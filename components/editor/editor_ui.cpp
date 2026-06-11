@@ -3562,21 +3562,41 @@ static void handle_editor_key(const kb_event_t *ev)
         break;
     case KB_KEY_ESCAPE:
         if (editor_is_modified()) {
-            if (s_esc_pending) {
-                /* Second Esc -- discard and close */
-                s_esc_pending = false;
-                editor_ui_show_file_browser();
-                return;
+            /* Auto-save on close instead of prompting: losing work to
+             * a double-Esc is worse than an extra draft on the card.
+             * Named files save in place; never-saved buffers get a
+             * generated draft name (same generator as the save
+             * dialog, where the user can rename later). */
+            esp_err_t save_err = ESP_FAIL;
+            if (editor_get_file_path()) {
+                save_err = editor_save_file();
+            } else {
+                const char *mp = sd_card_get_mount_point();
+                char name[sizeof(s_save_buf)];
+                if (mp && generate_default_name(name, sizeof(name))) {
+                    char path[512];
+                    snprintf(path, sizeof(path), "%s/%s", mp, name);
+                    save_err = editor_save_file_as(path);
+                }
             }
-            /* First Esc -- warn the user */
-            s_esc_pending = true;
-            editor_ui_set_status("Unsaved! Ctrl+S:Save  Esc:Discard");
-        } else {
-            s_esc_pending = false;
-            editor_ui_show_file_browser();
-            return;
+            if (save_err != ESP_OK) {
+                /* Save failed (SD missing / full): fall back to the
+                 * explicit two-step discard so work is neither lost
+                 * silently nor trapped in the editor. */
+                if (s_esc_pending) {
+                    s_esc_pending = false;
+                    editor_ui_show_file_browser();
+                    return;
+                }
+                s_esc_pending = true;
+                editor_ui_set_status(
+                    "Save failed! Ctrl+S:Save as  Esc:Discard");
+                break;
+            }
         }
-        break;
+        s_esc_pending = false;
+        editor_ui_show_file_browser();
+        return;
     default: {
         /* Use keyboard layout to translate keycode to UTF-8 */
         const char *text = kb_layout_translate(ev->keycode, ev->modifier);
