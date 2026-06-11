@@ -40,6 +40,7 @@
 #include <cstring>
 #include <cstdio>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
 #include <freertos/FreeRTOS.h>
@@ -320,6 +321,17 @@ static bool gt911_try_recover(void)
     return false;
 }
 
+/* GT911 "key" support: the controller scans an optional capacitive
+ * touch key (the round marker below the visible panel on the LilyGO
+ * T5 e-paper modules) and reports it in status bit 4 (0x10). Fire
+ * the registered callback once per press with a short suppression
+ * window so a steady finger produces one event, not a stream. */
+static touchscreen_button_cb_t s_button_cb = NULL;
+static bool    s_gt911_key_was_down = false;
+static int64_t s_gt911_key_last_fire_us = 0;
+#define GT911_STATUS_HAVE_KEY      0x10
+#define GT911_KEY_REFIRE_US        300000
+
 static bool poll_gt911(int *out_x, int *out_y)
 {
     if (!s_dev) return false;
@@ -346,6 +358,19 @@ static bool poll_gt911(int *out_x, int *out_y)
          * frame, so writing 0 is a no-op but also wastes an I2C
          * transaction. Just return. */
         return false;
+    }
+
+    /* Touch key (only meaningful in ready frames). */
+    {
+        bool key_down = (status & GT911_STATUS_HAVE_KEY) != 0;
+        if (key_down && !s_gt911_key_was_down && s_button_cb) {
+            int64_t now = esp_timer_get_time();
+            if (now - s_gt911_key_last_fire_us > GT911_KEY_REFIRE_US) {
+                s_gt911_key_last_fire_us = now;
+                s_button_cb();
+            }
+        }
+        s_gt911_key_was_down = key_down;
     }
 
     bool pressed = false;
@@ -699,6 +724,16 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
 #endif /* DRAFTLING_TOUCH_BSP_M5STACK_TAB5 */
 }
 
+extern "C" void touchscreen_set_button_callback(touchscreen_button_cb_t cb)
+{
+#if defined(CONFIG_DRAFTLING_TOUCH_GT911)
+    s_button_cb = cb;
+#else
+    /* Only the GT911 backend has a hardware touch key. */
+    (void)cb;
+#endif
+}
+
 extern "C" bool touchscreen_is_initialized(void)
 {
     return s_initialized;
@@ -790,6 +825,7 @@ extern "C" void touchscreen_sleep(void)
 #include "touchscreen.h"
 
 extern "C" void touchscreen_init(const touchscreen_config_t *cfg) { (void)cfg; }
+extern "C" void touchscreen_set_button_callback(touchscreen_button_cb_t cb) { (void)cb; }
 extern "C" bool touchscreen_is_initialized(void) { return false; }
 extern "C" int  touchscreen_get_int_gpio(void)    { return -1; }
 extern "C" bool touchscreen_read(int *x, int *y)  { (void)x; (void)y; return false; }

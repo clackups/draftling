@@ -129,6 +129,16 @@ bool touchscreen_read(int *out_x, int *out_y);
  * standby manager. */
 bool touchscreen_is_pressed(void);
 
+/* Optional callback fired when the touch panel's dedicated touch
+ * button (the GT911 "key" zone below the visible screen on the
+ * LilyGO T5 E-Paper S3 Pro panels) is tapped. Fired once per press
+ * (rising edge, with a short re-fire suppression window); the
+ * callback runs in the LVGL task context of the indev read poll.
+ * Only the GT911 backend implements this; other backends never
+ * fire it. */
+typedef void (*touchscreen_button_cb_t)(void);
+void touchscreen_set_button_callback(touchscreen_button_cb_t cb);
+
 /* Put the touch controller into its lowest-power sleep mode. The
  * controller stops scanning and drops to a few uA until the host
  * either resets it or wakes it via the INT line. Used by the

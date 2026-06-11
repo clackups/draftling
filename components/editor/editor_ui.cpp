@@ -262,7 +262,8 @@ static const int BACKLIGHT_OPTIONS[] = {
     0,
 #endif
 #if (CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 5) && \
-    defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO)
+    (defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
+     defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752))
     /* Extra-dim step for the LilyGO T5 E-Paper S3 Pro / Pro Lite
      * front-light: 10 % is already usable in a dark room but some
      * users want an even lower setting for night reading. The
@@ -505,11 +506,22 @@ static bool s_esc_pending = false;
 static lv_obj_t  *s_lbl_dev_batt    = NULL;  /* editor screen */
 static lv_obj_t  *s_lbl_br_dev_batt = NULL;  /* file browser screen */
 static lv_obj_t  *s_lbl_ble_dev_batt = NULL; /* BLE prompt screen */
+/* On the original H752 the FastEPD panel ghosts/flickers when the
+ * battery label is rewritten on a periodic timer, because every
+ * rewrite drives an e-paper refresh. On that board only, switch to a
+ * "pull" model: no timer; the label is refreshed at natural redraw
+ * points via sync_battery_labels(), and only when the value actually
+ * changed. Every other board keeps the periodic timer below (cheap on
+ * colour LCD; the epdiy e-paper boards are unaffected per testing). */
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+#define DRAFTLING_BATT_PULL_MODE 1
+#else
 static lv_timer_t *s_batt_timer     = NULL;
 #define BATT_POLL_MS 5000  /* refresh battery every 5 s (so charging
                               * state / plug-in events show up quickly
                               * on backends that expose it, INA226 on
                               * the M5Stack Tab5 in particular) */
+#endif
 #endif
 
 /* ---- WiFi connectivity icon ----
@@ -688,6 +700,34 @@ static void format_batt_str(char *buf, size_t len)
     }
 }
 
+#if defined(DRAFTLING_BATT_PULL_MODE)
+/* H752 pull model: cache the formatted string, and only rewrite the
+ * labels when it actually changed (so a redraw point that hasn't seen
+ * a battery change costs no e-paper update). */
+static char s_cached_batt[20] = "";
+static bool s_batt_pending = false;
+
+static void update_battery_cache(void)
+{
+    char batt[20];
+    format_batt_str(batt, sizeof(batt));
+    if (strcmp(s_cached_batt, batt) != 0) {
+        strncpy(s_cached_batt, batt, sizeof(s_cached_batt) - 1);
+        s_cached_batt[sizeof(s_cached_batt) - 1] = '\0';
+        s_batt_pending = true;
+    }
+}
+
+static void sync_battery_labels(void)
+{
+    update_battery_cache();
+    if (!s_batt_pending) return;
+    s_batt_pending = false;
+    if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, s_cached_batt);
+    if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, s_cached_batt);
+    if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, s_cached_batt);
+}
+#else
 static void batt_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -697,6 +737,14 @@ static void batt_timer_cb(lv_timer_t *timer)
     if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, batt);
     if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, batt);
 }
+/* No-op on the timer-driven boards: the call sites below are shared,
+ * but only the H752 pull model needs an explicit sync. */
+static inline void sync_battery_labels(void) {}
+#endif
+#else  /* !CONFIG_DRAFTLING_HAS_BATTERY */
+/* No battery indicator on this board: the shared sync_battery_labels()
+ * call sites compile to nothing. */
+static inline void sync_battery_labels(void) {}
 #endif
 
 /* Update the WiFi connectivity icons in both status bars: shown when
@@ -1168,6 +1216,7 @@ extern "C" void editor_ui_refresh(void)
     }
 
     update_title_bar();
+    sync_battery_labels();
 }
 
 static void ensure_cursor_visible(void)
@@ -1901,6 +1950,8 @@ static void refresh_file_list(void)
     s_browser_touch_ctx.activate   = browser_activate_item;
     list_touch_attach(s_list_files, &s_browser_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 extern "C" void editor_ui_show_file_browser(void)
@@ -1915,12 +1966,14 @@ extern "C" void editor_ui_show_file_browser(void)
         lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New file");
     }
 
+    sync_battery_labels();
     lv_scr_load(s_scr_browser);
 }
 
 extern "C" void editor_ui_show_editor(void)
 {
     editor_set_mode(EDITOR_MODE_EDITING);
+    sync_battery_labels();
     lv_scr_load(s_scr);
     editor_ui_refresh();
 }
@@ -2030,6 +2083,7 @@ static void set_status_with_timeout(const char *msg, uint32_t timeout_ms)
             lv_timer_set_repeat_count(s_status_clear_timer, 1);
         }
     }
+    sync_battery_labels();
 }
 
 extern "C" void editor_ui_set_status(const char *msg)
@@ -2199,6 +2253,8 @@ static void refresh_menu_items(void)
     s_menu_touch_ctx.activate   = menu_activate_item;
     list_touch_attach(s_menu_list, &s_menu_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 /* Move only the highlight bar without rebuilding the list. */
@@ -2213,6 +2269,7 @@ static void show_menu(void)
     s_menu_open = true;
     s_menu_sel = 0;
     refresh_menu_items();
+    sync_battery_labels();
     lv_scr_load(s_scr_menu);
 }
 
@@ -2336,6 +2393,8 @@ static void refresh_settings_items(void)
     s_settings_touch_ctx.activate   = settings_activate_item;
     list_touch_attach(s_settings_list, &s_settings_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 /* Move only the highlight bar without rebuilding the list. */
@@ -2363,6 +2422,8 @@ static void refresh_theme_picker_items(void)
     lv_list_add_btn(s_settings_list, NULL, "  Cancel (Esc)");
     apply_list_selection_styles(s_settings_list, s_theme_picker_sel);
     s_theme_picker_sel_prev = s_theme_picker_sel;
+
+    sync_battery_labels();
 }
 
 static void update_theme_picker_highlight(void)
@@ -2390,6 +2451,7 @@ static void show_settings(void)
     s_theme_picker_open = false;
 #endif
     refresh_settings_items();
+    sync_battery_labels();
     lv_scr_load(s_scr_settings);
 }
 
@@ -4407,9 +4469,15 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_dev_batt, 78);
     lv_label_set_text(s_lbl_br_dev_batt, "");
 
+#if defined(DRAFTLING_BATT_PULL_MODE)
+    /* H752: no periodic timer (see the declarations above); just paint
+     * the initial value. Subsequent updates ride redraw points. */
+    sync_battery_labels();
+#else
     /* Battery poll timer + first reading */
     s_batt_timer = lv_timer_create(batt_timer_cb, BATT_POLL_MS, NULL);
     batt_timer_cb(NULL);  /* show initial value immediately */
+#endif
 #define WIFI_ICON_RIGHT_OFFSET 95
 #else
 #define WIFI_ICON_RIGHT_OFFSET 15
@@ -4737,6 +4805,8 @@ static void build_screens(void)
     wifi_manager_set_callback(wifi_state_cb);
     git_sync_set_callback(git_sync_cb);
 
+    sync_battery_labels();
+
     /* Start on BLE prompt screen (transitions to file browser on connect) */
     lv_scr_load(s_scr_ble_prompt);
 }
@@ -4753,7 +4823,7 @@ static void teardown_screens(void)
 #if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     if (s_blink_timer)     { lv_timer_delete(s_blink_timer);     s_blink_timer     = NULL; }
 #endif
-#if defined(DRAFTLING_HAS_BATT_INDICATOR)
+#if defined(DRAFTLING_HAS_BATT_INDICATOR) && !defined(DRAFTLING_BATT_PULL_MODE)
     if (s_batt_timer)      { lv_timer_delete(s_batt_timer);      s_batt_timer      = NULL; }
 #endif
     if (s_repeat_timer)    { lv_timer_delete(s_repeat_timer);    s_repeat_timer    = NULL; }

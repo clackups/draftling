@@ -358,6 +358,48 @@ extern "C" void standby_enter_sleep(void)
 
     gpio_num_t wake_gpio = resolve_wake_gpio();
 
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+    /* Original H752: the only user key is GPIO48, which is not an
+     * RTC IO on the ESP32-S3 (EXT0/EXT1 cover GPIO0-21 only), so a
+     * deep-sleeping chip could only be revived with the RESET
+     * button. Mirror the known-good reader firmware
+     * (t5s3-reader HalGPIO::startDeepSleep, BOARD_T5S3_H752 branch):
+     * enter LIGHT sleep with a digital GPIO wake on the key, then
+     * restart so the firmware cold-boots exactly as it would after
+     * a deep-sleep wake. Light sleep idles at a few mA rather than
+     * deep-sleep microamps, but it is the only configuration in
+     * which the key can turn this hardware revision back on. */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_INPUT;
+        g.pin_bit_mask = 1ULL << wake_gpio;
+        g.pull_up_en   = GPIO_PULLUP_ENABLE;
+        g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        gpio_config(&g);
+
+        /* If the key is still held from the press that triggered
+         * sleep, wait for release so the LOW level does not wake us
+         * straight back up. Cap the wait; a stuck key should not
+         * block sleep forever. */
+        int waited_ms = 0;
+        while (gpio_get_level(wake_gpio) == 0 && waited_ms < 2000) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            waited_ms += 20;
+        }
+
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+        gpio_wakeup_enable(wake_gpio, GPIO_INTR_LOW_LEVEL);
+        esp_sleep_enable_gpio_wakeup();
+        ESP_LOGI(TAG, "Entering light sleep, wake on GPIO%d low...",
+                 (int)wake_gpio);
+        esp_light_sleep_start();
+        gpio_wakeup_disable(wake_gpio);
+        esp_restart();
+        /* Does not return */
+    }
+#endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
+
 #if SOC_PM_SUPPORT_EXT0_WAKEUP
     /* EXT0's level comparator and the RTC IO pull-up we are about to
      * enable both live in the RTC_PERIPH power domain. A pre-sleep

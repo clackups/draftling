@@ -13,7 +13,7 @@
 #include <driver/rtc_io.h>
 #include <driver/uart.h>
 #include <esp_sleep.h>
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -210,7 +210,8 @@ static void pre_sleep_autosave(void)
 #endif
 }
 
-#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO)
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
+    defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
 /* LilyGO T5 E-Paper S3 Pro / Pro Lite: deep-sleep current budget.
  *
  * Without this hook the board pulls ~30 mA in deep sleep (a 1500 mAh
@@ -644,7 +645,106 @@ static void pre_sleep_t5_deinit(void)
      * specifically) so the level stays driven through deep sleep. */
     gpio_deep_sleep_hold_en();
 }
-#endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO */
+
+static void pre_sleep_h752_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: LilyGO original H752 peripheral teardown");
+
+    pre_sleep_autosave();
+
+    /* H752 sleeps via esp_light_sleep_start() (GPIO48 is not an RTC
+     * IO, see standby.cpp), which freezes the CPU while the BT
+     * controller would otherwise keep scanning; stop BLE first so
+     * the controller is quiescent when the clocks gate. */
+    ble_keyboard_disable();
+    touchscreen_sleep();
+
+    t5_lora_sleep();
+    t5_gps_sleep();
+
+    battery_bq25896_prepare_sleep();
+    (void)sd_card_deinit();
+
+    display_deep_sleep_prepare();
+    gpio_deep_sleep_hold_en();
+}
+#endif /* LilyGO T5 EPD S3 family */
+
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+/* ---- H752 hardware shortcut keys ----
+ *
+ * The side key (GPIO48, also the light-sleep wake source) doubles as
+ * a Menu key during normal operation: a press injects F1 through the
+ * same editor_ui_handle_key() path the BLE/USB keyboards use, so it
+ * opens or closes the menu exactly like F1 on a keyboard. Polled at
+ * 30 ms by an esp_timer with a two-sample debounce; the synthetic
+ * event is injected as press+release in one go so the key-repeat
+ * tracker never fires a second toggle while the button is held.
+ *
+ * The capacitive touch key below the panel (GT911 status bit 0x10,
+ * surfaced by touchscreen_set_button_callback) acts as Back: it
+ * injects Esc, which closes the menu / settings / prompts, and in
+ * the editor returns to the file browser (auto-saving, see
+ * editor_ui.cpp). */
+
+static void h752_inject_key(uint8_t keycode)
+{
+    ESP_LOGD(TAG, "H752 key inject: keycode=0x%02X", keycode);
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void h752_touch_button_cb(void)
+{
+    h752_inject_key(KB_KEY_ESCAPE);
+}
+
+static void h752_user_key_poll_cb(void *arg)
+{
+    (void)arg;
+    static bool down = false;
+    static int  stable = 0;
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+    if (raw_down == down) {
+        stable = 0;
+        return;
+    }
+    if (++stable < 2) {
+        return;
+    }
+    stable = 0;
+    down = raw_down;
+    ESP_LOGD(TAG, "H752 side key %s (GPIO%d)",
+             down ? "PRESSED" : "released", WAKEUP_GPIO_NUM);
+    if (down) {
+        h752_inject_key(KB_KEY_F1);
+    }
+}
+
+static void h752_user_key_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = 1ULL << WAKEUP_GPIO_NUM;
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = h752_user_key_poll_cb;
+    targs.name     = "h752_key";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, 30 * 1000));
+    ESP_LOGI(TAG, "H752 side key poller started (GPIO%d, level now %d)",
+             WAKEUP_GPIO_NUM, gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
+}
+#endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
 /* M5Stack Tab5 (ESP32-P4): pre-sleep peripheral teardown.
@@ -784,7 +884,7 @@ extern "C" void app_main(void)
      * those bring-up paths see fresh, un-latched pads. */
     t5_release_held_gpios_after_wake();
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
@@ -960,6 +1060,11 @@ extern "C" void app_main(void)
      * definition (epdiy's built-in epd_board_v7 on the LilyGO T5
      * E-Paper S3 Pro / Pro Lite, the in-tree epd_board_papers3 on
      * the M5Stack PaperS3). Pin parameters are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+    /* Original LilyGO H752 EPD47 backend. Owns all panel GPIOs via
+     * the vendored LilyGO shift-register driver. Pin parameters are
+     * ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
     /* M5Stack Tab5 MIPI-DSI panel. All panel GPIOs, the MIPI-DSI
@@ -1147,7 +1252,8 @@ extern "C" void app_main(void)
         }
     }
 
-#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO)
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
+    defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
     /* LilyGO T5 E-Paper S3 Pro / Pro Lite: this firmware does not use
      * the SX1262 LoRa radio or the MIA-M10Q GPS receiver. Both come
      * up live after POR (SX1262 in STBY_RC ~600 uA, MIA-M10Q in full
@@ -1471,7 +1577,7 @@ extern "C" void app_main(void)
         tcfg.mirror_x = TOUCH_MIRROR_X ? true : false;
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;
         tcfg.user_rotate_deg = 0;
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
         tcfg.i2c_bus = (void *)shared_i2c_bus;
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* The m5stack_tab5 BSP owns the I2C master bus (created
@@ -1481,7 +1587,16 @@ extern "C" void app_main(void)
         tcfg.i2c_bus = (void *)bsp_i2c_get_handle();
 #endif
         touchscreen_init(&tcfg);
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+        /* Front touch key below the panel = Back (Esc). */
+        touchscreen_set_button_callback(h752_touch_button_cb);
+#endif
     }
+#endif
+
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+    /* Side key (GPIO48) = Menu (F1) while awake. */
+    h752_user_key_init();
 #endif
 
     /* WiFi is lazy-initialized on first wifi_manager_connect() call.
@@ -1500,6 +1615,8 @@ extern "C" void app_main(void)
     standby_init();
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO)
     standby_set_pre_sleep_cb(pre_sleep_t5_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+    standby_set_pre_sleep_cb(pre_sleep_h752_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
     standby_set_pre_sleep_cb(pre_sleep_tab5_deinit);
 #else
