@@ -4,6 +4,7 @@
 extern "C" {
 #endif
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 #include "sdkconfig.h"
@@ -47,6 +48,9 @@ const char *kb_layout_name(kb_layout_id_t layout);
 
 /* Cycle to the next layout and return its id */
 kb_layout_id_t kb_layout_next(void);
+
+/* True when the active layout produces right-to-left script (Hebrew) */
+bool kb_layout_is_rtl(void);
 
 #ifdef __cplusplus
 }

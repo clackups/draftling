@@ -262,7 +262,8 @@ static const int BACKLIGHT_OPTIONS[] = {
     0,
 #endif
 #if (CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 5) && \
-    defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO)
+    (defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
+     defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752))
     /* Extra-dim step for the LilyGO T5 E-Paper S3 Pro / Pro Lite
      * front-light: 10 % is already usable in a dark room but some
      * users want an even lower setting for night reading. The
@@ -505,11 +506,11 @@ static bool s_esc_pending = false;
 static lv_obj_t  *s_lbl_dev_batt    = NULL;  /* editor screen */
 static lv_obj_t  *s_lbl_br_dev_batt = NULL;  /* file browser screen */
 static lv_obj_t  *s_lbl_ble_dev_batt = NULL; /* BLE prompt screen */
+#if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
 static lv_timer_t *s_batt_timer     = NULL;
-#define BATT_POLL_MS 5000  /* refresh battery every 5 s (so charging
-                              * state / plug-in events show up quickly
-                              * on backends that expose it, INA226 on
-                              * the M5Stack Tab5 in particular) */
+#define BATT_POLL_MS 5000   /* reflective LCD and other fast refresh
+                             * backends can update battery more often. */
+#endif
 #endif
 
 /* ---- WiFi connectivity icon ----
@@ -615,22 +616,33 @@ static lv_style_t s_style_quote;
 
 static void init_styles(void)
 {
+    /* base_dir AUTO: LVGL's style default is LTR, which makes
+     * LV_TEXT_ALIGN_AUTO always resolve to LEFT and breaks both the
+     * paragraph alignment and lv_label_get_letter_pos() cursor
+     * geometry for RTL text. AUTO detects the paragraph direction
+     * from the first strong character, so a line starting with
+     * Hebrew right-aligns (and keeps right alignment when Latin is
+     * mixed in), while LTR-starting lines stay left-aligned. */
     lv_style_init(&s_style_body);
     lv_style_set_text_font(&s_style_body, body_font());
     lv_style_set_text_color(&s_style_body, theme_fg());
     lv_style_set_pad_all(&s_style_body, 0);
+    lv_style_set_base_dir(&s_style_body, LV_BASE_DIR_AUTO);
 
     lv_style_init(&s_style_h1);
     lv_style_set_text_font(&s_style_h1, h1_font());
     lv_style_set_text_color(&s_style_h1, theme_fg());
+    lv_style_set_base_dir(&s_style_h1, LV_BASE_DIR_AUTO);
 
     lv_style_init(&s_style_h2);
     lv_style_set_text_font(&s_style_h2, h2_font());
     lv_style_set_text_color(&s_style_h2, theme_fg());
+    lv_style_set_base_dir(&s_style_h2, LV_BASE_DIR_AUTO);
 
     lv_style_init(&s_style_h3);
     lv_style_set_text_font(&s_style_h3, h3_font());
     lv_style_set_text_color(&s_style_h3, theme_fg());
+    lv_style_set_base_dir(&s_style_h3, LV_BASE_DIR_AUTO);
 
     lv_style_init(&s_style_code);
     lv_style_set_text_font(&s_style_code, body_font());
@@ -638,6 +650,7 @@ static void init_styles(void)
     lv_style_set_border_width(&s_style_code, 1);
     lv_style_set_border_color(&s_style_code, theme_fg());
     lv_style_set_pad_left(&s_style_code, 4);
+    lv_style_set_base_dir(&s_style_code, LV_BASE_DIR_AUTO);
 
     lv_style_init(&s_style_quote);
     lv_style_set_text_font(&s_style_quote, body_font());
@@ -646,6 +659,7 @@ static void init_styles(void)
     lv_style_set_border_width(&s_style_quote, 2);
     lv_style_set_border_color(&s_style_quote, theme_fg());
     lv_style_set_pad_left(&s_style_quote, 8);
+    lv_style_set_base_dir(&s_style_quote, LV_BASE_DIR_AUTO);
 
     recalc_layout();
 
@@ -688,15 +702,44 @@ static void format_batt_str(char *buf, size_t len)
     }
 }
 
+static char s_cached_batt[20] = "";
+static bool s_batt_pending = false;
+
+static void update_battery_cache(void)
+{
+    char batt[20];
+    format_batt_str(batt, sizeof(batt));
+    if (strcmp(s_cached_batt, batt) != 0) {
+        strncpy(s_cached_batt, batt, sizeof(s_cached_batt) - 1);
+        s_cached_batt[sizeof(s_cached_batt) - 1] = '\0';
+        s_batt_pending = true;
+    }
+}
+
+static void sync_battery_labels(void)
+{
+    update_battery_cache();
+    if (!s_batt_pending) {
+        return;
+    }
+    s_batt_pending = false;
+    if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, s_cached_batt);
+    if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, s_cached_batt);
+    if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, s_cached_batt);
+}
+
+#if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
 static void batt_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
-    char batt[20];
-    format_batt_str(batt, sizeof(batt));
-    if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, batt);
-    if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, batt);
-    if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, batt);
+    update_battery_cache();
 }
+#endif
+#else  /* !CONFIG_DRAFTLING_HAS_BATTERY */
+/* No battery monitor on this board: the status-bar battery labels
+ * are never created, so refreshing them is a no-op. Kept as a stub
+ * so the many call sites stay unconditional. */
+static inline void sync_battery_labels(void) {}
 #endif
 
 /* Update the WiFi connectivity icons in both status bars: shown when
@@ -814,6 +857,55 @@ static size_t utf8_char_offset(const char *text, int n)
     return off;
 }
 
+
+/* Scan UTF-8 text for the first STRONG directional codepoint,
+ * mirroring LVGL's auto base-direction detection. Returns +1 for
+ * strong LTR (Latin, Greek, Cyrillic), -1 for strong RTL (Hebrew,
+ * Arabic and their presentation forms), 0 if the text contains only
+ * direction-neutral characters (spaces, digits, punctuation). */
+static int utf8_first_strong_dir(const char *s, size_t len)
+{
+    size_t i = 0;
+    while (i < len) {
+        unsigned char c = (unsigned char)s[i];
+        uint32_t cp;
+        size_t adv;
+        if (c < 0x80) {
+            cp = c; adv = 1;
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
+            cp = ((uint32_t)(c & 0x1F) << 6) |
+                 ((unsigned char)s[i + 1] & 0x3F);
+            adv = 2;
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
+            cp = ((uint32_t)(c & 0x0F) << 12) |
+                 (((unsigned char)s[i + 1] & 0x3F) << 6) |
+                 ((unsigned char)s[i + 2] & 0x3F);
+            adv = 3;
+        } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
+            cp = ((uint32_t)(c & 0x07) << 18) |
+                 (((unsigned char)s[i + 1] & 0x3F) << 12) |
+                 (((unsigned char)s[i + 2] & 0x3F) << 6) |
+                 ((unsigned char)s[i + 3] & 0x3F);
+            adv = 4;
+        } else {
+            cp = c; adv = 1;
+        }
+        i += adv;
+        /* Strong LTR */
+        if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) return 1;
+        if (cp >= 0x00C0 && cp <= 0x024F) return 1;  /* Latin Extended */
+        if (cp >= 0x0370 && cp <= 0x03FF) return 1;  /* Greek */
+        if (cp >= 0x0400 && cp <= 0x04FF) return 1;  /* Cyrillic */
+        /* Strong RTL */
+        if (cp >= 0x0590 && cp <= 0x05FF) return -1; /* Hebrew */
+        if (cp >= 0x0600 && cp <= 0x06FF) return -1; /* Arabic */
+        if (cp >= 0x0700 && cp <= 0x074F) return -1; /* Syriac */
+        if (cp >= 0x0750 && cp <= 0x077F) return -1; /* Arabic Supplement */
+        if (cp >= 0xFB1D && cp <= 0xFEFF) return -1; /* Hebrew + Arabic
+                                                        Presentation Forms */
+    }
+    return 0;
+}
 
 extern "C" void editor_ui_refresh(void)
 {
@@ -1139,6 +1231,18 @@ extern "C" void editor_ui_refresh(void)
                 cur_x = 2 + lpos.x;
                 cur_y = y_pos + lpos.y;
                 cur_h = line_h;
+
+                /* A line with no strong directional character (empty
+                 * or whitespace-only) detects as LTR and parks the
+                 * cursor at the left edge. If the user has switched
+                 * to an RTL keyboard layout, the first typed
+                 * character will right-align the paragraph, so show
+                 * the cursor at the right edge it is about to type
+                 * from. */
+                if (kb_layout_is_rtl() &&
+                    utf8_first_strong_dir(tmp.c_str(), tmp.size()) == 0) {
+                    cur_x = SCR_W - 4;
+                }
             }
 
             y_pos += rendered_h;
@@ -1168,6 +1272,7 @@ extern "C" void editor_ui_refresh(void)
     }
 
     update_title_bar();
+    sync_battery_labels();
 }
 
 static void ensure_cursor_visible(void)
@@ -1278,7 +1383,9 @@ static bool ui_point_to_offset(int x, int y, size_t *out_off)
         lv_point_t p;
         p.x = x_in_label;
         p.y = y_in_label;
-        disp_char = (int)lv_label_get_letter_on(s_line_labels[slot], &p, false);
+        /* bidi=true so taps on RTL/mixed lines map through LVGL's
+         * visual->logical reordering instead of the raw byte order. */
+        disp_char = (int)lv_label_get_letter_on(s_line_labels[slot], &p, true);
     }
     if (disp_char < 0) disp_char = 0;
 
@@ -1901,6 +2008,8 @@ static void refresh_file_list(void)
     s_browser_touch_ctx.activate   = browser_activate_item;
     list_touch_attach(s_list_files, &s_browser_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 extern "C" void editor_ui_show_file_browser(void)
@@ -1915,12 +2024,14 @@ extern "C" void editor_ui_show_file_browser(void)
         lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New file");
     }
 
+    sync_battery_labels();
     lv_scr_load(s_scr_browser);
 }
 
 extern "C" void editor_ui_show_editor(void)
 {
     editor_set_mode(EDITOR_MODE_EDITING);
+    sync_battery_labels();
     lv_scr_load(s_scr);
     editor_ui_refresh();
 }
@@ -2030,6 +2141,7 @@ static void set_status_with_timeout(const char *msg, uint32_t timeout_ms)
             lv_timer_set_repeat_count(s_status_clear_timer, 1);
         }
     }
+    sync_battery_labels();
 }
 
 extern "C" void editor_ui_set_status(const char *msg)
@@ -2199,6 +2311,8 @@ static void refresh_menu_items(void)
     s_menu_touch_ctx.activate   = menu_activate_item;
     list_touch_attach(s_menu_list, &s_menu_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 /* Move only the highlight bar without rebuilding the list. */
@@ -2213,6 +2327,7 @@ static void show_menu(void)
     s_menu_open = true;
     s_menu_sel = 0;
     refresh_menu_items();
+    sync_battery_labels();
     lv_scr_load(s_scr_menu);
 }
 
@@ -2336,6 +2451,8 @@ static void refresh_settings_items(void)
     s_settings_touch_ctx.activate   = settings_activate_item;
     list_touch_attach(s_settings_list, &s_settings_touch_ctx);
 #endif
+
+    sync_battery_labels();
 }
 
 /* Move only the highlight bar without rebuilding the list. */
@@ -2363,6 +2480,8 @@ static void refresh_theme_picker_items(void)
     lv_list_add_btn(s_settings_list, NULL, "  Cancel (Esc)");
     apply_list_selection_styles(s_settings_list, s_theme_picker_sel);
     s_theme_picker_sel_prev = s_theme_picker_sel;
+
+    sync_battery_labels();
 }
 
 static void update_theme_picker_highlight(void)
@@ -2390,6 +2509,7 @@ static void show_settings(void)
     s_theme_picker_open = false;
 #endif
     refresh_settings_items();
+    sync_battery_labels();
     lv_scr_load(s_scr_settings);
 }
 
@@ -3260,46 +3380,7 @@ static bool cursor_line_is_rtl(void)
     size_t ll = 0;
     const char *lt = editor_get_line(line, &ll);
     if (!lt) return false;
-    size_t i = 0;
-    while (i < ll) {
-        unsigned char c = (unsigned char)lt[i];
-        uint32_t cp;
-        size_t adv;
-        if (c < 0x80) {
-            cp = c; adv = 1;
-        } else if ((c & 0xE0) == 0xC0 && i + 1 < ll) {
-            cp = ((uint32_t)(c & 0x1F) << 6) |
-                 ((unsigned char)lt[i + 1] & 0x3F);
-            adv = 2;
-        } else if ((c & 0xF0) == 0xE0 && i + 2 < ll) {
-            cp = ((uint32_t)(c & 0x0F) << 12) |
-                 (((unsigned char)lt[i + 1] & 0x3F) << 6) |
-                 ((unsigned char)lt[i + 2] & 0x3F);
-            adv = 3;
-        } else if ((c & 0xF8) == 0xF0 && i + 3 < ll) {
-            cp = ((uint32_t)(c & 0x07) << 18) |
-                 (((unsigned char)lt[i + 1] & 0x3F) << 12) |
-                 (((unsigned char)lt[i + 2] & 0x3F) << 6) |
-                 ((unsigned char)lt[i + 3] & 0x3F);
-            adv = 4;
-        } else {
-            cp = c; adv = 1;
-        }
-        i += adv;
-        /* Strong LTR */
-        if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) return false;
-        if (cp >= 0x00C0 && cp <= 0x024F) return false;  /* Latin Extended */
-        if (cp >= 0x0370 && cp <= 0x03FF) return false;  /* Greek */
-        if (cp >= 0x0400 && cp <= 0x04FF) return false;  /* Cyrillic */
-        /* Strong RTL */
-        if (cp >= 0x0590 && cp <= 0x05FF) return true;   /* Hebrew */
-        if (cp >= 0x0600 && cp <= 0x06FF) return true;   /* Arabic */
-        if (cp >= 0x0700 && cp <= 0x074F) return true;   /* Syriac */
-        if (cp >= 0x0750 && cp <= 0x077F) return true;   /* Arabic Supplement */
-        if (cp >= 0xFB1D && cp <= 0xFEFF) return true;   /* Hebrew + Arabic
-                                                            Presentation Forms */
-    }
-    return false;
+    return utf8_first_strong_dir(lt, ll) < 0;
 }
 
 static void handle_editor_key(const kb_event_t *ev)
@@ -3562,21 +3643,41 @@ static void handle_editor_key(const kb_event_t *ev)
         break;
     case KB_KEY_ESCAPE:
         if (editor_is_modified()) {
-            if (s_esc_pending) {
-                /* Second Esc -- discard and close */
-                s_esc_pending = false;
-                editor_ui_show_file_browser();
-                return;
+            /* Auto-save on close instead of prompting: losing work to
+             * a double-Esc is worse than an extra draft on the card.
+             * Named files save in place; never-saved buffers get a
+             * generated draft name (same generator as the save
+             * dialog, where the user can rename later). */
+            esp_err_t save_err = ESP_FAIL;
+            if (editor_get_file_path()) {
+                save_err = editor_save_file();
+            } else {
+                const char *mp = sd_card_get_mount_point();
+                char name[sizeof(s_save_buf)];
+                if (mp && generate_default_name(name, sizeof(name))) {
+                    char path[512];
+                    snprintf(path, sizeof(path), "%s/%s", mp, name);
+                    save_err = editor_save_file_as(path);
+                }
             }
-            /* First Esc -- warn the user */
-            s_esc_pending = true;
-            editor_ui_set_status("Unsaved! Ctrl+S:Save  Esc:Discard");
-        } else {
-            s_esc_pending = false;
-            editor_ui_show_file_browser();
-            return;
+            if (save_err != ESP_OK) {
+                /* Save failed (SD missing / full): fall back to the
+                 * explicit two-step discard so work is neither lost
+                 * silently nor trapped in the editor. */
+                if (s_esc_pending) {
+                    s_esc_pending = false;
+                    editor_ui_show_file_browser();
+                    return;
+                }
+                s_esc_pending = true;
+                editor_ui_set_status(
+                    "Save failed! Ctrl+S:Save as  Esc:Discard");
+                break;
+            }
         }
-        break;
+        s_esc_pending = false;
+        editor_ui_show_file_browser();
+        return;
     default: {
         /* Use keyboard layout to translate keycode to UTF-8 */
         const char *text = kb_layout_translate(ev->keycode, ev->modifier);
@@ -4393,9 +4494,13 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_dev_batt, 78);
     lv_label_set_text(s_lbl_br_dev_batt, "");
 
+#if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     /* Battery poll timer + first reading */
     s_batt_timer = lv_timer_create(batt_timer_cb, BATT_POLL_MS, NULL);
     batt_timer_cb(NULL);  /* show initial value immediately */
+#else
+    sync_battery_labels();
+#endif
 #define WIFI_ICON_RIGHT_OFFSET 95
 #else
 #define WIFI_ICON_RIGHT_OFFSET 15
@@ -4722,6 +4827,8 @@ static void build_screens(void)
     /* Register WiFi and Git sync status callbacks */
     wifi_manager_set_callback(wifi_state_cb);
     git_sync_set_callback(git_sync_cb);
+
+    sync_battery_labels();
 
     /* Start on BLE prompt screen (transitions to file browser on connect) */
     lv_scr_load(s_scr_ble_prompt);

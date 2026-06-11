@@ -554,6 +554,15 @@ extern "C" kb_layout_id_t kb_layout_next(void)
     return s_layout;
 }
 
+extern "C" bool kb_layout_is_rtl(void)
+{
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HE
+    return s_layout == KB_LAYOUT_HE;
+#else
+    return false;
+#endif
+}
+
 extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
 {
     if (keycode < 0x04) return NULL;

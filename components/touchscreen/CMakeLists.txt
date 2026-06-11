@@ -1,4 +1,4 @@
-set(touch_reqs driver esp_driver_i2c esp_driver_gpio lvgl__lvgl)
+set(touch_reqs driver esp_driver_i2c esp_driver_gpio esp_timer lvgl__lvgl)
 
 idf_component_register(
     SRCS "touchscreen.cpp"

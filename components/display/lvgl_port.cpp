@@ -124,6 +124,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
 {
     int w = area->x2 - area->x1 + 1;
     int h = area->y2 - area->y1 + 1;
+    bool last = lv_display_flush_is_last(disp);
 
     /* Software-rotate the tile into the backend-native panel
      * orientation, then translate the area to physical coords. The
@@ -163,7 +164,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
          * refresh - otherwise the user sees the same screen update
          * twice (once for the cursor and once for the title bar) on
          * every keystroke. */
-        if (lv_display_flush_is_last(disp)) {
+        if (last) {
             display_flush();
         }
         lv_disp_flush_ready(disp);
@@ -195,7 +196,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
             buf++;
         }
     }
-    if (lv_display_flush_is_last(disp)) {
+    if (last) {
         display_flush();
     }
     lv_disp_flush_ready(disp);

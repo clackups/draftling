@@ -1,0 +1,9 @@
+# Draftling original LilyGO T5 E-Paper S3 Pro H752 defaults.
+#
+# Build with:
+#   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.h752" build
+
+CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752=y
+CONFIG_DRAFTLING_DISPLAY_ROTATE_0=y
+CONFIG_KB_LAYOUT_ENABLE_HE=y
+CONFIG_DRAFTLING_NO_KEYBOARD_SLEEP_SEC=0
