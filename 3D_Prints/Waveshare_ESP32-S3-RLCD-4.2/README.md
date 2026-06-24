@@ -27,3 +27,4 @@ Alternatively, Female-Female stand-offs can be used, and screws for attaching th
 
 Panels print: PLA, 0.2mm, 20% infill.
 
+Also, [available at Printables](https://www.printables.com/model/1763772-enclosure-for-waveshare-esp32-s3-rlcd-42).
