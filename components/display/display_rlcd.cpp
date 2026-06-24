@@ -92,8 +92,8 @@ extern "C" void display_init(int mosi, int sck, int dc, int cs, int rst,
 
     /* Create LCD panel IO over SPI */
     esp_lcd_panel_io_spi_config_t io_cfg = {};
-    io_cfg.dc_gpio_num      = dc;
-    io_cfg.cs_gpio_num      = cs;
+    io_cfg.dc_gpio_num      = (gpio_num_t)dc;
+    io_cfg.cs_gpio_num      = (gpio_num_t)cs;
     io_cfg.pclk_hz          = 10 * 1000 * 1000;
     io_cfg.lcd_cmd_bits     = 8;
     io_cfg.lcd_param_bits   = 8;
