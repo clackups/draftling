@@ -14,7 +14,7 @@ Part list:
 * M2.5*15mm Male-Female stand-offs: 4pc
 * M2.5 nuts: 4pc (back panel to stand-offs)
 
-Alternatively, Female-Femnale stand-offs can be used, and screws for attaching the back panel.
+Alternatively, Female-Female stand-offs can be used, and screws for attaching the back panel.
 
 Panels print: PLA, 0.2mm, 20% infill.
 
