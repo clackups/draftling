@@ -213,11 +213,15 @@ are available on my YouTube channel.
 
 ### Choosing a board
 
+See the [photo gallery](images/README.md) of some of supported
+hardware.
+
 The **Waveshare ESP32-S3-RLCD-4.2** provides a pretty smooth and
-responsive user interaction. But the screen is very fragile, and the
-device needs a proper enclosure, preferably with a protective glass.
-The contrast is very low, so it needs good lighting for comfortable
-work. (The screen broke during my tests.)
+responsive user interaction. But the screen is very fragile (the
+screen broke during my tests), and the device needs an enclosure. A
+[3D printed enclosure model is
+available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/).  The contrast is
+very low, so it needs good lighting for comfortable work.
 
 The **LilyGO T5 E-Paper S3 Pro** and **Pro Lite** are so far the most
 usable option: they come with a high-contrast 4.7" ED047TC1 e-paper
@@ -451,6 +455,6 @@ components/
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for
 details.
 
-Copyright (c) 2025 clackups@gmail.com
+Copyright (c) 2026 clackups@gmail.com
 
 Fediverse: [@clackups@social.noleron.com](https://social.noleron.com/@clackups)
