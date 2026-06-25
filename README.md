@@ -304,7 +304,7 @@ touch instead.
 
 ## Keyboard Layouts
 
-The editor supports four keyboard layouts that can be switched with
+The editor supports five keyboard layouts that can be switched with
 **Ctrl+L** (or **Win+Space**) or through the **F1 menu**:
 
 | Code | Layout |
@@ -313,6 +313,7 @@ The editor supports four keyboard layouts that can be switched with
 | UA | Ukrainian (Cyrillic) |
 | DE | German (QWERTZ with umlauts) |
 | FR | French (AZERTY with accents) |
+| HE | Hebrew (Israeli standard) |
 
 The current layout is shown in the title bar.
 
