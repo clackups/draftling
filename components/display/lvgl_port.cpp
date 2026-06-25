@@ -30,8 +30,19 @@ static SemaphoreHandle_t s_lvgl_mux = NULL;
  *
  * s_phys_w / s_phys_h are the panel dimensions in the
  * pre-user-rotation (backend-native) orientation; flush_cb maps
- * the LVGL-coordinate tile back into this space. */
+ * the LVGL-coordinate tile back into this space.
+ *
+ * s_rotate_deg is the *effective* rotation used by flush_cb. It is
+ * the build-time base rotation (s_base_rotate_deg, from
+ * DRAFTLING_DISPLAY_ROTATE_ANGLE) optionally combined with a runtime
+ * 180-degree flip toggled from the editor's Settings menu
+ * (draftling_lvgl_port_set_flip180). A 180 flip never changes the
+ * reported panel resolution, so it can be applied at runtime without
+ * rebuilding the LVGL widget tree -- only a full repaint is needed. */
+static int       s_base_rotate_deg = 0;
+static bool      s_flip180         = false;
 static int       s_rotate_deg = 0;
+static lv_display_t *s_disp    = NULL;
 static int       s_phys_w     = 0;
 static int       s_phys_h     = 0;
 static uint16_t *s_rot_buf    = NULL;
@@ -228,11 +239,13 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
      * into physical panel coordinates (LVGL v9.2 swaps the reported
      * horizontal/vertical resolution after lv_display_set_rotation
      * but does not rotate the rendered buffer for us). */
-    s_rotate_deg = (rotate_deg % 360 + 360) % 360;
-    if (s_rotate_deg != 0 && s_rotate_deg != 90 &&
-        s_rotate_deg != 180 && s_rotate_deg != 270) {
-        s_rotate_deg = 0;
+    s_base_rotate_deg = (rotate_deg % 360 + 360) % 360;
+    if (s_base_rotate_deg != 0 && s_base_rotate_deg != 90 &&
+        s_base_rotate_deg != 180 && s_base_rotate_deg != 270) {
+        s_base_rotate_deg = 0;
     }
+    s_flip180    = false;
+    s_rotate_deg = s_base_rotate_deg;
     s_phys_w = width;
     s_phys_h = height;
 
@@ -248,6 +261,7 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     lv_init();
 
     lv_display_t *disp = lv_display_create(width, height);
+    s_disp = disp;
     /* LVGL v9 defaults to LV_COLOR_FORMAT_RGB888 (4 bytes per pixel).
      * Our flush path expects RGB565, and BYTES_PER_PIXEL below is
      * sized for RGB565. Declare it explicitly before allocating
@@ -258,7 +272,7 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
 
     /* Apply display rotation */
     lv_display_rotation_t rot = LV_DISPLAY_ROTATION_0;
-    switch (rotate_deg) {
+    switch (s_rotate_deg) {
     case 90:  rot = LV_DISPLAY_ROTATION_90;  break;
     case 180: rot = LV_DISPLAY_ROTATION_180; break;
     case 270: rot = LV_DISPLAY_ROTATION_270; break;
@@ -306,7 +320,48 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     ESP_ERROR_CHECK(esp_timer_start_periodic(timer, LVGL_TICK_PERIOD_MS * 1000));
 
     xTaskCreatePinnedToCore(lvgl_task, "LVGL", 8 * 1024, NULL, 5, NULL, 0);
-    ESP_LOGI(TAG, "LVGL port initialized (%dx%d, rotation=%d)", width, height, rotate_deg);
+    ESP_LOGI(TAG, "LVGL port initialized (%dx%d, rotation=%d)", width, height, s_rotate_deg);
+}
+
+/* Runtime 180-degree flip toggle.
+ *
+ * The effective rotation handed to LVGL and flush_cb is the build-time
+ * base rotation optionally combined with an extra 180 degrees. A 180
+ * flip leaves the reported horizontal/vertical resolution unchanged
+ * (unlike a 90/270 swap), so the LVGL widget tree does not need to be
+ * rebuilt -- we just update lv_display_set_rotation, recompute the
+ * effective rotation used by flush_cb's software-rotate path, and
+ * invalidate the active screen so the whole panel repaints in the new
+ * orientation. Safe to call from the LVGL task context (e.g. the
+ * Settings key handler), which already holds the LVGL lock. */
+extern "C" void draftling_lvgl_port_set_flip180(bool flip)
+{
+    if (!s_disp) return;
+    if (s_flip180 == flip) return;
+    s_flip180    = flip;
+    s_rotate_deg = (s_base_rotate_deg + (flip ? 180 : 0)) % 360;
+
+    lv_display_rotation_t rot = LV_DISPLAY_ROTATION_0;
+    switch (s_rotate_deg) {
+    case 90:  rot = LV_DISPLAY_ROTATION_90;  break;
+    case 180: rot = LV_DISPLAY_ROTATION_180; break;
+    case 270: rot = LV_DISPLAY_ROTATION_270; break;
+    default:  rot = LV_DISPLAY_ROTATION_0;   break;
+    }
+    lv_display_set_rotation(s_disp, rot);
+
+    /* Repaint everything in the new orientation. display_clear() also
+     * flags the next flush as a full refresh on backends that track
+     * it, clearing any residue the rotated layout does not overwrite. */
+    display_clear(0xFF);
+    lv_obj_invalidate(lv_screen_active());
+    ESP_LOGI(TAG, "Display flip180=%d (effective rotation=%d)",
+             (int)flip, s_rotate_deg);
+}
+
+extern "C" bool draftling_lvgl_port_get_flip180(void)
+{
+    return s_flip180;
 }
 
 extern "C" bool draftling_lvgl_port_lock(int timeout_ms)

@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "display_rlcd.cpp" "display_epdiy.cpp" "display_h752.cpp" "epd_board_papers3.c" "display_axs15231b.cpp" "display_mipi_dsi.cpp" "lvgl_port.cpp"
+    SRCS "display_rlcd.cpp" "display_epdiy.cpp" "display_h752.cpp" "epd_board_papers3.c" "display_axs15231b.cpp" "display_mipi_dsi.cpp" "display_rgb.cpp" "lvgl_port.cpp"
     INCLUDE_DIRS "include"
     ## ESP-IDF 6.0 removed the legacy `driver` component's public
     ## dependencies on the split `esp_driver_*` components (see the

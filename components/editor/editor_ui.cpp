@@ -344,6 +344,39 @@ static int find_backlight_option(int pct)
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+/* ---- Runtime 180-degree display flip ----
+ * Toggled from the F1 -> Settings menu and persisted in NVS. Applied
+ * on top of the build-time base rotation by the LVGL port (a 180 flip
+ * never changes the reported resolution, so no widget rebuild is
+ * needed). Useful on boards whose USB-C / SD-card edge can face either
+ * way depending on the enclosure (e.g. Sunton ESP32-8048S043C). */
+#define NVS_KEY_ROTATE180 "rot180"
+static bool s_rotate180 = false;
+
+static void load_rotate180_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_ROTATE180, &v) == ESP_OK) {
+            s_rotate180 = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_rotate180_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_ROTATE180, s_rotate180 ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+#endif  /* CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE */
+
 /* Recalculate derived layout values from the current body font. */
 static void recalc_layout(void)
 {
@@ -2823,17 +2856,22 @@ static int find_timeout_option(uint32_t sec)
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
 #define SETTINGS_IDX_THEME    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 0)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 1)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 2)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_BACKLIGHT + 3)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_BACKLIGHT + 4)
+#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_NEXT_AFTER_BACKLIGHT + 1)
 #else
 #define SETTINGS_IDX_THEME    (-1)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 0)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 1)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_BACKLIGHT + 2)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_BACKLIGHT + 3)
+#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_NEXT_AFTER_BACKLIGHT + 0)
 #endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+#define SETTINGS_IDX_ROTATE   (_SETTINGS_NEXT_AFTER_THEME + 0)
+#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 1)
+#else
+#define SETTINGS_IDX_ROTATE   (-1)
+#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 0)
+#endif
+#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_ROTATE + 0)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_ROTATE + 1)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_ROTATE + 2)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_ROTATE + 3)
 
 static void refresh_settings_items(void)
 {
@@ -2876,6 +2914,13 @@ static void refresh_settings_items(void)
     /* Color theme (color LCDs only) */
     snprintf(buf, sizeof(buf), "Color theme: %s",
              COLOR_THEMES[s_theme_idx].name);
+    lv_list_add_btn(s_settings_list, NULL, buf);
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    /* Runtime 180-degree display flip */
+    snprintf(buf, sizeof(buf), "Rotate 180: %s",
+             s_rotate180 ? "on" : "off");
     lv_list_add_btn(s_settings_list, NULL, buf);
 #endif
 
@@ -3031,6 +3076,19 @@ static void settings_activate_item(int idx)
         s_theme_picker_open = true;
         s_theme_picker_sel = s_theme_idx;
         refresh_theme_picker_items();
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    } else if (idx == SETTINGS_IDX_ROTATE) {
+        /* Toggle the runtime 180-degree display flip. Applied
+         * immediately so the user sees the new orientation without
+         * leaving the menu; persisted in NVS and re-applied at boot.
+         * A 180 flip does not change the reported resolution, so the
+         * widget tree stays valid -- the LVGL port just repaints the
+         * whole panel in the new orientation. */
+        s_rotate180 = !s_rotate180;
+        save_rotate180_to_nvs();
+        draftling_lvgl_port_set_flip180(s_rotate180);
+        refresh_settings_items();
 #endif
     } else if (idx == SETTINGS_IDX_SLEEP) {
         /* Sleep now -- standby_enter_sleep() runs the registered
@@ -4869,6 +4927,21 @@ static void process_key_event(const kb_event_t *ev)
     if (norm.keycode == KB_KEY_KP_ENTER) {
         norm.keycode = KB_KEY_ENTER;
     }
+
+    /* Ctrl+X is a substitute for Escape on keyboards that have no
+     * dedicated ESC key (e.g. some compact BLE keyboards). Translate
+     * it into a synthetic Escape event so every screen handler that
+     * already keys off KB_KEY_ESCAPE picks it up unchanged. The 'x'
+     * HID usage id is 0x1B; match it with either Control modifier. */
+    {
+        bool ctrl = (norm.modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
+        if (ctrl && norm.keycode == 0x1B) {
+            norm.keycode  = KB_KEY_ESCAPE;
+            norm.modifier = 0;
+            norm.character = 0;
+        }
+    }
+
     const kb_event_t *e = &norm;
 
     if (s_save_open) {
@@ -6125,6 +6198,16 @@ extern "C" void editor_ui_init(void)
     s_key_drain_timer = lv_timer_create(key_drain_cb, KEY_DRAIN_PERIOD_MS, NULL);
 
     build_screens();
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    /* Restore the persisted 180-degree display flip and apply it on
+     * top of the build-time base rotation now that the screens exist
+     * (the flip repaints the active screen in the new orientation). */
+    load_rotate180_from_nvs();
+    if (s_rotate180) {
+        draftling_lvgl_port_set_flip180(true);
+    }
+#endif
 
     /* Restore the split layout persisted across reboot / deep sleep.
      * The documents themselves are not auto-reopened (the boot flow

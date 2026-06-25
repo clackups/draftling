@@ -1,0 +1,26 @@
+# Sunton ESP32-8048S043C board selection + board-specific tuning.
+# Pass alongside the common defaults via:
+#   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.sunton043" build
+
+CONFIG_DRAFTLING_MODEL_SUNTON_8048S043=y
+
+# The Sunton ESP32-8048S0xx boards' flash is wired for DIO (verified
+# working on this hardware in the parallel breezydemo port). Override
+# the common QIO default so the bootloader comes up reliably.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+
+# Enable the on-board GT911 capacitive touchscreen as a secondary
+# input device (cursor / scroll / tap-to-select). The GT911 INT line
+# is not wired on the Sunton reference (polled every LVGL tick) and
+# RST is on GPIO38 (derived in Kconfig).
+CONFIG_DRAFTLING_TOUCHSCREEN=y
+
+# Keyboard layouts: this board ships with a German BLE keyboard, so
+# make US (QWERTY) and DE (QWERTZ) the two available layouts (cycle
+# with Ctrl+L / Win+Space). Disable the Ukrainian layout that is on
+# by default in the common Kconfig.
+CONFIG_KB_LAYOUT_ENABLE_US=y
+CONFIG_KB_LAYOUT_ENABLE_DE=y
+CONFIG_KB_LAYOUT_ENABLE_UA=n
+CONFIG_KB_LAYOUT_ENABLE_FR=n
+CONFIG_KB_LAYOUT_ENABLE_HE=n

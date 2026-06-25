@@ -84,6 +84,33 @@ config DRAFTLING_MODEL_JC3248W535
         user buttons besides the power switch; deep sleep is woken
         by the touchscreen.
 
+config DRAFTLING_MODEL_SUNTON_8048S070
+    bool "Sunton ESP32-8048S070C (ESP32-S3, 7\" RGB color LCD, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Sunton ESP32-8048S070C development board: 7" TN color LCD,
+        800x480, 16-bit parallel RGB565 interface driven by the
+        ESP32-S3 LCD RGB peripheral (esp_lcd_new_rgb_panel). Has an
+        on-board GT911 capacitive touchscreen on I2C and a MicroSD
+        slot on SPI. Backlight on GPIO2. Keyboard-driven (USB / BLE)
+        like every other Draftling board.
+
+config DRAFTLING_MODEL_SUNTON_8048S043
+    bool "Sunton ESP32-8048S043C (ESP32-S3, 4.3\" RGB color LCD, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Sunton ESP32-8048S043C development board: 4.3" IPS color LCD,
+        800x480, ST7262 panel on a 16-bit parallel RGB565 interface
+        driven by the ESP32-S3 LCD RGB peripheral
+        (esp_lcd_new_rgb_panel). Shares the 800x480 resolution and the
+        same display backend as the 7" ESP32-8048S070C, but uses a
+        different control-pin map (VSYNC/DE swapped), different panel
+        timings (12.5 MHz, pclk_active_neg), and a different data-line
+        order (R,G,B vs the 7" panel's B,G,R). Has an on-board GT911
+        capacitive touchscreen on I2C and a MicroSD slot on SPI.
+        Backlight on GPIO2. Keyboard-driven (USB / BLE) like every
+        other Draftling board.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -97,6 +124,8 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default y if DRAFTLING_MODEL_JC3248W535
     default y if DRAFTLING_MODEL_M5STACK_TAB5
+    default y if DRAFTLING_MODEL_SUNTON_8048S070
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
     default n
 
 # DRAFTLING_DISPLAY_AXS15231B is set automatically when the selected
@@ -129,6 +158,40 @@ config DRAFTLING_DISPLAY_RLCD
 config DRAFTLING_DISPLAY_MIPI_DSI
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
+    default n
+
+# DRAFTLING_DISPLAY_RGB is set automatically when the selected board
+# drives a parallel RGB565 color panel through the ESP32-S3 LCD RGB
+# peripheral (esp_lcd_new_rgb_panel). The RGB backend
+# (components/display/display_rgb.cpp) is compiled in only when this
+# symbol is set. Currently only the Sunton ESP32-8048S070C.
+config DRAFTLING_DISPLAY_RGB
+    bool
+    default y if DRAFTLING_MODEL_SUNTON_8048S070
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default n
+
+# DRAFTLING_RGB_BOARD_S043 switches components/display/display_rgb.cpp
+# to the Sunton ESP32-8048S043C panel definition (ST7262, 12.5 MHz
+# pclk_active_neg, VSYNC=41/DE=40 control pins and R,G,B data-line
+# order) instead of the default ESP32-8048S070C definition (12 MHz
+# pclk_idle_high, VSYNC=40/DE=41 and B,G,R data-line order).
+config DRAFTLING_RGB_BOARD_S043
+    bool
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default n
+
+# DRAFTLING_DISPLAY_CAN_ROTATE enables a runtime "Rotate 180" entry in
+# the F1 -> Settings menu (persisted in NVS). It is offered on boards
+# whose display backend implements the software 180-degree flip in
+# lvgl_port.cpp's flush path. A 180 flip never changes the reported
+# panel resolution, so it can be toggled at runtime without rebuilding
+# the LVGL widget tree. Currently enabled on the parallel-RGB boards
+# (the Sunton ESP32-8048S0xx family), where the USB-C / SD-card edge
+# may be on either side depending on the enclosure.
+config DRAFTLING_DISPLAY_CAN_ROTATE
+    bool
+    default y if DRAFTLING_DISPLAY_RGB
     default n
 
 # DRAFTLING_DISPLAY_EPD is set automatically when the selected
@@ -187,6 +250,7 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     bool
     default y if DRAFTLING_DISPLAY_AXS15231B
     default y if DRAFTLING_DISPLAY_MIPI_DSI
+    default y if DRAFTLING_DISPLAY_RGB
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
     # front-light edge-lit LED on GPIO 11 (BOARD_BL_EN in the LilyGO
     # factory firmware). The EPDIY display backend drives it with
@@ -448,6 +512,8 @@ config DRAFTLING_WAKEUP_GPIO
     # WAKEUP_GPIO_NUM directly but no EXT0/LP_IO arming is done on
     # the P4 (see standby.cpp).
     default 0  if DRAFTLING_MODEL_M5STACK_TAB5
+    default 0  if DRAFTLING_MODEL_SUNTON_8048S070
+    default 0  if DRAFTLING_MODEL_SUNTON_8048S043
     default 0
 
 # ---- Touchscreen support ----
@@ -514,6 +580,8 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default y if DRAFTLING_MODEL_M5STACK_TAB5
+    default y if DRAFTLING_MODEL_SUNTON_8048S070
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
     default n
     help
         Goodix GT911. Register-addressed protocol: 16-bit register
@@ -570,6 +638,8 @@ config DRAFTLING_TOUCH_RST_GPIO
     range -1 54
     default 9  if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 41 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default 38 if DRAFTLING_MODEL_SUNTON_8048S070
+    default 38 if DRAFTLING_MODEL_SUNTON_8048S043
     default -1
 
 config DRAFTLING_TOUCH_DEBUG_LOG
@@ -647,6 +717,8 @@ config DRAFTLING_DISPLAY_WIDTH
     default 640 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default 480 if DRAFTLING_MODEL_JC3248W535
     default 720 if DRAFTLING_MODEL_M5STACK_TAB5
+    default 800 if DRAFTLING_MODEL_SUNTON_8048S070
+    default 800 if DRAFTLING_MODEL_SUNTON_8048S043
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -661,6 +733,8 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 172 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default 320 if DRAFTLING_MODEL_JC3248W535
     default 1280 if DRAFTLING_MODEL_M5STACK_TAB5
+    default 480 if DRAFTLING_MODEL_SUNTON_8048S070
+    default 480 if DRAFTLING_MODEL_SUNTON_8048S043
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -722,8 +796,15 @@ config DRAFTLING_DISPLAY_SCALE
     # scale brings the editor canvas down to 640x360 logical
     # pixels, comfortable for Greybeard-sized text.
     default 2 if DRAFTLING_MODEL_M5STACK_TAB5
+    # Sunton ESP32-8048S070C 800x480 7" panel (~133 DPI); a 2x scale
+    # brings the editor canvas down to 400x240 logical pixels for
+    # comfortably large Greybeard text.
+    default 2 if DRAFTLING_MODEL_SUNTON_8048S070
+    # Sunton ESP32-8048S043C 800x480 4.3" panel (~217 DPI); the denser
+    # panel needs the same 2x scale to keep Greybeard text comfortably
+    # large (400x240 logical pixels).
+    default 2 if DRAFTLING_MODEL_SUNTON_8048S043
     default 1
-
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
     depends on DRAFTLING_DISPLAY_EPD

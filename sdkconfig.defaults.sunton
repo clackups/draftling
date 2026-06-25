@@ -1,0 +1,16 @@
+# Sunton ESP32-8048S070C board selection + board-specific tuning.
+# Pass alongside the common defaults via:
+#   idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.sunton" build
+
+CONFIG_DRAFTLING_MODEL_SUNTON_8048S070=y
+
+# The Sunton board's flash is wired for DIO (verified working on this
+# hardware in the parallel breezydemo port). Override the common QIO
+# default so the bootloader comes up reliably.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+
+# Enable the on-board GT911 capacitive touchscreen as a secondary
+# input device (cursor / scroll / tap-to-select). The GT911 INT line
+# is not wired on the Sunton reference (polled every LVGL tick) and
+# RST is on GPIO38 (derived in Kconfig).
+CONFIG_DRAFTLING_TOUCHSCREEN=y

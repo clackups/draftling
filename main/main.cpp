@@ -1098,6 +1098,12 @@ extern "C" void app_main(void)
      * (ST7123 + ST7123). display_init's pin parameters are ignored
      * by this backend. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_RGB)
+    /* Parallel RGB565 color LCD (Sunton ESP32-8048S070C). All panel
+     * data / control / backlight GPIOs are owned by the RGB backend
+     * (components/display/display_rgb.cpp); pin parameters are
+     * ignored, only width/height are used. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend
