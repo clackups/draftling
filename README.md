@@ -201,6 +201,11 @@ automatically from that choice.
   capacitive touch on I2C. No user buttons -- the touch INT line is
   the deep-sleep wake source. External SD on a separate SPI bus.
 
+- **Sunton [ESP32-8048S043C](docs/sunton-esp32-8048S043.md) and
+  [ESP32-8048S070C](docs/sunton-esp32-8048S070c.md)** -- ESP32-S3 HMI
+  development boards with 16-bit parallel RGB565 interface and a GT911
+  capacitive touch controller.
+
 All ESP32-S3 boards use at least 8 MB of PSRAM and 16 MB of flash, BLE
 for the HID keyboard and 802.11 b/g/n Wi-Fi for Git sync. The Tab5
 board uses 32 MB HEX-mode PSRAM on the ESP32-P4 and reaches the same
@@ -374,25 +379,25 @@ Found at the top-level **DRAFTLING Configuration** menu.
 | **Enable touchscreen input** | bool | y on PaperS3 and JC3248W535, n otherwise | Enable the I2C touch driver and LVGL pointer input device. |
 | **Standby: wake from deep sleep on touchscreen tap** | bool | y on JC3248W535, n otherwise | Arm EXT0 on the touch INT line so any tap wakes the device. |
 
-> Backlight brightness on color-LCD boards is not a menuconfig option:
-> it is set at runtime from F1 -> Settings -> Backlight (or the
-> Ctrl+B shortcut) and persisted in NVS (default 50%). The backend
-> drives the BL GPIO with an LEDC PWM signal (~5 kHz, 10-bit). 0% =
-> off, 100% = full brightness.
->
-> The LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
-> front-light (GPIO 11) which uses the same Settings entry / Ctrl+B
-> shortcut. Because the e-paper panel is reflective and remains
-> readable without any illumination, the cycle on these boards also
-> includes a 0 % step that fully turns the front-light off.
+Backlight brightness on color-LCD boards is not a menuconfig option:
+it is set at runtime from F1 -> Settings -> Backlight (or the
+Ctrl+B shortcut) and persisted in NVS (default 50%). The backend
+drives the BL GPIO with an LEDC PWM signal (~5 kHz, 10-bit). 0% =
+off, 100% = full brightness.
 
-> **Note about e-paper boards (M5Stack PaperS3, LilyGO T5 E-Paper S3
-> Pro / Pro Lite):** the epdiy-based driver uses the single-pulse
-> `EPD_MODE_FAST` waveform for partial refreshes (one visible flash,
-> ~80-150 ms per update). A full refresh (3-5 s) is performed
-> automatically every `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` partials
-> (default 30) to clear residual ghosting; tune the interval in
-> `idf.py menuconfig`.
+The LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
+front-light (GPIO 11) which uses the same Settings entry / Ctrl+B
+shortcut. Because the e-paper panel is reflective and remains
+readable without any illumination, the cycle on these boards also
+includes a 0 % step that fully turns the front-light off.
+
+**Note about e-paper boards (M5Stack PaperS3, LilyGO T5 E-Paper S3
+Pro / Pro Lite):** the epdiy-based driver uses the single-pulse
+`EPD_MODE_FAST` waveform for partial refreshes (one visible flash,
+~80-150 ms per update). A full refresh (3-5 s) is performed
+automatically every `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` partials
+(default 30) to clear residual ghosting; tune the interval in
+`idf.py menuconfig`.
 
 ### DRAFTLING Keyboard Layouts
 

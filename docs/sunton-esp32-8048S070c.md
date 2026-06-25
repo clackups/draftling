@@ -1,6 +1,6 @@
 # Sunton ESP32-8048S070C -- board port notes
 
-![Sunton ESP32-8048S070C board with Draftling software](sunton7-270.jpg)
+![Sunton ESP32-8048S070C board with Draftling software](../images/sunton-ESP32-8048S070C.jpg)
 
 The Sunton ESP32-8048S070C is a 7" HMI dev board: an ESP32-S3 (16 MB
 flash, 8 MB octal PSRAM) driving an 800x480 TN color panel over a
