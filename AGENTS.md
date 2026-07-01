@@ -13,18 +13,19 @@
   comments reference the Unicode glyphs they encode.
 - All board-specific configuration -- pin numbers, panel dimensions,
   wakeup GPIOs, brand strings, etc. -- belongs in `main/Kconfig.projbuild`
-  and `main/app_config.h`. C and C++ files outside `main/` must NOT
-  reference specific board models (no `#if defined(CONFIG_DRAFTLING_MODEL_*)`,
-  no hard-coded board names). Use the derived feature flags
-  (`CONFIG_DRAFTLING_DISPLAY_EPD`, `CONFIG_DRAFTLING_DISPLAY_RLCD`,
-  `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT`, `CONFIG_DRAFTLING_HAS_BATTERY`,
-  `CONFIG_DRAFTLING_SD_SDMMC`, `CONFIG_DRAFTLING_WAKEUP_GPIO`, etc.)
-  exposed by `main/Kconfig.projbuild` instead. To add a new model,
-  introduce a new `DRAFTLING_MODEL_*` choice option, set the matching
-  derived flags / `default` lines for the existing feature symbols,
-  add a per-board `#elif` block in `main/app_config.h` defining the
-  board's `BOARD_NAME`, pin numbers and `WAKEUP_GPIO_NUM`, and update
-  `main/main.cpp`'s display / SD init switch as needed -- no other
+  and the per-board header files under `main/boards/`. C and C++ files
+  outside `main/` must NOT reference specific board models (no
+  `#if defined(CONFIG_DRAFTLING_MODEL_*)`, no hard-coded board names).
+  Use the derived feature flags (`CONFIG_DRAFTLING_DISPLAY_EPD`,
+  `CONFIG_DRAFTLING_DISPLAY_RLCD`, `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT`,
+  `CONFIG_DRAFTLING_HAS_BATTERY`, `CONFIG_DRAFTLING_SD_SDMMC`,
+  `CONFIG_DRAFTLING_WAKEUP_GPIO`, etc.) exposed by `main/Kconfig.projbuild`
+  instead. To add a new model, introduce a new `DRAFTLING_MODEL_*` choice
+  option, set the matching derived flags / `default` lines for the existing
+  feature symbols, create a new per-board header file under `main/boards/`
+  defining the board's `BOARD_NAME`, pin numbers and `WAKEUP_GPIO_NUM`, add
+  the corresponding `#elif` include directive in `main/app_config.h`, and
+  update `main/main.cpp`'s display / SD init switch as needed -- no other
   C / C++ file should require changes.
 
 ## Project Overview
@@ -60,7 +61,8 @@ sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
 main/                       Application entry point and hardware config
   main.cpp                  app_main(): initializes all subsystems
-  app_config.h              Pin definitions and display macros per board
+  app_config.h              Display macros; includes the active board header
+  boards/                   Per-board pin definitions (one .h file per board)
   Kconfig.projbuild         Menuconfig: hardware model, display size, rotation
   idf_component.yml         IDF component manifest (depends on lvgl ^9.2)
   CMakeLists.txt            Registers main as an IDF component
@@ -90,14 +92,16 @@ editor UI, SD card, BLE keyboard, WiFi manager, Git sync, and standby
 timer. It also registers an auto-save callback that persists the current
 document before entering deep sleep.
 
-`app_config.h` maps Kconfig hardware model selections to concrete GPIO pin
-numbers and display dimensions. Each supported board has its own `#if`
-block defining SPI pins (MOSI, SCK, DC, CS, RST, TE), SD card pins
+`app_config.h` defines display-dimension and scale macros from Kconfig
+symbols and then delegates all board-specific pin constants to a thin
+per-board header included from `main/boards/`. Each file in `main/boards/`
+(e.g. `waveshare_rlcd42.h`, `m5stack_papers3.h`) defines exactly one board:
+`BOARD_NAME`, SPI pins (MOSI, SCK, DC, CS, RST, TE), SD card pins
 (CLK, CMD, D0 for SDMMC, or MOSI/MISO/SCK/CS for SPI), I2C pins, the
 battery ADC pin, and the deep-sleep wakeup GPIO. The M5Stack PaperS3
-block omits the panel data-bus and control-line pins because the
-`vroland/epdiy` driver configures them internally from the in-tree
-PaperS3 board definition (`components/display/epd_board_papers3.c`).
+header omits panel data-bus / control-line pins because the `vroland/epdiy`
+driver configures them internally from the in-tree PaperS3 board definition
+(`components/display/epd_board_papers3.c`).
 
 ### components/battery/
 
@@ -156,8 +160,19 @@ and keyboard event dispatching. Each key event carries the HID keycode,
 ASCII character, modifier flags, and pressed/released state.
 
 Public API: `ble_keyboard_init()`, `ble_keyboard_start_scan()`,
-`ble_keyboard_is_connected()`, `ble_keyboard_set_callback()`, and
-several other callback registration functions.
+`ble_keyboard_is_connected()`, `ble_keyboard_set_callback()`,
+`ble_keyboard_forget_all()`, and several other callback registration
+functions.
+
+`ble_keyboard_forget_all()` erases every stored keyboard bond (both from
+the Bluedroid stack and from NVS), disconnects any currently-connected
+keyboard, resets the reconnection state machine, and immediately starts a
+fresh scan. After the call the device behaves as if it has never paired
+with any keyboard. It can be triggered in three ways: a 2-second hold of
+the wakeup / boot button (all boards that define `WAKEUP_GPIO_NUM`), a
+2-second hold of the side key on the LilyGO T5 E-Paper S3 Pro H752
+(GPIO48), or the "Forget KB" touch button on the BLE-prompt screen
+(boards with `CONFIG_DRAFTLING_TOUCHSCREEN`).
 
 ### components/display/
 
@@ -727,9 +742,11 @@ in C / C++ code:
 Components MUST key off these derived symbols; they MUST NOT
 test `DRAFTLING_MODEL_*` directly. Adding a new model means
 adding new `default` lines to each of the symbols above (plus
-the width / height / rotate-default symbols), an `#elif` block
-in `main/app_config.h`, and the matching display / SD init
-branch in `main/main.cpp`.
+the width / height / rotate-default symbols), creating a new per-board
+header file under `main/boards/` with the board's `BOARD_NAME`, pin
+numbers and `WAKEUP_GPIO_NUM`, adding the corresponding `#elif` include
+directive in `main/app_config.h`, and updating the matching display / SD
+init branch in `main/main.cpp`.
 
 #### Display Rotation (DRAFTLING_DISPLAY_ROTATE)
 

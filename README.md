@@ -73,6 +73,28 @@ development boards with reflective LCD, e-paper or color LCD displays.
 | Ctrl+Tab | Move keyboard focus to the other pane (when split) |
 | Escape | Switch to file browser. With unsaved changes, a dialog offers Save and exit / Exit without saving / Cancel (Up/Down + Enter to choose) |
 
+## Pairing a New Keyboard
+
+If you want to pair a different keyboard (or re-pair after a factory reset
+of the keyboard), you need to erase the stored BLE bond first.  There are
+three ways to trigger **Forget All Keyboards**:
+
+- **Wakeup / boot button -- 2-second hold**: on every board that has a
+  wakeup or boot button (GPIO18 on the Waveshare RLCD-4.2, GPIO0 on most
+  others), hold the button for at least 2 seconds.  The device immediately
+  drops the current connection, clears all stored pairings, and starts
+  scanning for a new keyboard.
+- **Side key on LilyGO T5 E-Paper S3 Pro H752 -- 2-second hold**: the side
+  key on GPIO48 normally injects F1 (menu) on a short press.  Holding it
+  for 2 seconds triggers Forget All instead.
+- **"Forget KB" button on the BLE-prompt screen** (boards with a
+  touchscreen): when the device is waiting for a keyboard to connect, the
+  BLE-prompt screen shows a small **Forget KB** button to the left of the
+  **Off** button.  Tapping it has the same effect as the 2-second hold.
+
+After triggering any of these actions the device starts scanning
+immediately; connect your new keyboard and it will pair automatically.
+
 ## Split-screen Editing
 
 The editor can show two documents side by side. **Ctrl+2** divides the
@@ -439,6 +461,7 @@ The `token` is a GitHub Personal Access Token with `repo` scope.
 
 ```
 main/               Application entry point, pin definitions, Kconfig
+  boards/           Per-board pin definitions (one .h file per board)
 components/
   battery/           Battery monitor: ADC + smoothing, or BQ27220
                      fuel gauge over I2C (T5 E-Paper S3 Pro / Lite)
