@@ -1716,6 +1716,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
 
     case ESP_GAP_BLE_SCAN_START_COMPLETE_EVT:
         if (param->scan_start_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+            notify_status("Scanning for keyboards...");
             ESP_LOGI(TAG, "Scanning for BLE HID keyboards...");
             /* Scanning started -- stop the periodic safety-net timer */
             if (s_startup_timer) {
