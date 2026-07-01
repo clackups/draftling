@@ -5813,8 +5813,10 @@ static void build_screens(void)
     {
         lv_obj_t *fgt_btn = lv_button_create(s_scr_ble_prompt);
         lv_obj_set_size(fgt_btn, 68, 24);
-        /* Place to the left of the "Off" button: Off is at x = SCR_W - 44,
-         * so Forget ends at SCR_W - 48, starts at SCR_W - 48 - 68 - 4. */
+        /* Place to the left of the "Off" button: Off right edge is 4px
+         * from screen right; Off is 40px wide, so its left edge is 44px
+         * from right. Forget KB right edge = 44 + 4 (gap) = 48px from
+         * right, which maps to LV_ALIGN_TOP_RIGHT x_ofs = -48. */
         lv_obj_align(fgt_btn, LV_ALIGN_TOP_RIGHT, -48, 4);
         lv_obj_set_style_bg_color(fgt_btn, theme_bg(), 0);
         lv_obj_set_style_bg_opa(fgt_btn, LV_OPA_COVER, 0);

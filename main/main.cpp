@@ -694,6 +694,12 @@ static void pre_sleep_h752_deinit(void)
 #endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
 #endif /* LilyGO T5 EPD S3 family */
 
+/* Poll period and long-press threshold shared by the H752 side-key
+ * handler and the generic wakeup-GPIO handler below. */
+#define BTN_POLL_PERIOD_MS    30
+#define BTN_LONG_PRESS_MS     2000
+#define BTN_LONG_PRESS_TICKS  (BTN_LONG_PRESS_MS / BTN_POLL_PERIOD_MS)
+
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
 /* ---- H752 hardware shortcut keys ----
  *
@@ -732,8 +738,8 @@ static void h752_touch_button_cb(void)
     h752_inject_key(KB_KEY_ESCAPE);
 }
 
-/* 30 ms poll period; 67 ticks ~= 2 s long-press threshold. */
-#define H752_LONG_PRESS_TICKS 67
+/* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
+#define H752_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
 static void h752_user_key_poll_cb(void *arg)
 {
@@ -796,7 +802,7 @@ static void h752_user_key_init(void)
     targs.name     = "h752_key";
     esp_timer_handle_t t = NULL;
     ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(t, 30 * 1000));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
     ESP_LOGI(TAG, "H752 side key poller started (GPIO%d, level now %d)",
              WAKEUP_GPIO_NUM, gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
@@ -815,8 +821,8 @@ static void h752_user_key_init(void)
  * when it arms the EXT0 deep-sleep wake source on GPIO 0 / 18). */
 #if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
 
-/* 30 ms poll period; 67 ticks ~= 2 s long-press threshold. */
-#define WAKEUP_BTN_LONG_PRESS_TICKS 67
+/* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
+#define WAKEUP_BTN_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
 static void wakeup_btn_poll_cb(void *arg)
 {
@@ -869,7 +875,7 @@ static void wakeup_btn_init(void)
     targs.name     = "wakeup_btn";
     esp_timer_handle_t t = NULL;
     if (esp_timer_create(&targs, &t) != ESP_OK ||
-        esp_timer_start_periodic(t, 30 * 1000) != ESP_OK) {
+        esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000) != ESP_OK) {
         ESP_LOGW(TAG, "Wakeup button poller init failed (GPIO%d)",
                  WAKEUP_GPIO_NUM);
         return;

@@ -49,8 +49,8 @@ void ble_keyboard_init(void)
                        "BLE keyboard support is disabled on this build.");
 }
 void ble_keyboard_disable(void)                                          {}
-void ble_keyboard_forget_all(void)                                       {}
 void ble_keyboard_enable(void)                                           {}
+void ble_keyboard_forget_all(void)                                       {}
 void ble_keyboard_set_callback(kb_event_callback_t /*cb*/)               {}
 void ble_keyboard_set_passkey_callback(ble_passkey_cb_t /*cb*/)          {}
 void ble_keyboard_set_connect_callback(ble_connect_cb_t /*cb*/)          {}
