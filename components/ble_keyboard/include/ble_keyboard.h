@@ -94,6 +94,11 @@ void ble_keyboard_disable(void);
  * keyboard the user powers on can pair / reconnect. No-op if BLE
  * is already enabled or has never been initialised. */
 void ble_keyboard_enable(void);
+/* Erase every stored keyboard bond and start scanning for a new
+ * keyboard from scratch. Removes all bonded device entries from
+ * the Bluedroid stack and from NVS, disconnects any currently-
+ * connected keyboard, and immediately starts a fresh scan. */
+void ble_keyboard_forget_all(void);
 void ble_keyboard_set_callback(kb_event_callback_t callback);
 void ble_keyboard_set_passkey_callback(ble_passkey_cb_t cb);
 void ble_keyboard_set_connect_callback(ble_connect_cb_t cb);

@@ -2378,6 +2378,17 @@ static void ble_prompt_off_btn_cb(lv_event_t *e)
     standby_enter_sleep();
 }
 
+/* Tap handler for the BLE-prompt screen's "Forget KB" button.
+ * Clears all stored BLE keyboard pairings and immediately starts
+ * scanning for a new keyboard, allowing the user to pair with a
+ * different (or freshly reset) keyboard without needing a physical
+ * keyboard to navigate the settings menu. */
+static void ble_prompt_forget_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    ble_keyboard_forget_all();
+}
+
 #endif /* CONFIG_DRAFTLING_TOUCHSCREEN */
 
 /* ---- File browser ---- */
@@ -5793,6 +5804,33 @@ static void build_screens(void)
         lv_obj_set_style_text_color(off_lbl, theme_fg(), 0);
         lv_label_set_text(off_lbl, "Off");
         lv_obj_center(off_lbl);
+    }
+
+    /* "Forget KB" button to the left of the "Off" button. Clears all
+     * stored keyboard pairings and starts a fresh scan, allowing the
+     * user to pair a different keyboard without needing a physical
+     * keyboard to navigate the settings menu. */
+    {
+        lv_obj_t *fgt_btn = lv_button_create(s_scr_ble_prompt);
+        lv_obj_set_size(fgt_btn, 68, 24);
+        /* Place to the left of the "Off" button: Off is at x = SCR_W - 44,
+         * so Forget ends at SCR_W - 48, starts at SCR_W - 48 - 68 - 4. */
+        lv_obj_align(fgt_btn, LV_ALIGN_TOP_RIGHT, -48, 4);
+        lv_obj_set_style_bg_color(fgt_btn, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(fgt_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(fgt_btn, theme_fg(), 0);
+        lv_obj_set_style_border_width(fgt_btn, 1, 0);
+        lv_obj_set_style_border_opa(fgt_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(fgt_btn, 4, 0);
+        lv_obj_set_style_pad_all(fgt_btn, 0, 0);
+        lv_obj_add_event_cb(fgt_btn, ble_prompt_forget_btn_cb,
+                            LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *fgt_lbl = lv_label_create(fgt_btn);
+        lv_obj_set_style_text_font(fgt_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(fgt_lbl, theme_fg(), 0);
+        lv_label_set_text(fgt_lbl, "Forget KB");
+        lv_obj_center(fgt_lbl);
     }
 #endif
 

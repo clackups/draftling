@@ -49,6 +49,8 @@ void ble_keyboard_init(void)
                        "BLE keyboard support is disabled on this build.");
 }
 void ble_keyboard_disable(void)                                          {}
+void ble_keyboard_forget_all(void)                                       {}
+void ble_keyboard_enable(void)                                           {}
 void ble_keyboard_set_callback(kb_event_callback_t /*cb*/)               {}
 void ble_keyboard_set_passkey_callback(ble_passkey_cb_t /*cb*/)          {}
 void ble_keyboard_set_connect_callback(ble_connect_cb_t /*cb*/)          {}
@@ -2313,6 +2315,79 @@ extern "C" void ble_keyboard_enable(void)
     if (s_scan_params_ready) {
         start_reconnection();
     }
+}
+
+/* Erase every stored keyboard bond and start scanning for a new
+ * keyboard from scratch.  Removes all bonded device entries from
+ * the Bluedroid stack and from the NVS namespace, disconnects any
+ * currently-connected keyboard, resets the reconnection state
+ * machine to skip the bonded phases, and immediately starts a
+ * fresh scan.
+ *
+ * This is the "forget all keyboards" action: after this call the
+ * device behaves as if it has never paired with any keyboard. */
+extern "C" void ble_keyboard_forget_all(void)
+{
+    ESP_LOGI(TAG, "Forgetting all bonded keyboards");
+
+    /* Stop all pending retry timers so they cannot restart old
+     * reconnection attempts while we are clearing state. */
+    if (s_scan_timer)          { xTimerStop(s_scan_timer,          0); }
+    if (s_reconn_timer)        { xTimerStop(s_reconn_timer,        0); }
+    if (s_open_watchdog_timer) { xTimerStop(s_open_watchdog_timer, 0); }
+    if (s_open_stuck_timer)    { xTimerStop(s_open_stuck_timer,    0); }
+
+    /* Disconnect the current keyboard if connected. */
+    if (s_hidh_dev) {
+        esp_hidh_dev_close(s_hidh_dev);
+        s_hidh_dev = NULL;
+    }
+    s_connected  = false;
+    s_connecting = false;
+    s_battery_level = -1;
+    s_force_close_on_open = false;
+
+    /* Notify the UI that the keyboard disconnected before we
+     * announce scanning, so status transitions are coherent. */
+    if (s_connect_cb) {
+        s_connect_cb(false);
+    }
+
+    /* Remove all bonds from the Bluedroid stack so the controller
+     * will not attempt encrypted reconnects to stale devices. */
+    for (int i = 0; i < s_bonded_count; i++) {
+        esp_ble_remove_bond_device(s_bonded[i].bda);
+    }
+
+    /* Clear the in-memory bond list. */
+    s_bonded_count = 0;
+    s_last_bonded  = -1;
+    s_dev_name[0]  = '\0';
+
+    /* Erase the persisted bond list from NVS. */
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_erase_all(h);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+
+    /* Reset all reconnection bookkeeping and go straight to a
+     * scan (no bonded phases to try). */
+    s_reconn_phase        = RECONN_SCAN;
+    s_reconn_idx          = 0;
+    s_reconn_delay_ms     = RECONN_DEFAULT_MS;
+    s_smp_repeat_attempts = 0;
+    s_last_auth_bond_dead = false;
+
+    notify_status("Searching for new keyboard...");
+
+    if (s_scan_params_ready) {
+        ble_keyboard_start_scan();
+    }
+    /* If scan params are not yet ready (very early in init), the
+     * SCAN_PARAM_SET_COMPLETE_EVT handler will start the scan once
+     * the controller is ready, as usual. */
 }
 
 extern "C" void ble_keyboard_set_passkey_callback(ble_passkey_cb_t cb)

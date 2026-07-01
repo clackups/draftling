@@ -705,6 +705,11 @@ static void pre_sleep_h752_deinit(void)
  * event is injected as press+release in one go so the key-repeat
  * tracker never fires a second toggle while the button is held.
  *
+ * A 2-second hold triggers "forget all keyboards" (clears every
+ * stored BLE bond and starts a fresh scan). The short-press F1
+ * action is only injected on release, after confirming the hold
+ * was shorter than 2 s, so the two actions are mutually exclusive.
+ *
  * The capacitive touch key below the panel (GT911 status bit 0x10,
  * surfaced by touchscreen_set_button_callback) acts as Back: it
  * injects Esc, which closes the menu / settings / prompts, and in
@@ -727,25 +732,52 @@ static void h752_touch_button_cb(void)
     h752_inject_key(KB_KEY_ESCAPE);
 }
 
+/* 30 ms poll period; 67 ticks ~= 2 s long-press threshold. */
+#define H752_LONG_PRESS_TICKS 67
+
 static void h752_user_key_poll_cb(void *arg)
 {
     (void)arg;
-    static bool down = false;
-    static int  stable = 0;
+    static bool down             = false;
+    static int  stable           = 0;
+    static int  hold_ticks       = 0;
+    static bool long_press_fired = false;
+
     bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+
     if (raw_down == down) {
+        /* No state change -- count hold time while button is held */
+        if (down) {
+            hold_ticks++;
+            if (!long_press_fired && hold_ticks >= H752_LONG_PRESS_TICKS) {
+                long_press_fired = true;
+                ESP_LOGI(TAG, "H752 side key: 2 s long press -- "
+                              "forgetting all keyboards (GPIO%d)",
+                         WAKEUP_GPIO_NUM);
+                ble_keyboard_forget_all();
+            }
+        }
         stable = 0;
         return;
     }
-    if (++stable < 2) {
-        return;
-    }
+
+    if (++stable < 2) return;
+
     stable = 0;
     down = raw_down;
     ESP_LOGD(TAG, "H752 side key %s (GPIO%d)",
              down ? "PRESSED" : "released", WAKEUP_GPIO_NUM);
+
     if (down) {
-        h752_inject_key(KB_KEY_F1);
+        hold_ticks       = 0;
+        long_press_fired = false;
+    } else {
+        /* Released: inject F1 only for a short press (< 2 s). */
+        if (!long_press_fired) {
+            h752_inject_key(KB_KEY_F1);
+        }
+        hold_ticks       = 0;
+        long_press_fired = false;
     }
 }
 
@@ -769,6 +801,85 @@ static void h752_user_key_init(void)
              WAKEUP_GPIO_NUM, gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
 #endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
+
+/* ---- Generic wakeup-GPIO long-press handler ----
+ *
+ * On boards other than the H752 (which has its own key handler above)
+ * the boot / wakeup button is monitored for a 2-second hold.  Holding
+ * the button for 2 s clears every stored BLE keyboard bond and starts
+ * a fresh scan, allowing the user to pair a new keyboard without
+ * navigating the settings menu.
+ *
+ * The button is assumed to be active-low with the internal pull-up
+ * enabled (the same electrical assumption the standby component makes
+ * when it arms the EXT0 deep-sleep wake source on GPIO 0 / 18). */
+#if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+
+/* 30 ms poll period; 67 ticks ~= 2 s long-press threshold. */
+#define WAKEUP_BTN_LONG_PRESS_TICKS 67
+
+static void wakeup_btn_poll_cb(void *arg)
+{
+    (void)arg;
+    static bool down             = false;
+    static int  stable           = 0;
+    static int  hold_ticks       = 0;
+    static bool long_press_fired = false;
+
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+
+    if (raw_down == down) {
+        if (down) {
+            hold_ticks++;
+            if (!long_press_fired &&
+                hold_ticks >= WAKEUP_BTN_LONG_PRESS_TICKS) {
+                long_press_fired = true;
+                ESP_LOGI(TAG, "Wakeup button: 2 s long press -- "
+                              "forgetting all keyboards (GPIO%d)",
+                         WAKEUP_GPIO_NUM);
+                ble_keyboard_forget_all();
+            }
+        }
+        stable = 0;
+        return;
+    }
+
+    if (++stable < 2) return;
+
+    stable = 0;
+    down = raw_down;
+    if (!down) {
+        hold_ticks       = 0;
+        long_press_fired = false;
+    }
+}
+
+static void wakeup_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = 1ULL << WAKEUP_GPIO_NUM;
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = wakeup_btn_poll_cb;
+    targs.name     = "wakeup_btn";
+    esp_timer_handle_t t = NULL;
+    if (esp_timer_create(&targs, &t) != ESP_OK ||
+        esp_timer_start_periodic(t, 30 * 1000) != ESP_OK) {
+        ESP_LOGW(TAG, "Wakeup button poller init failed (GPIO%d)",
+                 WAKEUP_GPIO_NUM);
+        return;
+    }
+    ESP_LOGI(TAG, "Wakeup button poller started (GPIO%d, level now %d; "
+                  "hold 2 s to forget all keyboards)",
+             WAKEUP_GPIO_NUM,
+             gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
+}
+#endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
 /* M5Stack Tab5 (ESP32-P4): pre-sleep peripheral teardown.
@@ -1711,8 +1822,13 @@ extern "C" void app_main(void)
 #endif
 
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
-    /* Side key (GPIO48) = Menu (F1) while awake. */
+    /* Side key (GPIO48) = Menu (F1) on short press,
+     * forget all keyboards on 2 s long press. */
     h752_user_key_init();
+#else
+    /* Generic wakeup-button long-press monitor: hold 2 s to forget
+     * all stored BLE keyboard pairings and start a fresh scan. */
+    wakeup_btn_init();
 #endif
 
     /* WiFi is lazy-initialized on first wifi_manager_connect() call.
