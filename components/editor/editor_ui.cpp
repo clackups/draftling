@@ -485,8 +485,14 @@ static void load_font_size_from_nvs(void)
     if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
         uint8_t val = 0;
         if (nvs_get_u8(h, NVS_KEY_FONTSZ, &val) == ESP_OK) {
-            if (find_font_size_option(val) > 0 || val == FONT_SIZE_OPTIONS[0])
-                s_font_size = val;
+            /* Accept the persisted value only if it is one of the
+             * sizes actually offered on this board (the option list
+             * differs between standard and HIDPI builds). */
+            bool valid = false;
+            for (int i = 0; i < FONT_SIZE_COUNT; i++) {
+                if (FONT_SIZE_OPTIONS[i] == val) { valid = true; break; }
+            }
+            if (valid) s_font_size = val;
         }
         nvs_close(h);
     }
