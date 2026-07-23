@@ -186,9 +186,10 @@ Per-board display backends behind a single C API:
   component. epdiy keeps a 4-bpp grayscale framebuffer (one
   nibble per panel pixel, ~253 KB at 960x540) in PSRAM; the LVGL
   port pushes RGB565 pixels straight into it through the optional
-  `display_push_rgb565()` fast path, with each LVGL pixel scaled
-  into a SCALE x SCALE block of panel pixels
-  (`CONFIG_DRAFTLING_DISPLAY_SCALE`, default 2). The backend
+  `display_push_rgb565()` fast path, one LVGL pixel per panel pixel
+  (1:1; the former 2x framebuffer upscale has been removed -- these
+  high-density boards render the larger Hack font instead, see
+  `CONFIG_DRAFTLING_DISPLAY_HIDPI`). The backend
   accumulates a dirty bounding box across pushes and, on
   `display_flush()`, powers on the EPD rail and runs an
   `epd_hl_update_area()` partial refresh over the bbox using the
@@ -351,8 +352,11 @@ white-on-transparent for `CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND`).
 
 ### components/fonts/
 
-Custom LVGL bitmap fonts generated from the Greybeard typeface. See the
-dedicated section below for the full creation process.
+Custom LVGL bitmap fonts. Standard-density boards use the Greybeard
+typeface; high-density boards (`CONFIG_DRAFTLING_DISPLAY_HIDPI`) use
+the Hack typeface at larger native sizes instead of upscaling the
+framebuffer. See the dedicated section below for the full creation
+process.
 
 ### components/git_sync/
 
@@ -674,6 +678,60 @@ that depends on `lvgl__lvgl`.
   the microcontroller.
 - **Format:** `lvgl` (native LVGL font structure).
 
+### Hack fonts (high-density boards)
+
+Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
+upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
+typeface instead of scaling Greybeard. Hack is a monospaced outline
+font (MIT, https://github.com/source-foundry/Hack). Six sizes are
+generated with `lv_font_conv`, one per Greybeard "slot", chosen so
+each text row is approximately the height the user saw with Greybeard
+rendered at the old 2x scale. The file names mirror the Greybeard
+slots (`hack_11` .. `hack_26`); the number is the slot, not the Hack
+pixel size:
+
+| File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
+|------|-----------------|------------|-------------|-------------------------|
+| hack_11.c | 19 | 11 | 23 | greybeard_11 (x2) |
+| hack_14.c | 21 | 13 | 26 | greybeard_14 (x2) |
+| hack_16.c | 25 | 15 | 30 | greybeard_16 (x2) |
+| hack_18.c | 28 | 17 | 34 | greybeard_18 (x2) |
+| hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
+| hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
+
+The generated advance widths are fractional (Hack is not a native
+pixel font), so after generation every full-width glyph's `adv_w` is
+snapped to an integer number of 1/16-px units (the cell width above)
+so the editor's monospace cursor grid stays aligned; zero-advance
+combining marks are left untouched.
+
+Script coverage mirrors Greybeard and is gated on the same Kconfig
+layout options:
+
+| File pattern | Range | Source | Gated on |
+|--------------|-------|--------|----------|
+| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
+| `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
+| `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
+
+Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
+Greybeard TTFs at twice the native pixel size (a clean 2x pixel-double
+that matches what the old scaled path produced). The base fonts are
+generated with `--lv-fallback hack_NN_ext` and the Hebrew subset with
+`--lv-fallback hack_NN_he_next`; the router structs live in
+`components/fonts/hack.c` and are chained at boot by `hack_init()`,
+exactly like `greybeard_init()`. The same post-generation include
+fix-up applies (replace the `#ifdef LV_LVGL_H_INCLUDE_SIMPLE ... #endif`
+block with `#include "lvgl.h"`). All Hack sources are compiled only
+when `CONFIG_DRAFTLING_DISPLAY_HIDPI` is set, so standard-density
+builds do not pay for them.
+
+The editor (`components/editor/editor_ui.cpp`) selects the family with
+a compile-time `#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI`: the `FONT_11`
+.. `FONT_26` macros, `char_width_for_font()` and the boot-time init
+call all switch between Greybeard and Hack. Everything else in the
+editor is family-agnostic because it works through those six slots.
+
 ## Hardware Definitions in Kconfig.projbuild
 
 There are two Kconfig.projbuild files that expose project-specific
@@ -733,6 +791,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5 |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
@@ -755,26 +814,26 @@ and 270 degrees. The default is 0 (no rotation). The selected angle is
 exposed as the hidden `int` symbol **DRAFTLING_DISPLAY_ROTATE_ANGLE**,
 consumed in `app_config.h` as `DISPLAY_ROTATE`.
 
-#### Display scale factor (DRAFTLING_DISPLAY_SCALE)
+#### High-density font selection (DRAFTLING_DISPLAY_HIDPI)
 
-Non-prompted derived `int` (range 1-8). Logical pixel size: every
-LVGL pixel is rendered as SCALE x SCALE physical panel pixels via
-nearest-neighbor expansion in the display backend. The editor and
-LVGL canvas operate in *logical* coordinates (panel size divided by
-SCALE); only the display backend deals in physical panel pixels.
-Defaults: 2 for the M5Stack PaperS3 (so the high-density 540x960
-panel renders Greybeard text at a comfortably readable size), 1 for
-every other board. Because the symbol is non-prompted, the per-model
-default re-applies automatically whenever `DRAFTLING_HARDWARE_MODEL`
-changes -- no need to delete `sdkconfig`. To override, set the value
-in `sdkconfig.defaults`.
+Non-prompted derived `bool`. When set, the board renders the UI 1:1
+(logical resolution == physical panel resolution) using the larger
+**Hack** font family instead of upscaling a lower-resolution Greybeard
+framebuffer. This is enabled by default on the boards whose panels are
+dense enough that native-size Greybeard text would be too small: the
+M5Stack PaperS3, both LilyGO T5 E-Paper S3 Pro variants, the M5Stack
+Tab5, and the Sunton 8048S070 / 8048S043. See the "Hack fonts" section
+under Font Creation Process for the sizes and script coverage. Because
+the symbol is non-prompted, the per-model default re-applies
+automatically whenever `DRAFTLING_HARDWARE_MODEL` changes -- no need to
+delete `sdkconfig`.
 
-Currently the `display_epdiy` (PaperS3 + LilyGO T5 e-paper),
-`display_axs15231b` (Touch-LCD-3.49 / JC3248W535) and
-`display_mipi_dsi` (M5Stack Tab5) backends implement the up-scaling;
-on the RLCD backend a value > 1
-has no visible effect because the LVGL framebuffer already matches
-the panel size.
+This flag replaced the former `DRAFTLING_DISPLAY_SCALE` integer, which
+rendered LVGL into a lower-resolution logical buffer and then expanded
+each pixel into a SCALE x SCALE block in the display backend. That
+approach produced blocky, upscaled glyphs; rendering the Hack font at
+its native size at full panel resolution is sharper. The display
+backends now always run their 1:1 (SCALE == 1) path.
 
 ### components/kb_layout/Kconfig.projbuild -- Keyboard Layouts
 

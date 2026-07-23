@@ -29,16 +29,18 @@ The RGB panel is driven by `components/display/display_rgb.cpp`
 (compiled only when `CONFIG_DRAFTLING_DISPLAY_RGB` is set, derived
 from the model choice). The backend keeps its own RGB565 framebuffer
 in PSRAM, accepts `display_push_rgb565()` pushes from the LVGL port
-(with `DISPLAY_SCALE` x `DISPLAY_SCALE` nearest-neighbor expansion of
-each logical pixel), accumulates a dirty bounding box, and on
-`display_flush()` copies just that rectangle into the scan-out
+(one LVGL pixel per panel pixel), accumulates a dirty bounding box,
+and on `display_flush()` copies just that rectangle into the scan-out
 framebuffer with `esp_lcd_panel_draw_bitmap()`. A degraded per-pixel
 fallback (`display_set_pixel`, 0/0xFF = black/white) covers the
 splash-logo path in `editor_ui.cpp`.
 
-`DISPLAY_SCALE` defaults to 2, so LVGL renders into a 400x240 logical
-canvas that the backend up-scales to the 800x480 panel -- comfortably
-large Greybeard text on the ~133 DPI 7" panel.
+The board sets `CONFIG_DRAFTLING_DISPLAY_HIDPI`, so LVGL renders at the
+full 800x480 panel resolution using the larger Hack font family --
+comfortably large text on the ~133 DPI 7" panel. (Earlier revisions
+instead rendered a 400x240 logical canvas and up-scaled it 2x; that
+`DISPLAY_SCALE` option has been removed in favor of the native-size
+Hack fonts.)
 
 ### Panel pins and timings
 
@@ -159,7 +161,7 @@ enables the GT911 touchscreen.
 
 - `components/display/display_rgb.cpp` -- RGB panel backend (init, push, flush, backlight, B,G,R data order).
 - `main/app_config.h` -- `CONFIG_DRAFTLING_MODEL_SUNTON_8048S070` block (SD / touch / wakeup pins).
-- `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` derived flag, width/height (800x480), `DISPLAY_SCALE` (2), GT911 / touch-RST defaults.
+- `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` derived flag, width/height (800x480), `DRAFTLING_DISPLAY_HIDPI` (Hack fonts), GT911 / touch-RST defaults.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB`.
 - `components/display/CMakeLists.txt` -- registers `display_rgb.cpp`.
 - `components/touchscreen/touchscreen.cpp` -- GT911 polled driver, dual-address probe.

@@ -80,11 +80,24 @@ static const char *TAG = "EditorUI";
 #define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
 #define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
 #endif
+/* Header / status bar heights. These bars always use FONT_11, so on
+ * high-density boards (which render 1:1 with the taller Hack font
+ * instead of the old 2x upscale) they must be twice as tall to fit the
+ * larger glyphs -- this reproduces the physical bar height users saw
+ * when these boards still upscaled a FONT_11 (Greybeard 11 px) bar 2x. */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#define HEADER_H     32
+#define STATUS_H     32
+#define EDITOR_Y     HEADER_H
+#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
+#define LIST_PANEL_H (SCR_H - 36)  /* height for list panels below header */
+#else
 #define HEADER_H     16
 #define STATUS_H     16
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - 18)  /* height for list panels below header */
+#endif
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, or 16 px as the editor body font.

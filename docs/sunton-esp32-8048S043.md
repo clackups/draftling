@@ -21,9 +21,10 @@ References:
 
 ## Relationship to the 7" ESP32-8048S070C
 
-Both boards select the same `DRAFTLING_DISPLAY_RGB` backend and the
-same 800x480 resolution and 2x logical scale (400x240 logical canvas).
-They differ only in the panel wiring, which the backend selects at
+Both boards select the same `DRAFTLING_DISPLAY_RGB` backend, the same
+800x480 resolution, and `DRAFTLING_DISPLAY_HIDPI` (native-resolution
+rendering with the larger Hack font family). They differ only in the
+panel wiring, which the backend selects at
 build time on `CONFIG_DRAFTLING_RGB_BOARD_S043`:
 
 | Parameter          | S070C (7")     | S043C (4.3")        |
@@ -168,7 +169,7 @@ enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
 
 - `components/display/display_rgb.cpp` -- RGB panel backend; per-board pin / timing / data-order block gated on `CONFIG_DRAFTLING_RGB_BOARD_S043`.
 - `main/app_config.h` -- `CONFIG_DRAFTLING_MODEL_SUNTON_8048S043` block (SD / touch / wakeup pins).
-- `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` + `DRAFTLING_RGB_BOARD_S043` derived flags, width/height (800x480), `DISPLAY_SCALE` (2), GT911 / touch-RST defaults.
+- `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` + `DRAFTLING_RGB_BOARD_S043` derived flags, width/height (800x480), `DRAFTLING_DISPLAY_HIDPI` (Hack fonts), GT911 / touch-RST defaults.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
 - `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+X -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
 - `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` / `draftling_lvgl_port_get_flip180()` runtime 180-degree flip.
