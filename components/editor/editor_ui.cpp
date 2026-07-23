@@ -3089,17 +3089,27 @@ static void settings_activate_item(int idx)
         save_font_size_to_nvs();
         init_styles();
         refresh_settings_items();
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
-        /* The new font changes widget geometry; on e-paper any
-         * pixels left from the previous layout that the new layout
-         * does not cover would otherwise stay on screen as garbage
-         * until the next full refresh. Wipe the framebuffer and
-         * invalidate the active screen so LVGL repaints everything;
-         * display_clear() also flags the next flush as a full
-         * refresh, clearing any accumulated ghosting. */
+        /* The new font changes widget geometry on every screen and in
+         * every pane. Pixels left over from the previous (differently
+         * sized) layout would otherwise survive in the persistent
+         * display buffer -- and stale line geometry lingers in each
+         * pane's render cache -- and reappear as garbage the next time
+         * the editor screen is drawn (for example after re-opening a
+         * file). Wipe the framebuffer, drop every pane's cached line
+         * geometry so each label is fully re-laid-out, and invalidate
+         * the active screen so LVGL repaints everything. This runs on
+         * all backends because both the e-paper and the persistent
+         * framebuffer LCDs keep stale pixels in regions the new layout
+         * no longer covers. display_clear() also promotes the next
+         * flush to a flashing full refresh on e-paper, clearing any
+         * accumulated ghosting. */
+#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND)
+        display_clear(0x00);
+#else
         display_clear(0xFF);
-        lv_obj_invalidate(lv_scr_act());
 #endif
+        invalidate_all_render_caches();
+        lv_obj_invalidate(lv_scr_act());
     } else if (idx == SETTINGS_IDX_MAXFILE) {
         /* Read-only display of the dynamically-sized editor buffer.
          * Enter is a no-op; the value is fixed at editor_init() time. */
