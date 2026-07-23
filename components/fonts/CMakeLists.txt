@@ -30,6 +30,43 @@ if(CONFIG_KB_LAYOUT_ENABLE_HE)
     )
 endif()
 
+if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+    # High-density boards render 1:1 with the larger Hack font family
+    # instead of upscaling Greybeard. The base Hack fonts cover Latin;
+    # Cyrillic and Hebrew subsets are gated on the same layout options
+    # as the Greybeard subsets. The Hebrew subset is rendered from the
+    # Greybeard TTFs because Hack has no Hebrew coverage.
+    list(APPEND srcs
+        "hack.c"
+        "hack_11.c"
+        "hack_14.c"
+        "hack_16.c"
+        "hack_18.c"
+        "hack_22.c"
+        "hack_26.c"
+    )
+    if(CONFIG_KB_LAYOUT_ENABLE_UA)
+        list(APPEND srcs
+            "hack_cyrillic_11.c"
+            "hack_cyrillic_14.c"
+            "hack_cyrillic_16.c"
+            "hack_cyrillic_18.c"
+            "hack_cyrillic_22.c"
+            "hack_cyrillic_26.c"
+        )
+    endif()
+    if(CONFIG_KB_LAYOUT_ENABLE_HE)
+        list(APPEND srcs
+            "hack_hebrew_11.c"
+            "hack_hebrew_14.c"
+            "hack_hebrew_16.c"
+            "hack_hebrew_18.c"
+            "hack_hebrew_22.c"
+            "hack_hebrew_26.c"
+        )
+    endif()
+endif()
+
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS "include"

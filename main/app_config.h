@@ -7,14 +7,14 @@
 #define DISPLAY_HEIGHT  CONFIG_DRAFTLING_DISPLAY_HEIGHT
 #define DISPLAY_ROTATE  CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE
 
-/* Logical pixel size: every logical LVGL pixel is rendered as
- * DISPLAY_SCALE x DISPLAY_SCALE panel pixels by the display backend
- * (nearest-neighbor expansion). The editor and LVGL canvas use
- * DISPLAY_LOGICAL_WIDTH / DISPLAY_LOGICAL_HEIGHT; only the display
- * backend deals in physical panel pixels. */
-#define DISPLAY_SCALE          CONFIG_DRAFTLING_DISPLAY_SCALE
-#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH  / DISPLAY_SCALE)
-#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT / DISPLAY_SCALE)
+/* The editor and LVGL canvas render 1:1 at the panel resolution.
+ * DISPLAY_LOGICAL_WIDTH / DISPLAY_LOGICAL_HEIGHT are kept as aliases
+ * of the physical panel dimensions so callers that historically used
+ * the "logical" names keep working. (High-density boards no longer
+ * upscale the framebuffer; they select a larger font instead -- see
+ * CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
+#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH)
+#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT)
 
 /* SD Card mount point (shared across all hardware models) */
 #define SD_MOUNT_POINT  "/sdcard"

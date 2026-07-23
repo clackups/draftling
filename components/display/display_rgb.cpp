@@ -129,11 +129,9 @@ static const int kDataGpios[16] = {
 
 /* Logical-to-panel pixel scale (Kconfig). Each logical LVGL pixel is
  * rendered as SCALE x SCALE physical panel pixels. */
-#ifdef CONFIG_DRAFTLING_DISPLAY_SCALE
-#define RGB_SCALE CONFIG_DRAFTLING_DISPLAY_SCALE
-#else
+/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
+ * has been removed (high-density boards use a larger font instead). */
 #define RGB_SCALE 1
-#endif
 
 static esp_lcd_panel_handle_t s_panel = NULL;
 static int s_width  = 0;

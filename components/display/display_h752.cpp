@@ -19,11 +19,9 @@ static constexpr int PANEL_WIDTH = 960;
 static constexpr int PANEL_HEIGHT = 540;
 static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 
-#ifdef CONFIG_DRAFTLING_DISPLAY_SCALE
-#define H752_SCALE CONFIG_DRAFTLING_DISPLAY_SCALE
-#else
+/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
+ * has been removed (high-density boards use a larger font instead). */
 #define H752_SCALE 1
-#endif
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define H752_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL

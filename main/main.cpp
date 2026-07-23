@@ -1277,10 +1277,10 @@ extern "C" void app_main(void)
 
     /* Initialize LVGL.
      *
-     * LVGL renders in *logical* pixels (panel size / DISPLAY_SCALE).
-     * The display backend is responsible for scaling each logical
-     * pixel to a SCALE x SCALE block of physical panel pixels. With
-     * SCALE = 1 the logical and panel dimensions are identical. */
+     * LVGL renders 1:1 at the panel resolution; DISPLAY_LOGICAL_WIDTH /
+     * DISPLAY_LOGICAL_HEIGHT are aliases of the physical panel size.
+     * (High-density boards no longer upscale the framebuffer; they use
+     * a larger font instead -- see CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
     ESP_LOGI(TAG, "Initializing LVGL...");
     draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT, DISPLAY_ROTATE);
 
@@ -1766,8 +1766,8 @@ extern "C" void app_main(void)
      * app_config.h's per-board block (TOUCH_NATIVE_W / _H /
      * TOUCH_SWAP_XY / TOUCH_MIRROR_X / TOUCH_MIRROR_Y), so this
      * code stays board-agnostic. logical_width / logical_height
-     * are the DISPLAY_SCALE-aware logical pixel counts that LVGL
-     * itself uses.
+     * are the panel pixel counts that LVGL itself uses (rendering is
+     * 1:1, so these equal the physical panel dimensions).
      *
      * On the LilyGO T5 E-Paper S3 Pro / Pro Lite the GT911 sits on
      * the same physical I2C bus as epdiy's PCA9535 + TPS65185, and

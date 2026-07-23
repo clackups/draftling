@@ -61,12 +61,11 @@
  *
  * Scaling
  * -------
- * Draftling renders LVGL in *logical* pixels (panel size /
- * DRAFTLING_DISPLAY_SCALE). On Tab5 SCALE=2, so LVGL paints
- * 360 x 640 (which becomes 640 x 360 landscape after lvgl_port's
- * 90 degree software rotation) and we nearest-neighbor expand
- * each logical pixel into a SCALE x SCALE block of panel pixels
- * when copying into the panel framebuffer.
+ * Draftling renders LVGL 1:1 at the panel resolution (framebuffer
+ * upscaling was removed; the Tab5 uses the larger Hack font instead).
+ * MDSI_SCALE is fixed at 1, so the copy paths below are effectively a
+ * straight blit; they are kept in their generic form in case a future
+ * board needs expansion again.
  *
  * Rotation
  * --------
@@ -74,8 +73,7 @@
  * tablet is held landscape, so lvgl_port.cpp software-rotates each
  * LVGL tile 90 degrees before calling display_push_rgb565(); we
  * receive coordinates and a pixel buffer that are already in
- * panel-native (portrait) orientation, with x in [0, 720*SCALE)
- * after the logical->physical scale-up below.
+ * panel-native (portrait) orientation, with x in [0, 720).
  */
 
 #include <cstdio>
@@ -94,7 +92,9 @@
 
 static const char *TAG = "Display";
 
-#define MDSI_SCALE   CONFIG_DRAFTLING_DISPLAY_SCALE
+/* Panel renders 1:1; the former DRAFTLING_DISPLAY_SCALE upscale has
+ * been removed (Tab5 uses a larger font instead). */
+#define MDSI_SCALE   1
 
 /* Upper bound on how long a single DMA2D frame-buffer copy may take
  * before we give up waiting for the color-trans-done callback. The

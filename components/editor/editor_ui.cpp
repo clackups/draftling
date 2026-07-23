@@ -35,37 +35,50 @@
 /*
  * Font aliases.
  *
- * Greybeard is a monospaced bitmap font that includes Latin,
- * Latin-1 Supplement, and Cyrillic glyphs in every size, so a
- * single set of fonts covers all enabled keyboard layouts.
+ * Two monospaced bitmap font families are available. Standard-density
+ * boards use Greybeard (Latin + Latin-1 + Cyrillic + Hebrew). The
+ * high-density boards (CONFIG_DRAFTLING_DISPLAY_HIDPI -- the ones that
+ * used to upscale the framebuffer 2x) instead render 1:1 with the
+ * larger Hack family, whose six sizes mirror the Greybeard slots so
+ * the rest of the editor is family-agnostic. The FONT_NN number is
+ * the Greybeard slot; on Hack boards it maps to a larger pixel size
+ * with an approximately matching row height.
  *
- * The body font is selected at runtime via the base font size
- * user setting (11, 14, or 16 px).  Heading fonts are scaled
- * relative to the body size, using the 26 px font for the
- * largest headings.  Status bars always use FONT_11 regardless
- * of the body font setting.
+ * The body font is selected at runtime via the base font size user
+ * setting (11, 14, or 16 px).  Heading fonts are scaled relative to
+ * the body size, using the 26 px slot for the largest headings.
+ * Status bars always use FONT_11 regardless of the body font setting.
  */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#include "hack.h"
+#define FONT_11 (&hack_11)
+#define FONT_14 (&hack_14)
+#define FONT_16 (&hack_16)
+#define FONT_18 (&hack_18)
+#define FONT_22 (&hack_22)
+#define FONT_26 (&hack_26)
+#else
 #define FONT_11 (&greybeard_11)
 #define FONT_14 (&greybeard_14)
 #define FONT_16 (&greybeard_16)
 #define FONT_18 (&greybeard_18)
 #define FONT_22 (&greybeard_22)
 #define FONT_26 (&greybeard_26)
+#endif
 
 static const char *TAG = "EditorUI";
 
-/* Layout constants -- account for display rotation and the logical
- * pixel scale factor (CONFIG_DRAFTLING_DISPLAY_SCALE). The editor
- * lives entirely in logical pixels; the display backend scales each
- * logical pixel to SCALE x SCALE physical panel pixels.
+/* Layout constants -- account for display rotation. The editor and
+ * LVGL canvas render 1:1 at the panel resolution (no framebuffer
+ * upscaling; high-density boards use a larger font instead).
  *
- * At 90 or 270 degrees, the logical width and height are swapped. */
+ * At 90 or 270 degrees, the width and height are swapped. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT / CONFIG_DRAFTLING_DISPLAY_SCALE)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  / CONFIG_DRAFTLING_DISPLAY_SCALE)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
 #else
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  / CONFIG_DRAFTLING_DISPLAY_SCALE)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT / CONFIG_DRAFTLING_DISPLAY_SCALE)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
 #endif
 #define HEADER_H     16
 #define STATUS_H     16
@@ -1181,17 +1194,27 @@ static lv_style_t *style_for_type(md_line_type_t type)
     }
 }
 
-/* Return the monospace cell width (in pixels) for a given Greybeard
- * font size.  The values are the advance widths stored in the generated
- * font data, divided by 16 (LVGL stores advances in 1/16-px units). */
+/* Return the monospace cell width (in pixels) for a given font slot.
+ * The values are the advance widths stored in the generated font data
+ * divided by 16 (LVGL stores advances in 1/16-px units). Hack (used on
+ * high-density boards) and Greybeard have different per-slot widths. */
 static int char_width_for_font(const lv_font_t *font)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (font == FONT_26) return 25;   /* hack_26 (41 px): adv_w 400 / 16 */
+    if (font == FONT_22) return 21;   /* hack_22 (34 px): adv_w 336 / 16 */
+    if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */
+    if (font == FONT_16) return 15;   /* hack_16 (25 px): adv_w 240 / 16 */
+    if (font == FONT_14) return 13;   /* hack_14 (21 px): adv_w 208 / 16 */
+    return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
+#else
     if (font == FONT_26) return 13;   /* adv_w 208 / 16 = 13 */
     if (font == FONT_22) return 11;   /* adv_w 176 / 16 = 11 */
     if (font == FONT_18) return 9;    /* adv_w 144 / 16 = 9 */
     if (font == FONT_16) return 8;    /* adv_w 128 / 16 = 8 */
     if (font == FONT_14) return 7;    /* adv_w 112 / 16 = 7 */
     return 6;                         /* FONT_11: adv_w  96 / 16 = 6 */
+#endif
 }
 
 /* Count UTF-8 characters in the first byte_len bytes of text. */
@@ -2714,8 +2737,8 @@ static void apply_list_selection_styles(lv_obj_t *list, int sel)
         }
     }
     /* After a full rebuild make sure the selected row is on screen.
-     * Without this, a list taller than the panel (e.g. on PaperS3 at
-     * DRAFTLING_DISPLAY_SCALE >= 2) keeps its previous scroll offset
+     * Without this, a list taller than the panel (e.g. on PaperS3 with
+     * the larger Hack font) keeps its previous scroll offset
      * and the highlight may land outside the visible area. */
     if (sel >= 0 && (uint32_t)sel < count) {
         lv_obj_scroll_to_view(lv_obj_get_child(list, sel), LV_ANIM_OFF);
@@ -2743,7 +2766,7 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel)
         lv_obj_set_style_text_color(cur, theme_bg(), 0);
         /* Scroll the list so the highlighted row is always visible.
          * Needed when the list is taller than the panel (e.g. on
-         * PaperS3 with DRAFTLING_DISPLAY_SCALE = 3, where only a few
+         * PaperS3 with the larger Hack font, where only a few
          * items fit on screen).  LV_ANIM_OFF avoids smooth-scroll
          * animation, which would force many extra e-paper refreshes. */
         lv_obj_scroll_to_view(cur, LV_ANIM_OFF);
@@ -6204,9 +6227,14 @@ static void rebuild_screens_for_theme(void)
 
 extern "C" void editor_ui_init(void)
 {
-    /* Chain optional Greybeard font subsets (Cyrillic / Hebrew) into
-     * the base font's fallback slot before any text is rendered. */
+    /* Chain optional font subsets (Cyrillic / Hebrew) into the base
+     * font's fallback slot before any text is rendered. High-density
+     * boards use the Hack family; all others use Greybeard. */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    hack_init();
+#else
     greybeard_init();
+#endif
 
     load_font_size_from_nvs();
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
