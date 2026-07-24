@@ -17,6 +17,13 @@ void draftling_lvgl_port_unlock(void);
 void draftling_lvgl_port_set_flip180(bool flip);
 bool draftling_lvgl_port_get_flip180(void);
 
+/* Zero both LVGL draw buffers to drop stale rendered pixels after a
+ * layout change (e.g. a base-font-size change). Needed on the
+ * reflective-LCD FULL render-mode path where LVGL alternates two
+ * screen-sized buffers and can flush a stale one, causing garbage.
+ * Call with the LVGL lock held. */
+void draftling_lvgl_port_clear_buffers(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -3174,6 +3174,14 @@ static void settings_activate_item(int idx)
 #else
         display_clear(0xFF);
 #endif
+        /* Also wipe LVGL's own draw buffers. On the reflective-LCD
+         * FULL render-mode path LVGL keeps two screen-sized buffers
+         * and can flush a stale one (holding the pre-change layout)
+         * when the next screen is only partially invalidated -- for
+         * example after re-opening a file -- which surfaces as garbage
+         * in the untouched regions. display_clear() only wipes the
+         * panel framebuffer, not these buffers. */
+        draftling_lvgl_port_clear_buffers();
         invalidate_all_render_caches();
         lv_obj_invalidate(lv_scr_act());
     } else if (idx == SETTINGS_IDX_MAXFILE) {
@@ -5890,9 +5898,19 @@ static void build_screens(void)
      * screen (we are scanning for it). standby_enter_sleep() runs
      * the registered pre-sleep callback (autosave + per-board
      * peripheral teardown) before esp_deep_sleep_start(). */
+    /* Size both buttons from the FONT_11 metrics so the labels fit
+     * their frames on every font family. The Hack font used on HIDPI
+     * boards is roughly twice as wide/tall as Greybeard, so fixed
+     * pixel sizes designed for Greybeard clipped the "Forget KB"
+     * text out of its frame. */
+    const int ble_btn_cw = char_width_for_font(FONT_11);
+    const int ble_btn_lh = lv_font_get_line_height(FONT_11);
+    const int ble_btn_h  = ble_btn_lh + 6;
+    const int ble_off_w  = 3 * ble_btn_cw + 10;  /* "Off"       */
+    const int ble_fgt_w  = 9 * ble_btn_cw + 10;  /* "Forget KB" */
     {
         lv_obj_t *off_btn = lv_button_create(s_scr_ble_prompt);
-        lv_obj_set_size(off_btn, 40, 24);
+        lv_obj_set_size(off_btn, ble_off_w, ble_btn_h);
         /* Anchor to the top-right corner with a small inset so the
          * button stays fully on-screen and its hit area matches the
          * pixels the user sees, independent of the parent screen's
@@ -5922,12 +5940,12 @@ static void build_screens(void)
      * keyboard to navigate the settings menu. */
     {
         lv_obj_t *fgt_btn = lv_button_create(s_scr_ble_prompt);
-        lv_obj_set_size(fgt_btn, 68, 24);
+        lv_obj_set_size(fgt_btn, ble_fgt_w, ble_btn_h);
         /* Place to the left of the "Off" button: Off right edge is 4px
-         * from screen right; Off is 40px wide, so its left edge is 44px
-         * from right. Forget KB right edge = 44 + 4 (gap) = 48px from
-         * right, which maps to LV_ALIGN_TOP_RIGHT x_ofs = -48. */
-        lv_obj_align(fgt_btn, LV_ALIGN_TOP_RIGHT, -48, 4);
+         * from screen right; its left edge is (4 + ble_off_w) from
+         * right, plus a 4px gap, so the "Forget KB" button's right edge
+         * sits at (4 + ble_off_w + 4) from the right. */
+        lv_obj_align(fgt_btn, LV_ALIGN_TOP_RIGHT, -(ble_off_w + 8), 4);
         lv_obj_set_style_bg_color(fgt_btn, theme_bg(), 0);
         lv_obj_set_style_bg_opa(fgt_btn, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(fgt_btn, theme_fg(), 0);
