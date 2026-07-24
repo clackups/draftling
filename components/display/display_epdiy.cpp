@@ -21,10 +21,8 @@
  * framebuffer (one nibble per panel pixel, ~253 KB at 960x540) in
  * PSRAM. We expose the optional display_push_rgb565() fast path that
  * lvgl_port.cpp uses on colour and e-paper backends and convert the
- * LVGL RGB565 chunks straight into that grayscale framebuffer,
- * scaling each logical LVGL pixel into a SCALE x SCALE block of
- * panel pixels (CONFIG_DRAFTLING_DISPLAY_SCALE = 2 by default on
- * this board). Pushes are batched
+ * LVGL RGB565 chunks straight into that grayscale framebuffer 1:1
+ * (one LVGL pixel per panel pixel). Pushes are batched
  * into a dirty bounding box; display_flush() turns on the panel
  * power rail, runs an `epd_hl_update_area` partial update over the
  * bbox, then powers the rail back off. Every
@@ -181,11 +179,9 @@ static bool                s_initialized = false;
 
 /* Logical-to-panel scale (every logical LVGL pixel is rendered as a
  * SCALE x SCALE block of panel pixels). */
-#ifdef CONFIG_DRAFTLING_DISPLAY_SCALE
-#define EPDIY_SCALE CONFIG_DRAFTLING_DISPLAY_SCALE
-#else
+/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
+ * has been removed (high-density boards use a larger font instead). */
 #define EPDIY_SCALE 1
-#endif
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define EPDIY_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL

@@ -35,50 +35,87 @@
 /*
  * Font aliases.
  *
- * Greybeard is a monospaced bitmap font that includes Latin,
- * Latin-1 Supplement, and Cyrillic glyphs in every size, so a
- * single set of fonts covers all enabled keyboard layouts.
+ * Two monospaced bitmap font families are available. Standard-density
+ * boards use Greybeard (Latin + Latin-1 + Cyrillic + Hebrew). The
+ * high-density boards (CONFIG_DRAFTLING_DISPLAY_HIDPI -- the ones that
+ * used to upscale the framebuffer 2x) instead render 1:1 with the
+ * larger Hack family, whose six sizes mirror the Greybeard slots so
+ * the rest of the editor is family-agnostic. The FONT_NN number is
+ * the Greybeard slot; on Hack boards it maps to a larger pixel size
+ * with an approximately matching row height.
  *
- * The body font is selected at runtime via the base font size
- * user setting (11, 14, or 16 px).  Heading fonts are scaled
- * relative to the body size, using the 26 px font for the
- * largest headings.  Status bars always use FONT_11 regardless
- * of the body font setting.
+ * The body font is selected at runtime via the base font size user
+ * setting (11, 14, or 16 px; high-density boards add a 20 px step).
+ * Heading fonts are scaled relative to the body size, using the 26 px
+ * slot for the largest headings.
+ * Status bars always use FONT_11 regardless of the body font setting.
  */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#include "hack.h"
+#define FONT_11 (&hack_11)
+#define FONT_14 (&hack_14)
+#define FONT_16 (&hack_16)
+#define FONT_18 (&hack_18)
+#define FONT_22 (&hack_22)
+#define FONT_26 (&hack_26)
+#define FONT_30 (&hack_30)
+#else
 #define FONT_11 (&greybeard_11)
 #define FONT_14 (&greybeard_14)
 #define FONT_16 (&greybeard_16)
 #define FONT_18 (&greybeard_18)
 #define FONT_22 (&greybeard_22)
 #define FONT_26 (&greybeard_26)
+#endif
 
 static const char *TAG = "EditorUI";
 
-/* Layout constants -- account for display rotation and the logical
- * pixel scale factor (CONFIG_DRAFTLING_DISPLAY_SCALE). The editor
- * lives entirely in logical pixels; the display backend scales each
- * logical pixel to SCALE x SCALE physical panel pixels.
+/* Layout constants -- account for display rotation. The editor and
+ * LVGL canvas render 1:1 at the panel resolution (no framebuffer
+ * upscaling; high-density boards use a larger font instead).
  *
- * At 90 or 270 degrees, the logical width and height are swapped. */
+ * At 90 or 270 degrees, the width and height are swapped. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT / CONFIG_DRAFTLING_DISPLAY_SCALE)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  / CONFIG_DRAFTLING_DISPLAY_SCALE)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
 #else
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  / CONFIG_DRAFTLING_DISPLAY_SCALE)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT / CONFIG_DRAFTLING_DISPLAY_SCALE)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
 #endif
+/* Header / status bar heights. These bars always use FONT_11, so on
+ * high-density boards (which render 1:1 with the taller Hack font
+ * instead of the old 2x upscale) they must be twice as tall to fit the
+ * larger glyphs -- this reproduces the physical bar height users saw
+ * when these boards still upscaled a FONT_11 (Greybeard 11 px) bar 2x. */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#define HEADER_H     32
+#define STATUS_H     32
+#define EDITOR_Y     HEADER_H
+#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
+#define LIST_PANEL_H (SCR_H - 36)  /* height for list panels below header */
+#else
 #define HEADER_H     16
 #define STATUS_H     16
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - 18)  /* height for list panels below header */
+#endif
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, or 16 px as the editor body font.
- * Heading fonts are scaled up from the body size. */
+ * Heading fonts are scaled up from the body size. High-density
+ * (HIDPI) boards render with the larger Hack family and expose one
+ * extra step, 20 px, since their panels have the resolution to show
+ * a bigger body font comfortably. */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#define FONT_SIZE_COUNT 4
+static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16, 20 };
+static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "11 px", "14 px", "16 px", "20 px" };
+#else
 #define FONT_SIZE_COUNT 3
 static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16 };
 static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "11 px", "14 px", "16 px" };
+#endif
 
 /* NVS namespace/key for font size */
 #define NVS_NS_EDITOR   "editor"
@@ -113,6 +150,9 @@ static void rebuild_screens_for_theme(void);
 /* Return the body font for the current size setting. */
 static const lv_font_t *body_font(void)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (s_font_size == 20) return FONT_18;
+#endif
     if (s_font_size == 16) return FONT_16;
     if (s_font_size == 14) return FONT_14;
     return FONT_11;
@@ -122,9 +162,13 @@ static const lv_font_t *body_font(void)
  *   body 11 -> h3 14, h2 16, h1 18
  *   body 14 -> h3 16, h2 18, h1 22
  *   body 16 -> h3 18, h2 22, h1 26
+ *   body 20 -> h3 22, h2 26, h1 30 (HIDPI only; slot 30 is Hack-only)
  */
 static const lv_font_t *h1_font(void)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (s_font_size == 20) return FONT_30;
+#endif
     if (s_font_size == 16) return FONT_26;
     if (s_font_size == 14) return FONT_22;
     return FONT_18;
@@ -132,6 +176,9 @@ static const lv_font_t *h1_font(void)
 
 static const lv_font_t *h2_font(void)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (s_font_size == 20) return FONT_26;
+#endif
     if (s_font_size == 16) return FONT_22;
     if (s_font_size == 14) return FONT_18;
     return FONT_16;
@@ -139,9 +186,47 @@ static const lv_font_t *h2_font(void)
 
 static const lv_font_t *h3_font(void)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (s_font_size == 20) return FONT_22;
+#endif
     if (s_font_size == 16) return FONT_18;
     if (s_font_size == 14) return FONT_16;
     return FONT_14;
+}
+
+/* ---- Modal overlay geometry ----
+ * The small editor overlays (save prompt, exit prompt, search box)
+ * lay a header line at y=0 and content rows below it. All use
+ * FONT_11 for the header, so the header occupies one FONT_11 line height. Deriving
+ * these offsets from the font (instead of a hard-coded 20 px that was
+ * tuned for the 11 px Greybeard header) keeps the panels tall enough
+ * that their border never clips the content on high-density boards,
+ * where FONT_11 is the much taller Hack 19 px glyph. */
+#define OVERLAY_PAD 6   /* lv_obj_set_style_pad_all() on each overlay */
+
+/* Y offset (inside the padded content area) of the first content row
+ * that sits below the overlay's FONT_11 header line. */
+static int overlay_row_y(void)
+{
+    return lv_font_get_line_height(FONT_11) + 4;
+}
+
+/* Pitch between successive FONT_11 content rows in an overlay. */
+static int overlay_row_pitch(void)
+{
+    return lv_font_get_line_height(FONT_11) + 2;
+}
+
+/* Search overlay row offsets (Find row, Replace row) inside the panel. */
+static int search_find_row_y(void) { return overlay_row_y(); }
+static int search_repl_row_y(void) { return overlay_row_y() + overlay_row_pitch(); }
+
+/* X offset of the search field value labels: just past the "F:" / "R:"
+ * two-character FONT_11 prefix, so the value never overlaps the prefix
+ * even with the wider Hack glyphs on high-density boards. */
+static int search_field_x(void)
+{
+    return 2 * char_width_for_font(FONT_11) + 4;
 }
 
 /* ---- Color theme ----
@@ -401,8 +486,14 @@ static void load_font_size_from_nvs(void)
     if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
         uint8_t val = 0;
         if (nvs_get_u8(h, NVS_KEY_FONTSZ, &val) == ESP_OK) {
-            if (val == 11 || val == 14 || val == 16)
-                s_font_size = val;
+            /* Accept the persisted value only if it is one of the
+             * sizes actually offered on this board (the option list
+             * differs between standard and HIDPI builds). */
+            bool valid = false;
+            for (int i = 0; i < FONT_SIZE_COUNT; i++) {
+                if (FONT_SIZE_OPTIONS[i] == val) { valid = true; break; }
+            }
+            if (valid) s_font_size = val;
         }
         nvs_close(h);
     }
@@ -1181,17 +1272,28 @@ static lv_style_t *style_for_type(md_line_type_t type)
     }
 }
 
-/* Return the monospace cell width (in pixels) for a given Greybeard
- * font size.  The values are the advance widths stored in the generated
- * font data, divided by 16 (LVGL stores advances in 1/16-px units). */
+/* Return the monospace cell width (in pixels) for a given font slot.
+ * The values are the advance widths stored in the generated font data
+ * divided by 16 (LVGL stores advances in 1/16-px units). Hack (used on
+ * high-density boards) and Greybeard have different per-slot widths. */
 static int char_width_for_font(const lv_font_t *font)
 {
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (font == FONT_30) return 28;   /* hack_30 (47 px): adv_w 448 / 16 */
+    if (font == FONT_26) return 25;   /* hack_26 (41 px): adv_w 400 / 16 */
+    if (font == FONT_22) return 21;   /* hack_22 (34 px): adv_w 336 / 16 */
+    if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */
+    if (font == FONT_16) return 15;   /* hack_16 (25 px): adv_w 240 / 16 */
+    if (font == FONT_14) return 13;   /* hack_14 (21 px): adv_w 208 / 16 */
+    return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
+#else
     if (font == FONT_26) return 13;   /* adv_w 208 / 16 = 13 */
     if (font == FONT_22) return 11;   /* adv_w 176 / 16 = 11 */
     if (font == FONT_18) return 9;    /* adv_w 144 / 16 = 9 */
     if (font == FONT_16) return 8;    /* adv_w 128 / 16 = 8 */
     if (font == FONT_14) return 7;    /* adv_w 112 / 16 = 7 */
     return 6;                         /* FONT_11: adv_w  96 / 16 = 6 */
+#endif
 }
 
 /* Count UTF-8 characters in the first byte_len bytes of text. */
@@ -2714,8 +2816,8 @@ static void apply_list_selection_styles(lv_obj_t *list, int sel)
         }
     }
     /* After a full rebuild make sure the selected row is on screen.
-     * Without this, a list taller than the panel (e.g. on PaperS3 at
-     * DRAFTLING_DISPLAY_SCALE >= 2) keeps its previous scroll offset
+     * Without this, a list taller than the panel (e.g. on PaperS3 with
+     * the larger Hack font) keeps its previous scroll offset
      * and the highlight may land outside the visible area. */
     if (sel >= 0 && (uint32_t)sel < count) {
         lv_obj_scroll_to_view(lv_obj_get_child(list, sel), LV_ANIM_OFF);
@@ -2743,7 +2845,7 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel)
         lv_obj_set_style_text_color(cur, theme_bg(), 0);
         /* Scroll the list so the highlighted row is always visible.
          * Needed when the list is taller than the panel (e.g. on
-         * PaperS3 with DRAFTLING_DISPLAY_SCALE = 3, where only a few
+         * PaperS3 with the larger Hack font, where only a few
          * items fit on screen).  LV_ANIM_OFF avoids smooth-scroll
          * animation, which would force many extra e-paper refreshes. */
         lv_obj_scroll_to_view(cur, LV_ANIM_OFF);
@@ -3053,17 +3155,27 @@ static void settings_activate_item(int idx)
         save_font_size_to_nvs();
         init_styles();
         refresh_settings_items();
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
-        /* The new font changes widget geometry; on e-paper any
-         * pixels left from the previous layout that the new layout
-         * does not cover would otherwise stay on screen as garbage
-         * until the next full refresh. Wipe the framebuffer and
-         * invalidate the active screen so LVGL repaints everything;
-         * display_clear() also flags the next flush as a full
-         * refresh, clearing any accumulated ghosting. */
+        /* The new font changes widget geometry on every screen and in
+         * every pane. Pixels left over from the previous (differently
+         * sized) layout would otherwise survive in the persistent
+         * display buffer -- and stale line geometry lingers in each
+         * pane's render cache -- and reappear as garbage the next time
+         * the editor screen is drawn (for example after re-opening a
+         * file). Wipe the framebuffer, drop every pane's cached line
+         * geometry so each label is fully re-laid-out, and invalidate
+         * the active screen so LVGL repaints everything. This runs on
+         * all backends because both the e-paper and the persistent
+         * framebuffer LCDs keep stale pixels in regions the new layout
+         * no longer covers. display_clear() also promotes the next
+         * flush to a flashing full refresh on e-paper, clearing any
+         * accumulated ghosting. */
+#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND)
+        display_clear(0x00);
+#else
         display_clear(0xFF);
-        lv_obj_invalidate(lv_scr_act());
 #endif
+        invalidate_all_render_caches();
+        lv_obj_invalidate(lv_scr_act());
     } else if (idx == SETTINGS_IDX_MAXFILE) {
         /* Read-only display of the dynamically-sized editor buffer.
          * Enter is a no-op; the value is fixed at editor_init() time. */
@@ -3334,7 +3446,7 @@ static void refresh_save_prompt(void)
         if ((s_save_buf[i] & 0xC0) != 0x80) chars++;
     }
     int cx = chars * cw;
-    lv_obj_set_pos(s_save_cur, cx, 20);
+    lv_obj_set_pos(s_save_cur, cx, overlay_row_y());
     lv_obj_remove_flag(s_save_cur, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -3582,13 +3694,11 @@ static void refresh_search_prompt(void)
     for (int i = 0; i < active_pos; i++) {
         if ((active_buf[i] & 0xC0) != 0x80) chars++;
     }
-    /* Field text labels are positioned at x=14 inside the panel
-     * (the "F:" / "R:" prefix occupies the first 14 px). */
-    int cx = 14 + chars * cw;
-    /* Cursor sits at the right edge of the active field's text.
-     * Field "Find:" line is at y=20, "Replace:" line at y=36
-     * inside the panel. */
-    int cy = (s_search_field == 0) ? 20 : 36;
+    /* Field text labels are positioned just past the "F:" / "R:"
+     * prefix inside the panel. */
+    int cx = search_field_x() + chars * cw;
+    /* Cursor sits at the right edge of the active field's text. */
+    int cy = (s_search_field == 0) ? search_find_row_y() : search_repl_row_y();
     lv_obj_set_pos(s_search_cur, cx, cy);
     lv_obj_remove_flag(s_search_cur, LV_OBJ_FLAG_HIDDEN);
 
@@ -5917,15 +6027,18 @@ static void build_screens(void)
     ble_keyboard_set_passkey_callback(passkey_display_cb);
 
     /* ---- Save-prompt overlay (shown on the editor screen) ---- */
+    int save_row_y  = overlay_row_y();
+    int save_line_h = lv_font_get_line_height(FONT_11);
+    int save_panel_h = save_row_y + save_line_h + 2 * OVERLAY_PAD;
     s_save_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_save_panel, SCR_W - 20, 46);
-    lv_obj_set_pos(s_save_panel, 10, (SCR_H - 46) / 2);
+    lv_obj_set_size(s_save_panel, SCR_W - 20, save_panel_h);
+    lv_obj_set_pos(s_save_panel, 10, (SCR_H - save_panel_h) / 2);
     lv_obj_set_style_bg_color(s_save_panel, theme_bg(), 0);
     lv_obj_set_style_bg_opa(s_save_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_save_panel, theme_fg(), 0);
     lv_obj_set_style_border_width(s_save_panel, 2, 0);
     lv_obj_set_style_radius(s_save_panel, 4, 0);
-    lv_obj_set_style_pad_all(s_save_panel, 6, 0);
+    lv_obj_set_style_pad_all(s_save_panel, OVERLAY_PAD, 0);
     lv_obj_remove_flag(s_save_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
 
@@ -5940,11 +6053,13 @@ static void build_screens(void)
     lv_obj_set_style_text_color(s_save_name_lbl, theme_fg(), 0);
     lv_obj_set_width(s_save_name_lbl, SCR_W - 20 - 12);
     lv_label_set_text(s_save_name_lbl, "");
-    lv_obj_set_pos(s_save_name_lbl, 0, 20);
+    lv_obj_set_pos(s_save_name_lbl, 0, save_row_y);
 
-    /* Thin cursor bar inside the save prompt name field */
+    /* Thin cursor bar inside the save prompt name field. The name field
+     * is FONT_11, so the caret matches that line height (not the body
+     * font's LINE_H, which may differ from FONT_11). */
     s_save_cur = lv_obj_create(s_save_panel);
-    lv_obj_set_size(s_save_cur, 2, LINE_H);
+    lv_obj_set_size(s_save_cur, 2, save_line_h);
     lv_obj_set_style_bg_color(s_save_cur, theme_fg(), 0);
     lv_obj_set_style_bg_opa(s_save_cur, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_save_cur, 0, 0);
@@ -5956,7 +6071,8 @@ static void build_screens(void)
      * Header line plus three selectable option rows. */
     {
         int rows = EXIT_OPT_COUNT;
-        int panel_h = 20 + rows * (LINE_H + 2) + 12;
+        int exit_row_y = overlay_row_y();
+        int panel_h = exit_row_y + rows * (LINE_H + 2) + 2 * OVERLAY_PAD;
         s_exit_panel = lv_obj_create(s_scr);
         lv_obj_set_size(s_exit_panel, SCR_W - 20, panel_h);
         lv_obj_set_pos(s_exit_panel, 10, (SCR_H - panel_h) / 2);
@@ -5983,20 +6099,26 @@ static void build_screens(void)
             lv_obj_set_width(s_exit_opt_lbl[i], SCR_W - 20 - 12);
             lv_obj_set_style_pad_hor(s_exit_opt_lbl[i], 2, 0);
             lv_label_set_text(s_exit_opt_lbl[i], EXIT_OPT_LABELS[i]);
-            lv_obj_set_pos(s_exit_opt_lbl[i], 0, 20 + i * (LINE_H + 2));
+            lv_obj_set_pos(s_exit_opt_lbl[i], 0, exit_row_y + i * (LINE_H + 2));
         }
     }
 
     /* ---- Search / Replace overlay (shown on the editor screen) ---- */
+    int srch_find_y = search_find_row_y();
+    int srch_repl_y = search_repl_row_y();
+    int srch_help_y = srch_repl_y + overlay_row_pitch();
+    int srch_field_x = search_field_x();
+    int srch_line_h  = lv_font_get_line_height(FONT_11);
+    int srch_panel_h = srch_help_y + srch_line_h + 2 * OVERLAY_PAD;
     s_search_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_search_panel, SCR_W - 20, 76);
-    lv_obj_set_pos(s_search_panel, 10, (SCR_H - 76) / 2);
+    lv_obj_set_size(s_search_panel, SCR_W - 20, srch_panel_h);
+    lv_obj_set_pos(s_search_panel, 10, (SCR_H - srch_panel_h) / 2);
     lv_obj_set_style_bg_color(s_search_panel, theme_bg(), 0);
     lv_obj_set_style_bg_opa(s_search_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_search_panel, theme_fg(), 0);
     lv_obj_set_style_border_width(s_search_panel, 2, 0);
     lv_obj_set_style_radius(s_search_panel, 4, 0);
-    lv_obj_set_style_pad_all(s_search_panel, 6, 0);
+    lv_obj_set_style_pad_all(s_search_panel, OVERLAY_PAD, 0);
     lv_obj_remove_flag(s_search_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(s_search_panel, LV_OBJ_FLAG_HIDDEN);
 
@@ -6011,29 +6133,29 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_search_find_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_search_find_hdr, theme_fg(), 0);
     lv_label_set_text(s_search_find_hdr, "F:");
-    lv_obj_set_pos(s_search_find_hdr, 0, 20);
+    lv_obj_set_pos(s_search_find_hdr, 0, srch_find_y);
 
     s_search_find_lbl = lv_label_create(s_search_panel);
     lv_obj_set_style_text_font(s_search_find_lbl, FONT_11, 0);
     lv_obj_set_style_text_color(s_search_find_lbl, theme_fg(), 0);
-    lv_obj_set_width(s_search_find_lbl, SCR_W - 20 - 12 - 14);
+    lv_obj_set_width(s_search_find_lbl, SCR_W - 20 - 12 - srch_field_x);
     lv_label_set_text(s_search_find_lbl, "");
-    lv_obj_set_pos(s_search_find_lbl, 14, 20);
+    lv_obj_set_pos(s_search_find_lbl, srch_field_x, srch_find_y);
 
     /* Replace row (only shown in replace mode) */
     s_search_repl_hdr = lv_label_create(s_search_panel);
     lv_obj_set_style_text_font(s_search_repl_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_search_repl_hdr, theme_fg(), 0);
     lv_label_set_text(s_search_repl_hdr, "R:");
-    lv_obj_set_pos(s_search_repl_hdr, 0, 36);
+    lv_obj_set_pos(s_search_repl_hdr, 0, srch_repl_y);
     lv_obj_add_flag(s_search_repl_hdr, LV_OBJ_FLAG_HIDDEN);
 
     s_search_repl_lbl = lv_label_create(s_search_panel);
     lv_obj_set_style_text_font(s_search_repl_lbl, FONT_11, 0);
     lv_obj_set_style_text_color(s_search_repl_lbl, theme_fg(), 0);
-    lv_obj_set_width(s_search_repl_lbl, SCR_W - 20 - 12 - 14);
+    lv_obj_set_width(s_search_repl_lbl, SCR_W - 20 - 12 - srch_field_x);
     lv_label_set_text(s_search_repl_lbl, "");
-    lv_obj_set_pos(s_search_repl_lbl, 14, 36);
+    lv_obj_set_pos(s_search_repl_lbl, srch_field_x, srch_repl_y);
     lv_obj_add_flag(s_search_repl_lbl, LV_OBJ_FLAG_HIDDEN);
 
     /* Help line at the bottom of the panel */
@@ -6042,12 +6164,14 @@ static void build_screens(void)
     lv_obj_set_style_text_color(s_search_help_lbl, theme_fg(), 0);
     lv_obj_set_width(s_search_help_lbl, SCR_W - 20 - 12);
     lv_label_set_text(s_search_help_lbl, "Enter:Next  Esc:Close");
-    lv_obj_set_pos(s_search_help_lbl, 0, 54);
+    lv_obj_set_pos(s_search_help_lbl, 0, srch_help_y);
 
-    /* Cursor bar shared between the find / replace fields. The
-     * refresh function repositions it to whichever row owns focus. */
+    /* Cursor bar shared between the find / replace fields. The find /
+     * replace fields are FONT_11, so the caret matches that line
+     * height. The refresh function repositions it to whichever row
+     * owns focus. */
     s_search_cur = lv_obj_create(s_search_panel);
-    lv_obj_set_size(s_search_cur, 2, LINE_H);
+    lv_obj_set_size(s_search_cur, 2, srch_line_h);
     lv_obj_set_style_bg_color(s_search_cur, theme_fg(), 0);
     lv_obj_set_style_bg_opa(s_search_cur, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_search_cur, 0, 0);
@@ -6204,9 +6328,14 @@ static void rebuild_screens_for_theme(void)
 
 extern "C" void editor_ui_init(void)
 {
-    /* Chain optional Greybeard font subsets (Cyrillic / Hebrew) into
-     * the base font's fallback slot before any text is rendered. */
+    /* Chain optional font subsets (Cyrillic / Hebrew) into the base
+     * font's fallback slot before any text is rendered. High-density
+     * boards use the Hack family; all others use Greybeard. */
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    hack_init();
+#else
     greybeard_init();
+#endif
 
     load_font_size_from_nvs();
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)

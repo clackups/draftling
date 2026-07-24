@@ -767,44 +767,27 @@ config DRAFTLING_DISPLAY_ROTATE_ANGLE
     default 180 if DRAFTLING_DISPLAY_ROTATE_180
     default 270 if DRAFTLING_DISPLAY_ROTATE_270
 
-# DRAFTLING_DISPLAY_SCALE -- logical pixel size in physical panel
-# pixels. Non-prompted derived int so the per-board default tracks
-# the hardware-model choice automatically (no stickiness in
-# sdkconfig). Override via sdkconfig.defaults if you need a value
-# other than the per-board default.
+# DRAFTLING_DISPLAY_HIDPI -- high-density panel that renders the UI
+# 1:1 with the larger Hack font family instead of upscaling the
+# Greybeard framebuffer. Non-prompted derived bool so the per-board
+# value tracks the hardware-model choice automatically.
 #
-# Every logical LVGL pixel is rendered as SCALE x SCALE physical
-# panel pixels via nearest-neighbor expansion in the display
-# backend. The editor and LVGL canvas operate in logical
-# coordinates (panel size divided by SCALE); only the display
-# backend scales up when pushing to the panel. Larger values give
-# bigger text at the cost of less screen real estate.
-#
-# Defaults: 2 for the M5Stack PaperS3 (whose 540x960 panel is
-# dense enough that 1:1 Greybeard text is uncomfortably small),
-# 1 everywhere else (one LVGL pixel == one panel pixel).
-# Currently only the M5Stack PaperS3 and JC3248W535
-# backends implement the up-scaling; on the RLCD backend SCALE > 1
-# has no visible effect.
-config DRAFTLING_DISPLAY_SCALE
-    int
-    range 1 8
-    default 2 if DRAFTLING_MODEL_M5STACK_PAPERS3
-    default 2 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
-    default 2 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
-    # M5Stack Tab5 1280x720 panel is dense (5", ~293 DPI); a 2x
-    # scale brings the editor canvas down to 640x360 logical
-    # pixels, comfortable for Greybeard-sized text.
-    default 2 if DRAFTLING_MODEL_M5STACK_TAB5
-    # Sunton ESP32-8048S070C 800x480 7" panel (~133 DPI); a 2x scale
-    # brings the editor canvas down to 400x240 logical pixels for
-    # comfortably large Greybeard text.
-    default 2 if DRAFTLING_MODEL_SUNTON_8048S070
-    # Sunton ESP32-8048S043C 800x480 4.3" panel (~217 DPI); the denser
-    # panel needs the same 2x scale to keep Greybeard text comfortably
-    # large (400x240 logical pixels).
-    default 2 if DRAFTLING_MODEL_SUNTON_8048S043
-    default 1
+# On these boards the panel is dense enough that 1:1 Greybeard text
+# would be uncomfortably small, so the editor selects the Hack fonts
+# (components/fonts/hack_*.c), sized so each text row is roughly the
+# height the user saw with Greybeard rendered at the old 2x scale.
+# The display backend paints one LVGL pixel per panel pixel; there is
+# no framebuffer upscaling. Boards that leave this unset keep
+# Greybeard at the native panel resolution.
+config DRAFTLING_DISPLAY_HIDPI
+    bool
+    default y if DRAFTLING_MODEL_M5STACK_PAPERS3
+    default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
+    default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_M5STACK_TAB5
+    default y if DRAFTLING_MODEL_SUNTON_8048S070
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
     depends on DRAFTLING_DISPLAY_EPD

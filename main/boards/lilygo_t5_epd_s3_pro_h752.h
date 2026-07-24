@@ -42,8 +42,8 @@
  * landscape display. Screen TL/TR/BL/BR map to raw (540,0)/
  * (540,960)/(0,0)/(0,960), so screen_x = raw_y and screen_y =
  * 539 - raw_x: mirror X first, then swap. In Draftling, LVGL works
- * in the logical 480x270 frame when DISPLAY_SCALE=2, so the
- * touchscreen component scales the transformed coordinates down. */
+ * 1:1 in the panel's 960x540 frame, so the touchscreen component maps
+ * the transformed coordinates to the full panel resolution. */
 #define TOUCH_I2C_ADDR  0x5D
 #define TOUCH_INT_PIN   CONFIG_DRAFTLING_TOUCH_INT_GPIO
 #define TOUCH_RST_PIN   CONFIG_DRAFTLING_TOUCH_RST_GPIO

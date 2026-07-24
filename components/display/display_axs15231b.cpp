@@ -346,11 +346,9 @@ static size_t    s_fb_pixels = 0;
  * LVGL renders into a logical canvas of size (s_width / SCALE) by
  * (s_height / SCALE), so without this scaling the LVGL output would
  * occupy only the top-left 1/SCALE^2 of the panel. */
-#ifdef CONFIG_DRAFTLING_DISPLAY_SCALE
-#define AXS_SCALE CONFIG_DRAFTLING_DISPLAY_SCALE
-#else
+/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
+ * has been removed (high-density boards use a larger font instead). */
 #define AXS_SCALE 1
-#endif
 
 /* Accumulated dirty bounding box (inclusive) since the last flush.
  * (-1, -1, -1, -1) means clean. */

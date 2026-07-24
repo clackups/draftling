@@ -30,9 +30,9 @@ extern "C" {
  *
  * The coordinate transform is parameterised so the same driver works
  * on touch panels mounted in different orientations relative to the
- * LCD. The driver returns logical LVGL coordinates (after the display
- * backend's software rotation and the DRAFTLING_DISPLAY_SCALE down-
- * scale), so the caller does not need to do further math.
+ * LCD. The driver returns LVGL coordinates (after the display
+ * backend's software rotation), so the caller does not need to do
+ * further math. Rendering is 1:1, so these equal the panel pixels.
  */
 
 typedef struct {
@@ -55,8 +55,7 @@ typedef struct {
 
     /* Logical (LVGL) coordinate range. Touch reports will be
      * transformed and clamped to [0, logical_width) x [0, logical_height).
-     * For boards with CONFIG_DRAFTLING_DISPLAY_SCALE > 1 these are the
-     * logical (scaled-down) values, not the panel pixel counts. */
+     * Rendering is 1:1, so these equal the panel pixel counts. */
     int logical_width;
     int logical_height;
 
