@@ -58,6 +58,7 @@
 #define FONT_18 (&hack_18)
 #define FONT_22 (&hack_22)
 #define FONT_26 (&hack_26)
+#define FONT_30 (&hack_30)
 #else
 #define FONT_11 (&greybeard_11)
 #define FONT_14 (&greybeard_14)
@@ -161,12 +162,12 @@ static const lv_font_t *body_font(void)
  *   body 11 -> h3 14, h2 16, h1 18
  *   body 14 -> h3 16, h2 18, h1 22
  *   body 16 -> h3 18, h2 22, h1 26
- *   body 20 -> h3 22, h2 26, h1 26 (HIDPI only; 26 is the largest slot)
+ *   body 20 -> h3 22, h2 26, h1 30 (HIDPI only; slot 30 is Hack-only)
  */
 static const lv_font_t *h1_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-    if (s_font_size == 20) return FONT_26;
+    if (s_font_size == 20) return FONT_30;
 #endif
     if (s_font_size == 16) return FONT_26;
     if (s_font_size == 14) return FONT_22;
@@ -1278,6 +1279,7 @@ static lv_style_t *style_for_type(md_line_type_t type)
 static int char_width_for_font(const lv_font_t *font)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    if (font == FONT_30) return 28;   /* hack_30 (47 px): adv_w 448 / 16 */
     if (font == FONT_26) return 25;   /* hack_26 (41 px): adv_w 400 / 16 */
     if (font == FONT_22) return 21;   /* hack_22 (34 px): adv_w 336 / 16 */
     if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */

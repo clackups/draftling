@@ -17,6 +17,12 @@
  * without changing its slot logic; the number in each symbol is the
  * Greybeard slot it replaces, NOT the Hack pixel size.
  *
+ * A seventh slot (30) is Hack-only: it has no Greybeard counterpart
+ * and exists so the HIDPI-only 20 px base font size can render an H1
+ * heading larger than its H2 (which uses slot 26). Its number follows
+ * the Greybeard slot progression (11/14/16/18/22/26/30) even though no
+ * Greybeard 30 px font is generated.
+ *
  * Slot -> Hack pixel size -> line_height -> monospace cell width:
  *   hack_11: 19 px, line_height 23, cell 11
  *   hack_14: 21 px, line_height 26, cell 13
@@ -24,6 +30,7 @@
  *   hack_18: 28 px, line_height 34, cell 17
  *   hack_22: 34 px, line_height 41, cell 21
  *   hack_26: 41 px, line_height 50, cell 25
+ *   hack_30: 47 px, line_height 58, cell 28
  *
  * The base fonts cover:
  *   0x0020-0x007F (Basic Latin)
@@ -63,6 +70,7 @@ extern const lv_font_t hack_16;
 extern const lv_font_t hack_18;
 extern const lv_font_t hack_22;
 extern const lv_font_t hack_26;
+extern const lv_font_t hack_30;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t hack_cyrillic_11;
@@ -71,6 +79,7 @@ extern const lv_font_t hack_cyrillic_16;
 extern const lv_font_t hack_cyrillic_18;
 extern const lv_font_t hack_cyrillic_22;
 extern const lv_font_t hack_cyrillic_26;
+extern const lv_font_t hack_cyrillic_30;
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -80,6 +89,7 @@ extern const lv_font_t hack_hebrew_16;
 extern const lv_font_t hack_hebrew_18;
 extern const lv_font_t hack_hebrew_22;
 extern const lv_font_t hack_hebrew_26;
+extern const lv_font_t hack_hebrew_30;
 #endif
 
 /* Wire up the runtime fallback chain so the base fonts pick up

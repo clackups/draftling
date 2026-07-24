@@ -44,6 +44,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
         "hack_18.c"
         "hack_22.c"
         "hack_26.c"
+        "hack_30.c"
     )
     if(CONFIG_KB_LAYOUT_ENABLE_UA)
         list(APPEND srcs
@@ -53,6 +54,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
             "hack_cyrillic_18.c"
             "hack_cyrillic_22.c"
             "hack_cyrillic_26.c"
+            "hack_cyrillic_30.c"
         )
     endif()
     if(CONFIG_KB_LAYOUT_ENABLE_HE)
@@ -63,6 +65,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
             "hack_hebrew_18.c"
             "hack_hebrew_22.c"
             "hack_hebrew_26.c"
+            "hack_hebrew_30.c"
         )
     endif()
 endif()

@@ -88,6 +88,7 @@ ROUTER(hack_16_ext, 30, 6);
 ROUTER(hack_18_ext, 34, 7);
 ROUTER(hack_22_ext, 41, 8);
 ROUTER(hack_26_ext, 50, 10);
+ROUTER(hack_30_ext, 58, 12);
 
 /* Routers chained after the Hebrew font so that Hebrew can hand off
  * to Cyrillic when both layouts are enabled. Defined unconditionally
@@ -98,6 +99,7 @@ ROUTER(hack_16_he_next, 30, 6);
 ROUTER(hack_18_he_next, 34, 7);
 ROUTER(hack_22_he_next, 41, 8);
 ROUTER(hack_26_he_next, 50, 10);
+ROUTER(hack_30_he_next, 58, 12);
 
 void hack_init(void)
 {
@@ -109,6 +111,7 @@ void hack_init(void)
     hack_18_ext.fallback = &hack_hebrew_18;
     hack_22_ext.fallback = &hack_hebrew_22;
     hack_26_ext.fallback = &hack_hebrew_26;
+    hack_30_ext.fallback = &hack_hebrew_30;
 #  ifdef CONFIG_KB_LAYOUT_ENABLE_UA
     hack_11_he_next.fallback = &hack_cyrillic_11;
     hack_14_he_next.fallback = &hack_cyrillic_14;
@@ -116,6 +119,7 @@ void hack_init(void)
     hack_18_he_next.fallback = &hack_cyrillic_18;
     hack_22_he_next.fallback = &hack_cyrillic_22;
     hack_26_he_next.fallback = &hack_cyrillic_26;
+    hack_30_he_next.fallback = &hack_cyrillic_30;
 #  endif
 #elif defined(CONFIG_KB_LAYOUT_ENABLE_UA)
     /* Base -> Cyrillic (no Hebrew) */
@@ -125,5 +129,6 @@ void hack_init(void)
     hack_18_ext.fallback = &hack_cyrillic_18;
     hack_22_ext.fallback = &hack_cyrillic_22;
     hack_26_ext.fallback = &hack_cyrillic_26;
+    hack_30_ext.fallback = &hack_cyrillic_30;
 #endif
 }

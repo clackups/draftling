@@ -683,12 +683,14 @@ that depends on `lvgl__lvgl`.
 Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
 typeface instead of scaling Greybeard. Hack is a monospaced outline
-font (MIT, https://github.com/source-foundry/Hack). Six sizes are
-generated with `lv_font_conv`, one per Greybeard "slot", chosen so
-each text row is approximately the height the user saw with Greybeard
-rendered at the old 2x scale. The file names mirror the Greybeard
-slots (`hack_11` .. `hack_26`); the number is the slot, not the Hack
-pixel size:
+font (MIT, https://github.com/source-foundry/Hack). Seven sizes are
+generated with `lv_font_conv`. Six mirror the Greybeard "slots",
+chosen so each text row is approximately the height the user saw with
+Greybeard rendered at the old 2x scale; a seventh Hack-only slot (30)
+has no Greybeard counterpart and provides an H1 heading larger than
+slot 26 for the HIDPI-only 20 px base font size. The file names mirror
+the Greybeard slots (`hack_11` .. `hack_26`) plus the extra `hack_30`;
+the number is the slot, not the Hack pixel size:
 
 | File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
 |------|-----------------|------------|-------------|-------------------------|
@@ -698,6 +700,7 @@ pixel size:
 | hack_18.c | 28 | 17 | 34 | greybeard_18 (x2) |
 | hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
 | hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
+| hack_30.c | 47 | 28 | 58 | (none; Hack-only H1 slot for the 20 px base size) |
 
 The generated advance widths are fractional (Hack is not a native
 pixel font), so after generation every full-width glyph's `adv_w` is
@@ -728,9 +731,12 @@ builds do not pay for them.
 
 The editor (`components/editor/editor_ui.cpp`) selects the family with
 a compile-time `#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI`: the `FONT_11`
-.. `FONT_26` macros, `char_width_for_font()` and the boot-time init
-call all switch between Greybeard and Hack. Everything else in the
-editor is family-agnostic because it works through those six slots.
+.. `FONT_26` macros (plus the HIDPI-only `FONT_30`),
+`char_width_for_font()` and the boot-time init call all switch between
+Greybeard and Hack. Everything else in the editor is family-agnostic
+because it works through those slots. `FONT_30` is only defined and
+referenced in the HIDPI (Hack) branch, since it backs the H1 heading
+of the HIDPI-only 20 px base font size and has no Greybeard equivalent.
 
 ## Hardware Definitions in Kconfig.projbuild
 
