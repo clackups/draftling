@@ -1436,11 +1436,26 @@ static void refresh_active_pane(bool draw_cursor)
                  * dirties the previous label rectangle on every
                  * refresh and the union of all those rectangles
                  * fills most of the editor area, defeating the
-                 * partial-update path on e-paper backends. */
-                if (s_line_labels[i] && s_prev_line_visible[i]) {
+                 * partial-update path on e-paper backends.
+                 *
+                 * Gate on the widget's *actual* LVGL visibility rather
+                 * than the s_prev_line_* cache: invalidate_render_cache()
+                 * (called on a font-size or theme change) resets those
+                 * cache flags to false while the labels are still shown
+                 * on screen holding the previous layout's text. Keying
+                 * off the cache would then skip hiding a genuinely-visible
+                 * stale label, so its old (differently-sized) content
+                 * survives the next full repaint as garbage -- exactly
+                 * the symptom seen after switching to a larger font and
+                 * re-opening a file. Checking the live HIDDEN flag hides
+                 * whatever is really on screen while still avoiding a
+                 * redundant invalidate when the slot is already hidden. */
+                if (s_line_labels[i] &&
+                    !lv_obj_has_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN)) {
                     lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
                 }
-                if (s_sel_rects[i] && s_prev_line_was_selected[i]) {
+                if (s_sel_rects[i] &&
+                    !lv_obj_has_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN)) {
                     lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
                 }
                 /* Always clear the cached state for hidden slots so a
