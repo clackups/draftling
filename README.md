@@ -246,8 +246,10 @@ hardware.
 The **Waveshare ESP32-S3-RLCD-4.2** provides a pretty smooth and
 responsive user interaction. But the screen is very fragile (the
 screen broke during my tests), and the device needs an enclosure. A
-[3D printed enclosure model is
-available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/).  The contrast is
+[simplistic 3D-printed enclosure is
+available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/). Also, [Simon Shimel 
+has designed Whale Writer, a foldable enclosure with an attached 
+keyboard](https://github.com/shmimel/whale-writer). The contrast is
 very low, so it needs good lighting for comfortable work.
 
 The **LilyGO T5 E-Paper S3 Pro** and **Pro Lite** are so far the most
