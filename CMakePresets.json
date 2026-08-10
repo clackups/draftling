@@ -11,6 +11,15 @@
             }
         },
         {
+            "name": "m5stack_papers3",
+            "displayName": "M5Stack PaperS3",
+            "binaryDir": "build/m5stack_papers3",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_papers3",
+                "SDKCONFIG": "build/m5stack_papers3/sdkconfig"
+            }
+        },
+        {
             "name": "lilygo_t5_epd_s3_pro",
             "displayName": "LilyGO T5 E-Paper S3 Pro / Pro Lite",
             "binaryDir": "build/lilygo_t5_epd_s3_pro",

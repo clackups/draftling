@@ -358,31 +358,23 @@ can be independently enabled or disabled. By default **US-English** and
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
 v6.0.2 or later.
 
-> **Note:** the M5Stack PaperS3 currently requires **ESP-IDF 5.5.x**.
-> The `vroland/epdiy` driver's in-tree PaperS3 board definition has
-> not yet been validated against ESP-IDF 6.x, so this board is not
-> included in `CMakePresets.json` and must still be built the classic
-> way with `idf.py set-target esp32s3` on ESP-IDF 5.5.x (see the
-> `DRAFTLING_MODEL_M5STACK_PAPERS3` option under [Supported
-> hardware](#supported-hardware)). Every other supported board can be
-> built on ESP-IDF 6.0.2 using the presets below.
-
 The repository root ships a [`CMakePresets.json`](CMakePresets.json)
-with one configuration preset per supported board (except M5Stack
-PaperS3, see the note above). Each preset sets the correct IDF target
-and hardware model via its own `sdkconfig.defaults.<board>` file, and
-places its build output under `build/<board>` with the generated
-`sdkconfig` inside that same directory, so multiple boards can be
-configured side by side without clobbering each other's build state.
+with one configuration preset per supported board. Each preset sets the
+correct IDF target and hardware model via its own
+`sdkconfig.defaults.<board>` file, and places its build output under
+`build/<board>` with the generated `sdkconfig` inside that same
+directory, so multiple boards can be configured side by side without
+clobbering each other's build state.
 
 ```bash
 idf.py --preset waveshare_rlcd42 build
 idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
 ```
 
-Available preset names: `waveshare_rlcd42`, `lilygo_t5_epd_s3_pro`,
-`lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
-`jc3248w535`, `sunton_8048s070`, `sunton_8048s043`.
+Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
+`lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
+`waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
+`sunton_8048s070`, `sunton_8048s043`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:
