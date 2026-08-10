@@ -48,6 +48,14 @@ static int       s_phys_h     = 0;
 static uint16_t *s_rot_buf    = NULL;
 static size_t    s_rot_buf_px = 0;
 
+/* The two LVGL draw buffers handed to lv_display_set_buffers(). Kept
+ * so draftling_lvgl_port_clear_buffers() can wipe stale rendered
+ * pixels out of BOTH of them (see that function for why the panel
+ * framebuffer alone is not enough). */
+static uint8_t  *s_draw_buf1  = NULL;
+static uint8_t  *s_draw_buf2  = NULL;
+static size_t    s_draw_buf_size = 0;
+
 /* Rotate an RGB565 tile (w x h) in src by 90 / 180 / 270 degrees CW
  * into dst. Caller guarantees dst has enough room for w*h pixels. */
 static void rotate_tile_rgb565(const uint16_t *src, uint16_t *dst,
@@ -310,6 +318,9 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     assert(buf1 && buf2);
     lv_display_set_buffers(disp, buf1, buf2, buf_size, LV_DISPLAY_RENDER_MODE_FULL);
 #endif
+    s_draw_buf1     = buf1;
+    s_draw_buf2     = buf2;
+    s_draw_buf_size = buf_size;
 
     /* Tick timer */
     esp_timer_create_args_t timer_args = {};
@@ -362,6 +373,30 @@ extern "C" void draftling_lvgl_port_set_flip180(bool flip)
 extern "C" bool draftling_lvgl_port_get_flip180(void)
 {
     return s_flip180;
+}
+
+/* Wipe both LVGL draw buffers so no stale rendered pixels survive a
+ * layout change (e.g. a base-font-size change that resizes every
+ * widget on every screen).
+ *
+ * On the reflective-LCD path LVGL runs in LV_DISPLAY_RENDER_MODE_FULL
+ * with two screen-sized buffers that it alternates between frames. When
+ * only part of a screen is invalidated, LVGL renders the dirty region
+ * into the back buffer and reuses the rest of that buffer's previous
+ * (now stale) contents, then flushes the whole buffer to the panel. If
+ * a buffer still holds a frame drawn with the OLD font geometry, those
+ * stale pixels reappear as garbage the next time that buffer is flushed
+ * -- for example after re-opening a file. Clearing the panel
+ * framebuffer alone (display_clear) does not fix this because the stale
+ * pixels live inside LVGL's own buffers. Zeroing both buffers here
+ * forces a clean slate for whichever buffer LVGL flushes next.
+ *
+ * Must be called with the LVGL lock held (the Settings key handler
+ * runs in the LVGL task context, which already holds it). */
+extern "C" void draftling_lvgl_port_clear_buffers(void)
+{
+    if (s_draw_buf1) memset(s_draw_buf1, 0, s_draw_buf_size);
+    if (s_draw_buf2) memset(s_draw_buf2, 0, s_draw_buf_size);
 }
 
 extern "C" bool draftling_lvgl_port_lock(int timeout_ms)
