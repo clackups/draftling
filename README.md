@@ -356,30 +356,50 @@ can be independently enabled or disabled. By default **US-English** and
 ## Building
 
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
-v5.3 or later (v5.3 - v5.5 confirmed working).
+v6.0.2 or later.
 
-> **Note:** the e-paper boards (M5Stack PaperS3 and LilyGO T5 E-Paper
-> S3 Pro / Pro Lite) currently require **ESP-IDF 5.5.x**. The
-> `vroland/epdiy` driver is not yet compatible with ESP-IDF 6.x;
-> please stay on the 5.5.x release line for these devices until the
-> driver becomes compatible.
+> **Note:** the M5Stack PaperS3 currently requires **ESP-IDF 5.5.x**.
+> The `vroland/epdiy` driver's in-tree PaperS3 board definition has
+> not yet been validated against ESP-IDF 6.x, so this board is not
+> included in `CMakePresets.json` and must still be built the classic
+> way with `idf.py set-target esp32s3` on ESP-IDF 5.5.x (see the
+> `DRAFTLING_MODEL_M5STACK_PAPERS3` option under [Supported
+> hardware](#supported-hardware)). Every other supported board can be
+> built on ESP-IDF 6.0.2 using the presets below.
 
-Keep in mind that M5Stack Tab5 uses a different MCU, so the tatget
-should be set to 'esp32s4'.
+The repository root ships a [`CMakePresets.json`](CMakePresets.json)
+with one configuration preset per supported board (except M5Stack
+PaperS3, see the note above). Each preset sets the correct IDF target
+and hardware model via its own `sdkconfig.defaults.<board>` file, and
+places its build output under `build/<board>` with the generated
+`sdkconfig` inside that same directory, so multiple boards can be
+configured side by side without clobbering each other's build state.
 
 ```bash
-idf.py set-target esp32s3
+idf.py --preset waveshare_rlcd42 build
+idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
+```
+
+Available preset names: `waveshare_rlcd42`, `lilygo_t5_epd_s3_pro`,
+`lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
+`jc3248w535`, `sunton_8048s070`, `sunton_8048s043`.
+
+To avoid repeating `--preset` on every command, set the `IDF_PRESET`
+environment variable instead:
+
+```bash
+export IDF_PRESET=waveshare_rlcd42
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-If you update `sdkconfig.defaults` or pull new changes, delete the generated
-`sdkconfig` so the defaults are re-applied:
+If you pull new changes that touch `sdkconfig.defaults` or any of the
+per-board `sdkconfig.defaults.<board>` files, delete the preset's
+generated `sdkconfig` so the defaults are re-applied:
 
 ```bash
-rm -f sdkconfig
-idf.py set-target esp32s3
-idf.py build
+rm -f build/waveshare_rlcd42/sdkconfig
+idf.py --preset waveshare_rlcd42 build
 ```
 
 ## Menuconfig Options

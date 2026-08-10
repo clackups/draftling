@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: Waveshare ESP32-S3-RLCD-4.2
+# Sets the hardware model and IDF target used by the "waveshare_rlcd42" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42=y

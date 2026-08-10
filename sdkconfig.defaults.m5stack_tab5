@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: M5Stack Tab5 (ESP32-P4)
+# Sets the hardware model and IDF target used by the "m5stack_tab5" preset.
+
+CONFIG_IDF_TARGET="esp32p4"
+CONFIG_DRAFTLING_MODEL_M5STACK_TAB5=y

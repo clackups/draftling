@@ -57,8 +57,7 @@ For older P4 silicon, rebuild with the minimum chip revision
 relaxed to match your hardware:
 
 ```bash
-idf.py set-target esp32p4
-idf.py menuconfig
+idf.py --preset m5stack_tab5 menuconfig
 ```
 
 then navigate to
@@ -72,8 +71,9 @@ Component config  --->
       Maximum Supported ESP32-P4 Revision  --->  v3.99
 ```
 
-Save (`S`), exit (`Q`), then `idf.py build flash monitor`. With
-the minimum lowered to `v0.0` the same image flashes and boots on
+Save (`S`), exit (`Q`), then `idf.py --preset m5stack_tab5 build flash
+monitor`. With the minimum lowered to `v0.0` the same image flashes
+and boots on
 both the early v1.x dies (such as the v1.3 reference unit) and
 current v3.x silicon. The relevant Kconfig symbols are
 `CONFIG_ESP32P4_REV_MIN_*` and `CONFIG_ESP32P4_REV_MAX_*`; you can

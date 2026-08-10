@@ -118,8 +118,7 @@ RGB peripheral does not use a SPI bus, so there is no contention).
 The on-board GT911 is supported (`CONFIG_DRAFTLING_TOUCH_GT911`,
 derived from the model choice) but `CONFIG_DRAFTLING_TOUCHSCREEN` is
 opt-in -- Draftling is keyboard-driven, so touch is left off unless
-the user enables it in `menuconfig` (or via the `sdkconfig.defaults.sunton`
-overlay).
+the user enables it in `menuconfig`.
 
 The GT911 INT line is not wired on the Sunton reference, so the
 touchscreen component polls the controller's status register on every
@@ -135,27 +134,26 @@ rebinds if the controller drifts. The panel is natively landscape
 
 The board's flash is wired for **DIO** (verified on this hardware in
 the parallel `breezydemo` port). The common ESP32-S3 default is QIO,
-so `sdkconfig.defaults.sunton` overrides
+so `sdkconfig.defaults.sunton_8048s070` overrides
 `CONFIG_ESPTOOLPY_FLASHMODE_DIO=y` to ensure the bootloader comes up
 reliably. PSRAM is octal at 80 MHz (the common ESP32-S3 default,
 which matches this board).
 
 ## Building
 
-The model and its board-specific overrides live in
-`sdkconfig.defaults.sunton`. Select the board by passing all three
-defaults files:
+The model and its board-specific overrides (DIO flash mode) live in
+`sdkconfig.defaults.sunton_8048s070` in the repository root, wired up
+as the `sunton_8048s070` preset in `CMakePresets.json`:
 
 ```
-SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.sunton" \
-    idf.py set-target esp32s3
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py --preset sunton_8048s070 build
+idf.py --preset sunton_8048s070 -p /dev/ttyUSB0 flash monitor
 ```
 
-`sdkconfig.defaults.sunton` selects
-`CONFIG_DRAFTLING_MODEL_SUNTON_8048S070`, forces DIO flash mode, and
-enables the GT911 touchscreen.
+`sdkconfig.defaults.sunton_8048s070` selects
+`CONFIG_DRAFTLING_MODEL_SUNTON_8048S070` and forces DIO flash mode.
+Touch is opt-in; enable it with `idf.py --preset sunton_8048s070
+menuconfig` under **DRAFTLING Configuration**.
 
 ## Cross-references
 
@@ -165,4 +163,4 @@ enables the GT911 touchscreen.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB`.
 - `components/display/CMakeLists.txt` -- registers `display_rgb.cpp`.
 - `components/touchscreen/touchscreen.cpp` -- GT911 polled driver, dual-address probe.
-- `sdkconfig.defaults.sunton` -- board selection + DIO flash + touch enable.
+- `sdkconfig.defaults.sunton_8048s070` -- board selection + DIO flash override for the `sunton_8048s070` preset.

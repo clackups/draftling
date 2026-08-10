@@ -32,7 +32,8 @@
 
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
 development boards with reflective LCD displays. It is built with the
-ESP-IDF framework (v5.3+) and uses LVGL v9 for the graphical interface.
+ESP-IDF framework (v6.0.2+; M5Stack PaperS3 still requires v5.5.x) and
+uses LVGL v9 for the graphical interface.
 
 The user connects a Bluetooth keyboard and edits Markdown files stored on
 a MicroSD card. The reflective LCD needs no backlight and works well in
@@ -56,9 +57,13 @@ to be usable.
 
 ```
 CMakeLists.txt              Top-level CMake project file
+CMakePresets.json           Per-board build presets (idf.py --preset <board>)
 partitions.csv              Custom partition table (16 MB flash)
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
+sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
+                            per CMakePresets.json preset (e.g.
+                            sdkconfig.defaults.waveshare_rlcd42)
 main/                       Application entry point and hardware config
   main.cpp                  app_main(): initializes all subsystems
   app_config.h              Display macros; includes the active board header
@@ -860,7 +865,11 @@ only the enabled layout tables.
 
 ## Building
 
-Requires ESP-IDF v5.3 or later (v5.3 - v5.5 confirmed working).
+Requires ESP-IDF v6.0.2 or later. The M5Stack PaperS3 is an exception:
+its `vroland/epdiy`-based board definition has not yet been validated
+against ESP-IDF 6.x, so it currently still requires **ESP-IDF 5.5.x**
+and is built the classic way (`idf.py set-target esp32s3`) rather than
+through `CMakePresets.json`.
 
 PSRAM is required on every supported board. The editor gap buffer
 (sized dynamically at startup from the PSRAM that is free when
@@ -875,17 +884,35 @@ with a `FATAL_ERROR` if `CONFIG_SPIRAM` is not set. Targets without
 on-chip PSRAM support (e.g. ESP32-S2, bare ESP32-C3 modules without
 PSRAM) are not supported.
 
+The repository root ships a `CMakePresets.json` with one preset per
+supported board except M5Stack PaperS3 (`waveshare_rlcd42`,
+`lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
+`waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
+`sunton_8048s070`, `sunton_8048s043`). Each preset points
+`SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
+`sdkconfig.defaults.<board>` file in the repository root (which sets
+`CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),
+and places `binaryDir` / `SDKCONFIG` under `build/<board>` so every
+board's build output stays isolated:
+
+```bash
+idf.py --preset waveshare_rlcd42 build
+idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
+```
+
+For M5Stack PaperS3, build without a preset on ESP-IDF 5.5.x:
+
 ```bash
 idf.py set-target esp32s3
 idf.py build
 idf.py -p /dev/ttyACM0 flash monitor
 ```
 
-If you update `sdkconfig.defaults` or pull new changes, delete the
-generated `sdkconfig` so the defaults are re-applied:
+If you pull new changes that touch `sdkconfig.defaults` or a board's
+`sdkconfig.defaults.<board>` file, delete the preset's generated
+`sdkconfig` so the defaults are re-applied:
 
 ```bash
-rm -f sdkconfig
-idf.py set-target esp32s3
-idf.py build
+rm -f build/waveshare_rlcd42/sdkconfig
+idf.py --preset waveshare_rlcd42 build
 ```

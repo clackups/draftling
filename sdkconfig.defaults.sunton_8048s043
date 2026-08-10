@@ -1,0 +1,17 @@
+# CMakePresets.json board defaults: Sunton ESP32-8048S043C
+# Sets the hardware model and IDF target used by the "sunton_8048s043" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_SUNTON_8048S043=y
+
+# This board's flash is wired for DIO, overriding the QIO default in
+# sdkconfig.defaults.esp32s3. See docs/sunton-esp32-8048S043.md.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+
+# Enable the on-board GT911 touchscreen as a secondary input device.
+CONFIG_DRAFTLING_TOUCHSCREEN=y
+
+# This author's keyboard is German; enable only US (QWERTY) and DE
+# (QWERTZ) layouts and drop the Ukrainian / French / Hebrew defaults.
+CONFIG_KB_LAYOUT_ENABLE_UA=n
+CONFIG_KB_LAYOUT_ENABLE_DE=y

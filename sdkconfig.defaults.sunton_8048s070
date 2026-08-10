@@ -1,0 +1,9 @@
+# CMakePresets.json board defaults: Sunton ESP32-8048S070C
+# Sets the hardware model and IDF target used by the "sunton_8048s070" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_SUNTON_8048S070=y
+
+# This board's flash is wired for DIO, overriding the QIO default in
+# sdkconfig.defaults.esp32s3. See docs/sunton-esp32-8048S070c.md.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y

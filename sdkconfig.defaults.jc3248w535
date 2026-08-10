@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: Guition JC3248W535
+# Sets the hardware model and IDF target used by the "jc3248w535" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_JC3248W535=y
