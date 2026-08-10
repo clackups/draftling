@@ -17,7 +17,16 @@ dependencies:
     rules:
       - if: "target == esp32p4"
       - if: "idf_version <6.1"
+  ## Pinned below 3.0: ESP-Hosted 3.0 replaced the legacy
+  ## CONFIG_ESP_HOSTED_ENABLE_BT_BLUEDROID / ..._BLUEDROID_HCI_VHCI
+  ## Kconfig knobs (used by sdkconfig.defaults.esp32p4 and consumed by
+  ## components/ble_keyboard/ble_keyboard.cpp's CONFIG_BT_CONTROLLER_DISABLED
+  ## branch) with a new esp_hosted_bt_host_stack adapter API
+  ## (esp_hosted_bt_host_stack_setup() + CONFIG_ESP_HOSTED_HOST_FEAT_BT).
+  ## An unbounded ">=2.12" resolves to 3.x today and aborts the CMake
+  ## configure step with "Hosted BT Kconfig changed in 3.0." See
+  ## https://github.com/espressif/esp-hosted/blob/unified_release/docs/migration.md
   espressif/esp_hosted:
-    version: ">=2.12"
+    version: ">=2.12,<3.0.0"
     rules:
       - if: "target == esp32p4"

@@ -144,7 +144,9 @@ host pulses `Slave_Reset`.
 ## One-time C6 slave firmware flashing
 
 The C6 needs the ESP-Hosted slave firmware. The host side is pinned to
-`espressif/esp_hosted >= 2.12` in `main/idf_component.yml`, so the
+`espressif/esp_hosted >=2.12,<3.0.0` in `main/idf_component.yml` (3.0
+replaced the Bluetooth Kconfig / API this project's `ble_keyboard.cpp`
+relies on -- see the comment above that dependency), so the
 slave image must be flashed with esp-hosted-mcu firmware of version
 **2.x**. The M5Stack prebuilt image that ships with M5Tab5-UserDemo
 (`ESP32C6-WiFi-SDIO-Interface-V1.4.1-96bea3a_0x0.bin`) was built
