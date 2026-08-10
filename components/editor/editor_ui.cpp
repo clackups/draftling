@@ -462,6 +462,49 @@ static void save_rotate180_to_nvs(void)
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE */
 
+/* ---- Append-only editing ----
+ * Toggled from the F1 -> Settings menu and persisted in NVS. When
+ * active, existing text can no longer be deleted or edited: Backspace,
+ * Delete and Ctrl+X (cut) are no-ops, and any key that would insert
+ * text moves the cursor to the very end of the document first (if it
+ * is not already there) so the new text is always appended. Enter
+ * (newline) is exempt from the end-of-document jump so a blank line
+ * can still be inserted wherever the cursor happens to be. */
+#define NVS_KEY_APPEND_ONLY "appendonly"
+static bool s_append_only = false;
+
+static void load_append_only_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_APPEND_ONLY, &v) == ESP_OK) {
+            s_append_only = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_append_only_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_APPEND_ONLY, s_append_only ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+/* True when the cursor sits at the very end of the active document's
+ * text (the only place where insertion is allowed while append-only
+ * editing is active). */
+static bool cursor_at_doc_end(void)
+{
+    size_t len = 0;
+    editor_get_text(&len);
+    return editor_get_cursor() >= len;
+}
+
 /* Recalculate derived layout values from the current body font. */
 static void recalc_layout(void)
 {
@@ -2981,10 +3024,11 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_ROTATE   (-1)
 #define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 0)
 #endif
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_ROTATE + 0)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_ROTATE + 1)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_ROTATE + 2)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_ROTATE + 3)
+#define SETTINGS_IDX_APPEND_ONLY (_SETTINGS_NEXT_AFTER_ROTATE + 0)
+#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_ROTATE + 1)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_ROTATE + 2)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_ROTATE + 3)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_ROTATE + 4)
 
 static void refresh_settings_items(void)
 {
@@ -3036,6 +3080,11 @@ static void refresh_settings_items(void)
              s_rotate180 ? "on" : "off");
     lv_list_add_btn(s_settings_list, NULL, buf);
 #endif
+
+    /* Append-only editing */
+    snprintf(buf, sizeof(buf), "Append-only editing: %s",
+             s_append_only ? "on" : "off");
+    lv_list_add_btn(s_settings_list, NULL, buf);
 
     /* Sleep now */
     lv_list_add_btn(s_settings_list, NULL, "Sleep now");
@@ -3213,6 +3262,12 @@ static void settings_activate_item(int idx)
         draftling_lvgl_port_set_flip180(s_rotate180);
         refresh_settings_items();
 #endif
+    } else if (idx == SETTINGS_IDX_APPEND_ONLY) {
+        /* Toggle append-only editing. No hardware side effects, so
+         * just flip the flag, persist it, and refresh the label. */
+        s_append_only = !s_append_only;
+        save_append_only_to_nvs();
+        refresh_settings_items();
     } else if (idx == SETTINGS_IDX_SLEEP) {
         /* Sleep now -- standby_enter_sleep() runs the registered
          * pre-sleep callback (autosave + per-board peripheral
@@ -3796,6 +3851,10 @@ static void search_find_next(void)
 static void search_replace_current(void)
 {
     if (!s_search_replace_mode) return;
+    if (s_append_only) {
+        editor_ui_set_status("Append-only: replace disabled");
+        return;
+    }
     if (s_search_match_start < 0) {
         /* No active match -- treat the first Ctrl+Enter as Find Next. */
         search_find_next();
@@ -4402,12 +4461,20 @@ static void handle_editor_key(const kb_event_t *ev)
             editor_ui_refresh();
             return;
         case 'x':
+            if (s_append_only) {
+                editor_ui_set_status("Append-only: deletion disabled");
+                return;
+            }
             if (editor_cut())
                 editor_ui_set_status("Cut");
             ensure_cursor_visible();
             editor_ui_refresh();
             return;
         case 'v':
+            if (s_append_only && !cursor_at_doc_end()) {
+                editor_clear_selection();
+                editor_move_doc_end();
+            }
             if (!editor_paste())
                 editor_ui_set_status("Buffer full -- paste truncated");
             ensure_cursor_visible();
@@ -4597,6 +4664,10 @@ static void handle_editor_key(const kb_event_t *ev)
         editor_move_page_down(VISIBLE_LINES);
         break;
     case KB_KEY_BACKSPACE:
+        if (s_append_only) {
+            editor_ui_set_status("Append-only: deletion disabled");
+            break;
+        }
         content_changed = true;
         if (!editor_delete_selection()) {
             editor_delete_back();
@@ -4606,6 +4677,10 @@ static void handle_editor_key(const kb_event_t *ev)
         }
         break;
     case KB_KEY_DELETE:
+        if (s_append_only) {
+            editor_ui_set_status("Append-only: deletion disabled");
+            break;
+        }
         content_changed = true;
         if (!editor_delete_selection()) {
             editor_delete_forward();
@@ -4616,13 +4691,23 @@ static void handle_editor_key(const kb_event_t *ev)
         break;
     case KB_KEY_ENTER:
         content_changed = true;
-        editor_delete_selection();
+        /* Newlines are the one insertion allowed anywhere while
+         * append-only editing is active, so no end-of-document jump
+         * is needed here -- but deletion is still disallowed, so a
+         * selection is cleared rather than replaced. */
+        if (s_append_only) editor_clear_selection();
+        else editor_delete_selection();
         if (!editor_insert_newline())
             editor_ui_set_status("Buffer full -- increase editor size in menuconfig");
         break;
     case KB_KEY_TAB:
         content_changed = true;
-        editor_delete_selection();
+        if (s_append_only) {
+            editor_clear_selection();
+            if (!cursor_at_doc_end()) editor_move_doc_end();
+        } else {
+            editor_delete_selection();
+        }
         if (!editor_insert_text("    ", 4))
             editor_ui_set_status("Buffer full -- increase editor size in menuconfig");
         break;
@@ -4641,7 +4726,17 @@ static void handle_editor_key(const kb_event_t *ev)
         if (text) {
             content_changed = true;
             bool had_sel = editor_selection_active();
-            editor_delete_selection();
+            if (s_append_only) {
+                /* Regular character insertion is only allowed at the
+                 * very end of the document while append-only editing
+                 * is active. If the cursor is elsewhere, jump it to
+                 * the end (dropping any selection, since deletion is
+                 * disallowed) before inserting. */
+                editor_clear_selection();
+                if (!cursor_at_doc_end()) editor_move_doc_end();
+            } else {
+                editor_delete_selection();
+            }
             if (!editor_insert_text(text, strlen(text)))
                 editor_ui_set_status("Buffer full -- increase editor size in menuconfig");
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
@@ -6345,6 +6440,7 @@ extern "C" void editor_ui_init(void)
     load_backlight_from_nvs();
     display_set_backlight(s_backlight_pct);
 #endif
+    load_append_only_from_nvs();
     init_styles();
 
     /* Create key-event queue (must exist before BLE callback is set) */
