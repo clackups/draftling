@@ -413,6 +413,14 @@ static esp_hidh_dev_t *s_hidh_dev = NULL;
 static esp_bd_addr_t s_target_bda;
 static esp_ble_addr_type_t s_target_addr_type;
 
+/* Set while connect_task() is running its between-attempt scan
+ * refresh (stop -> brief rescan -> stop) so the
+ * ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT handler does not mistake the
+ * refresh's own stop-scanning completion for "target found, go
+ * connect" and spawn a second, overlapping connect_task. See the
+ * comment on CONNECT_RETRIES for the symptom this addresses. */
+static volatile bool s_scan_refreshing = false;
+
 /* Timer used to retry scanning after a delay */
 static TimerHandle_t s_scan_timer = NULL;
 
@@ -1418,10 +1426,23 @@ static void open_watchdog_cb(TimerHandle_t timer)
 
 /* Maximum number of open-connection retries.  esp_hidh_dev_open()
  * can fail transiently if the remote device is slow to respond.
- * A short retry loop handles this.  Keep this low (2) so that
- * re-pairing scenarios (where the old address is unreachable) do
- * not block for too long before scanning for the new address. */
-#define CONNECT_RETRIES     2
+ * A short retry loop handles this.
+ *
+ * Some keyboards (observed with the NuPhy Air60 V2) fail every
+ * esp_hidh_dev_open() attempt in a cycle of only 2 retries at a
+ * fixed 250 ms spacing, then fall back to a full rescan that
+ * eventually succeeds -- suggesting the direct-connect attempt
+ * sometimes lands outside the peer's advertising/connectable
+ * window and needs a few more, more spread-out tries before
+ * giving up. CONNECT_RETRIES is raised to 4 and CONNECT_RETRY_MS
+ * grows per attempt (see the backoff computation below) so a
+ * single connect cycle persists a bit longer before falling back
+ * to a rescan, without changing behavior for keyboards that
+ * already connect on the first or second attempt. Keep this
+ * bounded, not unbounded, so re-pairing scenarios (where the old
+ * address is unreachable) do not block for too long before
+ * scanning for the new address. */
+#define CONNECT_RETRIES     4
 #define CONNECT_RETRY_MS  250
 
 static void connect_task(void *arg)
@@ -1472,13 +1493,21 @@ static void connect_task(void *arg)
      * post-pairing, in which case the ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT
      * handler bumps it back up.
      *
-     * min_int=24 (30 ms), max_int=40 (50 ms): typical HID keyboard
-     * range; intentionally not aggressive so we do not regress power
-     * if the peer accepts it as-is. latency=0, supervision_timeout =
-     * SUPERVISION_TIMEOUT_FLOOR_10MS. */
+     * min_int=6 (7.5 ms), max_int=100 (125 ms): widened from the
+     * previous 24-40 (30-50 ms) hint after reports of a NuPhy Air60
+     * V2 keyboard repeatedly failing to complete the BLE HID
+     * connection -- a narrow preferred-interval hint could cause a
+     * peer whose firmware only accepts intervals outside that band
+     * to reject or ignore the hint and fall back to timing that
+     * esp_hidh_dev_open() does not tolerate. The BLE spec's full
+     * legal range is 6-3200 (7.5 ms-4 s); 6-100 covers essentially
+     * every real HID peripheral (from low-latency gaming keyboards
+     * up to power-conscious ones) while still being a genuine
+     * "preference" rather than a no-op. latency=0, supervision_timeout
+     * = SUPERVISION_TIMEOUT_FLOOR_10MS. */
     esp_err_t pref_err = esp_ble_gap_set_prefer_conn_params(
         s_target_bda,
-        24, 40, 0,
+        6, 100, 0,
         SUPERVISION_TIMEOUT_FLOOR_10MS);
     ESP_LOGI(TAG, "Preferred conn params set (sto=%u 10 ms): %s",
              (unsigned)SUPERVISION_TIMEOUT_FLOOR_10MS,
@@ -1522,12 +1551,39 @@ static void connect_task(void *arg)
         /* Open returned NULL -- no OPEN_EVENT will fire for this
          * attempt, so disarm the watchdog ourselves. */
         open_watchdog_stop();
+        /* Mild backoff: each retry waits longer than the last, on
+         * the theory (NuPhy Air60 V2 symptom) that a peer missing
+         * the connect window once is more likely to be caught by a
+         * later, more widely spaced attempt than by an immediate
+         * retry against the same timing. */
+        uint32_t retry_delay_ms = CONNECT_RETRY_MS * (uint32_t)(attempt + 1);
         ESP_LOGW(TAG, "esp_hidh_dev_open attempt %d/%d failed, "
-                 "retrying in %d ms...",
-                 attempt + 1, CONNECT_RETRIES, CONNECT_RETRY_MS);
+                 "retrying in %u ms...",
+                 attempt + 1, CONNECT_RETRIES, (unsigned)retry_delay_ms);
         notify_status("Connect attempt %d/%d failed,\nretrying...",
                       attempt + 1, CONNECT_RETRIES);
-        vTaskDelay(pdMS_TO_TICKS(CONNECT_RETRY_MS));
+        if (attempt + 1 < CONNECT_RETRIES && !s_disabled) {
+            /* Between attempts, stop/restart scanning briefly so the
+             * controller reacquires fresh advertising/timing data for
+             * this peer instead of reusing whatever it captured
+             * during the original scan (which may now be stale).
+             * s_scan_refreshing suppresses the normal "stop scanning
+             * -> spawn connect_task" handling in gap_event_handler
+             * for the stop this triggers. */
+            s_scan_refreshing = true;
+            esp_ble_gap_stop_scanning();
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
+            if (esp_ble_gap_start_scanning(1) == ESP_OK) {
+                vTaskDelay(pdMS_TO_TICKS(300));
+            }
+            esp_ble_gap_stop_scanning();
+            /* Give the async SCAN_STOP_COMPLETE_EVT time to arrive
+             * and be suppressed before clearing the guard. */
+            vTaskDelay(pdMS_TO_TICKS(100));
+            s_scan_refreshing = false;
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
+        }
     }
 
     if (!dev) {
@@ -1824,8 +1880,13 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
     }
 
     case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
-        /* Scanning stopped -- initiate HID connection if target found */
-        if (s_connecting) {
+        /* Scanning stopped -- initiate HID connection if target found.
+         * Skip while s_scan_refreshing is set: that flag means this
+         * stop-scanning completion belongs to connect_task's own
+         * between-attempt rescan refresh, not a fresh "target found"
+         * stop, so connect_task itself (not us) drives the next
+         * esp_hidh_dev_open() retry. */
+        if (s_connecting && !s_scan_refreshing) {
             xTaskCreate(connect_task, "ble_connect", CONNECT_TASK_STACK,
                         NULL, 2, NULL);
         }
