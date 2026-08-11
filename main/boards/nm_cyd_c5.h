@@ -61,13 +61,21 @@
  * wired to the MCU, so touchscreen.cpp polls the Z1/Z2 pressure
  * channels every cycle instead of gating reads on an interrupt.
  *
- * Calibration constants (raw 12-bit ADC range per axis) and the
- * mirror/swap orientation come from
+ * Calibration constants (raw 12-bit ADC range per axis) come from
  * RockBase-iot/ESP32-KillerBee's include/boards/nm_cyd_c5_pins.h,
  * which ships known-good values for this exact board. The touch
  * overlay is mounted in the panel's native portrait orientation
  * (240x320); TOUCH_SWAP_XY rotates it to match the 320x240 landscape
- * logical framebuffer, same as the display's own swap_xy + mirror. */
+ * logical framebuffer. touchscreen.cpp's native_to_logical() applies
+ * swap_xy as a plain transpose of the native axes (no additional
+ * mirroring), which already maps each native corner onto the
+ * matching logical corner for this panel/bus wiring; the upstream
+ * KillerBee firmware additionally inverts both axes in its own
+ * coordinate math, which does not carry over here -- setting both
+ * TOUCH_MIRROR_X and TOUCH_MIRROR_Y here on top of TOUCH_SWAP_XY
+ * double-corrected the mapping into a full 180-degree rotation
+ * (touching the lower-right corner moved the cursor to the
+ * upper-left corner instead). */
 #define TOUCH_SPI_CS_PIN    1
 #define TOUCH_XPT_RAW_X_MIN 250
 #define TOUCH_XPT_RAW_X_MAX 3850
@@ -76,8 +84,8 @@
 #define TOUCH_NATIVE_W      240
 #define TOUCH_NATIVE_H      320
 #define TOUCH_SWAP_XY       1
-#define TOUCH_MIRROR_X      1
-#define TOUCH_MIRROR_Y      1
+#define TOUCH_MIRROR_X      0
+#define TOUCH_MIRROR_Y      0
 /* Unused by the XPT2046 (SPI) backend, but touchscreen_config_t's
  * common fields still need values that compile; TOUCH_INT_PIN /
  * TOUCH_RST_PIN default to -1 via Kconfig (no per-board override
