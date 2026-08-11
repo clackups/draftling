@@ -5,11 +5,26 @@
 ## epdiy-based backends (LilyGO T5 E-Paper S3 Pro via the built-in
 ## epd_board_v7, M5Stack PaperS3 via the in-tree
 ## epd_board_papers3.c) depend on the vroland/epdiy managed
-## component, gated on `$CONFIG{DRAFTLING_DISPLAY_EPDIY} == True` so
-## it is only pulled into the boards that actually select it (the
-## LilyGO T5 E-Paper S3 Pro / Pro Lite and the M5Stack PaperS3, see
-## main/Kconfig.projbuild) instead of every Xtensa (esp32s3) target
-## that happens not to be excluded by a negative `target !=` rule.
+## component, gated directly on the two `DRAFTLING_MODEL_*` choice
+## options that select those boards, so it is only pulled into the
+## boards that actually need it (the LilyGO T5 E-Paper S3 Pro / Pro
+## Lite and the M5Stack PaperS3, see main/Kconfig.projbuild) instead
+## of every Xtensa (esp32s3) target that happens not to be excluded
+## by a negative `target !=` rule.
+##
+## The rule intentionally tests the two `DRAFTLING_MODEL_*` options
+## rather than the derived `DRAFTLING_DISPLAY_EPDIY` symbol (also
+## defined in main/Kconfig.projbuild as `default y if <model>`).
+## `DRAFTLING_MODEL_*` are plain, directly-prompted choice entries
+## that are already resolved from sdkconfig.defaults.<board> before
+## the component manager's manifest-solving pass runs, whereas
+## `DRAFTLING_DISPLAY_EPDIY` requires a full Kconfig evaluation
+## (which itself depends on the final component list) to resolve its
+## `default ... if` chain. Referencing the derived symbol here made
+## the component manager's manifest solver run before that value was
+## available and print: "The following Kconfig variables were used
+## in \"if\" clauses, but not found in any Kconfig file:
+## DRAFTLING_DISPLAY_EPDIY, ...".
 ##
 ## See:
 ##   https://components.espressif.com/components/vroland/epdiy
@@ -44,9 +59,10 @@ dependencies:
   ## (RockBase NM-CYD-C5), and pulling it in unconditionally for
   ## every other target would also drag it into esp32s3 boards that
   ## don't use it at all (Waveshare RLCD-4.2, Touch-LCD-3.49,
-  ## JC3248W535, Sunton 8048S070 / 8048S043). Gating on
-  ## `CONFIG_DRAFTLING_DISPLAY_EPDIY` (set only for the LilyGO T5
-  ## E-Paper S3 Pro / Pro Lite and the M5Stack PaperS3) restricts the
+  ## JC3248W535, Sunton 8048S070 / 8048S043). Gating on the
+  ## `DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO` /
+  ## `DRAFTLING_MODEL_M5STACK_PAPERS3` choice options (the only two
+  ## boards that select `DRAFTLING_DISPLAY_EPDIY`) restricts the
   ## dependency to exactly the boards that need it; display_epdiy.cpp
   ## itself is still wrapped in `#if CONFIG_DRAFTLING_DISPLAY_EPDIY`
   ## as a second line of defense.
@@ -55,7 +71,7 @@ dependencies:
     version: "2.1.3"
     rules:
       - if: "idf_version >=5.3.0"
-      - if: "$CONFIG{DRAFTLING_DISPLAY_EPDIY} == True"
+      - if: "$CONFIG{DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO} == True || $CONFIG{DRAFTLING_MODEL_M5STACK_PAPERS3} == True"
     require: public
   ## espressif/m5stack_tab5 BSP, pulled in only for the ESP32-P4
   ## M5Stack Tab5 build. Handles MIPI-DSI PHY LDO power-up,
