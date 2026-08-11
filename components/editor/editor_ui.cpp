@@ -4183,7 +4183,7 @@ struct ClipGuard {
 
 /* Return true when the line containing the cursor is rendered
  * right-to-left.  We mirror LVGL's auto base-direction detection
- * (CONFIG_LV_BIDI_BASE_DIR_DEF_AUTO): scan the raw line UTF-8 and
+ * (CONFIG_LV_BIDI_DIR_AUTO): scan the raw line UTF-8 and
  * return based on the first STRONG directional codepoint -- strong
  * RTL (Hebrew, Arabic, Hebrew/Arabic presentation forms) makes the
  * paragraph RTL; strong LTR (Latin, Greek, Cyrillic) makes it LTR;
