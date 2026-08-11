@@ -79,7 +79,6 @@ static void backlight_pwm_init(int bl_pin)
     c.speed_mode = BL_LEDC_MODE;
     c.channel    = BL_LEDC_CHANNEL;
     c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
     c.gpio_num   = bl_pin;
     c.duty       = BL_DUTY_MAX; /* start fully on */
     c.hpoint     = 0;
@@ -125,8 +124,8 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
                                        &bus_cfg, SPI_DMA_CH_AUTO));
 
     esp_lcd_panel_io_spi_config_t io_cfg = {};
-    io_cfg.dc_gpio_num       = cfg->dc;
-    io_cfg.cs_gpio_num       = cfg->cs;
+    io_cfg.dc_gpio_num       = (gpio_num_t)cfg->dc;
+    io_cfg.cs_gpio_num       = (gpio_num_t)cfg->cs;
     io_cfg.pclk_hz           = 40 * 1000 * 1000;
     io_cfg.lcd_cmd_bits      = 8;
     io_cfg.lcd_param_bits    = 8;
@@ -136,7 +135,7 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
                                              &io_cfg, &s_io));
 
     esp_lcd_panel_dev_config_t panel_cfg = {};
-    panel_cfg.reset_gpio_num = cfg->rst;
+    panel_cfg.reset_gpio_num = (gpio_num_t)cfg->rst;
     panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB;
     panel_cfg.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
