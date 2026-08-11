@@ -145,8 +145,9 @@ config DRAFTLING_DISPLAY_COLOR
     default n
 
 # DRAFTLING_DISPLAY_ST7789 is set automatically when the selected
-# board uses an ST7789 SPI color LCD driven via the standard
-# espressif/esp_lcd_st7789 managed component. The display backend
+# board uses an ST7789 SPI color LCD driven via the stock ESP-IDF
+# `esp_lcd` component's esp_lcd_new_panel_st7789() API (no managed
+# component required). The display backend
 # (components/display/display_st7789.cpp) is compiled in only for
 # these boards.
 config DRAFTLING_DISPLAY_ST7789
