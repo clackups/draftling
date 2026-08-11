@@ -2,11 +2,14 @@
 ##
 ## The lvgl_port and the RLCD driver depend only on stock ESP-IDF and
 ## on the lvgl/lvgl component declared by the application. The
-## epdiy-based backends (LilyGO T5 E-Paper S3 Pro / Pro Lite via
-## the built-in epd_board_v7, M5Stack PaperS3 via the in-tree
+## epdiy-based backends (LilyGO T5 E-Paper S3 Pro via the built-in
+## epd_board_v7, M5Stack PaperS3 via the in-tree
 ## epd_board_papers3.c) depend on the vroland/epdiy managed
-## component, gated on `target != esp32p4` because epdiy ships
-## Xtensa-only LX6/LX7 board headers.
+## component, gated on `$CONFIG{DRAFTLING_DISPLAY_EPDIY} == True` so
+## it is only pulled into the boards that actually select it (the
+## LilyGO T5 E-Paper S3 Pro / Pro Lite and the M5Stack PaperS3, see
+## main/Kconfig.projbuild) instead of every Xtensa (esp32s3) target
+## that happens not to be excluded by a negative `target !=` rule.
 ##
 ## See:
 ##   https://components.espressif.com/components/vroland/epdiy
@@ -37,19 +40,22 @@ dependencies:
   ##
   ## epdiy only supports Xtensa targets (LX6/LX7); its board headers
   ## include xtensa/core-macros.h which does not exist in the RISC-V
-  ## toolchain used for ESP32-P4 and ESP32-C5. Exclude the dependency
-  ## on those RISC-V targets (M5Stack Tab5, RockBase NM-CYD-C5) so
-  ## that the build does not pull it in and fail to compile
-  ## epd_board.h. display_epdiy.cpp is wrapped in
-  ## `#if CONFIG_DRAFTLING_DISPLAY_EPDIY` so skipping the dep on
-  ## non-epdiy targets is sufficient.
+  ## toolchain used for ESP32-P4 (M5Stack Tab5) and ESP32-C5
+  ## (RockBase NM-CYD-C5), and pulling it in unconditionally for
+  ## every other target would also drag it into esp32s3 boards that
+  ## don't use it at all (Waveshare RLCD-4.2, Touch-LCD-3.49,
+  ## JC3248W535, Sunton 8048S070 / 8048S043). Gating on
+  ## `CONFIG_DRAFTLING_DISPLAY_EPDIY` (set only for the LilyGO T5
+  ## E-Paper S3 Pro / Pro Lite and the M5Stack PaperS3) restricts the
+  ## dependency to exactly the boards that need it; display_epdiy.cpp
+  ## itself is still wrapped in `#if CONFIG_DRAFTLING_DISPLAY_EPDIY`
+  ## as a second line of defense.
   vroland/epdiy:
     git: "https://github.com/vroland/epdiy.git"
     version: "2.1.3"
     rules:
       - if: "idf_version >=5.3.0"
-      - if: "target != esp32p4"
-      - if: "target != esp32c5"
+      - if: "$CONFIG{DRAFTLING_DISPLAY_EPDIY} == True"
     require: public
   ## espressif/m5stack_tab5 BSP, pulled in only for the ESP32-P4
   ## M5Stack Tab5 build. Handles MIPI-DSI PHY LDO power-up,
