@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: RockBase NM-CYD-C5
+# Sets the hardware model and IDF target used by the "nm_cyd_c5" preset.
+
+CONFIG_IDF_TARGET="esp32c5"
+CONFIG_DRAFTLING_MODEL_NM_CYD_C5=y

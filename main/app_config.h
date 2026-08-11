@@ -39,6 +39,8 @@
 #include "boards/sunton_8048s070.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SUNTON_8048S043)
 #include "boards/sunton_8048s043.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_NM_CYD_C5)
+#include "boards/nm_cyd_c5.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

@@ -81,6 +81,15 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s043",
                 "SDKCONFIG": "build/sunton_8048s043/sdkconfig"
             }
+        },
+        {
+            "name": "nm_cyd_c5",
+            "displayName": "RockBase NM-CYD-C5 (ESP32-C5)",
+            "binaryDir": "build/nm_cyd_c5",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.nm_cyd_c5",
+                "SDKCONFIG": "build/nm_cyd_c5/sdkconfig"
+            }
         }
     ]
 }

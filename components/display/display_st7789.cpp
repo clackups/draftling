@@ -1,0 +1,248 @@
+#include "sdkconfig.h"
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+
+/*
+ * RockBase NM-CYD-C5 ST7789 SPI color LCD driver.
+ *
+ * Hardware
+ * --------
+ * 2.8" IPS panel, 320x240 landscape, driven over a standard 4-wire
+ * SPI interface (SCK/MISO/MOSI/CS/DC). The physical SPI bus (SCK=6,
+ * MISO=2, MOSI=7) is shared with the on-board MicroSD slot (and, on
+ * boards that wire it, the XPT2046 resistive touch controller), each
+ * on its own CS line -- see main/boards/nm_cyd_c5.h.
+ *
+ * Strategy
+ * --------
+ * Unlike the AXS15231B QSPI boards (which need a hand-rolled vendor
+ * command sequence), ST7789 is supported directly by the upstream
+ * `espressif/esp_lcd_st7789` managed component's
+ * esp_lcd_new_panel_st7789() API, which implements the full panel
+ * init sequence internally. We only need to wire up the generic
+ * esp_lcd SPI panel-IO layer and hand the resulting handles to that
+ * driver, then push RGB565 tiles via esp_lcd_panel_draw_bitmap() --
+ * no local framebuffer is required (there is no partial-refresh
+ * ghosting to manage, unlike e-paper).
+ */
+
+#include <cstdio>
+#include <cstring>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <esp_log.h>
+#include <esp_heap_caps.h>
+#include <driver/gpio.h>
+#include <driver/ledc.h>
+#include <driver/spi_master.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_st7789.h>
+
+#include "display.h"
+
+static const char *TAG = "DisplayST7789";
+
+static esp_lcd_panel_io_handle_t s_io    = NULL;
+static esp_lcd_panel_handle_t    s_panel = NULL;
+static int s_width  = 0;
+static int s_height = 0;
+
+/* ---- Backlight (LEDC PWM), active-HIGH ---- */
+#define BL_LEDC_TIMER   LEDC_TIMER_1
+#define BL_LEDC_MODE    LEDC_LOW_SPEED_MODE
+#define BL_LEDC_CHANNEL LEDC_CHANNEL_1
+#define BL_LEDC_RES     LEDC_TIMER_10_BIT
+#define BL_DUTY_MAX     ((1 << 10) - 1)
+
+static int  s_bl_pin = -1;
+static bool s_bl_ready = false;
+
+static void backlight_pwm_init(int bl_pin)
+{
+    s_bl_pin = bl_pin;
+    if (bl_pin < 0) return;
+
+    ledc_timer_config_t t = {};
+    t.speed_mode      = BL_LEDC_MODE;
+    t.timer_num       = BL_LEDC_TIMER;
+    t.duty_resolution = BL_LEDC_RES;
+    t.freq_hz         = 5000;
+    t.clk_cfg         = LEDC_AUTO_CLK;
+    ESP_ERROR_CHECK(ledc_timer_config(&t));
+
+    ledc_channel_config_t c = {};
+    c.speed_mode = BL_LEDC_MODE;
+    c.channel    = BL_LEDC_CHANNEL;
+    c.timer_sel  = BL_LEDC_TIMER;
+    c.intr_type  = LEDC_INTR_DISABLE;
+    c.gpio_num   = bl_pin;
+    c.duty       = BL_DUTY_MAX; /* start fully on */
+    c.hpoint     = 0;
+    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    s_bl_ready = true;
+}
+
+extern "C" void display_set_backlight(int percent)
+{
+    if (!s_bl_ready || s_bl_pin < 0) return;
+    if (percent < 0)   percent = 0;
+    if (percent > 100) percent = 100;
+    uint32_t duty = (uint32_t)((percent * BL_DUTY_MAX) / 100);
+    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+}
+
+extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
+                             int /*pin_d*/, int /*pin_e*/, int /*pin_f*/,
+                             int /*width*/, int /*height*/)
+{
+    /* The ST7789 backend needs more pins (spi_host, dc, bl, ...) than
+     * display_init()'s 6 generic pin slots hold, so it has its own
+     * struct-based init (display_st7789_init). Calling the generic
+     * entry point is a build-configuration error. */
+    ESP_LOGE(TAG, "display_init() called on ST7789 backend; use "
+                  "display_st7789_init() instead");
+}
+
+extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
+{
+    s_width  = cfg->width;
+    s_height = cfg->height;
+
+    spi_bus_config_t bus_cfg = {};
+    bus_cfg.mosi_io_num     = cfg->mosi;
+    bus_cfg.miso_io_num     = cfg->miso;
+    bus_cfg.sclk_io_num     = cfg->sck;
+    bus_cfg.quadwp_io_num   = -1;
+    bus_cfg.quadhd_io_num   = -1;
+    bus_cfg.max_transfer_sz = cfg->width * cfg->height * sizeof(uint16_t);
+    ESP_ERROR_CHECK(spi_bus_initialize((spi_host_device_t)cfg->spi_host,
+                                       &bus_cfg, SPI_DMA_CH_AUTO));
+
+    esp_lcd_panel_io_spi_config_t io_cfg = {};
+    io_cfg.dc_gpio_num       = cfg->dc;
+    io_cfg.cs_gpio_num       = cfg->cs;
+    io_cfg.pclk_hz           = 40 * 1000 * 1000;
+    io_cfg.lcd_cmd_bits      = 8;
+    io_cfg.lcd_param_bits    = 8;
+    io_cfg.spi_mode          = 0;
+    io_cfg.trans_queue_depth = 10;
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)cfg->spi_host,
+                                             &io_cfg, &s_io));
+
+    esp_lcd_panel_dev_config_t panel_cfg = {};
+    panel_cfg.reset_gpio_num = cfg->rst;
+    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB;
+    panel_cfg.bits_per_pixel = 16;
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
+
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, cfg->invert_colors));
+    /* The 320x240 landscape panel is scanned out natively in
+     * 240 (W) x 320 (H) portrait order; swap XY so our width/height
+     * match the physical mounting. */
+    ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, false, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
+
+    backlight_pwm_init(cfg->bl);
+
+    ESP_LOGI(TAG, "ST7789 %dx%d initialized", s_width, s_height);
+}
+
+extern "C" void display_clear(uint8_t color)
+{
+    if (!s_panel) return;
+    uint16_t fill = color ? 0xFFFF : 0x0000;
+    uint16_t *row = (uint16_t *)heap_caps_malloc((size_t)s_width * sizeof(uint16_t),
+                                                 MALLOC_CAP_SPIRAM);
+    if (!row) return;
+    for (int x = 0; x < s_width; x++) row[x] = fill;
+    for (int y = 0; y < s_height; y++) {
+        esp_lcd_panel_draw_bitmap(s_panel, 0, y, s_width, y + 1, row);
+    }
+    heap_caps_free(row);
+}
+
+extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*color*/)
+{
+    /* Color backend: per-pixel setting is unused (lvgl_port always
+     * pushes RGB565 tiles via display_push_rgb565). */
+}
+
+extern "C" bool display_push_rgb565(int x, int y, int w, int h,
+                                    const void *color_map)
+{
+    if (!s_panel)         return true;
+    if (w <= 0 || h <= 0) return true;
+
+    int x2 = x + w;
+    int y2 = y + h;
+    if (x2 > s_width)  x2 = s_width;
+    if (y2 > s_height) y2 = s_height;
+    if (x2 <= x || y2 <= y) return true;
+
+    esp_lcd_panel_draw_bitmap(s_panel, x, y, x2, y2, color_map);
+    return true;
+}
+
+extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
+                                         int /*w*/, int /*h*/)
+{
+    /* No dirty-bbox refresh state machine on this backend; every
+     * push_rgb565 tile is written immediately. No-op. */
+}
+
+extern "C" void display_flush(void)
+{
+    /* No-op: esp_lcd_panel_draw_bitmap() in display_push_rgb565()
+     * already streamed the change to the panel over SPI. */
+}
+
+extern "C" void display_full_refresh(void)
+{
+    /* No-op (no e-paper waveforms to clear). */
+}
+
+extern "C" void display_request_full_refresh(void)
+{
+    /* No-op: nothing to latch. */
+}
+
+extern "C" uint8_t *display_get_buffer(void)
+{
+    /* No local framebuffer is kept; every write goes straight to the
+     * panel via esp_lcd_panel_draw_bitmap(). */
+    return NULL;
+}
+
+extern "C" int display_get_buffer_size(void)
+{
+    return 0;
+}
+
+extern "C" void display_sleep(void)
+{
+    display_set_backlight(0);
+    if (s_panel) esp_lcd_panel_disp_on_off(s_panel, false);
+}
+
+extern "C" void display_wake(void)
+{
+    if (s_panel) esp_lcd_panel_disp_on_off(s_panel, true);
+}
+
+extern "C" void display_deep_sleep_prepare(void)
+{
+    display_set_backlight(0);
+    if (s_panel) esp_lcd_panel_disp_on_off(s_panel, false);
+}
+
+extern "C" void display_set_shared_i2c_bus(void * /*bus_handle*/)
+{
+    /* ST7789 does not use I2C. No-op. */
+}
+
+#endif /* CONFIG_DRAFTLING_DISPLAY_ST7789 */

@@ -278,6 +278,44 @@ void display_set_backlight(int percent);
 void display_axs15231b_init(const display_axs15231b_config_t *cfg);
 
 /*
+ * ST7789 SPI color-LCD driver init (via the espressif/esp_lcd_st7789
+ * managed component's esp_lcd_new_panel_st7789() API).
+ *
+ * Used by boards with CONFIG_DRAFTLING_DISPLAY_ST7789 (RockBase
+ * NM-CYD-C5). The panel, MicroSD card, and (optionally) a resistive
+ * touch controller all share one physical SPI bus with separate CS
+ * lines, so `spi_host` lets the caller pick which SPI peripheral the
+ * backend should initialize; main.cpp reuses the same host id (with
+ * mosi/sck/miso passed as -1) when it later calls sd_card_init_spi().
+ * Call this *instead of* display_init() on ST7789 boards.
+ *
+ * After this returns, display_clear/display_set_pixel/
+ * display_push_rgb565/display_flush behave like on any other backend.
+ */
+typedef struct {
+    int spi_host; /* e.g. SPI2_HOST; the bus is shared with the SD
+                  * card (and, on boards with resistive touch, the
+                  * touch controller) via separate CS lines. */
+    int cs;
+    int sck;
+    int mosi;
+    int miso; /* -1 if the panel never reads back (write-only) */
+    int dc;
+    int rst;  /* -1 if RESET is tied to the board RST / not wired */
+    int bl;   /* backlight enable, -1 if always-on / external.
+              * When >= 0 the backend drives this GPIO with LEDC PWM
+              * whose duty is set via display_set_backlight(). */
+    int width;
+    int height;
+    /* IPS ST7789 panels need color inversion (INVON) for pixel
+     * value 0x0000 to render black and 0xFFFF to render white;
+     * without it the output is inverted. */
+    bool invert_colors;
+} display_st7789_config_t;
+
+void display_st7789_init(const display_st7789_config_t *cfg);
+
+/*
  * Hand a caller-created (driver-NG) I2C master bus handle to the
  * display backend. Must be called *before* display_init() to take
  * effect.

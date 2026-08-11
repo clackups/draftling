@@ -111,6 +111,21 @@ config DRAFTLING_MODEL_SUNTON_8048S043
         Backlight on GPIO2. Keyboard-driven (USB / BLE) like every
         other Draftling board.
 
+config DRAFTLING_MODEL_NM_CYD_C5
+    bool "RockBase NM-CYD-C5 (ESP32-C5, ST7789, 2.8\" color LCD, 320x240)"
+    depends on IDF_TARGET_ESP32C5
+    help
+        RockBase IoT NM-CYD-C5 development board: a "Cheap
+        Yellow Display" built on ESP32-C5 (RISC-V, dual-band Wi-Fi 6
+        + BLE 5 + 802.15.4). 2.8" IPS color LCD, 320x240, ST7789
+        controller over SPI. The display, an XPT2046 resistive touch
+        controller (not yet supported by Draftling) and the on-board
+        MicroSD slot all share one physical SPI bus (SCK=6, MISO=2,
+        MOSI=7) on separate CS lines. No user buttons besides the
+        power switch, so (as on the M5Stack Tab5) deep-sleep wake
+        relies on the hardware RESET button; the editor autosaves
+        before every standby.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -126,6 +141,17 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_NM_CYD_C5
+    default n
+
+# DRAFTLING_DISPLAY_ST7789 is set automatically when the selected
+# board uses an ST7789 SPI color LCD driven via the standard
+# espressif/esp_lcd_st7789 managed component. The display backend
+# (components/display/display_st7789.cpp) is compiled in only for
+# these boards.
+config DRAFTLING_DISPLAY_ST7789
+    bool
+    default y if DRAFTLING_MODEL_NM_CYD_C5
     default n
 
 # DRAFTLING_DISPLAY_AXS15231B is set automatically when the selected
@@ -251,6 +277,7 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_AXS15231B
     default y if DRAFTLING_DISPLAY_MIPI_DSI
     default y if DRAFTLING_DISPLAY_RGB
+    default y if DRAFTLING_DISPLAY_ST7789
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
     # front-light edge-lit LED on GPIO 11 (BOARD_BL_EN in the LilyGO
     # factory firmware). The EPDIY display backend drives it with
@@ -514,6 +541,14 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_M5STACK_TAB5
     default 0  if DRAFTLING_MODEL_SUNTON_8048S070
     default 0  if DRAFTLING_MODEL_SUNTON_8048S043
+    # RockBase NM-CYD-C5: no user buttons besides the power switch (see
+    # ESP32-KillerBee's nm_cyd_c5_pins.h reference: "Buttons (n/a on
+    # NM-CYD-C5; UI uses touchscreen)"), and Draftling does not yet
+    # support this board's XPT2046 resistive touch controller. Like
+    # the M5Stack Tab5, standby enters real deep sleep with no GPIO
+    # wake source; the only wake path is the hardware RESET button,
+    # and the editor autosaves before every standby.
+    default 0  if DRAFTLING_MODEL_NM_CYD_C5
     default 0
 
 # ---- Touchscreen support ----
@@ -719,6 +754,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 720 if DRAFTLING_MODEL_M5STACK_TAB5
     default 800 if DRAFTLING_MODEL_SUNTON_8048S070
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 320 if DRAFTLING_MODEL_NM_CYD_C5
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -735,6 +771,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 1280 if DRAFTLING_MODEL_M5STACK_TAB5
     default 480 if DRAFTLING_MODEL_SUNTON_8048S070
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 240 if DRAFTLING_MODEL_NM_CYD_C5
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.

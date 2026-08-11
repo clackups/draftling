@@ -884,7 +884,7 @@ The repository root ships a `CMakePresets.json` with one preset per
 supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`). Each preset points
+`sunton_8048s070`, `sunton_8048s043`, `nm_cyd_c5`). Each preset points
 `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

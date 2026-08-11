@@ -151,8 +151,9 @@ imprecise taps.
 
 ## Supported hardware
 
-Draftling currently runs on seven development boards (six ESP32-S3 and
-one ESP32-P4). All of them share the same firmware image; the target
+Draftling currently runs on ten development boards (eight ESP32-S3,
+one ESP32-P4 and one ESP32-C5). All of them share the same firmware
+image; the target
 board is picked at build time with `idf.py menuconfig` -> **DRAFTLING
 Configuration > Hardware Model**. Display resolution, driver, pin map,
 touch controller and the deep-sleep wake source are derived
@@ -228,11 +229,24 @@ automatically from that choice.
   development boards with 16-bit parallel RGB565 interface and a GT911
   capacitive touch controller.
 
+- **[RockBase NM-CYD-C5](https://github.com/RockBase-iot/NM-CYD-C5)** --
+  "Cheap Yellow Display" built on ESP32-C5 (RISC-V, dual-band Wi-Fi 6 +
+  BLE 5 + 802.15.4). 2.8" IPS color LCD (320x240, ST7789 over SPI). No
+  battery monitor (USB-powered). No user buttons besides the power
+  switch, so standby enters real deep sleep with the hardware RESET
+  button as the only wake path (autosave restores the document on the
+  next boot). On-board MicroSD shares the display's SPI bus on a
+  separate CS line. The board also has an XPT2046 resistive touch
+  controller, which Draftling does not yet support (only I2C
+  capacitive touch controllers are implemented today).
+
 All ESP32-S3 boards use at least 8 MB of PSRAM and 16 MB of flash, BLE
 for the HID keyboard and 802.11 b/g/n Wi-Fi for Git sync. The Tab5
 board uses 32 MB HEX-mode PSRAM on the ESP32-P4 and reaches the same
 BLE / Wi-Fi functionality through its on-board ESP32-C6 co-processor
-via ESP-Hosted-MCU (see above and `docs/tab5-esp-hosted.md`).
+via ESP-Hosted-MCU (see above and `docs/tab5-esp-hosted.md`). The
+RockBase NM-CYD-C5 uses 8 MB of Quad-mode PSRAM and 16 MB of flash on
+the ESP32-C5, with native on-chip Wi-Fi 6 and BLE 5.
 
 A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
@@ -374,7 +388,7 @@ idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
 Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`.
+`sunton_8048s070`, `sunton_8048s043`, `nm_cyd_c5`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:
@@ -409,7 +423,7 @@ Found at the top-level **DRAFTLING Configuration** menu.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all six options. |
+| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all options. |
 | **Display rotation angle** | choice | 0 degrees | Rotate the display by 0, 90, 180, or 270 degrees. |
 | **E-paper full-refresh interval** | int | 30 | E-paper boards only: number of partial refreshes between full refreshes. |
 | **Enable touchscreen input** | bool | y on PaperS3 and JC3248W535, n otherwise | Enable the I2C touch driver and LVGL pointer input device. |

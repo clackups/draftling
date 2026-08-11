@@ -65,3 +65,15 @@ dependencies:
     rules:
       - if: "target == esp32p4"
     require: public
+  ## espressif/esp_lcd_st7789, pulled in only for the ESP32-C5
+  ## RockBase NM-CYD-C5 build. Implements the full ST7789 panel init
+  ## sequence (SLPOUT/COLMOD/MADCTL/INVON/...) behind the standard
+  ## esp_lcd_new_panel_st7789() API so display_st7789.cpp only has
+  ## to wire up the generic esp_lcd SPI panel-IO layer, unlike the
+  ## hand-rolled AXS15231B vendor command sequence.
+  ## See https://components.espressif.com/components/espressif/esp_lcd_st7789
+  espressif/esp_lcd_st7789:
+    version: "^1.0.0"
+    rules:
+      - if: "target == esp32c5"
+    require: public

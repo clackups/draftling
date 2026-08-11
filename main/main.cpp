@@ -1221,6 +1221,28 @@ extern "C" void app_main(void)
      * (components/display/display_rgb.cpp); pin parameters are
      * ignored, only width/height are used. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+    /* ST7789 SPI color LCD (RockBase NM-CYD-C5). Needs an SPI host id
+     * plus a MISO pin (shared bus with the MicroSD card) in addition
+     * to CS/SCK/MOSI/DC/RST/BL, which do not fit in display_init()'s
+     * 6 pin slots, so the backend exposes a dedicated struct-based
+     * init. sd_card_init_spi() below reuses this same SPI host with
+     * mosi/miso/sck passed as -1 since the bus is already up. */
+    {
+        display_st7789_config_t cfg = {};
+        cfg.spi_host = LCD_SPI_HOST;
+        cfg.cs       = LCD_CS_PIN;
+        cfg.sck      = LCD_SCK_PIN;
+        cfg.mosi     = LCD_MOSI_PIN;
+        cfg.miso     = LCD_MISO_PIN;
+        cfg.dc       = LCD_DC_PIN;
+        cfg.rst      = LCD_RST_PIN;
+        cfg.bl       = LCD_BL_PIN;
+        cfg.width    = DISPLAY_WIDTH;
+        cfg.height   = DISPLAY_HEIGHT;
+        cfg.invert_colors = true; /* IPS panel */
+        display_st7789_init(&cfg);
+    }
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend
@@ -1414,11 +1436,22 @@ extern "C" void app_main(void)
      *   - LilyGO T5 E-Paper S3 Pro: on-board MicroSD on SPI3 (shared
      *     with the SX1262 LoRa radio CS; we drive LoRa CS HIGH above
      *     so the radio does not snoop the SD traffic).
+     *   - RockBase NM-CYD-C5: on-board MicroSD physically shares the
+     *     display's SPI2 bus (SCK/MISO/MOSI) via a separate CS line;
+     *     mosi/miso/sck are passed as -1 so sd_card_init_spi() reuses
+     *     the bus display_st7789_init() already brought up instead of
+     *     re-initializing it.
      * sd_card_init_spi() returns gracefully if no card is present. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+    sd_ret = sd_card_init_spi(LCD_SPI_HOST, -1, -1, -1,
+                              SD_SPI_CS_PIN, SD_EN_PIN,
+                              SD_MOUNT_POINT);
+#else
     sd_ret = sd_card_init_spi(SPI3_HOST,
                               SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_SCK_PIN,
                               SD_SPI_CS_PIN, SD_EN_PIN,
                               SD_MOUNT_POINT);
+#endif
 #endif
     if (sd_ret != ESP_OK) {
         ESP_LOGE(TAG, "SD card init failed: %s", esp_err_to_name(sd_ret));
