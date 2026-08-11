@@ -217,11 +217,15 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
      * pushes RGB565 tiles via display_push_rgb565). */
 }
 
-/* Apply both host-side color corrections to every RGB565 pixel in
- * [src, src+n), writing the result into a lazily-(re)sized scratch
- * buffer and returning it (or NULL on allocation failure, in which
- * case the caller should fall back to sending src unmodified rather
- * than drop the tile).
+/* Apply both host-side color corrections to a src_w x src_h tile of
+ * RGB565 pixels (src_w is also the source buffer's row stride, i.e.
+ * the *unclipped* tile width LVGL asked to flush), copying only the
+ * top-left copy_w x copy_h sub-rectangle (used when display_push_rgb565
+ * has clipped the requested tile to the panel bounds) into a
+ * lazily-(re)sized scratch buffer with row stride copy_w. Returns the
+ * scratch buffer, or NULL on allocation failure, in which case the
+ * caller should fall back to sending src unmodified rather than drop
+ * the tile.
  *
  * Two independent corrections are combined here, both because
  * neither of the corresponding esp_lcd_panel_dev_config_t fields
@@ -246,8 +250,10 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
  * reported bugs (BGR-only swap alone still misrenders the wire byte
  * order; byte-order-only swap alone still misrenders the channel
  * order), so both must be applied together. */
-static const uint16_t *color_fixup_buffer(const uint16_t *src, size_t n)
+static const uint16_t *color_fixup_buffer(const uint16_t *src, int src_w,
+                                          int copy_w, int copy_h)
 {
+    size_t n = (size_t)copy_w * (size_t)copy_h;
     if (n > s_rb_swap_pixels) {
         uint16_t *buf = (uint16_t *)heap_caps_realloc(
             s_rb_swap_buf, n * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -259,17 +265,26 @@ static const uint16_t *color_fixup_buffer(const uint16_t *src, size_t n)
         s_rb_swap_buf    = buf;
         s_rb_swap_pixels = n;
     }
-    for (size_t i = 0; i < n; i++) {
-        uint16_t px = src[i];
-        uint16_t r  = (px >> 11) & 0x1F;
-        uint16_t g  = (px >> 5)  & 0x3F;
-        uint16_t b  = px & 0x1F;
-        uint16_t swapped_channels = (uint16_t)((b << 11) | (g << 5) | r);
-        /* 16-bit byte-order swap so the high byte of the
-         * channel-swapped value is transmitted first over SPI,
-         * matching the panel's big-endian wire expectation. */
-        s_rb_swap_buf[i] = (uint16_t)((swapped_channels << 8) |
-                                      (swapped_channels >> 8));
+    /* Copy row by row: the source tile's row stride is src_w (the
+     * unclipped width LVGL asked to flush), which may be wider than
+     * copy_w when display_push_rgb565() clipped the tile in x, so a
+     * flat element-count copy would read the wrong pixels / desync
+     * rows. The destination buffer's row stride is copy_w. */
+    for (int row = 0; row < copy_h; row++) {
+        const uint16_t *srow = src + (size_t)row * (size_t)src_w;
+        uint16_t *drow = s_rb_swap_buf + (size_t)row * (size_t)copy_w;
+        for (int col = 0; col < copy_w; col++) {
+            uint16_t px = srow[col];
+            uint16_t r  = (px >> 11) & 0x1F;
+            uint16_t g  = (px >> 5)  & 0x3F;
+            uint16_t b  = px & 0x1F;
+            uint16_t swapped_channels = (uint16_t)((b << 11) | (g << 5) | r);
+            /* 16-bit byte-order swap so the high byte of the
+             * channel-swapped value is transmitted first over SPI,
+             * matching the panel's big-endian wire expectation. */
+            drow[col] = (uint16_t)((swapped_channels << 8) |
+                                   (swapped_channels >> 8));
+        }
     }
     return s_rb_swap_buf;
 }
@@ -287,7 +302,7 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (x2 <= x || y2 <= y) return true;
 
     const uint16_t *swapped = color_fixup_buffer(
-        (const uint16_t *)color_map, (size_t)w * (size_t)h);
+        (const uint16_t *)color_map, w, x2 - x, y2 - y);
     esp_lcd_panel_draw_bitmap(s_panel, x, y, x2, y2,
                               swapped ? swapped : color_map);
     return true;
