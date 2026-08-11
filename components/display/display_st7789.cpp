@@ -52,12 +52,11 @@ static esp_lcd_panel_handle_t    s_panel = NULL;
 static int s_width  = 0;
 static int s_height = 0;
 
-/* Host-side R/B swap scratch buffer. See the doc comment on
- * rb_swap_buffer() for why this exists in addition to (not instead
- * of) panel_cfg.rgb_ele_order below. Sized lazily to the largest
- * tile ever requested by display_push_rgb565() (in practice the
- * full screen, since lvgl_port pushes the LVGL flush area as one
- * tile). */
+/* Host-side color-fixup scratch buffer. See the doc comment on
+ * color_fixup_buffer() for the two corrections applied into it.
+ * Sized lazily to the largest tile ever requested by
+ * display_push_rgb565() (in practice the full screen, since
+ * lvgl_port pushes the LVGL flush area as one tile). */
 static uint16_t *s_rb_swap_buf    = NULL;
 static size_t    s_rb_swap_pixels = 0;
 
@@ -70,6 +69,18 @@ static size_t    s_rb_swap_pixels = 0;
 
 static int  s_bl_pin = -1;
 static bool s_bl_ready = false;
+
+/* Last user-requested backlight percent, cached so display_sleep() /
+ * display_wake() can restore the brightness after blanking the
+ * panel (mirrors the AXS15231B backend's s_bl_last_pct). Initialised
+ * to 100 to match backlight_pwm_init()'s initial "start fully on"
+ * duty, so a wake before the editor has called
+ * display_set_backlight() still gives a fully-lit panel. Without
+ * this cache, display_wake() had no brightness value to restore and
+ * the panel stayed dark (backlight at 0 %) after every standby wake
+ * on this backend's CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF path (see
+ * enter_display_off() in components/standby/standby.cpp). */
+static int s_bl_last_pct = 100;
 
 static void backlight_pwm_init(int bl_pin)
 {
@@ -100,6 +111,7 @@ extern "C" void display_set_backlight(int percent)
     if (!s_bl_ready || s_bl_pin < 0) return;
     if (percent < 0)   percent = 0;
     if (percent > 100) percent = 100;
+    s_bl_last_pct = percent;
     uint32_t duty = (uint32_t)((percent * BL_DUTY_MAX) / 100);
     ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
@@ -145,43 +157,23 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
 
     esp_lcd_panel_dev_config_t panel_cfg = {};
     panel_cfg.reset_gpio_num = (gpio_num_t)cfg->rst;
-    /* CYD-family ST7789 panels wire the color filter as BGR, not the
-     * esp_lcd default RGB (confirmed against multiple independent
-     * ESP32-2432S028R "Cheap Yellow Display" reference configs, e.g.
-     * TFT_eSPI's TFT_RGB_ORDER). Symmetric colors (black/white/gray/
-     * green, i.e. R==B) are unaffected either way, but asymmetric
-     * theme colors (e.g. the Orange theme) come out with red and
-     * blue swapped without compensating for this somewhere.
-     *
-     * panel_cfg.rgb_ele_order (LCD_RGB_ELEMENT_ORDER_BGR) is left at
-     * its default (RGB) here on purpose: setting it to BGR was tried
-     * first, asking esp_lcd_new_panel_st7789() to program the
-     * controller's MADCTL BGR bit for us, but this did not correct
-     * the swap on real hardware (the Orange-on-black theme still
-     * rendered blue-on-black) -- either this IDF release's ST7789
-     * driver does not wire that field through to MADCTL, or the
-     * controller ignores/does not implement that bit. Instead we
-     * swap the R and B fields of every pixel on the host side in
-     * display_push_rgb565() (see rb_swap_buffer()), the same
-     * "compensate in software, don't rely on an unverified vendor
-     * flag" strategy already used by the sibling AXS15231B backend
-     * for its byte-endian issue. */
-    /* esp_lcd_panel_dev_config_t.data_endian defaults to
-     * LCD_RGB_DATA_ENDIAN_BIG (matching the ST7789's own RAMCTRL
-     * reset default), but display_push_rgb565() hands LVGL's
-     * lv_color_t buffer to esp_lcd_panel_draw_bitmap() unswapped --
-     * and lv_color_t is native little-endian on this target. Without
-     * this line every 16-bit pixel is byte-swapped on the wire,
-     * which combined with invert_colors above reproduced exactly the
-     * reported "cyan/light-green text on white background" bug
-     * (black 0x0000 is byte-swap-symmetric, so it only inverts to
-     * white; green 0x07E0 swaps to 0xE007 and then inverts to
-     * 0x1FF8, i.e. R=9% G=100% B=77% -- cyan-ish light green). Set
-     * to LITTLE so the panel is told to expect the data exactly as
-     * LVGL already produces it, matching the sibling AXS15231B
-     * backend's *result* without needing that backend's manual
-     * host-side byte-swap. */
-    panel_cfg.data_endian    = LCD_RGB_DATA_ENDIAN_LITTLE;
+    /* CYD-family ST7789 clone controllers do not reliably honor the
+     * MADCTL BGR bit (panel_cfg.rgb_ele_order) or the RAMCTRL
+     * little-endian bit (panel_cfg.data_endian) that
+     * esp_lcd_new_panel_st7789() programs on our behalf -- both were
+     * tried in isolation and neither corrected the reported color
+     * bugs on real hardware (setting rgb_ele_order to BGR alone left
+     * the Orange-on-black theme rendering blue-on-black; setting
+     * data_endian to LITTLE alone reproduced a "cyan/light-green
+     * text on white background" bug). Both fields are therefore left
+     * at their hardware-default values here (RGB / BIG) and BOTH the
+     * R/B channel swap (compensating this panel's BGR subpixel
+     * wiring) and the byte-order swap (compensating LVGL's native
+     * little-endian lv_color_t buffer vs. the panel's big-endian
+     * wire format) are applied together, on the host side, in
+     * color_fixup_buffer() -- the same "compensate in software,
+     * don't rely on an unverified vendor flag" strategy the sibling
+     * AXS15231B backend uses for its own byte-endian issue. */
     panel_cfg.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
 
@@ -225,27 +217,42 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
      * pushes RGB565 tiles via display_push_rgb565). */
 }
 
-/* Swap the R and B 5-bit fields of every RGB565 pixel in [src, src+n)
- * into a lazily-(re)sized scratch buffer, returning it (or NULL on
- * allocation failure, in which case the caller should fall back to
- * sending src unmodified rather than drop the tile).
+/* Apply both host-side color corrections to every RGB565 pixel in
+ * [src, src+n), writing the result into a lazily-(re)sized scratch
+ * buffer and returning it (or NULL on allocation failure, in which
+ * case the caller should fall back to sending src unmodified rather
+ * than drop the tile).
  *
- * This compensates in software for the CYD-family panel's BGR
- * subpixel wiring (see the panel_cfg.rgb_ele_order comment in
- * display_st7789_init()): asking the controller to do this via its
- * MADCTL BGR bit did not work on real hardware, so every tile is
- * pre-swapped here instead, independent of whatever the controller
- * does with its own color-order setting. RGB565 packs
- * R[15:11] G[10:5] B[4:0]; swapping only exchanges the R and B
- * fields, leaving G (and therefore symmetric colors where R==B, like
- * black/white/gray/green) unchanged either way. */
-static const uint16_t *rb_swap_buffer(const uint16_t *src, size_t n)
+ * Two independent corrections are combined here, both because
+ * neither of the corresponding esp_lcd_panel_dev_config_t fields
+ * (rgb_ele_order / data_endian) took effect on real CYD-family
+ * hardware -- see the comment in display_st7789_init():
+ *
+ *  1. R/B channel swap, compensating this panel's BGR subpixel
+ *     wiring. RGB565 packs R[15:11] G[10:5] B[4:0]; swapping only
+ *     exchanges the R and B fields, leaving G (and therefore
+ *     symmetric colors where R==B, like black/white/gray/green)
+ *     unchanged either way.
+ *  2. Byte-order swap, compensating the mismatch between LVGL's
+ *     native little-endian lv_color_t buffer and the panel's
+ *     big-endian RAMCTRL wire format (its power-on default, which we
+ *     leave untouched since the little-endian RAMCTRL bit did not
+ *     take effect either). Without this, every pixel's high and low
+ *     bytes arrive swapped over SPI, e.g. orange 0xCB20 (after the
+ *     R/B swap above) would be transmitted as 0x20CB -- a dim
+ *     blue/teal instead of orange, matching the reported bug.
+ *
+ * Skipping either correction reproduces one of the two previously
+ * reported bugs (BGR-only swap alone still misrenders the wire byte
+ * order; byte-order-only swap alone still misrenders the channel
+ * order), so both must be applied together. */
+static const uint16_t *color_fixup_buffer(const uint16_t *src, size_t n)
 {
     if (n > s_rb_swap_pixels) {
         uint16_t *buf = (uint16_t *)heap_caps_realloc(
             s_rb_swap_buf, n * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
         if (!buf) {
-            ESP_LOGE(TAG, "rb_swap_buffer: alloc of %u px failed",
+            ESP_LOGE(TAG, "color_fixup_buffer: alloc of %u px failed",
                      (unsigned)n);
             return NULL;
         }
@@ -257,7 +264,12 @@ static const uint16_t *rb_swap_buffer(const uint16_t *src, size_t n)
         uint16_t r  = (px >> 11) & 0x1F;
         uint16_t g  = (px >> 5)  & 0x3F;
         uint16_t b  = px & 0x1F;
-        s_rb_swap_buf[i] = (uint16_t)((b << 11) | (g << 5) | r);
+        uint16_t swapped_channels = (uint16_t)((b << 11) | (g << 5) | r);
+        /* 16-bit byte-order swap so the high byte of the
+         * channel-swapped value is transmitted first over SPI,
+         * matching the panel's big-endian wire expectation. */
+        s_rb_swap_buf[i] = (uint16_t)((swapped_channels << 8) |
+                                      (swapped_channels >> 8));
     }
     return s_rb_swap_buf;
 }
@@ -274,7 +286,7 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (y2 > s_height) y2 = s_height;
     if (x2 <= x || y2 <= y) return true;
 
-    const uint16_t *swapped = rb_swap_buffer(
+    const uint16_t *swapped = color_fixup_buffer(
         (const uint16_t *)color_map, (size_t)w * (size_t)h);
     esp_lcd_panel_draw_bitmap(s_panel, x, y, x2, y2,
                               swapped ? swapped : color_map);
@@ -318,13 +330,25 @@ extern "C" int display_get_buffer_size(void)
 
 extern "C" void display_sleep(void)
 {
+    /* Capture the user's brightness BEFORE display_set_backlight(0)
+     * overwrites s_bl_last_pct, so display_wake() can restore it
+     * accurately (mirrors display_axs15231b.cpp's display_sleep()). */
+    int saved_pct = s_bl_last_pct;
     display_set_backlight(0);
     if (s_panel) esp_lcd_panel_disp_on_off(s_panel, false);
+    s_bl_last_pct = saved_pct ? saved_pct : 100;
 }
 
 extern "C" void display_wake(void)
 {
     if (s_panel) esp_lcd_panel_disp_on_off(s_panel, true);
+    /* Without this the backlight stayed at 0 % after every
+     * CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF wake (e.g. the RockBase
+     * NM-CYD-C5): esp_lcd_panel_disp_on_off() only re-enables the
+     * panel's own DISPON state, it does not touch the separate LEDC
+     * backlight PWM channel, so the screen looked "stuck black" even
+     * though the controller was drawing again. */
+    display_set_backlight(s_bl_last_pct);
 }
 
 extern "C" void display_deep_sleep_prepare(void)
