@@ -1437,6 +1437,31 @@ extern "C" void app_main(void)
         gpio_set_level((gpio_num_t)BOARD_LORA_CS_PIN, 1);
     }
 #endif
+#if defined(CONFIG_DRAFTLING_MODEL_NM_CYD_C5)
+    /* RockBase NM-CYD-C5: the on-board MicroSD slot shares the
+     * ST7789 display's SPI2 bus with the XPT2046 touch controller
+     * (separate CS lines, same SCK/MISO/MOSI). touchscreen_init()
+     * does not run until much later in app_main() (after SD init),
+     * so at this point TOUCH_SPI_CS_PIN has never been configured
+     * and sits in its post-reset floating GPIO-input state. If that
+     * line floats low, the XPT2046 chip can latch onto SPI traffic
+     * intended for the SD card and drive the shared MISO line at the
+     * same time, corrupting the SD card's responses -- exactly the
+     * same failure mode already fixed for the LilyGO T5's LoRa CS
+     * above (LilyGO T5S3-4.7-e-paper-PRO issue #3), just with a
+     * touch controller instead of a LoRa radio. Drive touch CS HIGH
+     * here so it stays deselected for the whole SD mount sequence;
+     * touchscreen_init() re-drives it low/high per-transaction once
+     * it takes over the pin later. */
+    {
+        gpio_config_t touch_cs = {};
+        touch_cs.intr_type    = GPIO_INTR_DISABLE;
+        touch_cs.mode         = GPIO_MODE_OUTPUT;
+        touch_cs.pin_bit_mask = (1ULL << TOUCH_SPI_CS_PIN);
+        gpio_config(&touch_cs);
+        gpio_set_level((gpio_num_t)TOUCH_SPI_CS_PIN, 1);
+    }
+#endif
     /* Every other supported board carries the SD card on a generic
      * SPI bus separate from the display:
      *   - PaperS3:                on-board MicroSD on SPI3
@@ -1448,7 +1473,8 @@ extern "C" void app_main(void)
      *     display's SPI2 bus (SCK/MISO/MOSI) via a separate CS line;
      *     mosi/miso/sck are passed as -1 so sd_card_init_spi() reuses
      *     the bus display_st7789_init() already brought up instead of
-     *     re-initializing it.
+     *     re-initializing it. The XPT2046 touch CS is driven HIGH
+     *     above so it does not snoop the SD traffic either.
      * sd_card_init_spi() returns gracefully if no card is present. */
 #if defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
     sd_ret = sd_card_init_spi(LCD_SPI_HOST, -1, -1, -1,
