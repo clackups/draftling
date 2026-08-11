@@ -1240,7 +1240,15 @@ extern "C" void app_main(void)
         cfg.bl       = LCD_BL_PIN;
         cfg.width    = DISPLAY_WIDTH;
         cfg.height   = DISPLAY_HEIGHT;
-        cfg.invert_colors = true; /* IPS panel */
+        /* This panel does NOT need INVON: with the data_endian fix
+         * in display_st7789_init() (colors sent in the correct byte
+         * order), enabling invert_colors here bitwise-complements
+         * every pixel at the panel, e.g. black background 0x0000
+         * becomes white (0xFFFF) and the default green foreground
+         * 0x07E0 becomes magenta (0xF81F) -- exactly the reported
+         * "magenta text on white background" bug. Leave inversion
+         * off so colors are shown as sent. */
+        cfg.invert_colors = false;
         display_st7789_init(&cfg);
     }
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)

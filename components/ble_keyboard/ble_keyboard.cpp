@@ -674,7 +674,23 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
 static void hidh_callback(void *handler_args, esp_event_base_t base,
                            int32_t id, void *event_data);
 
-/* Helper: fill in standard BLE scan parameters */
+/* Helper: fill in standard BLE scan parameters
+ *
+ * These same parameters also govern the controller's initiating
+ * scan when esp_hidh_dev_open() (via esp_ble_gattc_open()) performs
+ * a direct connection: the Bluedroid stack reuses whatever scan
+ * window/interval is currently configured to look for the peer's
+ * advertisements before sending the CONNECT_REQ. A 50% duty cycle
+ * (30 ms window / 60 ms interval) leaves a real chance that the
+ * peer's advertisement falls outside the window right as the
+ * controller tries to initiate, which the controller reports back
+ * as an immediate disconnect with reason 0x3E ("Connection Failed
+ * to be Established") -- repeated a few times in a row and then
+ * esp_hidh_dev_open() gives up with status 0x85. Using a continuous
+ * scan (window == interval) removes that race entirely at the cost
+ * of a bit more scan-time radio-on power, which only matters while
+ * actively scanning/connecting (not once a keyboard is paired and
+ * idle). */
 static void fill_scan_params(esp_ble_scan_params_t *p)
 {
     memset(p, 0, sizeof(*p));
@@ -682,7 +698,7 @@ static void fill_scan_params(esp_ble_scan_params_t *p)
     p->own_addr_type      = BLE_ADDR_TYPE_PUBLIC;
     p->scan_filter_policy = BLE_SCAN_FILTER_ALLOW_ALL;
     p->scan_interval      = 0x0060;  /* 60 ms */
-    p->scan_window        = 0x0030;  /* 30 ms */
+    p->scan_window        = 0x0060;  /* 60 ms (continuous scan) */
     p->scan_duplicate     = BLE_SCAN_DUPLICATE_DISABLE;
 }
 
@@ -1405,7 +1421,7 @@ static void open_watchdog_cb(TimerHandle_t timer)
  * A short retry loop handles this.  Keep this low (2) so that
  * re-pairing scenarios (where the old address is unreachable) do
  * not block for too long before scanning for the new address. */
-#define CONNECT_RETRIES     1
+#define CONNECT_RETRIES     2
 #define CONNECT_RETRY_MS  250
 
 static void connect_task(void *arg)
