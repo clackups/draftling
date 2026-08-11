@@ -52,6 +52,15 @@ static esp_lcd_panel_handle_t    s_panel = NULL;
 static int s_width  = 0;
 static int s_height = 0;
 
+/* Host-side R/B swap scratch buffer. See the doc comment on
+ * rb_swap_buffer() for why this exists in addition to (not instead
+ * of) panel_cfg.rgb_ele_order below. Sized lazily to the largest
+ * tile ever requested by display_push_rgb565() (in practice the
+ * full screen, since lvgl_port pushes the LVGL flush area as one
+ * tile). */
+static uint16_t *s_rb_swap_buf    = NULL;
+static size_t    s_rb_swap_pixels = 0;
+
 /* ---- Backlight (LEDC PWM), active-HIGH ---- */
 #define BL_LEDC_TIMER   LEDC_TIMER_1
 #define BL_LEDC_MODE    LEDC_LOW_SPEED_MODE
@@ -141,9 +150,22 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
      * ESP32-2432S028R "Cheap Yellow Display" reference configs, e.g.
      * TFT_eSPI's TFT_RGB_ORDER). Symmetric colors (black/white/gray/
      * green, i.e. R==B) are unaffected either way, but asymmetric
-     * theme colors (e.g. the Orange theme) would come out with red
-     * and blue swapped without this. */
-    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR;
+     * theme colors (e.g. the Orange theme) come out with red and
+     * blue swapped without compensating for this somewhere.
+     *
+     * panel_cfg.rgb_ele_order (LCD_RGB_ELEMENT_ORDER_BGR) is left at
+     * its default (RGB) here on purpose: setting it to BGR was tried
+     * first, asking esp_lcd_new_panel_st7789() to program the
+     * controller's MADCTL BGR bit for us, but this did not correct
+     * the swap on real hardware (the Orange-on-black theme still
+     * rendered blue-on-black) -- either this IDF release's ST7789
+     * driver does not wire that field through to MADCTL, or the
+     * controller ignores/does not implement that bit. Instead we
+     * swap the R and B fields of every pixel on the host side in
+     * display_push_rgb565() (see rb_swap_buffer()), the same
+     * "compensate in software, don't rely on an unverified vendor
+     * flag" strategy already used by the sibling AXS15231B backend
+     * for its byte-endian issue. */
     /* esp_lcd_panel_dev_config_t.data_endian defaults to
      * LCD_RGB_DATA_ENDIAN_BIG (matching the ST7789's own RAMCTRL
      * reset default), but display_push_rgb565() hands LVGL's
@@ -203,6 +225,43 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
      * pushes RGB565 tiles via display_push_rgb565). */
 }
 
+/* Swap the R and B 5-bit fields of every RGB565 pixel in [src, src+n)
+ * into a lazily-(re)sized scratch buffer, returning it (or NULL on
+ * allocation failure, in which case the caller should fall back to
+ * sending src unmodified rather than drop the tile).
+ *
+ * This compensates in software for the CYD-family panel's BGR
+ * subpixel wiring (see the panel_cfg.rgb_ele_order comment in
+ * display_st7789_init()): asking the controller to do this via its
+ * MADCTL BGR bit did not work on real hardware, so every tile is
+ * pre-swapped here instead, independent of whatever the controller
+ * does with its own color-order setting. RGB565 packs
+ * R[15:11] G[10:5] B[4:0]; swapping only exchanges the R and B
+ * fields, leaving G (and therefore symmetric colors where R==B, like
+ * black/white/gray/green) unchanged either way. */
+static const uint16_t *rb_swap_buffer(const uint16_t *src, size_t n)
+{
+    if (n > s_rb_swap_pixels) {
+        uint16_t *buf = (uint16_t *)heap_caps_realloc(
+            s_rb_swap_buf, n * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+        if (!buf) {
+            ESP_LOGE(TAG, "rb_swap_buffer: alloc of %u px failed",
+                     (unsigned)n);
+            return NULL;
+        }
+        s_rb_swap_buf    = buf;
+        s_rb_swap_pixels = n;
+    }
+    for (size_t i = 0; i < n; i++) {
+        uint16_t px = src[i];
+        uint16_t r  = (px >> 11) & 0x1F;
+        uint16_t g  = (px >> 5)  & 0x3F;
+        uint16_t b  = px & 0x1F;
+        s_rb_swap_buf[i] = (uint16_t)((b << 11) | (g << 5) | r);
+    }
+    return s_rb_swap_buf;
+}
+
 extern "C" bool display_push_rgb565(int x, int y, int w, int h,
                                     const void *color_map)
 {
@@ -215,7 +274,10 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (y2 > s_height) y2 = s_height;
     if (x2 <= x || y2 <= y) return true;
 
-    esp_lcd_panel_draw_bitmap(s_panel, x, y, x2, y2, color_map);
+    const uint16_t *swapped = rb_swap_buffer(
+        (const uint16_t *)color_map, (size_t)w * (size_t)h);
+    esp_lcd_panel_draw_bitmap(s_panel, x, y, x2, y2,
+                              swapped ? swapped : color_map);
     return true;
 }
 

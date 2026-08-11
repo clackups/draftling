@@ -24,10 +24,18 @@
  * is in addition to the primary keyboard-driven UX (an external BLE
  * keyboard, like every other supported board).
  *
- * This board has no user buttons besides the power switch, so (like
- * the M5Stack Tab5) there is no RTC-capable GPIO wake source: standby
- * enters real deep sleep and the only wake path is the hardware RESET
- * button, with autosave restoring the document on the next boot.
+ * This board has no user buttons besides the power switch, and its
+ * touch controller has no PENIRQ line at all (not just one that is
+ * off an RTC-capable GPIO), so neither the default BOOT-button EXT0
+ * wake nor CONFIG_DRAFTLING_STANDBY_WAKE_ON_TOUCH's EXT0-on-touch-INT
+ * path is usable. Instead this board defaults
+ * CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF to y: on standby the MCU stays
+ * running, the display is blanked, and the standby loop actively
+ * polls the XPT2046 (the same Z1/Z2 pressure-channel read used while
+ * awake) until a tap or BLE key event wakes the display back up. See
+ * enter_display_off() in components/standby/standby.cpp. Editor state
+ * is preserved across this path (unlike real deep sleep), so autosave
+ * is only needed for a genuine power interruption.
  *
  * Included by main/app_config.h when CONFIG_DRAFTLING_MODEL_NM_CYD_C5
  * is selected.

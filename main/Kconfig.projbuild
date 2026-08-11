@@ -732,6 +732,7 @@ config DRAFTLING_TOUCH_DEBUG_LOG
 # sleep + wake-on-touch.
 config DRAFTLING_STANDBY_DISPLAY_OFF
     bool "Standby: turn display off (keep MCU running) instead of deep sleep"
+    default y if DRAFTLING_MODEL_NM_CYD_C5
     default n
     help
         On standby, blank the display and put the panel into its
@@ -744,6 +745,13 @@ config DRAFTLING_STANDBY_DISPLAY_OFF
         GPIO). It draws more power than deep sleep -- prefer
         DRAFTLING_STANDBY_WAKE_ON_TOUCH if you have a touch
         controller wired to an RTC GPIO.
+
+        Defaulted on for the RockBase NM-CYD-C5: its XPT2046 touch
+        controller has no PENIRQ line at all (not just one that is
+        off an RTC-capable GPIO), so WAKE_ON_TOUCH's EXT0 approach
+        cannot be used; the standby loop instead actively polls the
+        touch driver while the display is off (see enter_display_off()
+        in components/standby/standby.cpp).
 
 config DRAFTLING_STANDBY_WAKE_ON_TOUCH
     bool "Standby: wake from deep sleep on touchscreen tap"

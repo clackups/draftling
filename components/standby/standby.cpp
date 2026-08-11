@@ -20,10 +20,12 @@
  *   * CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF (display off, MCU
  *     running): blank the display via display_sleep() and block in
  *     a low-priority FreeRTOS poll loop until any input arrives
- *     (touch INT low, or BLE keyboard press), then display_wake()
- *     and return without losing editor state. Draws more power than
- *     deep sleep but works on hardware with no RTC-capable wake
- *     source.
+ *     (touch INT low, an active touchscreen_read() poll on
+ *     controllers with no interrupt line at all, or a BLE keyboard
+ *     press), then display_wake() and return without losing editor
+ *     state. Draws more power than deep sleep but works on hardware
+ *     with no RTC-capable wake source (e.g. the RockBase NM-CYD-C5's
+ *     XPT2046, which has no PENIRQ line).
  *
  * This file is otherwise board-agnostic. The editor state lives in
  * PSRAM/heap and IS preserved across the display-off path; deep
@@ -271,14 +273,17 @@ static gpio_num_t resolve_wake_gpio(void)
  * task (the only caller is standby_enter_sleep, invoked from either
  * the LVGL timer callback or the inactivity esp_timer). The poll
  * loop checks:
- *   - touch INT GPIO low (any tap), or
+ *   - touch INT GPIO low (any tap), when the controller has one, or
+ *   - an active touchscreen_read() poll, for controllers with no
+ *     interrupt line at all (e.g. the NM-CYD-C5's XPT2046, which has
+ *     no PENIRQ wired -- touchscreen.cpp already polls its Z1/Z2
+ *     pressure channels on every read for the same reason), or
  *   - BLE keyboard key event (ble_keyboard_is_connected -> reset
  *     timer in editor_ui resumes us via standby_reset_timer)
- * To keep this simple we poll only the touch INT and rely on
- * standby_reset_timer() being called from the BLE callback path
- * to invoke standby_display_off_wake() externally; in practice
- * the polling loop returns as soon as a touch is detected, which
- * is the primary input on display-off boards. */
+ * standby_reset_timer() (called from the BLE key-handler path) also
+ * flips s_display_off_wake_req directly; in practice the polling
+ * loop usually returns as soon as a touch is detected, which is the
+ * primary input on display-off boards. */
 
 static void enter_display_off(void)
 {
@@ -304,6 +309,21 @@ static void enter_display_off(void)
             gpio_get_level((gpio_num_t)int_gpio) == 0) {
             break;
         }
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        /* Controllers with no interrupt line (int_gpio < 0, e.g. the
+         * NM-CYD-C5's XPT2046) cannot be polled for free via a GPIO
+         * level read; actively poll the touch driver itself instead
+         * so a tap still wakes the display on those boards. This is
+         * the same SPI/I2C transaction touchscreen_read() already
+         * performs every LVGL indev tick while awake, just done here
+         * on our own 100 ms cadence while the display is off. */
+        if (int_gpio < 0 && touchscreen_is_initialized()) {
+            int tx, ty;
+            if (touchscreen_read(&tx, &ty)) {
+                break;
+            }
+        }
+#endif
         if (ble_keyboard_is_connected()) {
             /* BLE keyboard events route through editor_ui's
              * key handler which calls standby_reset_timer(); that
