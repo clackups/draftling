@@ -13,7 +13,9 @@
 #include <esp_log.h>
 #include <esp_vfs_fat.h>
 #include <sdmmc_cmd.h>
+#if defined(CONFIG_DRAFTLING_SD_SDMMC)
 #include <driver/sdmmc_host.h>
+#endif
 #include <driver/sdspi_host.h>
 #include <driver/spi_common.h>
 #include <driver/spi_master.h>
@@ -36,6 +38,7 @@ static bool s_spi_bus_owned = false;
 static spi_device_handle_t s_keepalive_dev = NULL;
 #endif
 
+#if defined(CONFIG_DRAFTLING_SD_SDMMC)
 extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point)
 {
     strncpy(s_mount, mount_point, sizeof(s_mount) - 1);
@@ -62,6 +65,25 @@ extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const ch
     ESP_LOGI(TAG, "SD card mounted at %s", s_mount);
     return ESP_OK;
 }
+#else
+/* Only boards with CONFIG_DRAFTLING_SD_SDMMC (currently just the
+ * Waveshare ESP32-S3-RLCD-4.2) call this function -- see the
+ * "#if defined(CONFIG_DRAFTLING_SD_SDMMC)" branch in main.cpp. Every
+ * other board mounts the SD card over SPI via sd_card_init_spi().
+ * Not all targets even have an SDMMC host peripheral (e.g. ESP32-C5),
+ * so `driver/sdmmc_host.h` and the SDMMC_* macros above are only
+ * pulled in when this config is enabled; this stub keeps the public
+ * API link-compatible everywhere else. */
+extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point)
+{
+    (void)clk_pin;
+    (void)cmd_pin;
+    (void)d0_pin;
+    (void)mount_point;
+    ESP_LOGE(TAG, "sd_card_init (SDMMC) not supported on this board");
+    return ESP_ERR_NOT_SUPPORTED;
+}
+#endif
 
 extern "C" esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
                                       int cs, int enable_gpio,
