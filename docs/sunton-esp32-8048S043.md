@@ -39,15 +39,17 @@ build time on `CONFIG_DRAFTLING_RGB_BOARD_S043`:
 | VSYNC pw/bp/fp     | 2 / 12 / 8     | 4 / 8 / 8           |
 | `pclk_active_neg`  | 0              | 1                   |
 | `pclk_idle_high`   | 1              | 0                   |
-| Data-line order    | B,G,R          | R,G,B               |
+| Data-line order    | B,G,R          | B,G,R                |
 | Backlight          | 2 (LEDC PWM)   | 2 (LEDC PWM)        |
 
-Note that VSYNC and DE are swapped between the two boards, and the
-data-line order is reversed. On the 7" panel the physical lines are
-wired R,G,B but listed B,G,R in `data_gpio_nums[]` (esp_lcd maps
-`[0]` to the RGB565 LSB), to avoid an R/B swap. The 4.3" panel needs
-the opposite (R,G,B) array order to render a standard RGB565 pixel
-with red and blue in the right place.
+Note that VSYNC and DE are swapped between the two boards. Both
+panels' physical lines are wired R,G,B but are listed B,G,R in
+`data_gpio_nums[]` (esp_lcd maps `[0]` to the RGB565 LSB), to avoid
+an R/B swap. An earlier revision of the S043C block used the raw
+R,G,B array order, which on real hardware swapped red and blue
+(e.g. "orange on black" rendered as blue on black, while green and
+white -- unaffected by an R/B swap -- displayed correctly); the
+array order was corrected to B,G,R to match the 7" board's scheme.
 
 ### Panel pins and timings (S043C)
 

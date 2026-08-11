@@ -30,10 +30,11 @@
  * CONFIG_DRAFTLING_RGB_BOARD_S043 (set for the 4.3" ESP32-8048S043C;
  * unset for the default 7" ESP32-8048S070C). The two boards share the
  * 800x480 resolution but differ in their control-pin map (VSYNC/DE
- * swapped), panel timings (12.5 MHz pclk_active_neg vs 12 MHz
- * pclk_idle_high) and data-line order (R,G,B vs B,G,R). The data
- * GPIOs are always listed in the order required by the panel so a
- * standard RGB565 pixel lands on the correct color lines.
+ * swapped) and panel timings (12.5 MHz pclk_active_neg vs 12 MHz
+ * pclk_idle_high). Both boards' data lines are wired R,G,B but are
+ * listed B,G,R in data_gpio_nums[] to compensate (esp_lcd maps [0] to
+ * the RGB565 LSB), so a standard RGB565 pixel lands on the correct
+ * color lines.
  */
 
 #include <cstdio>
@@ -82,12 +83,18 @@ static const char *TAG = "DisplayRGB";
 #define RGB_PCLK_ACTIVE_NEG 1   /* ST7262 panel needs active-low PCLK */
 #define RGB_PCLK_IDLE_HIGH  0
 
-/* Data lines in R,G,B order (the 4.3" panel's required wiring).
- * R0-R4 -> bits 0..4, G0-G5 -> 5..10, B0-B4 -> 11..15. */
+/* Data lines in B,G,R order. Like the 7" board, the 4.3" panel's
+ * physical lines are wired R,G,B; listing them here in B,G,R order
+ * compensates so a standard RGB565 pixel lands on the correct color
+ * lines. The previous R,G,B array order swapped red and blue on
+ * real hardware (e.g. "orange on black" rendered as blue on black),
+ * while green and white (which do not depend on the R/B ordering)
+ * displayed correctly.
+ * B0-B4 -> bits 0..4, G0-G5 -> 5..10, R0-R4 -> 11..15. */
 static const int kDataGpios[16] = {
-    8, 3, 46, 9, 1,       /* R0-R4 */
+    45, 48, 47, 21, 14,   /* B0-B4 */
     5, 6, 7, 15, 16, 4,   /* G0-G5 */
-    45, 48, 47, 21, 14    /* B0-B4 */
+    8, 3, 46, 9, 1        /* R0-R4 */
 };
 
 #else
