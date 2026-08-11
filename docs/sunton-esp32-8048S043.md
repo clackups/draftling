@@ -11,7 +11,7 @@ framebuffer in PSRAM is continuously scanned out under the
 HSYNC / VSYNC / DE / PCLK timing the controller generates.
 
 The board is keyboard-driven like every other Draftling target (USB /
-BLE). Touch is enabled by the `sdkconfig.defaults.sunton043` overlay as
+BLE). Touch is enabled by the `sdkconfig.defaults.sunton_8048s043` overlay as
 a secondary input device (cursor / scroll / tap-to-select).
 
 References:
@@ -95,7 +95,7 @@ RGB peripheral does not use a SPI bus, so there is no contention).
 
 The on-board GT911 is supported (`CONFIG_DRAFTLING_TOUCH_GT911`,
 derived from the model choice) and is enabled by the
-`sdkconfig.defaults.sunton043` overlay. The GT911 INT line is not
+`sdkconfig.defaults.sunton_8048s043` overlay. The GT911 INT line is not
 wired on the Sunton reference, so the touchscreen component polls the
 controller's status register on every LVGL tick. RST is on GPIO 38;
 the driver pulses it at init and probes both possible GT911 addresses
@@ -106,7 +106,7 @@ so no axis swap or mirror is needed
 ## Keyboard layouts
 
 This author of this port works with a German BLE keyboard, so the
-`sdkconfig.defaults.sunton043` overlay enables only the US (QWERTY)
+`sdkconfig.defaults.sunton_8048s043` overlay enables only the US (QWERTY)
 and DE (QWERTZ) layouts (cycle with `Ctrl+L` or `Win+Space`) and
 disables the Ukrainian, French and Hebrew layouts that the common
 Kconfig would otherwise pull in.
@@ -143,7 +143,7 @@ re-applied at boot in `editor_ui_init()`.
 
 The board's flash is wired for **DIO** (verified on this hardware in
 the parallel breezydemo port). The common ESP32-S3 default is QIO,
-so `sdkconfig.defaults.sunton043` overrides
+so `sdkconfig.defaults.sunton_8048s043` overrides
 `CONFIG_ESPTOOLPY_FLASHMODE_DIO=y` to ensure the bootloader comes up
 reliably. PSRAM is octal at 80 MHz (the common ESP32-S3 default,
 which matches this board).
@@ -151,17 +151,15 @@ which matches this board).
 ## Building
 
 The model and its board-specific overrides live in
-`sdkconfig.defaults.sunton043`. Select the board by passing all three
-defaults files:
+`sdkconfig.defaults.sunton_8048s043` in the repository root, wired up
+as the `sunton_8048s043` preset in `CMakePresets.json`:
 
 ```
-SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.esp32s3;sdkconfig.defaults.sunton043" \
-    idf.py set-target esp32s3
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+idf.py --preset sunton_8048s043 build
+idf.py --preset sunton_8048s043 -p /dev/ttyUSB0 flash monitor
 ```
 
-`sdkconfig.defaults.sunton043` selects
+`sdkconfig.defaults.sunton_8048s043` selects
 `CONFIG_DRAFTLING_MODEL_SUNTON_8048S043`, forces DIO flash mode,
 enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
 
@@ -173,5 +171,5 @@ enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
 - `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+X -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
 - `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` / `draftling_lvgl_port_get_flip180()` runtime 180-degree flip.
-- `sdkconfig.defaults.sunton043` -- board selection + DIO flash + touch enable + US/DE keyboard layouts.
+- `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable + US/DE keyboard layouts.
 - `docs/sunton-esp32-8048S070c.md` -- the 7" sibling board.

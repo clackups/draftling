@@ -57,8 +57,7 @@ For older P4 silicon, rebuild with the minimum chip revision
 relaxed to match your hardware:
 
 ```bash
-idf.py set-target esp32p4
-idf.py menuconfig
+idf.py --preset m5stack_tab5 menuconfig
 ```
 
 then navigate to
@@ -72,8 +71,9 @@ Component config  --->
       Maximum Supported ESP32-P4 Revision  --->  v3.99
 ```
 
-Save (`S`), exit (`Q`), then `idf.py build flash monitor`. With
-the minimum lowered to `v0.0` the same image flashes and boots on
+Save (`S`), exit (`Q`), then `idf.py --preset m5stack_tab5 build flash
+monitor`. With the minimum lowered to `v0.0` the same image flashes
+and boots on
 both the early v1.x dies (such as the v1.3 reference unit) and
 current v3.x silicon. The relevant Kconfig symbols are
 `CONFIG_ESP32P4_REV_MIN_*` and `CONFIG_ESP32P4_REV_MAX_*`; you can
@@ -144,7 +144,9 @@ host pulses `Slave_Reset`.
 ## One-time C6 slave firmware flashing
 
 The C6 needs the ESP-Hosted slave firmware. The host side is pinned to
-`espressif/esp_hosted >= 2.12` in `main/idf_component.yml`, so the
+`espressif/esp_hosted >=2.12,<3.0.0` in `main/idf_component.yml` (3.0
+replaced the Bluetooth Kconfig / API this project's `ble_keyboard.cpp`
+relies on -- see the comment above that dependency), so the
 slave image must be flashed with esp-hosted-mcu firmware of version
 **2.x**. The M5Stack prebuilt image that ships with M5Tab5-UserDemo
 (`ESP32C6-WiFi-SDIO-Interface-V1.4.1-96bea3a_0x0.bin`) was built

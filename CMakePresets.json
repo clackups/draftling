@@ -1,0 +1,86 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "waveshare_rlcd42",
+            "displayName": "Waveshare ESP32-S3-RLCD-4.2",
+            "binaryDir": "build/waveshare_rlcd42",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_rlcd42",
+                "SDKCONFIG": "build/waveshare_rlcd42/sdkconfig"
+            }
+        },
+        {
+            "name": "m5stack_papers3",
+            "displayName": "M5Stack PaperS3",
+            "binaryDir": "build/m5stack_papers3",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_papers3",
+                "SDKCONFIG": "build/m5stack_papers3/sdkconfig"
+            }
+        },
+        {
+            "name": "lilygo_t5_epd_s3_pro",
+            "displayName": "LilyGO T5 E-Paper S3 Pro / Pro Lite",
+            "binaryDir": "build/lilygo_t5_epd_s3_pro",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.lilygo_t5_epd_s3_pro",
+                "SDKCONFIG": "build/lilygo_t5_epd_s3_pro/sdkconfig"
+            }
+        },
+        {
+            "name": "lilygo_t5_epd_s3_pro_h752",
+            "displayName": "LilyGO T5 E-Paper S3 Pro original H752",
+            "binaryDir": "build/lilygo_t5_epd_s3_pro_h752",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.lilygo_t5_epd_s3_pro_h752",
+                "SDKCONFIG": "build/lilygo_t5_epd_s3_pro_h752/sdkconfig"
+            }
+        },
+        {
+            "name": "waveshare_touch_lcd_349",
+            "displayName": "Waveshare ESP32-S3-Touch-LCD-3.49",
+            "binaryDir": "build/waveshare_touch_lcd_349",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_touch_lcd_349",
+                "SDKCONFIG": "build/waveshare_touch_lcd_349/sdkconfig"
+            }
+        },
+        {
+            "name": "m5stack_tab5",
+            "displayName": "M5Stack Tab5 (ESP32-P4)",
+            "binaryDir": "build/m5stack_tab5",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_tab5",
+                "SDKCONFIG": "build/m5stack_tab5/sdkconfig"
+            }
+        },
+        {
+            "name": "jc3248w535",
+            "displayName": "Guition JC3248W535",
+            "binaryDir": "build/jc3248w535",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.jc3248w535",
+                "SDKCONFIG": "build/jc3248w535/sdkconfig"
+            }
+        },
+        {
+            "name": "sunton_8048s070",
+            "displayName": "Sunton ESP32-8048S070C",
+            "binaryDir": "build/sunton_8048s070",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s070",
+                "SDKCONFIG": "build/sunton_8048s070/sdkconfig"
+            }
+        },
+        {
+            "name": "sunton_8048s043",
+            "displayName": "Sunton ESP32-8048S043C",
+            "binaryDir": "build/sunton_8048s043",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s043",
+                "SDKCONFIG": "build/sunton_8048s043/sdkconfig"
+            }
+        }
+    ]
+}

@@ -12,23 +12,29 @@
 ##   https://components.espressif.com/components/vroland/epdiy
 ##   https://github.com/vroland/epdiy
 dependencies:
-  ## Pinned to a post-2.0.0 git commit (no tagged release yet) that
-  ## carries vroland/epdiy PR #475 ("Migrate epdiy board I2C init to
-  ## the new ESP-IDF driver"). That PR migrates epdiy's on-board I2C
-  ## bus from the legacy `driver/i2c.h` to driver-NG
-  ## (`driver/i2c_master.h`) AND adds a new `epd_init_with_config()`
-  ## entry point that accepts a caller-supplied
-  ## `i2c_master_bus_handle_t` via `EpdInitConfig.i2c.bus_handle`.
-  ## Both pieces are required to share the LilyGO T5 E-Paper S3 Pro
-  ## (and Pro Lite) on-board I2C bus between epdiy (PCA9535 + TPS65185)
-  ## and the GT911 capacitive touch controller managed by the
-  ## Draftling touchscreen component (also driver-NG). With epdiy
-  ## 2.0.0 the two driver generations collided on I2C port 0 and
-  ## ESP-IDF aborted at boot ("CONFLICT! driver_ng is not allowed
-  ## to be used with this old driver"), so touch had to be disabled
-  ## on both T5 SKUs. Drop the pin and switch back to a version
-  ## range once a 2.0.1 / 2.1 tag including PR #475 lands on
-  ## the Espressif Component Registry.
+  ## Pinned to the vroland/epdiy 2.1.3 tag, which carries both:
+  ##
+  ## - PR #475 ("Migrate epdiy board I2C init to the new ESP-IDF
+  ##   driver"). That PR migrates epdiy's on-board I2C bus from the
+  ##   legacy `driver/i2c.h` to driver-NG (`driver/i2c_master.h`) AND
+  ##   adds a new `epd_init_with_config()` entry point that accepts a
+  ##   caller-supplied `i2c_master_bus_handle_t` via
+  ##   `EpdInitConfig.i2c.bus_handle`. Both pieces are required to
+  ##   share the LilyGO T5 E-Paper S3 Pro (and Pro Lite) on-board I2C
+  ##   bus between epdiy (PCA9535 + TPS65185) and the GT911 capacitive
+  ##   touch controller managed by the Draftling touchscreen component
+  ##   (also driver-NG). With epdiy 2.0.0 the two driver generations
+  ##   collided on I2C port 0 and ESP-IDF aborted at boot ("CONFLICT!
+  ##   driver_ng is not allowed to be used with this old driver"), so
+  ##   touch had to be disabled on both T5 SKUs.
+  ## - PR #477 ("IDF-6.0 support ported from #463"), which fixes the
+  ##   ESP32-S3 LCD driver path (`src/output_lcd/lcd_driver.c`) and
+  ##   the RMT/I2S/ADC compatibility layers to build against ESP-IDF
+  ##   6.x. Previously epdiy included `soc/lcd_periph.h`, which was
+  ##   removed in IDF 6.0 (tracked upstream in
+  ##   https://github.com/vroland/epdiy/issues/450); this is now
+  ##   fixed on both IDF 5.x and 6.x.
+  ##
   ## epdiy only supports Xtensa targets (LX6/LX7); its board headers
   ## include xtensa/core-macros.h which does not exist in the RISC-V
   ## toolchain used for ESP32-P4. Exclude the dependency on ESP32-P4
@@ -36,21 +42,11 @@ dependencies:
   ## compile epd_board.h. display_epdiy.cpp is wrapped in
   ## `#if CONFIG_DRAFTLING_DISPLAY_EPDIY` so skipping the dep on
   ## non-epdiy targets is sufficient.
-  ## epdiy does not yet compile against ESP-IDF 6.x: its
-  ## `src/output_lcd/lcd_driver.c` includes `soc/lcd_periph.h`,
-  ## which was removed in IDF 6.0. Tracked upstream in
-  ## https://github.com/vroland/epdiy/issues/450. Until a fix lands,
-  ## gate the dependency to `idf_version <6.0` so non-epdiy boards
-  ## (Waveshare 3.49 / JC3248W535 / RLCD42, plus the ESP32-P4 Tab5)
-  ## can still build on IDF 6.x. epdiy-based boards (LilyGO T5
-  ## Pro / Pro Lite, M5Stack PaperS3) must stay on ESP-IDF 5.3-5.5
-  ## for now.
   vroland/epdiy:
     git: "https://github.com/vroland/epdiy.git"
-    version: "a3426c0ec38f98282cf3ec33761e556f083b0f7c"
+    version: "2.1.3"
     rules:
       - if: "idf_version >=5.3.0"
-      - if: "idf_version <6.0"
       - if: "target != esp32p4"
     require: public
   ## espressif/m5stack_tab5 BSP, pulled in only for the ESP32-P4

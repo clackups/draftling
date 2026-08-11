@@ -17,7 +17,33 @@ dependencies:
     rules:
       - if: "target == esp32p4"
       - if: "idf_version <6.1"
+  ## Pinned below 3.0: ESP-Hosted 3.0 replaced the legacy
+  ## CONFIG_ESP_HOSTED_ENABLE_BT_BLUEDROID / ..._BLUEDROID_HCI_VHCI
+  ## Kconfig knobs (used by sdkconfig.defaults.esp32p4 and consumed by
+  ## components/ble_keyboard/ble_keyboard.cpp's CONFIG_BT_CONTROLLER_DISABLED
+  ## branch) with a new esp_hosted_bt_host_stack adapter API
+  ## (esp_hosted_bt_host_stack_setup() + CONFIG_ESP_HOSTED_HOST_FEAT_BT).
+  ## An unbounded ">=2.12" resolves to 3.x today and aborts the CMake
+  ## configure step with "Hosted BT Kconfig changed in 3.0." See
+  ## https://github.com/espressif/esp-hosted/blob/unified_release/docs/migration.md
   espressif/esp_hosted:
-    version: ">=2.12"
+    version: ">=2.12,<3.0.0"
+    rules:
+      - if: "target == esp32p4"
+  ## Pinned below 2.9.0: espressif/m5stack_tab5 (main/idf_component.yml
+  ## via components/display/idf_component.yml) publicly requires
+  ## `espressif/esp_lvgl_port: "^2"`, and an unconstrained resolve picks
+  ## the latest 2.x. esp_lvgl_port 2.9.0 switched its MIPI-DSI frame-buf
+  ## callback to `esp_lcd_dpi_panel_event_callbacks_t::on_frame_buf_complete`,
+  ## a member ESP-IDF only added in 6.1 (see
+  ## docs/en/migration-guides/release-6.x/6.1/peripherals.rst); building
+  ## against our pinned IDF 6.0.2 fails with "has no member named
+  ## 'on_frame_buf_complete'" in esp_lvgl_port_disp.c. Draftling's
+  ## display_mipi_dsi.cpp does not call into esp_lvgl_port at all (see
+  ## the comment there), so this is purely a transitive-dependency
+  ## version fix; drop the upper bound once the project moves to IDF
+  ## 6.1+.
+  espressif/esp_lvgl_port:
+    version: ">=2.4.0,<2.9.0"
     rules:
       - if: "target == esp32p4"
