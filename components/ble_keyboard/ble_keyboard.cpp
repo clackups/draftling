@@ -2200,7 +2200,7 @@ extern "C" void ble_keyboard_init(void)
     ESP_ERROR_CHECK(esp_bluedroid_attach_hci_driver(&hci_ops));
     ESP_LOGI(TAG, "Hosted VHCI attached to Bluedroid");
 #else
-    /* Native BT controller path (ESP32-S3). */
+    /* Native BT controller path (ESP32-S3, ESP32-C5). */
 
     /* Release Classic BT memory (ESP32-S3 is BLE-only) */
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));

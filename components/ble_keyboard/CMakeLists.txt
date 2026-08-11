@@ -63,3 +63,15 @@ if(CONFIG_BT_BLUEDROID_ENABLED)
         idf_component_optional_requires(PRIVATE espressif__esp_hosted)
     endif()
 endif()
+
+## ESP-IDF's esp32c5 esp_bt.h ships a BT_CONTROLLER_INIT_CONFIG_DEFAULT()
+## macro that leaves the newer esp_bt_controller_config_t members
+## (cca_drop_mode, cca_low_tx_pwr) out of the designated-initializer
+## list, which trips -Wmissing-field-initializers wherever the macro
+## is expanded (ble_keyboard.cpp's native BT controller init path).
+## This is a vendor header gap, not something we can fix from here;
+## silence the warning for this component only so it stays visible
+## elsewhere.
+if(CONFIG_IDF_TARGET_ESP32C5)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-missing-field-initializers)
+endif()
