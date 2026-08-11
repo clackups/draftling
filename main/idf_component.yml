@@ -30,3 +30,20 @@ dependencies:
     version: ">=2.12,<3.0.0"
     rules:
       - if: "target == esp32p4"
+  ## Pinned below 2.9.0: espressif/m5stack_tab5 (main/idf_component.yml
+  ## via components/display/idf_component.yml) publicly requires
+  ## `espressif/esp_lvgl_port: "^2"`, and an unconstrained resolve picks
+  ## the latest 2.x. esp_lvgl_port 2.9.0 switched its MIPI-DSI frame-buf
+  ## callback to `esp_lcd_dpi_panel_event_callbacks_t::on_frame_buf_complete`,
+  ## a member ESP-IDF only added in 6.1 (see
+  ## docs/en/migration-guides/release-6.x/6.1/peripherals.rst); building
+  ## against our pinned IDF 6.0.2 fails with "has no member named
+  ## 'on_frame_buf_complete'" in esp_lvgl_port_disp.c. Draftling's
+  ## display_mipi_dsi.cpp does not call into esp_lvgl_port at all (see
+  ## the comment there), so this is purely a transitive-dependency
+  ## version fix; drop the upper bound once the project moves to IDF
+  ## 6.1+.
+  espressif/esp_lvgl_port:
+    version: ">=2.4.0,<2.9.0"
+    rules:
+      - if: "target == esp32p4"
