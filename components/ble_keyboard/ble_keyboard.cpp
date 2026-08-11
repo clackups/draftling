@@ -70,6 +70,7 @@ int ble_keyboard_get_battery_level(void)                                 { retur
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
+#include <freertos/semphr.h>
 #include <esp_log.h>
 #if !defined(CONFIG_BT_CONTROLLER_DISABLED)
 /* esp_bt.h declares the on-chip BT *controller* API
@@ -414,12 +415,21 @@ static esp_bd_addr_t s_target_bda;
 static esp_ble_addr_type_t s_target_addr_type;
 
 /* Set while connect_task() is running its between-attempt scan
- * refresh (stop -> brief rescan -> stop) so the
+ * refresh (brief rescan -> stop) so the
  * ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT handler does not mistake the
  * refresh's own stop-scanning completion for "target found, go
  * connect" and spawn a second, overlapping connect_task. See the
- * comment on CONNECT_RETRIES for the symptom this addresses. */
+ * comment on CONNECT_RETRIES for the symptom this addresses.
+ *
+ * s_scan_refresh_done_sem lets gap_event_handler hand the stop
+ * completion back to connect_task synchronously instead of
+ * connect_task guessing how long the async event takes to arrive:
+ * without it, a fixed sleep could either race (event arrives after
+ * the sleep and the by-then-cleared s_scan_refreshing flag lets it
+ * fall through to the normal connect_task-spawn path, creating a
+ * duplicate) or waste time waiting longer than necessary. */
 static volatile bool s_scan_refreshing = false;
+static SemaphoreHandle_t s_scan_refresh_done_sem = NULL;
 
 /* Timer used to retry scanning after a delay */
 static TimerHandle_t s_scan_timer = NULL;
@@ -1563,23 +1573,31 @@ static void connect_task(void *arg)
         notify_status("Connect attempt %d/%d failed,\nretrying...",
                       attempt + 1, CONNECT_RETRIES);
         if (attempt + 1 < CONNECT_RETRIES && !s_disabled) {
-            /* Between attempts, stop/restart scanning briefly so the
+            /* Between attempts, restart scanning briefly so the
              * controller reacquires fresh advertising/timing data for
              * this peer instead of reusing whatever it captured
-             * during the original scan (which may now be stale).
-             * s_scan_refreshing suppresses the normal "stop scanning
-             * -> spawn connect_task" handling in gap_event_handler
-             * for the stop this triggers. */
+             * during the original scan (which may now be stale), then
+             * stop again and wait for confirmation via
+             * s_scan_refresh_done_sem (rather than a fixed guess-delay)
+             * that gap_event_handler's suppressed stop-completion has
+             * actually arrived, so the guard is never cleared early. */
             s_scan_refreshing = true;
-            esp_ble_gap_stop_scanning();
+            if (s_scan_refresh_done_sem) {
+                /* Drain any stale signal left over from a previous
+                 * refresh cycle before we start a new one. */
+                xSemaphoreTake(s_scan_refresh_done_sem, 0);
+            }
             vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
             if (esp_ble_gap_start_scanning(1) == ESP_OK) {
                 vTaskDelay(pdMS_TO_TICKS(300));
+                esp_ble_gap_stop_scanning();
+                if (s_scan_refresh_done_sem) {
+                    xSemaphoreTake(s_scan_refresh_done_sem,
+                                   pdMS_TO_TICKS(500));
+                } else {
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
             }
-            esp_ble_gap_stop_scanning();
-            /* Give the async SCAN_STOP_COMPLETE_EVT time to arrive
-             * and be suppressed before clearing the guard. */
-            vTaskDelay(pdMS_TO_TICKS(100));
             s_scan_refreshing = false;
         } else {
             vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
@@ -1881,12 +1899,16 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
 
     case ESP_GAP_BLE_SCAN_STOP_COMPLETE_EVT:
         /* Scanning stopped -- initiate HID connection if target found.
-         * Skip while s_scan_refreshing is set: that flag means this
-         * stop-scanning completion belongs to connect_task's own
-         * between-attempt rescan refresh, not a fresh "target found"
-         * stop, so connect_task itself (not us) drives the next
-         * esp_hidh_dev_open() retry. */
-        if (s_connecting && !s_scan_refreshing) {
+         * When s_scan_refreshing is set, this stop-scanning completion
+         * belongs to connect_task's own between-attempt rescan refresh
+         * rather than a fresh "target found" stop; signal the
+         * semaphore so connect_task can proceed immediately instead of
+         * spawning a duplicate connect_task itself. */
+        if (s_scan_refreshing) {
+            if (s_scan_refresh_done_sem) {
+                xSemaphoreGive(s_scan_refresh_done_sem);
+            }
+        } else if (s_connecting) {
             xTaskCreate(connect_task, "ble_connect", CONNECT_TASK_STACK,
                         NULL, 2, NULL);
         }
@@ -2191,6 +2213,13 @@ static void ble_init_task(void *arg)
     /* Create scan retry timer (one-shot, 2-second delay) */
     s_scan_timer = xTimerCreate("scan_retry", pdMS_TO_TICKS(2000),
                                 pdFALSE, NULL, scan_timer_cb);
+
+    /* Binary semaphore used by connect_task's between-attempt scan
+     * refresh to wait for gap_event_handler's confirmation that the
+     * refresh's stop-scanning has actually completed, instead of
+     * guessing with a fixed delay (see s_scan_refresh_done_sem doc
+     * comment near the top of this file). */
+    s_scan_refresh_done_sem = xSemaphoreCreateBinary();
 
     /* Create reconnection timer (one-shot, 1-second delay) */
     s_reconn_timer = xTimerCreate("reconn", pdMS_TO_TICKS(1000),
