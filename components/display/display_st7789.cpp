@@ -136,7 +136,30 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
 
     esp_lcd_panel_dev_config_t panel_cfg = {};
     panel_cfg.reset_gpio_num = (gpio_num_t)cfg->rst;
-    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB;
+    /* CYD-family ST7789 panels wire the color filter as BGR, not the
+     * esp_lcd default RGB (confirmed against multiple independent
+     * ESP32-2432S028R "Cheap Yellow Display" reference configs, e.g.
+     * TFT_eSPI's TFT_RGB_ORDER). Symmetric colors (black/white/gray/
+     * green, i.e. R==B) are unaffected either way, but asymmetric
+     * theme colors (e.g. the Orange theme) would come out with red
+     * and blue swapped without this. */
+    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR;
+    /* esp_lcd_panel_dev_config_t.data_endian defaults to
+     * LCD_RGB_DATA_ENDIAN_BIG (matching the ST7789's own RAMCTRL
+     * reset default), but display_push_rgb565() hands LVGL's
+     * lv_color_t buffer to esp_lcd_panel_draw_bitmap() unswapped --
+     * and lv_color_t is native little-endian on this target. Without
+     * this line every 16-bit pixel is byte-swapped on the wire,
+     * which combined with invert_colors above reproduced exactly the
+     * reported "cyan/light-green text on white background" bug
+     * (black 0x0000 is byte-swap-symmetric, so it only inverts to
+     * white; green 0x07E0 swaps to 0xE007 and then inverts to
+     * 0x1FF8, i.e. R=9% G=100% B=77% -- cyan-ish light green). Set
+     * to LITTLE so the panel is told to expect the data exactly as
+     * LVGL already produces it, matching the sibling AXS15231B
+     * backend's *result* without needing that backend's manual
+     * host-side byte-swap. */
+    panel_cfg.data_endian    = LCD_RGB_DATA_ENDIAN_LITTLE;
     panel_cfg.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
 
@@ -144,10 +167,15 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, cfg->invert_colors));
     /* The 320x240 landscape panel is scanned out natively in
-     * 240 (W) x 320 (H) portrait order; swap XY so our width/height
-     * match the physical mounting. */
+     * 240 (W) x 320 (H) portrait order. Landscape rotation on this
+     * panel family needs both swap_xy (MADCTL MV) *and* mirror_x
+     * (MADCTL MX) -- confirmed against TFT_eSPI's ST7789_Rotation.h
+     * rotation-1 MADCTL value (TFT_MAD_MX | TFT_MAD_MV). swap_xy
+     * alone produces a diagonal transpose that reads as a mirror
+     * image (matches the reported "had to use a physical mirror to
+     * read it" bug). */
     ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(s_panel, true));
-    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, false, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, true, false));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     backlight_pwm_init(cfg->bl);

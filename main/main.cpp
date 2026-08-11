@@ -1851,6 +1851,17 @@ extern "C" void app_main(void)
          * its handle to the touchscreen component so we do not
          * collide on i2c_new_master_bus() for the same port. */
         tcfg.i2c_bus = (void *)bsp_i2c_get_handle();
+#elif defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+        /* XPT2046 shares the ST7789 display's SPI bus (already
+         * brought up by display_st7789_init()); the touchscreen
+         * component only adds its own CS device to that bus. Raw
+         * ADC calibration bounds come from the board header. */
+        tcfg.spi_host      = LCD_SPI_HOST;
+        tcfg.spi_cs        = TOUCH_SPI_CS_PIN;
+        tcfg.xpt_raw_x_min = TOUCH_XPT_RAW_X_MIN;
+        tcfg.xpt_raw_x_max = TOUCH_XPT_RAW_X_MAX;
+        tcfg.xpt_raw_y_min = TOUCH_XPT_RAW_Y_MIN;
+        tcfg.xpt_raw_y_max = TOUCH_XPT_RAW_Y_MAX;
 #endif
         touchscreen_init(&tcfg);
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)

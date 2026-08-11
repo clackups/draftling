@@ -569,6 +569,7 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default y if DRAFTLING_MODEL_M5STACK_TAB5
+    default y if DRAFTLING_MODEL_NM_CYD_C5
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a GT911 capacitive
     # touch controller on the same on-board I2C bus as epdiy's
     # PCA9535 I/O expander + TPS65185 power-management IC. epdiy is
@@ -591,12 +592,13 @@ config DRAFTLING_TOUCHSCREEN
         touch-navigable in addition to the keyboard. Required on
         boards that have no user buttons.
 
-# Touch controller silicon. Each model wires a different I2C chip
+# Touch controller silicon. Each model wires a different chip
 # (AXS5106L on the Guition JC3248W535, GT911 on the M5Stack
-# PaperS3). The touchscreen component carries one driver per
-# controller and dispatches at build time on these symbols.
+# PaperS3, XPT2046 resistive SPI touch on the RockBase NM-CYD-C5).
+# The touchscreen component carries one driver per controller and
+# dispatches at build time on these symbols.
 #
-# Both are non-prompted derived bools so the value tracks the
+# All are non-prompted derived bools so the value tracks the
 # hardware-model choice automatically (no stickiness in sdkconfig).
 config DRAFTLING_TOUCH_AXS5106L
     bool
@@ -623,6 +625,20 @@ config DRAFTLING_TOUCH_GT911
         Goodix GT911. Register-addressed protocol: 16-bit register
         address sent MSB-first, status byte at 0x814E, touch points
         at 0x814F+. Default I2C address 0x5D (0x14 as backup).
+
+config DRAFTLING_TOUCH_XPT2046
+    bool
+    depends on DRAFTLING_TOUCHSCREEN
+    default y if DRAFTLING_MODEL_NM_CYD_C5
+    default n
+    help
+        XPT2046 resistive touch controller, read over the same SPI
+        bus as the display (its own CS line). No PENIRQ interrupt
+        line is wired on the NM-CYD-C5, so touch presence is derived
+        from the Z1/Z2 pressure channels on every poll instead of a
+        hardware interrupt, and touch coordinates come from a linear
+        mapping of the raw 12-bit ADC channels through fixed per-
+        board calibration constants (see nm_cyd_c5.h).
 
 # Touchscreen INT GPIO. The touch controller pulses this line low
 # on touch. Used by the LVGL pointer indev (the read_cb only polls

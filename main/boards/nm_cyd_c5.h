@@ -16,11 +16,13 @@
  *   SD Card    6     2     7  10
  *
  * DC=24, RST=-1 (display RESET is tied to the board RESET, not a
- * dedicated GPIO), BL=25 (LEDC PWM backlight). Draftling does not yet
- * implement an XPT2046 resistive-touch driver (the touchscreen
- * component currently only supports I2C capacitive controllers), so
- * touch is left unused here -- Draftling is keyboard-driven via an
- * external BLE keyboard like every other supported board.
+ * dedicated GPIO), BL=25 (LEDC PWM backlight). The touchscreen
+ * component's XPT2046 backend (components/touchscreen/touchscreen.cpp,
+ * CONFIG_DRAFTLING_TOUCH_XPT2046) polls the resistive overlay over the
+ * shared SPI bus; there is no PENIRQ line wired to the MCU, so touch
+ * presence is derived from the Z1/Z2 pressure channels instead. This
+ * is in addition to the primary keyboard-driven UX (an external BLE
+ * keyboard, like every other supported board).
  *
  * This board has no user buttons besides the power switch, so (like
  * the M5Stack Tab5) there is no RTC-capable GPIO wake source: standby
@@ -54,10 +56,37 @@
 #define SD_SPI_CS_PIN       10
 #define SD_EN_PIN           -1
 
-/* XPT2046 resistive touch controller CS (GPIO1), on the same shared
- * SPI bus. Not yet wired up by Draftling -- kept here for a future
- * touch driver so the pin does not need to be rediscovered. */
+/* XPT2046 resistive touch controller, on the same shared SPI bus as
+ * the display and SD card (its own CS line, GPIO1). No PENIRQ line is
+ * wired to the MCU, so touchscreen.cpp polls the Z1/Z2 pressure
+ * channels every cycle instead of gating reads on an interrupt.
+ *
+ * Calibration constants (raw 12-bit ADC range per axis) and the
+ * mirror/swap orientation come from
+ * RockBase-iot/ESP32-KillerBee's include/boards/nm_cyd_c5_pins.h,
+ * which ships known-good values for this exact board. The touch
+ * overlay is mounted in the panel's native portrait orientation
+ * (240x320); TOUCH_SWAP_XY rotates it to match the 320x240 landscape
+ * logical framebuffer, same as the display's own swap_xy + mirror. */
 #define TOUCH_SPI_CS_PIN    1
+#define TOUCH_XPT_RAW_X_MIN 250
+#define TOUCH_XPT_RAW_X_MAX 3850
+#define TOUCH_XPT_RAW_Y_MIN 220
+#define TOUCH_XPT_RAW_Y_MAX 3820
+#define TOUCH_NATIVE_W      240
+#define TOUCH_NATIVE_H      320
+#define TOUCH_SWAP_XY       1
+#define TOUCH_MIRROR_X      1
+#define TOUCH_MIRROR_Y      1
+/* Unused by the XPT2046 (SPI) backend, but touchscreen_config_t's
+ * common fields still need values that compile; TOUCH_INT_PIN /
+ * TOUCH_RST_PIN default to -1 via Kconfig (no per-board override
+ * added below), same as every other unused-INT/RST board. */
+#define I2C_SDA_PIN         -1
+#define I2C_SCL_PIN         -1
+#define TOUCH_RST_PIN       CONFIG_DRAFTLING_TOUCH_RST_GPIO
+#define TOUCH_INT_PIN       CONFIG_DRAFTLING_TOUCH_INT_GPIO
+#define TOUCH_I2C_ADDR      0
 
 /* No on-board battery monitor (USB-powered dev board). */
 #define BATT_ADC_PIN        -1

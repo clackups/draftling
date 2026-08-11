@@ -10,10 +10,12 @@ extern "C" {
 /*
  * Touchscreen driver + LVGL pointer input device.
  *
- * Supports two controllers, selected at build time via
- * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
+ * Supports three controllers, selected at build time by the
+ * hardware model choice (CONFIG_DRAFTLING_TOUCH_AXS5106L /
+ * CONFIG_DRAFTLING_TOUCH_GT911 / CONFIG_DRAFTLING_TOUCH_XPT2046):
  *   - AXS5106L (magic-packet I2C, e.g. Guition JC3248W535)
  *   - GT911    (register-based I2C, e.g. M5Stack PaperS3)
+ *   - XPT2046  (resistive, SPI, e.g. RockBase NM-CYD-C5)
  *
  * Compiled in only when CONFIG_DRAFTLING_TOUCHSCREEN is set.
  * Initialize from main.cpp after the LVGL port and the LCD have
@@ -98,6 +100,24 @@ typedef struct {
      * itself; an externally supplied handle is left intact for the
      * other consumer to clean up. */
     void *i2c_bus;
+
+    /* ---- XPT2046 only (SPI resistive touch) ----
+     * The XPT2046 has no register map / I2C address; it shares the
+     * physical SPI bus already brought up by the display backend
+     * (spi_bus_initialize() is called once, by display_st7789_init())
+     * via its own dedicated CS line. spi_host must match the host
+     * the display used; spi_cs is the touch controller's CS GPIO. */
+    int spi_host;
+    int spi_cs;
+
+    /* Raw 12-bit ADC calibration range (0-4095) for the X/Y
+     * measurement channels, i.e. the raw values the controller
+     * reports at the extreme edges of the panel. Only used by the
+     * XPT2046 backend; ignored by the I2C controllers. */
+    int xpt_raw_x_min;
+    int xpt_raw_x_max;
+    int xpt_raw_y_min;
+    int xpt_raw_y_max;
 } touchscreen_config_t;
 
 /* Initialize the touchscreen and register an LVGL pointer indev.

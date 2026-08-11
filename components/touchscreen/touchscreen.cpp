@@ -2,10 +2,11 @@
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
 
 /*
- * I2C touchscreen driver + LVGL pointer input device.
+ * I2C/SPI touchscreen driver + LVGL pointer input device.
  *
- * Supports two controllers, picked at build time via
- * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
+ * Supports three controllers, picked at build time by the hardware
+ * model choice (CONFIG_DRAFTLING_TOUCH_AXS5106L /
+ * CONFIG_DRAFTLING_TOUCH_GT911 / CONFIG_DRAFTLING_TOUCH_XPT2046):
  *
  *   * AXS5106L (Allystar, e.g. Guition JC3248W535):
  *     Speaks a small "magic packet" I2C protocol -- the host writes
@@ -27,7 +28,21 @@
  *     not wired to an ESP32 GPIO (PaperS3) the address-select
  *     reset sequence cannot be performed, but probing covers it.
  *
- * In both cases the driver registers an LVGL pointer indev which
+ *   * XPT2046 (resistive, e.g. RockBase NM-CYD-C5):
+ *     SPI, not I2C -- shares the same physical bus as the ST7789
+ *     display (and the MicroSD card) via a dedicated CS line. Each
+ *     axis is read with an 8-bit control byte followed by 16 clocks
+ *     that return a 12-bit ADC sample; touch presence has no
+ *     dedicated IRQ line on this board, so we measure the Z1/Z2
+ *     pressure channels every poll and treat the panel as pressed
+ *     when the standard z = z1 + 4095 - z2 formula clears a
+ *     threshold (the same approach used by Adafruit's XPT2046
+ *     library). Raw ADC samples are affine-mapped from a
+ *     per-board calibration range into native panel pixels before
+ *     going through the same mirror/swap/rotate transform as the
+ *     I2C controllers.
+ *
+ * In all three cases the driver registers an LVGL pointer indev which
  * feeds touch coordinates to the LVGL event system, so widgets
  * receive standard click / press / gesture events. The transform
  * from the controller's native coordinate space to LVGL logical
@@ -48,6 +63,11 @@
 #include "lvgl.h"
 
 #include "touchscreen.h"
+
+#if defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+#include <driver/spi_master.h>
+#endif
+
 
 /* On the M5Stack Tab5 we delegate the controller-specific bring-up
  * to the upstream espressif/m5stack_tab5 BSP via bsp_touch_new(),
@@ -76,6 +96,13 @@ static bool s_owns_bus = false;
 static i2c_master_dev_handle_t s_dev = NULL;
 static SemaphoreHandle_t s_mux = NULL;
 static lv_indev_t *s_indev = NULL;
+
+#if defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+/* SPI device handle for the XPT2046, added to the physical bus the
+ * ST7789 display backend already initialized via spi_bus_initialize()
+ * (see display_st7789_init() / main.cpp). */
+static spi_device_handle_t s_xpt_dev = NULL;
+#endif
 
 #if defined(DRAFTLING_TOUCH_BSP_M5STACK_TAB5)
 /* esp_lcd_touch handle owned by the m5stack_tab5 BSP. Created by
@@ -405,6 +432,82 @@ static bool poll_gt911(int *out_x, int *out_y)
 
 #endif /* CONFIG_DRAFTLING_TOUCH_GT911 */
 
+/* ---- XPT2046 (resistive, SPI) driver ---- */
+#if defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+
+/* Control-byte channel selects (datasheet table 5): START bit (0x80)
+ * | A2A1A0 channel | MODE=0 (12-bit) | SER/DFR=0 (differential) |
+ * PD1PD0=00 (power down between conversions, except Z1/Z2 below
+ * which keep the reference on between the two consecutive reads).
+ * These are the same values used by the widely-cited PJRC / Adafruit
+ * XPT2046 Arduino libraries. */
+#define XPT2046_CMD_X   0xD0 /* channel 101 = X+ */
+#define XPT2046_CMD_Y   0x90 /* channel 001 = Y+ */
+#define XPT2046_CMD_Z1  0xB1 /* channel 011 = Z1, PD=01 (ref stays on) */
+#define XPT2046_CMD_Z2  0xC1 /* channel 100 = Z2, PD=01 (ref stays on) */
+
+/* Empirical pressure threshold below which the panel is considered
+ * released. Matches the default used by Adafruit's XPT2046 library. */
+#define XPT2046_Z_THRESHOLD 400
+
+/* Issue one control byte and clock out the 16-bit response. The
+ * controller begins conversion on the 8th clock of the control byte
+ * and returns a 12-bit sample MSB-first over the next two bytes with
+ * 3 leading padding bits, hence the ">> 3". No dedicated IRQ line is
+ * wired on this board, so every axis/pressure channel is polled
+ * directly. */
+static uint16_t xpt2046_read(uint8_t cmd)
+{
+    if (!s_xpt_dev) return 0;
+
+    uint8_t tx[3] = { cmd, 0, 0 };
+    uint8_t rx[3] = { 0, 0, 0 };
+    spi_transaction_t t = {};
+    t.length    = 8 * sizeof(tx);
+    t.tx_buffer = tx;
+    t.rx_buffer = rx;
+    if (spi_device_polling_transmit(s_xpt_dev, &t) != ESP_OK) {
+        return 0;
+    }
+    return (((uint16_t)rx[1] << 8) | rx[2]) >> 3;
+}
+
+static bool poll_xpt2046(int *out_x, int *out_y)
+{
+    if (!s_xpt_dev) return false;
+
+    /* Pressure check first (no IRQ line to gate on). z = z1 + 4095 -
+     * z2 rises as contact resistance drops, i.e. as the finger/stylus
+     * presses harder; a light touch or no touch keeps z low. */
+    uint16_t z1 = xpt2046_read(XPT2046_CMD_Z1);
+    uint16_t z2 = xpt2046_read(XPT2046_CMD_Z2);
+    int z = (int)z1 + 4095 - (int)z2;
+    if (z < XPT2046_Z_THRESHOLD) {
+        return false;
+    }
+
+    uint16_t raw_x = xpt2046_read(XPT2046_CMD_X);
+    uint16_t raw_y = xpt2046_read(XPT2046_CMD_Y);
+
+    int xmin = s_cfg.xpt_raw_x_min, xmax = s_cfg.xpt_raw_x_max;
+    int ymin = s_cfg.xpt_raw_y_min, ymax = s_cfg.xpt_raw_y_max;
+    if (xmax <= xmin) xmax = xmin + 1;
+    if (ymax <= ymin) ymax = ymin + 1;
+
+    int cx = clamp((int)raw_x, xmin, xmax);
+    int cy = clamp((int)raw_y, ymin, ymax);
+    int nx = (int)((int64_t)(cx - xmin) * (s_cfg.native_width  - 1) / (xmax - xmin));
+    int ny = (int)((int64_t)(cy - ymin) * (s_cfg.native_height - 1) / (ymax - ymin));
+
+    int lx, ly;
+    native_to_logical(nx, ny, &lx, &ly);
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
+    return true;
+}
+
+#endif /* CONFIG_DRAFTLING_TOUCH_XPT2046 */
+
 /* ---- M5Stack Tab5 (BSP-delegated) driver ---- */
 #if defined(DRAFTLING_TOUCH_BSP_M5STACK_TAB5)
 
@@ -460,6 +563,8 @@ static bool poll_controller(int *out_x, int *out_y)
     return poll_gt911(out_x, out_y);
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     return poll_axs5106l(out_x, out_y);
+#elif defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+    return poll_xpt2046(out_x, out_y);
 #else
 #  error "No touch controller driver selected (CONFIG_DRAFTLING_TOUCH_*)"
 #endif
@@ -600,8 +705,29 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
 #endif
     }
 
-    /* I2C master bus + device handle (ESP-IDF v5.x i2c_master API).
-     *
+    /* I2C master bus + device handle (ESP-IDF v5.x i2c_master API),
+     * or the XPT2046's SPI device on boards that use that backend
+     * instead. */
+#if defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+    /* XPT2046 shares the physical SPI bus already brought up by
+     * display_st7789_init() (spi_bus_initialize() was already
+     * called there); we only need to add our own CS device. */
+    {
+        spi_device_interface_config_t devcfg = {};
+        devcfg.clock_speed_hz = 2 * 1000 * 1000; /* XPT2046 max ~2 MHz */
+        devcfg.mode           = 0;
+        devcfg.spics_io_num   = s_cfg.spi_cs;
+        devcfg.queue_size     = 1;
+        esp_err_t err = spi_bus_add_device((spi_host_device_t)s_cfg.spi_host,
+                                           &devcfg, &s_xpt_dev);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "xpt2046 spi_bus_add_device failed: %s",
+                     esp_err_to_name(err));
+            return;
+        }
+    }
+#else
+    /*
      * If the caller passed an existing driver-NG bus handle via
      * s_cfg.i2c_bus we adopt it instead of creating our own. This
      * is the only way to coexist with another driver-NG consumer
@@ -692,6 +818,7 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     (void)gt911_write_reg(GT911_REG_COMMAND, 0x00);
     (void)gt911_write_reg(GT911_REG_STATUS,  0x00);
 #endif
+#endif /* CONFIG_DRAFTLING_TOUCH_XPT2046 */
 
     /* Register LVGL pointer indev. lv_init() was already called by
      * draftling_lvgl_port_init(); we just attach the new device to the default
@@ -710,9 +837,21 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     const char *ctrl = "GT911";
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     const char *ctrl = "AXS5106L";
+#elif defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+    const char *ctrl = "XPT2046";
 #else
     const char *ctrl = "?";
 #endif
+#if defined(CONFIG_DRAFTLING_TOUCH_XPT2046)
+    ESP_LOGI(TAG, "%s touchscreen initialized "
+                  "(SPI host=%d CS=%d, native=%dx%d, logical=%dx%d, "
+                  "mirror_x=%d mirror_y=%d swap_xy=%d)",
+             ctrl,
+             s_cfg.spi_host, s_cfg.spi_cs,
+             s_cfg.native_width, s_cfg.native_height,
+             s_cfg.logical_width, s_cfg.logical_height,
+             (int)s_cfg.mirror_x, (int)s_cfg.mirror_y, (int)s_cfg.swap_xy);
+#else
     ESP_LOGI(TAG, "%s touchscreen initialized "
                   "(I2C addr=0x%02X, INT=%d, native=%dx%d, logical=%dx%d, "
                   "mirror_x=%d mirror_y=%d swap_xy=%d)",
@@ -721,8 +860,10 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
              s_cfg.native_width, s_cfg.native_height,
              s_cfg.logical_width, s_cfg.logical_height,
              (int)s_cfg.mirror_x, (int)s_cfg.mirror_y, (int)s_cfg.swap_xy);
+#endif
 #endif /* DRAFTLING_TOUCH_BSP_M5STACK_TAB5 */
 }
+
 
 extern "C" void touchscreen_set_button_callback(touchscreen_button_cb_t cb)
 {
@@ -808,9 +949,11 @@ extern "C" void touchscreen_sleep(void)
         }
     }
 #else
-    /* AXS5106L has no documented sleep command in the public
-     * register map; it idles to ~100 uA on its own once polling
-     * stops, which is acceptable on the Tab5 (separate rail). */
+    /* AXS5106L and XPT2046 have no documented sleep command; they
+     * idle down on their own once polling stops (the XPT2046 is a
+     * fully passive resistive divider with no always-on scanning
+     * logic to begin with). Acceptable since standby enters real
+     * deep sleep on both boards regardless. */
 #endif
 }
 
