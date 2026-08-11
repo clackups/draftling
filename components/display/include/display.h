@@ -278,8 +278,9 @@ void display_set_backlight(int percent);
 void display_axs15231b_init(const display_axs15231b_config_t *cfg);
 
 /*
- * ST7789 SPI color-LCD driver init (via the espressif/esp_lcd_st7789
- * managed component's esp_lcd_new_panel_st7789() API).
+ * ST7789 SPI color-LCD driver init (via the stock ESP-IDF `esp_lcd`
+ * component's esp_lcd_new_panel_st7789() API; no managed component
+ * required).
  *
  * Used by boards with CONFIG_DRAFTLING_DISPLAY_ST7789 (RockBase
  * NM-CYD-C5). The panel, MicroSD card, and (optionally) a resistive

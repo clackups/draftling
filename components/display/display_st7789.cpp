@@ -15,14 +15,18 @@
  * Strategy
  * --------
  * Unlike the AXS15231B QSPI boards (which need a hand-rolled vendor
- * command sequence), ST7789 is supported directly by the upstream
- * `espressif/esp_lcd_st7789` managed component's
- * esp_lcd_new_panel_st7789() API, which implements the full panel
- * init sequence internally. We only need to wire up the generic
- * esp_lcd SPI panel-IO layer and hand the resulting handles to that
- * driver, then push RGB565 tiles via esp_lcd_panel_draw_bitmap() --
- * no local framebuffer is required (there is no partial-refresh
- * ghosting to manage, unlike e-paper).
+ * command sequence), ST7789 is supported directly by the stock
+ * ESP-IDF `esp_lcd` component's esp_lcd_new_panel_st7789() API
+ * (components/esp_lcd/src/esp_lcd_panel_st7789.c upstream), which
+ * implements the full panel init sequence internally. No managed
+ * component is needed -- ST7789 has been bundled in-tree since IDF
+ * 5.x, unlike the third-party `jbrilha/esp_lcd_st7789` registry
+ * package (there is no `espressif/esp_lcd_st7789` package at all).
+ * We only need to wire up the generic esp_lcd SPI panel-IO layer and
+ * hand the resulting handles to that driver, then push RGB565 tiles
+ * via esp_lcd_panel_draw_bitmap() -- no local framebuffer is
+ * required (there is no partial-refresh ghosting to manage, unlike
+ * e-paper).
  */
 
 #include <cstdio>
@@ -37,7 +41,7 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
-#include <esp_lcd_st7789.h>
+#include <esp_lcd_panel_st7789.h>
 
 #include "display.h"
 

@@ -73,15 +73,14 @@ dependencies:
     rules:
       - if: "target == esp32p4"
     require: public
-  ## espressif/esp_lcd_st7789, pulled in only for the ESP32-C5
-  ## RockBase NM-CYD-C5 build. Implements the full ST7789 panel init
-  ## sequence (SLPOUT/COLMOD/MADCTL/INVON/...) behind the standard
-  ## esp_lcd_new_panel_st7789() API so display_st7789.cpp only has
-  ## to wire up the generic esp_lcd SPI panel-IO layer, unlike the
-  ## hand-rolled AXS15231B vendor command sequence.
-  ## See https://components.espressif.com/components/espressif/esp_lcd_st7789
-  espressif/esp_lcd_st7789:
-    version: "^1.0.0"
-    rules:
-      - if: "target == esp32c5"
-    require: public
+  ## ST7789 support (RockBase NM-CYD-C5, ESP32-C5) needs no managed
+  ## component: esp_lcd_new_panel_st7789() has shipped as part of the
+  ## stock ESP-IDF `esp_lcd` component (components/esp_lcd) since IDF
+  ## 5.x, so display_st7789.cpp only needs its PRIV_REQUIRES on
+  ## `esp_lcd` in components/display/CMakeLists.txt. There is no
+  ## `espressif/esp_lcd_st7789` package on the component registry
+  ## (the only published `esp_lcd_st7789` package is the third-party
+  ## `jbrilha/esp_lcd_st7789`, which is a different API and not what
+  ## display_st7789.cpp uses); listing the non-existent
+  ## `espressif/esp_lcd_st7789` dependency here made
+  ## `idf.py --preset nm_cyd_c5 build` fail version solving.
