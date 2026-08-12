@@ -53,12 +53,12 @@ static int s_width  = 0;
 static int s_height = 0;
 
 /* Host-side color-fixup scratch buffer. See the doc comment on
- * color_fixup_buffer() for the two corrections applied into it.
+ * color_fixup_buffer() for the byte-order correction applied into it.
  * Sized lazily to the largest tile ever requested by
  * display_push_rgb565() (in practice the full screen, since
  * lvgl_port pushes the LVGL flush area as one tile). */
-static uint16_t *s_rb_swap_buf    = NULL;
-static size_t    s_rb_swap_pixels = 0;
+static uint16_t *s_swap_buf    = NULL;
+static size_t    s_swap_pixels = 0;
 
 /* ---- Backlight (LEDC PWM), active-HIGH ---- */
 #define BL_LEDC_TIMER   LEDC_TIMER_1
@@ -158,22 +158,23 @@ extern "C" void display_st7789_init(const display_st7789_config_t *cfg)
     esp_lcd_panel_dev_config_t panel_cfg = {};
     panel_cfg.reset_gpio_num = (gpio_num_t)cfg->rst;
     /* CYD-family ST7789 clone controllers do not reliably honor the
-     * MADCTL BGR bit (panel_cfg.rgb_ele_order) or the RAMCTRL
-     * little-endian bit (panel_cfg.data_endian) that
-     * esp_lcd_new_panel_st7789() programs on our behalf -- both were
-     * tried in isolation and neither corrected the reported color
-     * bugs on real hardware (setting rgb_ele_order to BGR alone left
-     * the Orange-on-black theme rendering blue-on-black; setting
-     * data_endian to LITTLE alone reproduced a "cyan/light-green
-     * text on white background" bug). Both fields are therefore left
-     * at their hardware-default values here (RGB / BIG) and BOTH the
-     * R/B channel swap (compensating this panel's BGR subpixel
-     * wiring) and the byte-order swap (compensating LVGL's native
-     * little-endian lv_color_t buffer vs. the panel's big-endian
-     * wire format) are applied together, on the host side, in
+     * RAMCTRL little-endian bit (panel_cfg.data_endian) that
+     * esp_lcd_new_panel_st7789() programs on our behalf, so it is
+     * left at its hardware-default value here (BIG) and the
+     * byte-order swap is instead applied on the host side in
      * color_fixup_buffer() -- the same "compensate in software,
      * don't rely on an unverified vendor flag" strategy the sibling
-     * AXS15231B backend uses for its own byte-endian issue. */
+     * AXS15231B backend uses for its own byte-endian issue. The
+     * panel's native subpixel order is plain RGB (not BGR), matching
+     * RockBase-iot/ESP32-KillerBee's kb_display.cpp reference driver
+     * for this exact board (ESP_LCD_COLOR_SPACE_RGB, no channel
+     * swap, only a byte-swap of every color value) -- rgb_ele_order
+     * is therefore also left at its default (RGB) and no R/B channel
+     * swap is applied. An earlier revision of this driver added an
+     * R/B channel swap on top of the byte-order swap on the mistaken
+     * assumption that the panel was wired BGR; that double
+     * correction reintroduced the "orange renders as blue" bug it
+     * was meant to fix. */
     panel_cfg.bits_per_pixel = 16;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &panel_cfg, &s_panel));
 
@@ -217,7 +218,7 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
      * pushes RGB565 tiles via display_push_rgb565). */
 }
 
-/* Apply both host-side color corrections to a src_w x src_h tile of
+/* Apply the host-side byte-order correction to a src_w x src_h tile of
  * RGB565 pixels (src_w is also the source buffer's row stride, i.e.
  * the *unclipped* tile width LVGL asked to flush), copying only the
  * top-left copy_w x copy_h sub-rectangle (used when display_push_rgb565
@@ -227,43 +228,35 @@ extern "C" void display_set_pixel(uint16_t /*x*/, uint16_t /*y*/, uint8_t /*colo
  * caller should fall back to sending src unmodified rather than drop
  * the tile.
  *
- * Two independent corrections are combined here, both because
- * neither of the corresponding esp_lcd_panel_dev_config_t fields
- * (rgb_ele_order / data_endian) took effect on real CYD-family
- * hardware -- see the comment in display_st7789_init():
+ * A single correction is applied here, compensating the mismatch
+ * between LVGL's native little-endian lv_color_t buffer and the
+ * panel's big-endian RAMCTRL wire format (its power-on default, which
+ * we leave untouched since the little-endian RAMCTRL bit did not
+ * take effect on real CYD-family hardware -- see the comment in
+ * display_st7789_init()). Without this, every pixel's high and low
+ * bytes arrive swapped over SPI, e.g. orange 0xFD20 would be
+ * transmitted as 0x20FD -- a dim blue/teal instead of orange.
  *
- *  1. R/B channel swap, compensating this panel's BGR subpixel
- *     wiring. RGB565 packs R[15:11] G[10:5] B[4:0]; swapping only
- *     exchanges the R and B fields, leaving G (and therefore
- *     symmetric colors where R==B, like black/white/gray/green)
- *     unchanged either way.
- *  2. Byte-order swap, compensating the mismatch between LVGL's
- *     native little-endian lv_color_t buffer and the panel's
- *     big-endian RAMCTRL wire format (its power-on default, which we
- *     leave untouched since the little-endian RAMCTRL bit did not
- *     take effect either). Without this, every pixel's high and low
- *     bytes arrive swapped over SPI, e.g. orange 0xCB20 (after the
- *     R/B swap above) would be transmitted as 0x20CB -- a dim
- *     blue/teal instead of orange, matching the reported bug.
- *
- * Skipping either correction reproduces one of the two previously
- * reported bugs (BGR-only swap alone still misrenders the wire byte
- * order; byte-order-only swap alone still misrenders the channel
- * order), so both must be applied together. */
+ * No R/B channel swap is applied: this panel's native subpixel order
+ * is plain RGB, matching RockBase-iot/ESP32-KillerBee's reference
+ * driver for the same board. An earlier revision of this function
+ * additionally swapped the R and B channels on the mistaken
+ * assumption that the panel was wired BGR, which reintroduced the
+ * "orange renders as blue" bug this byte-order swap alone fixes. */
 static const uint16_t *color_fixup_buffer(const uint16_t *src, int src_w,
                                           int copy_w, int copy_h)
 {
     size_t n = (size_t)copy_w * (size_t)copy_h;
-    if (n > s_rb_swap_pixels) {
+    if (n > s_swap_pixels) {
         uint16_t *buf = (uint16_t *)heap_caps_realloc(
-            s_rb_swap_buf, n * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+            s_swap_buf, n * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
         if (!buf) {
             ESP_LOGE(TAG, "color_fixup_buffer: alloc of %u px failed",
                      (unsigned)n);
             return NULL;
         }
-        s_rb_swap_buf    = buf;
-        s_rb_swap_pixels = n;
+        s_swap_buf    = buf;
+        s_swap_pixels = n;
     }
     /* Copy row by row: the source tile's row stride is src_w (the
      * unclipped width LVGL asked to flush), which may be wider than
@@ -272,21 +265,16 @@ static const uint16_t *color_fixup_buffer(const uint16_t *src, int src_w,
      * rows. The destination buffer's row stride is copy_w. */
     for (int row = 0; row < copy_h; row++) {
         const uint16_t *srow = src + (size_t)row * (size_t)src_w;
-        uint16_t *drow = s_rb_swap_buf + (size_t)row * (size_t)copy_w;
+        uint16_t *drow = s_swap_buf + (size_t)row * (size_t)copy_w;
         for (int col = 0; col < copy_w; col++) {
             uint16_t px = srow[col];
-            uint16_t r  = (px >> 11) & 0x1F;
-            uint16_t g  = (px >> 5)  & 0x3F;
-            uint16_t b  = px & 0x1F;
-            uint16_t swapped_channels = (uint16_t)((b << 11) | (g << 5) | r);
-            /* 16-bit byte-order swap so the high byte of the
-             * channel-swapped value is transmitted first over SPI,
-             * matching the panel's big-endian wire expectation. */
-            drow[col] = (uint16_t)((swapped_channels << 8) |
-                                   (swapped_channels >> 8));
+            /* 16-bit byte-order swap so the high byte of the pixel
+             * is transmitted first over SPI, matching the panel's
+             * big-endian wire expectation. */
+            drow[col] = (uint16_t)((px << 8) | (px >> 8));
         }
     }
-    return s_rb_swap_buf;
+    return s_swap_buf;
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h,
