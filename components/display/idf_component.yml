@@ -68,10 +68,10 @@ dependencies:
   ## ST77922 QSPI color-LCD driver for the Freenove FNK0104N, used by
   ## display_st77922.cpp (CONFIG_DRAFTLING_DISPLAY_ST77922, ESP32-S3
   ## only). This is the same component (from espressif/esp-iot-solution)
-  ## that Freenove's own confirmed-working xiaozhi-esp32 firmware for
-  ## this exact board uses
-  ## (main/boards/freenove-esp32s3-display-3.5-lcd/
-  ## freenove-esp32s3-display-3.5-lcd.cc). See
+  ## and byte-identical vendor init table used by the xiaozhi-esp32
+  ## board file main/boards/lcdwiki-es3c35p/lcdwiki-es3c35p.cc, which
+  ## drives a different vendor's board (LCDWiki ES3C35P) built around
+  ## the same LCD module/controller. See
   ## https://components.espressif.com/components/espressif/esp_lcd_st77922
   espressif/esp_lcd_st77922:
     version: "^2.0.2"

@@ -235,8 +235,11 @@ Per-board display backends behind a single C API:
 - **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
   ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`), built on the
   official `espressif/esp_lcd_st77922` managed component (from
-  espressif/esp-iot-solution) -- the same component Freenove's own
-  confirmed-working xiaozhi-esp32 firmware uses for this exact board.
+  espressif/esp-iot-solution) -- the same component and byte-identical
+  vendor init table used by the xiaozhi-esp32 board file
+  `main/boards/lcdwiki-es3c35p/lcdwiki-es3c35p.cc`, which drives a
+  different vendor's board (LCDWiki ES3C35P) built around the same LCD
+  module/controller.
   Pins are hardcoded (not read from the board header) because the
   panel is driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3)
   separate from the shared SPI pins used elsewhere. The native panel
@@ -246,7 +249,16 @@ Per-board display backends behind a single C API:
   pixel to big-endian in software (via `flush_rect()`) before calling
   `esp_lcd_panel_draw_bitmap()`, matching Freenove's own
   `ST77922::Fill_Colors()` rotation-1 behavior and its
-  `LV_COLOR_16_SWAP` LVGL config for this board. This panel has no
+  `LV_COLOR_16_SWAP` LVGL config for this board. `flush_rect()`'s
+  window-start mapping is `(ly, lx)` (a plain axis swap, no
+  width-complement term), confirmed against two independent
+  unofficial mirrors of Freenove's own TFT_eSPI `ST77922.cpp` driver
+  with byte-identical init tables and matching pin numbers; an earlier
+  revision instead used `(FNK_N_NATIVE_WIDTH - 1 - ly, lx)`, which
+  only matched for a full-frame flush and left every partial-rect UI
+  update landing at the vertically-mirrored native position, causing
+  a permanently blank-looking screen after the first full clear. This
+  panel has no
   discrete RST pin; `esp_lcd_panel_reset()` sends a software reset
   (SWRESET + 120 ms delay) instead. An earlier hand-rolled SPI
   implementation never sent any reset at all, which left the panel's
