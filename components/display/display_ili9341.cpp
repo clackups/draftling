@@ -12,7 +12,7 @@
  * file serves both, selecting the vendor init table with #if
  * CONFIG_DRAFTLING_DISPLAY_ST7796.
  *
- * All four FNK0104 SPI-TFT SKUs (A/B/S) wire the panel to the same
+ * All three FNK0104 SPI-TFT SKUs (A/B/S) wire the panel to the same
  * GPIOs (MOSI=11, SCLK=12, DC=46, CS=10, BL=45, no discrete RST --
  * TFT_eSPI's setup headers define TFT_RST as -1 for this family, so
  * this backend uses the SWRESET command instead of a GPIO pulse),

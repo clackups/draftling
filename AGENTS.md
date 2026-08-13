@@ -237,10 +237,14 @@ Per-board display backends behind a single C API:
   hardcoded (not read from the board header) because the panel is
   driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3) separate
   from the shared SPI pins used elsewhere. The native panel is
-  320x480 portrait; `display_push_rgb565()` transposes each pushed
-  rect into native panel orientation in software before issuing a
-  QSPI pixel burst (`SPI_TRANS_MODE_QIO`), matching Freenove's own
-  `ST77922::Fill_Colors()` rotation-1 behavior.
+  320x480 portrait; `display_flush()` transposes each dirty rect
+  into native panel orientation in software (via `flush_rect()`)
+  before issuing a QSPI pixel burst (`SPI_TRANS_MODE_QIO`), matching
+  Freenove's own `ST77922::Fill_Colors()` rotation-1 behavior. Since
+  this panel has no discrete RST pin and its vendor init table issues
+  no SWRESET, `display_init()` waits 120 ms after SPI bus/device setup
+  before sending any configuration commands, giving the panel's power
+  rails/oscillator time to settle.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
