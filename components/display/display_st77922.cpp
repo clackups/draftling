@@ -246,7 +246,9 @@ static void write_reg(uint8_t cmd, const void *data, uint8_t len)
         tx.base.tx_buffer = data;
         tx.base.length = 8u * len;
     }
+    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
     ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
+    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 1);
 }
 
 static void set_windows(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey)
@@ -357,7 +359,7 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     dev_cfg.address_bits   = 0;
     dev_cfg.mode           = 0;
     dev_cfg.clock_speed_hz = FNK_N_SPI_CLOCK_HZ;
-    dev_cfg.spics_io_num   = -1; /* CS is driven manually, see fill_native_rect() */
+    dev_cfg.spics_io_num   = -1; /* CS is driven manually, see write_reg() / fill_native_rect() */
     dev_cfg.flags          = SPI_DEVICE_HALFDUPLEX;
     dev_cfg.queue_size     = 17;
     ESP_ERROR_CHECK(spi_bus_add_device(FNK_N_SPI_HOST, &dev_cfg, &s_spi));
