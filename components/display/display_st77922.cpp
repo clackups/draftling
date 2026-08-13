@@ -92,7 +92,7 @@ static const char *TAG = "DisplayST77922";
 #define FNK_N_D1_PIN     13
 #define FNK_N_D2_PIN     14
 #define FNK_N_D3_PIN     9
-#define FNK_N_RST_PIN    -1  /* No discrete RST pin; the component issues
+#define FNK_N_RST_PIN    (gpio_num_t)-1  /* No discrete RST pin; the component issues
                               * a software reset (SWRESET) instead -- see
                               * esp_lcd_panel_reset() in display_init(). */
 
