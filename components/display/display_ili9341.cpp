@@ -124,7 +124,6 @@ static void backlight_pwm_init(void)
     c.speed_mode = BL_LEDC_MODE;
     c.channel    = BL_LEDC_CHANNEL;
     c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
     c.duty       = BL_LEDC_DUTY_MAX;
     c.hpoint     = 0;
     ESP_ERROR_CHECK(ledc_channel_config(&c));
@@ -291,8 +290,8 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     ESP_ERROR_CHECK(spi_bus_initialize(FNK_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
 
     esp_lcd_panel_io_spi_config_t io_cfg = {};
-    io_cfg.dc_gpio_num      = FNK_LCD_DC_PIN;
-    io_cfg.cs_gpio_num      = FNK_LCD_CS_PIN;
+    io_cfg.dc_gpio_num      = (gpio_num_t)FNK_LCD_DC_PIN;
+    io_cfg.cs_gpio_num      = (gpio_num_t)FNK_LCD_CS_PIN;
     io_cfg.pclk_hz          = FNK_SPI_CLOCK_HZ;
     io_cfg.lcd_cmd_bits     = 8;
     io_cfg.lcd_param_bits   = 8;

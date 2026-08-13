@@ -26,6 +26,19 @@
  * to operate in logical (already-landscape) coordinates like every
  * other backend.
  *
+ * Like AXS15231B, the ST77922 expects pixel data on the wire in
+ * big-endian (MSB-first) RGB565 byte order. Freenove's own reference
+ * LVGL integration for this exact board
+ * (Tutorial_No_Touch/Sketches/Sketch_11.1_LVGL/display.h) sets
+ * `#define LV_COLOR_16_SWAP 1` for FNK0104N_3P5_320x480_ST77922,
+ * which makes LVGL byte-swap every pixel before it reaches the flush
+ * callback. We do not use LV_COLOR_16_SWAP (LVGL's buffers stay
+ * native little-endian, matching every other backend), so the
+ * transpose step below must perform the equivalent byte swap itself
+ * when copying into s_tx_buf, or every pixel is sent MSB/LSB
+ * reversed -- which silently corrupts colours enough that the
+ * editor's mostly-dark-on-light text becomes invisible.
+ *
  * All FNK0104N pins are hard-coded here (this is the only board using
  * this backend), matching the existing convention of
  * display_rgb.cpp hard-coding its per-board Sunton pins internally.
@@ -347,7 +360,12 @@ static void flush_rect(int lx, int ly, int w, int h)
     for (int row = 0; row < h; row++) {
         const uint16_t *src = s_fb + (size_t)(ly + row) * s_width + lx;
         for (int col = 0; col < w; col++) {
-            s_tx_buf[col * phys_w + (phys_w - 1 - row)] = src[col];
+            /* Byte-swap each pixel: the panel wants big-endian RGB565
+             * on the wire (see the LV_COLOR_16_SWAP note above), but
+             * s_fb holds native little-endian uint16_t values. */
+            uint16_t px = src[col];
+            s_tx_buf[col * phys_w + (phys_w - 1 - row)] =
+                (uint16_t)((px << 8) | (px >> 8));
         }
     }
 
