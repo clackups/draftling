@@ -98,17 +98,22 @@ static const char *TAG = "DisplayST77922";
                               * esp_lcd_panel_reset() in display_init(). */
 
 #define FNK_N_SPI_HOST       SPI2_HOST
-/* 40 MHz QSPI, matching Freenove's own confirmed-working
- * xiaozhi-esp32 board file (DISPLAY_SPI_SCLK_HZ in
- * freenove-esp32s3-display-3.5-lcd/config.h) exactly. A prior
- * revision of this file ran at 80 MHz (the clock used by Freenove's
- * separate Arduino TFT_eSPI vendor driver, QSPI_FREQUENCY in
- * ST77922.h) on the theory that this was the vendor-tested value;
- * that driver is a different, unconfirmed reference for our purposes.
- * Since we are now porting the exact xiaozhi-esp32 init path, match
- * its clock too rather than mixing values from two different vendor
- * sources. */
-#define FNK_N_SPI_CLOCK_HZ   (40 * 1000 * 1000)
+/* 20 MHz QSPI. Freenove's own confirmed-working xiaozhi-esp32 board
+ * file (DISPLAY_SPI_SCLK_HZ in
+ * freenove-esp32s3-display-3.5-lcd/config.h) uses 40 MHz, and this
+ * driver matched that for a while, but ESP-IDF v6's SPI driver reads
+ * the PSRAM-resident s_tx_buf color buffer over DMA (psram_dma_direct)
+ * fast enough to underrun its own FIFO at 40 MHz: the whole-panel
+ * flush issued right after LVGL init reliably aborted with
+ * "DMA TX underflow detected" / "recycle spi transactions failed" out
+ * of panel_st77922_draw_bitmap(), taking down the app via
+ * ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(...)). The same failure
+ * mode (and fix) is documented for another PSRAM-backed QSPI panel on
+ * ESP-IDF v6 in the sh8601-based esp32_s3_touch_amoled_2_06 board
+ * patch notes, which also had to drop from the vendor's 40 MHz default
+ * to 20 MHz. 20 MHz is still far more bandwidth than this panel's
+ * partial-rect UI updates need. */
+#define FNK_N_SPI_CLOCK_HZ   (20 * 1000 * 1000)
 
 /* Native panel resolution (portrait). The logical (landscape) frame
  * used by display_clear/set_pixel/push_rgb565 is
