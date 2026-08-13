@@ -46,3 +46,24 @@ if("vroland__epdiy" IN_LIST build_components)
             -Wno-cpp)
     endif()
 endif()
+
+# Silence a use-after-free warning emitted from the
+# espressif/esp_lcd_st77922 managed component (used by
+# display_st77922.cpp on the Freenove FNK0104N, CONFIG_DRAFTLING_DISPLAY_ST77922).
+# panel_st77922_del() in esp_lcd_st77922_rgb.c logs the freed pointer
+# after calling free() on it:
+#   free(st77922);
+#   ESP_LOGD(TAG, "del st77922 panel @%p", st77922);
+# The pointer value itself is never dereferenced (only printed), so this
+# is harmless in practice, but newer GCC toolchains (as shipped with
+# recent ESP-IDF) flag it as -Werror=use-after-free and fail the build.
+# This bug is still present upstream as of esp-iot-solution's latest
+# esp_lcd_st77922_rgb.c, so suppress it for that component's library
+# only, without patching third-party vendor code we don't maintain.
+if("espressif__esp_lcd_st77922" IN_LIST build_components)
+    idf_component_get_property(st77922_lib espressif__esp_lcd_st77922 COMPONENT_LIB)
+    if(st77922_lib)
+        target_compile_options(${st77922_lib} PRIVATE
+            -Wno-error=use-after-free)
+    endif()
+endif()
