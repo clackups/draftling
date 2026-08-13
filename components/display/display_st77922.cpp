@@ -378,9 +378,28 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS | SPICOMMON_BUSFLAG_QUAD;
     ESP_ERROR_CHECK(spi_bus_initialize(FNK_N_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
 
-    esp_lcd_panel_io_spi_config_t io_cfg = ST77922_PANEL_IO_QSPI_CONFIG(
-        (gpio_num_t)FNK_N_CS_PIN, nullptr, nullptr);
+    /* Field-for-field equivalent of the component's own
+     * ST77922_PANEL_IO_QSPI_CONFIG() macro, expanded by hand instead
+     * of invoked directly: the macro's braced-init-list assigns the
+     * plain-int literal `-1` to the `gpio_num_t dc_gpio_num` field and
+     * leaves `cs_ena_pretrans` / `cs_ena_posttrans` out of the list
+     * entirely, which is legal C99 designated-initializer usage but
+     * fails to compile as C++ aggregate initialization in this .cpp
+     * file (-fpermissive int->enum conversion error, plus
+     * -Werror=missing-field-initializers). Zero-initialising the
+     * struct first and then assigning every field the macro sets
+     * keeps the exact same configuration while staying valid C++. */
+    esp_lcd_panel_io_spi_config_t io_cfg = {};
+    io_cfg.cs_gpio_num = (gpio_num_t)FNK_N_CS_PIN;
+    io_cfg.dc_gpio_num = (gpio_num_t)-1;
+    io_cfg.spi_mode = 0;
     io_cfg.pclk_hz = FNK_N_SPI_CLOCK_HZ;
+    io_cfg.trans_queue_depth = 10;
+    io_cfg.on_color_trans_done = nullptr;
+    io_cfg.user_ctx = nullptr;
+    io_cfg.lcd_cmd_bits = 32;
+    io_cfg.lcd_param_bits = 8;
+    io_cfg.flags.quad_mode = true;
     /* See the DMA_ALIGN_BYTES comment above s_tx_buf's declaration:
      * without this flag, esp_lcd_panel_io_tx_color() bounces every
      * >32 KB chunk of a PSRAM color buffer through a freshly malloc'd
