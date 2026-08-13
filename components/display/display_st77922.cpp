@@ -6,11 +6,12 @@
  * 320x480 native panel, rendered landscape at 480x320).
  *
  * This backend is built on the official `espressif/esp_lcd_st77922`
- * managed component (from espressif/esp-iot-solution), the same
- * component Freenove's own confirmed-working xiaozhi-esp32 firmware
- * uses for this exact board
- * (main/boards/freenove-esp32s3-display-3.5-lcd/
- * freenove-esp32s3-display-3.5-lcd.cc). Two earlier revisions of this
+ * managed component (from espressif/esp-iot-solution). The same
+ * component and the same byte-identical vendor init table are also
+ * used by the xiaozhi-esp32 board file
+ * main/boards/lcdwiki-es3c35p/lcdwiki-es3c35p.cc, which drives a
+ * different vendor's board (LCDWiki ES3C35P) built around the same
+ * LCD module/controller. Two earlier revisions of this
  * file hand-rolled the QSPI protocol directly against
  * spi_device_polling_transmit(), first porting Freenove's separate
  * Arduino TFT_eSPI vendor driver (Libraries/FNK0104N/
@@ -28,7 +29,7 @@
  *
  * The vendor init command table below is unchanged from the earlier
  * revisions (still ported from Freenove's driver and byte-identical
- * to the table used by their own xiaozhi-esp32 board file), just
+ * to the table used by the lcdwiki-es3c35p board file above), just
  * retyped as `st77922_lcd_init_cmd_t` to match the component's
  * `st77922_vendor_config_t::init_cmds` field.
  *
@@ -39,8 +40,8 @@
  * MADCTL at its portrait value and instead performs a software pixel
  * transpose in Fill_Colors() for rotation 1/3; this file ports that
  * same transpose (rotation "1": logical (lx, ly) -> physical
- * (LCD_NATIVE_WIDTH - 1 - ly, lx)) so the draw_bitmap window always
- * addresses the panel's native portrait frame, while
+ * (ly, lx)) so the draw_bitmap window always addresses the panel's
+ * native portrait frame, while
  * display_clear/display_set_pixel/display_push_rgb565 continue to
  * operate in logical (already-landscape) coordinates like every other
  * backend.
@@ -301,10 +302,23 @@ static void tx_param_qspi(uint8_t cmd, const void *data, size_t len)
 /* Transpose a logical (already-landscape) rectangle of the
  * framebuffer into s_tx_buf in the panel's native portrait
  * coordinate space, following Freenove's Fill_Colors() rotation==1
- * mapping: physical(x, y) = (FNK_N_NATIVE_WIDTH - 1 - ly, lx). */
+ * mapping: physical(x, y) = (ly, lx). Confirmed against two
+ * independent (non-Freenove-hosted) copies of Freenove's own
+ * TFT_eSPI ST77922.cpp vendor driver -- both byte-identical to our
+ * s_init_seq table and using the same LCD_CS=10/BL=41/SCLK=12/
+ * D0=11/D1=13/D2=14/D3=9 pin numbers -- whose Fill_Colors() simply
+ * swaps sx/sy (new_sx = old_sy, new_sy = old_sx) after transposing
+ * the pixel buffer, with no width-complement term. An earlier
+ * revision of this file used physical(x, y) = (FNK_N_NATIVE_WIDTH -
+ * 1 - ly, lx), which happens to match the true mapping only for a
+ * full-frame flush (ly == 0, h == FNK_N_NATIVE_WIDTH) -- every
+ * partial-rect flush (i.e. every UI update after the initial full
+ * clear) landed at the vertically-mirrored native position instead,
+ * which looked like a permanently blank screen once the editor UI
+ * started issuing small dirty-rect updates. */
 static void flush_rect(int lx, int ly, int w, int h)
 {
-    int phys_sx = FNK_N_NATIVE_WIDTH - ly - h;
+    int phys_sx = ly;
     int phys_sy = lx;
     int phys_w  = h;
     int phys_h  = w;
