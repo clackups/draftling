@@ -88,12 +88,29 @@ static const char *TAG = "DisplayST77922";
 
 #define QSPI_1W_CMD   0x02
 #define QSPI_4W_CMD   0x32
-#define WR_RAM_C_CMD  0x3C  /* RAMWRC: the panel's chosen color-data write
-                             * command for every chunk of a Fill_Colors
-                             * burst, per Freenove's actual vendor driver
-                             * (see fill_native_rect() below for details on
-                             * why this deviates from the generic MIPI DCS
-                             * RAMWR-then-RAMWRC pattern). */
+#define WR_RAM_CMD    0x2C  /* RAMWR: standard MIPI DCS memory-write command,
+                             * used for every chunk of a pixel burst (see
+                             * fill_native_rect() below). Freenove's own
+                             * xiaozhi-esp32 board file for this exact panel
+                             * (main/boards/freenove-esp32s3-display-3.5-lcd,
+                             * confirmed working on real FNK0104N hardware)
+                             * builds on top of the official
+                             * espressif/esp_lcd_st77922 IDF component, whose
+                             * panel_st77922_draw_bitmap() always issues
+                             * LCD_CMD_RAMWR (0x2C) -- never RAMWRC (0x3C) --
+                             * for the color-data write, and that component's
+                             * tx_color() forwards the very same lcd_cmd to
+                             * esp_lcd_panel_io_tx_color(), which resends the
+                             * identical QSPI cmd/addr header on every
+                             * DMA-sized sub-transaction of a large burst (the
+                             * IDF SPI LCD IO layer does not swap to a
+                             * different "continuation" opcode mid-burst). A
+                             * prior revision of this file used RAMWRC (0x3C)
+                             * for every chunk instead, based on reading
+                             * Freenove's separate Arduino TFT_eSPI vendor
+                             * driver (ST77922.cpp); that turned out not to
+                             * match the officially confirmed-working
+                             * reference and left the FNK0104N screen blank. */
 #define SET_X_CMD     0x2A
 #define SET_Y_CMD     0x2B
 #define MADCTL_CMD    0x36
@@ -303,45 +320,36 @@ static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
     set_windows(sx, sy, sx + w, sy + h);
 
     if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    /* Re-send the WR_RAM_C (0x3C) command/address header on every
-     * chunk of the burst, including the first, while CS stays
-     * asserted low across the whole burst. Confirmed against
-     * Freenove's actual vendor driver source (extracted from
-     * Libraries/FNK0104N/TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922.cpp,
-     * not just its header/summary): ST77922::Fill_Colors() always
-     * addresses WR_RAM_C_CMD (0x3C), for every chunk, and never sends
-     * WR_RAM_CMD (0x2C) at all -- this panel/timing combination
-     * apparently accepts RAMWRC as the very first color-data command
-     * following a fresh CASET/RASET window, unlike the generic MIPI
-     * DCS assumption that only RAMWR may open a burst.
+    /* Re-send the RAMWR (0x2C) command/address header on every chunk
+     * of the burst, including the first, while CS stays asserted low
+     * across the whole burst.
      *
-     * A prior revision of this function switched the first chunk to
-     * WR_RAM_CMD (0x2C) based on comparing against the unrelated
-     * espressif/esp-iot-solution esp_lcd_st77922 IDF component, which
-     * is a different, more generic ST77922 driver that this board's
-     * firmware does not use -- Freenove's actual shipped driver for
-     * this exact panel/timing never issues RAMWR. That change was a
-     * regression (screen stayed blank); reverted back to always using
-     * RAMWRC to match the real vendor source exactly.
-     *
-     * The header itself is resent on every chunk (not just implied to
-     * continue) because Freenove's `spi_transaction_ext_t espit` is
-     * declared once, zero-initialised before the do-while loop, and
-     * never reset inside it: the `else` branch (every chunk after the
-     * first) only touches `espit.base.flags` (adding
-     * SPI_TRANS_VARIABLE_DUMMY) and leaves `espit.base.cmd`,
-     * `espit.base.addr`, `espit.command_bits` and `espit.address_bits`
-     * untouched from the first iteration, so those values (0x32,
-     * WR_RAM_C_CMD<<8, 8, 24) silently carry over into every later
-     * `spi_device_polling_transmit()` call too -- i.e. the vendor's
-     * real on-the-wire behaviour resends the full header every chunk,
-     * it just never changes which command that header carries. */
+     * A prior revision of this function used WR_RAM_C (0x3C,
+     * "RAMWRC"/write-memory-continue) exclusively instead, based on a
+     * reading of Freenove's separate Arduino TFT_eSPI vendor driver
+     * (Libraries/FNK0104N/TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922.cpp,
+     * Fill_Colors()). That turned out not to match Freenove's own
+     * xiaozhi-esp32 firmware for this exact panel/board
+     * (main/boards/freenove-esp32s3-display-3.5-lcd), which the user
+     * confirmed works correctly on real FNK0104N hardware (via
+     * CONFIG_BOARD_TYPE_Freenove_ESP32S3_DISPLAY_3_5_LCD=y) while ours
+     * showed a blank screen. That firmware is built on top of the
+     * official espressif/esp_lcd_st77922 IDF component
+     * (esp_lcd_st77922_general.c, panel_st77922_draw_bitmap()), which
+     * always issues plain MIPI DCS RAMWR (0x2C) for the color-data
+     * write and never sends RAMWRC (0x3C) at all; that component's
+     * tx_color() forwards the very same lcd_cmd to
+     * esp_lcd_panel_io_tx_color(), which resends the identical QSPI
+     * cmd/addr header on every DMA-sized sub-transaction of a large
+     * burst (the IDF SPI LCD IO layer does not switch to a different
+     * "continuation" opcode mid-burst) -- matching the resend-every-
+     * chunk pattern kept below. */
     while (total > 0) {
         size_t chunk = (total > TX_LEN) ? TX_LEN : total;
         spi_transaction_ext_t tx = {};
         tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
         tx.base.cmd  = QSPI_4W_CMD;
-        tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
+        tx.base.addr = ((uint32_t)WR_RAM_CMD) << 8;
         tx.command_bits = 8;
         tx.address_bits = 24;
         tx.base.tx_buffer = tx_buf;
