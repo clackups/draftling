@@ -248,16 +248,21 @@ Per-board display backends behind a single C API:
   each dirty rect into native panel orientation and byte-swaps each
   pixel to big-endian in software (via `flush_rect()`) before calling
   `esp_lcd_panel_draw_bitmap()`, matching Freenove's own
-  `ST77922::Fill_Colors()` rotation-1 behavior and its
-  `LV_COLOR_16_SWAP` LVGL config for this board. `flush_rect()`'s
-  window-start mapping is `(ly, lx)` (a plain axis swap, no
-  width-complement term), confirmed against two independent
-  unofficial mirrors of Freenove's own TFT_eSPI `ST77922.cpp` driver
-  with byte-identical init tables and matching pin numbers; an earlier
-  revision instead used `(FNK_N_NATIVE_WIDTH - 1 - ly, lx)`, which
-  only matched for a full-frame flush and left every partial-rect UI
-  update landing at the vertically-mirrored native position, causing
-  a permanently blank-looking screen after the first full clear. This
+  `ST77922::Fill_Colors_Landscape()` behavior (the vendor helper that
+  actually renders landscape UI on this native-portrait panel without
+  changing MADCTL) and its `LV_COLOR_16_SWAP` LVGL config for this
+  board. `flush_rect()`'s window-start mapping is
+  `(FNK_N_NATIVE_WIDTH - ly - h, lx)` (a width-complement, not a plain
+  axis swap), confirmed against `Fill_Colors_Landscape()` in two
+  independent unofficial mirrors of Freenove's own TFT_eSPI
+  `ST77922.cpp` driver with byte-identical init tables and matching
+  pin numbers; two earlier revisions instead used `(FNK_N_NATIVE_WIDTH
+  - 1 - ly, lx)` and later `(ly, lx)` (derived from the unrelated
+  `Fill_Colors()` rotation-1 branch, which also outright refuses
+  partial-rect writes), both of which only matched the true mapping
+  for a full-frame flush and left every partial-rect UI update landing
+  at the wrong native position, causing a permanently blank-looking
+  screen after the first full clear. This
   panel has no
   discrete RST pin; `esp_lcd_panel_reset()` sends a software reset
   (SWRESET + 120 ms delay) instead. An earlier hand-rolled SPI
