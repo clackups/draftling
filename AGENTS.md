@@ -226,8 +226,12 @@ Per-board display backends behind a single C API:
   respectively. Both panels are wired identically (MOSI/SCK/CS/DC,
   no hardware RST, GPIO45 active-high backlight) so one file holds
   both controllers' init command sequences and a shared
-  `display_push_rgb565()` fast path that byte-swaps one row at a
-  time into a DMA scratch buffer.
+  `display_flush()` path that byte-swaps the whole dirty rectangle
+  into a PSRAM scratch buffer and sends it with a single
+  `esp_lcd_panel_io_tx_color()` call -- refilling the scratch buffer
+  row-by-row across multiple queued `tx_color()` calls previously
+  raced with the async DMA hardware, corrupting the lower portion of
+  the screen once the transaction queue filled up.
 - **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
   ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`). Pins are
   hardcoded (not read from the board header) because the panel is
