@@ -91,7 +91,10 @@ static const char *TAG = "DisplayST77922";
 
 #define QSPI_1W_CMD   0x02
 #define QSPI_4W_CMD   0x32
-#define WR_RAM_C_CMD  0x3C
+#define WR_RAM_CMD    0x2C  /* RAMWR: write frame memory, resets the internal
+                             * write pointer to the CASET/RASET window origin. */
+#define WR_RAM_C_CMD  0x3C  /* RAMWRC: continue a RAMWR write in progress
+                             * without resetting the pointer. */
 #define SET_X_CMD     0x2A
 #define SET_Y_CMD     0x2B
 #define MADCTL_CMD    0x36
@@ -301,40 +304,51 @@ static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
     set_windows(sx, sy, sx + w, sy + h);
 
     if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    /* Re-send the WR_RAM_C (0x3C) command/address header on every
-     * chunk of the burst, while CS stays asserted low across the
-     * whole burst.
+    /* Re-send a full command/address header on every chunk of the
+     * burst, while CS stays asserted low across the whole burst
+     * (matches Freenove's own reference driver's actual on-the-wire
+     * behaviour -- ST77922.cpp's Fill_Colors() appears at a skim to
+     * frame only the first do/while iteration, guarded by a `flag`
+     * bool cleared after the first pass, but its `spi_transaction_ext_t
+     * espit` is declared once, zero-initialised before the loop, and
+     * never reset inside it: the `else` branch only touches
+     * `espit.base.flags`, so `espit.base.cmd`/`addr`/`command_bits`/
+     * `address_bits` silently carry over into every later
+     * `spi_device_polling_transmit()` call too).
      *
-     * This looks redundant at first glance -- Freenove's own
-     * reference driver (ST77922.cpp's Fill_Colors()) appears at a
-     * skim to frame only the very first do/while iteration, guarded
-     * by a `flag` bool that is cleared after the first pass. But its
-     * `spi_transaction_ext_t espit` is declared ONCE, zero-initialised
-     * before the loop, and never reset inside it: the `else` branch
-     * (every chunk after the first) only touches `espit.base.flags`
-     * (adding SPI_TRANS_VARIABLE_DUMMY) and leaves `espit.base.cmd`,
-     * `espit.base.addr`, `espit.command_bits` and `espit.address_bits`
-     * untouched from the first iteration, so their values (0x32,
-     * WR_RAM_C_CMD<<8, 8, 24) silently carry over into every later
-     * `spi_device_polling_transmit()` call too. The vendor driver's
-     * *actual* on-the-wire behaviour is therefore to resend the full
-     * command/address header on every chunk, not just the first --
-     * the `flag` bool only controls whether VARIABLE_DUMMY gets
-     * added to the flags, nothing else. A previous version of this
-     * function took the `flag` bool at face value and framed only
-     * the first chunk with a freshly zeroed transaction struct each
-     * iteration (so continuation chunks really were headerless),
-     * which does not match the vendor reference's real behavior and
-     * left the panel blank on any redraw spanning more than one
-     * TX_LEN chunk (0x4000 = 16384 pixels), i.e. every partial LVGL
-     * redraw larger than a small rect -- including the very first
-     * full-screen paint of the editor UI. */
+     * Per MIPI DCS, only the FIRST chunk of a burst may use RAMWR
+     * (0x2C): that command resets the panel's internal write pointer
+     * to the CASET/RASET window set by set_windows() above. Any
+     * subsequent RAMWR would re-reset the pointer back to the window
+     * origin and overwrite the start of the rect with each later
+     * chunk instead of continuing where the previous chunk left off.
+     * Follow-on chunks must instead use RAMWRC (0x3C), which streams
+     * more pixel data from wherever the pointer currently sits.
+     *
+     * A previous version of this function used RAMWRC (0x3C) for
+     * every chunk, including the first, and never sent RAMWR at all.
+     * Since RAMWRC never resets the pointer to the window origin, a
+     * fresh rect's first write landed wherever a previous burst left
+     * the write pointer, corrupting or dropping pixel data -- this
+     * left the panel blank/garbled on essentially every redraw after
+     * the very first frame, matching the actual field symptom. The
+     * espressif/esp-iot-solution esp_lcd_st77922 reference driver
+     * confirms this: it always issues LCD_CMD_RAMWR (0x2C), never
+     * RAMWRC, for every color-data transfer regardless of size,
+     * because esp_lcd_panel_io_tx_color() sends the command once and
+     * then streams all chunks as pure data (no per-chunk command).
+     * We still resend a header on every polling-transmit chunk here
+     * (see paragraph above on why: it matches this manual QSPI
+     * backend's chunked-transaction structure), but the command value
+     * in that header must be RAMWR for chunk 0 and RAMWRC afterwards
+     * to correctly continue rather than restart the write. */
+    bool first_chunk = true;
     while (total > 0) {
         size_t chunk = (total > TX_LEN) ? TX_LEN : total;
         spi_transaction_ext_t tx = {};
         tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
         tx.base.cmd  = QSPI_4W_CMD;
-        tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
+        tx.base.addr = ((uint32_t)(first_chunk ? WR_RAM_CMD : WR_RAM_C_CMD)) << 8;
         tx.command_bits = 8;
         tx.address_bits = 24;
         tx.base.tx_buffer = tx_buf;
@@ -342,6 +356,7 @@ static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
         ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
         total  -= chunk;
         tx_buf += chunk;
+        first_chunk = false;
     }
     if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 1);
 }
