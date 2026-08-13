@@ -76,7 +76,21 @@ static int s_height = 0;
 static int s_dirty_x1 = -1, s_dirty_y1 = -1, s_dirty_x2 = -1, s_dirty_y2 = -1;
 static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
 
-static uint8_t *s_row_buf = NULL;   /* byte-swapped DMA scratch, one row */
+/* Byte-swapped scratch buffer for the whole dirty rectangle of a
+ * single display_flush() call, sized to the full framebuffer so any
+ * rect fits without reallocation. This must NOT be reused row-by-row
+ * across separate esp_lcd_panel_io_tx_color() calls: that API queues
+ * the transfer asynchronously (io_cfg.trans_queue_depth above 1) and
+ * only blocks once the queue is full, so a buffer that is refilled
+ * for the next row before the SPI/DMA hardware has actually read the
+ * previous row out of it gets corrupted -- observed on real hardware
+ * as the top portion of the screen rendering correctly and the rest
+ * being shifted by a few rows once the queue saturates. Building the
+ * whole rect into one buffer and issuing a single tx_color call (the
+ * same pattern used by display_rlcd.cpp and display_st77922.cpp)
+ * avoids the race entirely. PSRAM is fine here: the ESP32-S3's GDMA
+ * can source SPI DMA transfers directly from PSRAM. */
+static uint8_t *s_tx_buf = NULL;
 
 /* Last user-requested backlight percent, cached so display_sleep() /
  * display_wake() can restore the brightness after blanking the panel
@@ -286,7 +300,7 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     bus_cfg.sclk_io_num   = FNK_LCD_SCK_PIN;
     bus_cfg.quadwp_io_num = -1;
     bus_cfg.quadhd_io_num = -1;
-    bus_cfg.max_transfer_sz = width * 2;
+    bus_cfg.max_transfer_sz = width * height * 2;
     ESP_ERROR_CHECK(spi_bus_initialize(FNK_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
 
     esp_lcd_panel_io_spi_config_t io_cfg = {};
@@ -301,8 +315,8 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 
     s_fb_pixels = (size_t)width * height;
     s_fb = (uint16_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    s_row_buf = (uint8_t *)heap_caps_malloc((size_t)width * 2, MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    assert(s_fb && s_row_buf);
+    s_tx_buf = (uint8_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    assert(s_fb && s_tx_buf);
     memset(s_fb, 0, s_fb_pixels * sizeof(uint16_t));
 
     backlight_pwm_init();
@@ -414,16 +428,16 @@ extern "C" void display_flush(void)
     set_addr_window(x1, y1, w, h);
     send_command(0x2C); /* RAMWR */
 
+    uint8_t *dst = s_tx_buf;
     for (int row = 0; row < h; row++) {
         const uint16_t *src = s_fb + (size_t)(y1 + row) * s_width + x1;
-        uint8_t *dst = s_row_buf;
         for (int col = 0; col < w; col++) {
             uint16_t px = src[col];
             *dst++ = (uint8_t)(px >> 8);
             *dst++ = (uint8_t)(px & 0xFF);
         }
-        esp_lcd_panel_io_tx_color(s_io_handle, -1, s_row_buf, (size_t)w * 2);
     }
+    esp_lcd_panel_io_tx_color(s_io_handle, -1, s_tx_buf, (size_t)w * h * 2);
 }
 
 extern "C" void display_full_refresh(void)
