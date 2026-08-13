@@ -54,7 +54,21 @@ static const char *TAG = "DisplayST77922";
 #define FNK_N_D3_PIN     9
 
 #define FNK_N_SPI_HOST       SPI2_HOST
-#define FNK_N_SPI_CLOCK_HZ   (80 * 1000 * 1000)
+/* 80 MHz QSPI (4 data lines all toggling every clock, wired point to
+ * point on a hobby board rather than a controlled-impedance PCB
+ * trace) is right at the edge of reliable signal integrity: the two
+ * prior fixes to this file corrected the WR_RAM_C cmd/addr framing
+ * (which is necessary and still correct) but a user report of the
+ * screen staying blank persisted afterwards even though every write
+ * completes without a driver-level error (QSPI writes are
+ * write-only/unidirectional, so a garbled bit on D0-D3 at 80 MHz is
+ * never detected by the ESP32 side -- it just silently corrupts the
+ * command/address/pixel stream the panel receives). The other QSPI
+ * color-LCD backend in this component, AXS15231B, already runs its
+ * bus at 40 MHz (see AXS_SPI_CLOCK_HZ in display_axs15231b.cpp);
+ * drop this panel to the same, safer 40 MHz so cmd/addr/pixel data
+ * are actually latched correctly by the panel. */
+#define FNK_N_SPI_CLOCK_HZ   (40 * 1000 * 1000)
 
 /* Native panel resolution (portrait). The logical (landscape) frame
  * used by display_clear/set_pixel/push_rgb565 is
