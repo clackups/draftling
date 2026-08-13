@@ -441,6 +441,22 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     assert(s_fb && s_tx_buf);
     memset(s_fb, 0, s_fb_pixels * sizeof(uint16_t));
 
+    /* This board has no discrete RST pin (Freenove's TFT_eSPI setup
+     * header defines TFT_RST as -1 for this panel, same as the
+     * ILI9341/ST7796 FNK0104 SKUs) and the vendor init table below
+     * issues no software reset (SWRESET, 0x01) either, so the panel
+     * comes out of a cold power-on with no reset pulse at all. The
+     * controller needs time for its internal power rails/oscillator
+     * to settle before it will latch configuration registers -- without
+     * this delay, register writes sent immediately after
+     * spi_bus_add_device() are silently ignored and the panel never
+     * leaves its power-on default state (backlight turns on but the
+     * screen stays blank/garbled). 120 ms matches the settle time
+     * already used for the panel's own SLPOUT delay below and is
+     * within the panel datasheet's recommended >=100-120 ms power-on
+     * reset window. */
+    vTaskDelay(pdMS_TO_TICKS(120));
+
     for (size_t i = 0; i < sizeof(s_init_seq) / sizeof(s_init_seq[0]); i++) {
         write_reg(s_init_seq[i].cmd, s_init_seq[i].data, s_init_seq[i].len);
         if (s_init_seq[i].delay_ms) vTaskDelay(pdMS_TO_TICKS(s_init_seq[i].delay_ms));
