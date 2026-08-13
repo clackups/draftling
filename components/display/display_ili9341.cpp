@@ -89,8 +89,34 @@ static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
  * whole rect into one buffer and issuing a single tx_color call (the
  * same pattern used by display_rlcd.cpp and display_st77922.cpp)
  * avoids the race entirely. PSRAM is fine here: the ESP32-S3's GDMA
- * can source SPI DMA transfers directly from PSRAM. */
+ * can source SPI DMA transfers directly from PSRAM -- provided
+ * io_cfg.flags.psram_dma_direct is set (see display_init()) and the
+ * buffer is DMA/cache-line aligned; see the allocation below. */
 static uint8_t *s_tx_buf = NULL;
+
+/* esp_lcd_panel_io_spi caps a single SPI transaction at 32 KB
+ * (SPI_LL_DMA_MAX_BIT_LEN on ESP32-S3) and splits any larger
+ * esp_lcd_panel_io_tx_color() buffer into that many chunks
+ * internally. Without io_cfg.flags.psram_dma_direct (the default),
+ * each chunk that lives in PSRAM is bounced through a *freshly
+ * malloc'd internal-DRAM* buffer for the DMA transfer, because the
+ * driver assumes PSRAM source buffers need a DMA-capable-internal
+ * copy unless told otherwise. On FNK0104S a full-screen flush is
+ * 307200 bytes -> 10 chunks -> up to 10 simultaneous 32 KB internal
+ * allocations in flight (trans_queue_depth), which can exhaust
+ * internal SRAM once the rest of the firmware (LVGL, BLE, WiFi) has
+ * claimed its share; esp_lcd_panel_io_tx_color()'s return value is
+ * not checked here, so an ESP_ERR_NO_MEM part-way through a big
+ * flush silently drops the rest of the rectangle instead of
+ * asserting -- this reproduced as the lower half of the screen (the
+ * later rows of a full-height flush) never updating while small
+ * writes near the top (e.g. the status-bar battery percentage)
+ * still succeeded. Setting psram_dma_direct lets the driver DMA
+ * straight out of s_tx_buf instead, provided the buffer (and every
+ * 32 KB chunk offset into it) is aligned; DMA_ALIGN_BYTES keeps both
+ * the allocation and the chunk size aligned so the fast path is
+ * always taken. */
+#define DMA_ALIGN_BYTES 64
 
 /* Last user-requested backlight percent, cached so display_sleep() /
  * display_wake() can restore the brightness after blanking the panel
@@ -311,11 +337,24 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     io_cfg.lcd_param_bits   = 8;
     io_cfg.spi_mode         = 0;
     io_cfg.trans_queue_depth = 10;
+    /* See the DMA_ALIGN_BYTES comment above s_tx_buf's declaration:
+     * without this flag, esp_lcd_panel_io_tx_color() bounces every
+     * >32 KB chunk of a PSRAM color buffer through a freshly
+     * malloc'd internal-DRAM buffer, which can silently fail (and
+     * drop the rest of the flush) once internal SRAM is under
+     * pressure. */
+    io_cfg.flags.psram_dma_direct = 1;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)FNK_SPI_HOST, &io_cfg, &s_io_handle));
 
     s_fb_pixels = (size_t)width * height;
     s_fb = (uint16_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    s_tx_buf = (uint8_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    /* Aligned (and sized so every 32 KB DMA chunk offset stays
+     * aligned) so the psram_dma_direct fast path above is always
+     * taken instead of falling back to the internal-DRAM bounce
+     * copy for a misaligned chunk. */
+    size_t tx_buf_size = (s_fb_pixels * sizeof(uint16_t) + DMA_ALIGN_BYTES - 1) &
+                         ~(size_t)(DMA_ALIGN_BYTES - 1);
+    s_tx_buf = (uint8_t *)heap_caps_aligned_alloc(DMA_ALIGN_BYTES, tx_buf_size, MALLOC_CAP_SPIRAM);
     assert(s_fb && s_tx_buf);
     memset(s_fb, 0, s_fb_pixels * sizeof(uint16_t));
 
@@ -437,7 +476,10 @@ extern "C" void display_flush(void)
             *dst++ = (uint8_t)(px & 0xFF);
         }
     }
-    esp_lcd_panel_io_tx_color(s_io_handle, -1, s_tx_buf, (size_t)w * h * 2);
+    esp_err_t ret = esp_lcd_panel_io_tx_color(s_io_handle, -1, s_tx_buf, (size_t)w * h * 2);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "tx_color failed (%s), dropped %dx%d flush", esp_err_to_name(ret), w, h);
+    }
 }
 
 extern "C" void display_full_refresh(void)
