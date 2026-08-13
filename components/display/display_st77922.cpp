@@ -460,7 +460,17 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 
     esp_lcd_panel_dev_config_t panel_cfg = {};
     panel_cfg.reset_gpio_num = FNK_N_RST_PIN;
-    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB;
+    /* Matches the confirmed-working xiaozhi-esp32 lcdwiki-es3c35p
+     * board's DISPLAY_RGB_ORDER (LCD_RGB_ELEMENT_ORDER_BGR). This has
+     * no effect on the panel's actual MADCTL register in practice --
+     * the component sends its own MADCTL derived from this field
+     * *before* running init_cmds, but our vendor table's own 0x36
+     * entry (d_36 below) is sent afterwards and wins (hence the
+     * "36h command has been used and will be overwritten" warning
+     * logged at boot) -- but matching the reference removes any doubt
+     * and keeps this field meaningful if the vendor table ever drops
+     * its own MADCTL entry. */
+    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_BGR;
     panel_cfg.bits_per_pixel = 16;
     panel_cfg.vendor_config  = &vendor_cfg;
     ESP_ERROR_CHECK(esp_lcd_new_panel_st77922(s_io, &panel_cfg, &s_panel));
@@ -476,6 +486,21 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
      * resetting Draftling. */
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
+
+    /* The confirmed-working xiaozhi-esp32 lcdwiki-es3c35p board
+     * explicitly calls these three functions right after
+     * esp_lcd_panel_init() to pin down the panel's final display
+     * state. Our vendor init table (s_init_seq above) already sends
+     * equivalent DCS commands (0x21 INVON, 0x29 DISPON) *inside* the
+     * init sequence, but esp_lcd_panel_invert_color() /
+     * esp_lcd_panel_mirror() / esp_lcd_panel_disp_on_off() are the
+     * *last* word issued to the panel -- calling them here overrides
+     * whatever the table left behind and guarantees our panel ends up
+     * in exactly the same electrical state as the reference,
+     * regardless of any future edits to s_init_seq. */
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, false, false));
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
 
     gpio_set_level((gpio_num_t)FNK_N_BL_PIN, 1);
 
