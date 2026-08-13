@@ -38,10 +38,11 @@
  * (`panel_st77922_swap_xy()` in the component unconditionally returns
  * ESP_ERR_NOT_SUPPORTED). Freenove's own reference driver keeps
  * MADCTL at its portrait value and instead performs a software pixel
- * transpose in Fill_Colors() for rotation 1/3; this file ports that
- * same transpose (rotation "1": logical (lx, ly) -> physical
- * (ly, lx)) so the draw_bitmap window always addresses the panel's
- * native portrait frame, while
+ * transpose in its ST77922::Fill_Colors_Landscape() helper; this file
+ * ports that same transpose (logical (lx, ly) -> physical
+ * (FNK_N_NATIVE_WIDTH - ly - h, lx), see flush_rect() below) so the
+ * draw_bitmap window always addresses the panel's native portrait
+ * frame, while
  * display_clear/display_set_pixel/display_push_rgb565 continue to
  * operate in logical (already-landscape) coordinates like every other
  * backend.
@@ -306,24 +307,42 @@ static void tx_param_qspi(uint8_t cmd, const void *data, size_t len)
 
 /* Transpose a logical (already-landscape) rectangle of the
  * framebuffer into s_tx_buf in the panel's native portrait
- * coordinate space, following Freenove's Fill_Colors() rotation==1
- * mapping: physical(x, y) = (ly, lx). Confirmed against two
- * independent (non-Freenove-hosted) copies of Freenove's own
- * TFT_eSPI ST77922.cpp vendor driver -- both byte-identical to our
- * s_init_seq table and using the same LCD_CS=10/BL=41/SCLK=12/
- * D0=11/D1=13/D2=14/D3=9 pin numbers -- whose Fill_Colors() simply
- * swaps sx/sy (new_sx = old_sy, new_sy = old_sx) after transposing
- * the pixel buffer, with no width-complement term. An earlier
- * revision of this file used physical(x, y) = (FNK_N_NATIVE_WIDTH -
- * 1 - ly, lx), which happens to match the true mapping only for a
- * full-frame flush (ly == 0, h == FNK_N_NATIVE_WIDTH) -- every
- * partial-rect flush (i.e. every UI update after the initial full
- * clear) landed at the vertically-mirrored native position instead,
- * which looked like a permanently blank screen once the editor UI
- * started issuing small dirty-rect updates. */
+ * coordinate space, following Freenove's own ST77922::
+ * Fill_Colors_Landscape() helper (ST77922.cpp in the FNK0104N vendor
+ * driver bundle) -- the function that actually implements landscape
+ * rendering on top of the native-portrait (rotation == 0) panel, as
+ * opposed to Fill_Colors()'s generic rotation==1/3 branch (used only
+ * when Set_Rotation(1) has been called, which also hard-refuses any
+ * partial-rect write that is not the full frame -- not applicable
+ * here since this backend never changes MADCTL away from 0).
+ * Fill_Colors_Landscape() computes native_sx as
+ * `LCD_WIDTH - (sy + h)` (LCD_WIDTH == FNK_N_NATIVE_WIDTH, sy/h are
+ * the landscape-space y-origin/height), i.e. physical(x, y) =
+ * (FNK_N_NATIVE_WIDTH - ly - h, lx) -- a genuine 90-degree-rotation
+ * mapping where the landscape y-axis inverts onto the native x-axis
+ * (column) while the landscape x-axis maps straight onto the native
+ * y-axis (row), matching the per-pixel transpose below
+ * (`col * h + (h - 1 - row)`, identical to Fill_Colors_Landscape's
+ * `col * h + (h - row - 1)`).
+ *
+ * Two earlier revisions of this file got the window origin wrong:
+ * one used physical(x, y) = (FNK_N_NATIVE_WIDTH - 1 - ly, lx), which
+ * only matches the true mapping for a full-frame flush (ly == 0,
+ * h == FNK_N_NATIVE_WIDTH); a later revision removed the complement
+ * entirely (physical(x, y) = (ly, lx)) after comparing against
+ * Fill_Colors()'s unrelated rotation==1 branch (from
+ * community/community-mirrored copies of the vendor driver, not the
+ * landscape-specific helper) -- both of those also only agree with
+ * the correct mapping for a full-frame flush (ly == 0, h ==
+ * FNK_N_NATIVE_WIDTH), which is why the initial post-boot
+ * full-screen clear appeared to work while every subsequent
+ * partial-rect flush (i.e. every actual editor UI update -- text,
+ * cursor, title bar) landed at the wrong CASET column and never
+ * became visible, leaving the panel looking permanently blank after
+ * the first frame. */
 static void flush_rect(int lx, int ly, int w, int h)
 {
-    int phys_sx = ly;
+    int phys_sx = FNK_N_NATIVE_WIDTH - ly - h;
     int phys_sy = lx;
     int phys_w  = h;
     int phys_h  = w;
