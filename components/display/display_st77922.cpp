@@ -477,6 +477,29 @@ extern "C" void display_flush(void)
     if (x2 >= s_width)  x2 = s_width  - 1;
     if (y2 >= s_height) y2 = s_height - 1;
 
+    /* Round the flush window out to 4-pixel boundaries. Freenove's own
+     * reference LVGL integration (Tutorial_No_Touch/Sketches/
+     * Sketch_11.1_LVGL/display.cpp, my_rounder_cb) does exactly this
+     * -- "area->x1 &= ~0x3; area->y1 &= ~0x3; area->x2 |= 0x3;
+     * area->y2 |= 0x3;" -- and it is only wired up for the ST77922
+     * board (the ILI9341/ST7796 branch of the same file needs no
+     * rounder). The panel's SET_X/SET_Y window is silently ignored
+     * (or renders garbage) when the requested window is not aligned
+     * to a 4-pixel boundary, so without this the initial full-screen
+     * display_full_refresh() (already 480x320, both multiples of 4)
+     * looks fine but every subsequent small, arbitrarily-positioned
+     * LVGL partial redraw -- the actual editor UI text/title bar --
+     * never reaches the panel, leaving it stuck on a blank backlit
+     * screen after the first frame. Expanding is safe: the source
+     * pixels for the extra rows/columns are already present in
+     * s_fb from earlier writes. */
+    x1 &= ~0x3;
+    y1 &= ~0x3;
+    x2 |= 0x3;
+    y2 |= 0x3;
+    if (x2 >= s_width)  x2 = s_width  - 1;
+    if (y2 >= s_height) y2 = s_height - 1;
+
     flush_rect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
 }
 
