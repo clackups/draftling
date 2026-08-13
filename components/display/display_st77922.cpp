@@ -274,40 +274,42 @@ static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
     set_windows(sx, sy, sx + w, sy + h);
 
     if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    /* Only the first chunk of the burst carries the WR_RAM_C (0x3C)
-     * command/address header; every later chunk streams raw pixel
-     * bytes with the cmd/addr/dummy phases explicitly sized to zero,
-     * while CS stays asserted low across the whole burst. This
-     * mirrors both Freenove's own reference driver (ST77922.cpp's
-     * Fill_Colors(): a `flag` bool frames only the very first
-     * do/while iteration with SPI_TRANS_VARIABLE_CMD/ADDR, and every
-     * later iteration clears those flags so the fixed dev_cfg
-     * command_bits=0 / address_bits=0 apply instead) and the
-     * already-working display_axs15231b.cpp burst helpers
-     * (spi_send_pixels_first() / spi_send_pixels_cont()). A prior
-     * version of this function re-sent the full command/address
-     * header on every chunk, which does not match either reference
-     * and left the panel blank on any redraw spanning more than one
+    /* Re-send the WR_RAM_C (0x3C) command/address header on every
+     * chunk of the burst, while CS stays asserted low across the
+     * whole burst.
+     *
+     * This looks redundant at first glance -- Freenove's own
+     * reference driver (ST77922.cpp's Fill_Colors()) appears at a
+     * skim to frame only the very first do/while iteration, guarded
+     * by a `flag` bool that is cleared after the first pass. But its
+     * `spi_transaction_ext_t espit` is declared ONCE, zero-initialised
+     * before the loop, and never reset inside it: the `else` branch
+     * (every chunk after the first) only touches `espit.base.flags`
+     * (adding SPI_TRANS_VARIABLE_DUMMY) and leaves `espit.base.cmd`,
+     * `espit.base.addr`, `espit.command_bits` and `espit.address_bits`
+     * untouched from the first iteration, so their values (0x32,
+     * WR_RAM_C_CMD<<8, 8, 24) silently carry over into every later
+     * `spi_device_polling_transmit()` call too. The vendor driver's
+     * *actual* on-the-wire behaviour is therefore to resend the full
+     * command/address header on every chunk, not just the first --
+     * the `flag` bool only controls whether VARIABLE_DUMMY gets
+     * added to the flags, nothing else. A previous version of this
+     * function took the `flag` bool at face value and framed only
+     * the first chunk with a freshly zeroed transaction struct each
+     * iteration (so continuation chunks really were headerless),
+     * which does not match the vendor reference's real behavior and
+     * left the panel blank on any redraw spanning more than one
      * TX_LEN chunk (0x4000 = 16384 pixels), i.e. every partial LVGL
      * redraw larger than a small rect -- including the very first
      * full-screen paint of the editor UI. */
-    bool first = true;
     while (total > 0) {
         size_t chunk = (total > TX_LEN) ? TX_LEN : total;
         spi_transaction_ext_t tx = {};
-        tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
-                        SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
-        if (first) {
-            tx.base.cmd  = QSPI_4W_CMD;
-            tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
-            tx.command_bits = 8;
-            tx.address_bits = 24;
-            first = false;
-        } else {
-            tx.command_bits = 0;
-            tx.address_bits = 0;
-            tx.dummy_bits   = 0;
-        }
+        tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
+        tx.base.cmd  = QSPI_4W_CMD;
+        tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
+        tx.command_bits = 8;
+        tx.address_bits = 24;
         tx.base.tx_buffer = tx_buf;
         tx.base.length = chunk * 16;
         ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
@@ -366,6 +368,27 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     bus_cfg.sclk_io_num  = FNK_N_SCLK_PIN;
     bus_cfg.data2_io_num = FNK_N_D2_PIN;
     bus_cfg.data3_io_num = FNK_N_D3_PIN;
+    /* Explicitly mark the octal-mode data4..data7 lines as unused.
+     * spi_bus_config_t's data4_io_num..data7_io_num fields are plain
+     * ints (not unioned with anything we set above), so the
+     * zero-initialised `bus_cfg = {}` above leaves them at 0 (GPIO0)
+     * rather than -1. ESP-IDF's spicommon_bus_initialize_io() only
+     * skips these fields when `!(flags & SPICOMMON_BUSFLAG_OCTAL)`,
+     * but that test is a bitwise AND against a compound flag
+     * (OCTAL == QUAD | IO4_IO7), so it is still true whenever QUAD's
+     * bits are set -- i.e. it never actually skips them for a
+     * quad-mode bus like this one. The iomux-pin reservation loop
+     * then walks into data4_io_num..data7_io_num and tries to
+     * reserve GPIO0 four times, logging "GPIO 0 is conflict with
+     * others and be overwritten" (matches the exact warning seen in
+     * the field on this board). Setting them to -1 makes
+     * GPIO_IS_VALID_GPIO() reject them so they are skipped, same as
+     * the AXS15231B/ILI9341 backends' bus configs implicitly get via
+     * their smaller struct-literal initialisers. */
+    bus_cfg.data4_io_num = -1;
+    bus_cfg.data5_io_num = -1;
+    bus_cfg.data6_io_num = -1;
+    bus_cfg.data7_io_num = -1;
     bus_cfg.max_transfer_sz = (TX_LEN * 2) + 8;
     bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS | SPICOMMON_BUSFLAG_QUAD;
     ESP_ERROR_CHECK(spi_bus_initialize(FNK_N_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
