@@ -4,7 +4,7 @@
 /*
  * I2C touchscreen driver + LVGL pointer input device.
  *
- * Supports two controllers, picked at build time via
+ * Supports four controllers, picked at build time via
  * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
  *
  *   * AXS5106L (Allystar, e.g. Guition JC3248W535):
@@ -27,7 +27,19 @@
  *     not wired to an ESP32 GPIO (PaperS3) the address-select
  *     reset sequence cannot be performed, but probing covers it.
  *
- * In both cases the driver registers an LVGL pointer indev which
+ *   * FT6336U (FocalTech, e.g. Freenove FNK0104B / FNK0104S):
+ *     Register-addressed protocol -- 8-bit register address, touch
+ *     count at 0x02 (TD_STATUS), first point's X/Y at 0x03..0x06
+ *     (top nibble of each 16-bit value is an event/id code, low 12
+ *     bits are the coordinate).
+ *
+ *   * The Freenove FNK0104N's bundled ST77922-panel touch IC:
+ *     Register-addressed protocol -- 16-bit register address sent
+ *     MSB-first, an "update" flag at 0x0010 (bit 3), first point
+ *     (id + X + Y, 7 bytes) at 0x0014. Ported from Freenove's own
+ *     reference driver; exact silicon identity unconfirmed.
+ *
+ * In all cases the driver registers an LVGL pointer indev which
  * feeds touch coordinates to the LVGL event system, so widgets
  * receive standard click / press / gesture events. The transform
  * from the controller's native coordinate space to LVGL logical
@@ -405,6 +417,131 @@ static bool poll_gt911(int *out_x, int *out_y)
 
 #endif /* CONFIG_DRAFTLING_TOUCH_GT911 */
 
+/* ---- FT6336U (register-based) driver ---- */
+#if defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+
+/* FocalTech FT6336U register map (also shared by the FT6206/FT6236
+ * family this chip descends from). 8-bit register address, single
+ * I2C transaction each for status and point data. Used by the
+ * Freenove FNK0104B / FNK0104S. */
+#define FT6336U_REG_TD_STATUS  0x02  /* number of touch points, 0..2 */
+#define FT6336U_REG_P1_XH      0x03  /* event(2b) | x[11:8] */
+#define FT6336U_REG_P1_XL      0x04
+#define FT6336U_REG_P1_YH      0x05  /* id(4b) | y[11:8] */
+#define FT6336U_REG_P1_YL      0x06
+
+static esp_err_t ft6336u_read_reg(uint8_t reg, uint8_t *buf, size_t len)
+{
+    return i2c_master_transmit_receive(
+        s_dev, &reg, 1, buf, len, 50 /* ms */);
+}
+
+static bool poll_ft6336u(int *out_x, int *out_y)
+{
+    if (!s_dev) return false;
+
+    uint8_t pt[5] = { 0 };
+    /* Read TD_STATUS through P1_YL in one burst -- registers are
+     * contiguous (0x02..0x06). */
+    if (ft6336u_read_reg(FT6336U_REG_TD_STATUS, pt, sizeof(pt)) != ESP_OK) {
+        ESP_LOGD(TAG, "ft6336u read failed");
+        return false;
+    }
+
+    uint8_t points = pt[0] & 0x0F;
+    if (points < 1 || points > 2) return false;
+
+    int nx = ((int)(pt[1] & 0x0F) << 8) | pt[2];
+    int ny = ((int)(pt[3] & 0x0F) << 8) | pt[4];
+
+    int lx, ly;
+    native_to_logical(nx, ny, &lx, &ly);
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
+    return true;
+}
+
+#endif /* CONFIG_DRAFTLING_TOUCH_FT6336U */
+
+/* ---- Freenove FNK0104N bundled touch controller ---- */
+#if defined(CONFIG_DRAFTLING_TOUCH_FNK_ST77922)
+
+/* Register map ported from Freenove's own reference driver
+ * (Libraries/FNK0104N/TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922_Touch.cpp,
+ * bundled with https://github.com/Freenove/Freenove_ESP32_S3_Display).
+ * 16-bit register address sent MSB-first over I2C, then a plain read
+ * of the requested length (no repeated-start register re-issue). */
+#define FNKTOUCH_REG_STATUS       0x0001
+#define FNKTOUCH_REG_MAX_TOUCHES  0x0009
+#define FNKTOUCH_REG_TOUCH_INFO   0x0010
+#define FNKTOUCH_REG_TOUCH_POINT0 0x0014
+#define FNKTOUCH_STATUS_BUSY_MASK 0x0F
+#define FNKTOUCH_INFO_UPDATE_BIT  0x08
+
+static uint8_t s_fnktouch_max_points = 1;
+
+static esp_err_t fnktouch_read_reg(uint16_t reg, uint8_t *buf, size_t len)
+{
+    uint8_t addr[2] = { (uint8_t)((reg >> 8) & 0xFF), (uint8_t)(reg & 0xFF) };
+    return i2c_master_transmit_receive(
+        s_dev, addr, sizeof(addr), buf, len, 50 /* ms */);
+}
+
+/* One-time bring-up: wait for the controller to clear its busy bits
+ * after reset, then read how many simultaneous touch points it
+ * supports. Mirrors ST77922_TOUCH::init() in the vendor reference. */
+static void fnktouch_wait_ready_and_probe(void)
+{
+    uint8_t status = 0xFF;
+    int tries = 0;
+    while ((status & FNKTOUCH_STATUS_BUSY_MASK) != 0 && tries < 100) {
+        if (fnktouch_read_reg(FNKTOUCH_REG_STATUS, &status, 1) != ESP_OK) {
+            status = 0xFF;
+        }
+        tries++;
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    uint8_t max_points = 0;
+    if (fnktouch_read_reg(FNKTOUCH_REG_MAX_TOUCHES, &max_points, 1) == ESP_OK &&
+        max_points > 0 && max_points <= 10) {
+        s_fnktouch_max_points = max_points;
+    }
+    ESP_LOGD(TAG, "fnk touch max_points=%u", (unsigned)s_fnktouch_max_points);
+}
+
+static bool poll_fnk_st77922_touch(int *out_x, int *out_y)
+{
+    if (!s_dev) return false;
+
+    uint8_t update = 0;
+    if (fnktouch_read_reg(FNKTOUCH_REG_TOUCH_INFO, &update, 1) != ESP_OK) {
+        ESP_LOGD(TAG, "fnk touch info read failed");
+        return false;
+    }
+    if ((update & FNKTOUCH_INFO_UPDATE_BIT) == 0) return false;
+
+    /* Only the first point (index 0) is needed -- the editor UI is
+     * single-touch. Each point is 7 bytes: [0] valid(bit7)|x_hi(6b),
+     * [1] x_lo, [2] y_hi(6b), [3] y_lo, [4..6] pressure/area/reserved. */
+    uint8_t pt[7] = { 0 };
+    if (fnktouch_read_reg(FNKTOUCH_REG_TOUCH_POINT0, pt, sizeof(pt)) != ESP_OK) {
+        ESP_LOGD(TAG, "fnk touch point read failed");
+        return false;
+    }
+    if ((pt[0] & 0x80) == 0) return false;
+
+    int nx = ((int)(pt[0] & 0x3F) << 8) | pt[1];
+    int ny = ((int)(pt[2] & 0x3F) << 8) | pt[3];
+
+    int lx, ly;
+    native_to_logical(nx, ny, &lx, &ly);
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
+    return true;
+}
+
+#endif /* CONFIG_DRAFTLING_TOUCH_FNK_ST77922 */
+
 /* ---- M5Stack Tab5 (BSP-delegated) driver ---- */
 #if defined(DRAFTLING_TOUCH_BSP_M5STACK_TAB5)
 
@@ -460,6 +597,10 @@ static bool poll_controller(int *out_x, int *out_y)
     return poll_gt911(out_x, out_y);
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     return poll_axs5106l(out_x, out_y);
+#elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+    return poll_ft6336u(out_x, out_y);
+#elif defined(CONFIG_DRAFTLING_TOUCH_FNK_ST77922)
+    return poll_fnk_st77922_touch(out_x, out_y);
 #else
 #  error "No touch controller driver selected (CONFIG_DRAFTLING_TOUCH_*)"
 #endif
@@ -691,6 +832,11 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
      *     chip remains unresponsive. */
     (void)gt911_write_reg(GT911_REG_COMMAND, 0x00);
     (void)gt911_write_reg(GT911_REG_STATUS,  0x00);
+#elif defined(CONFIG_DRAFTLING_TOUCH_FNK_ST77922)
+    /* Wait for the bundled touch controller to finish its post-reset
+     * bring-up and learn how many simultaneous points it reports,
+     * mirroring ST77922_TOUCH::init() in Freenove's reference driver. */
+    fnktouch_wait_ready_and_probe();
 #endif
 
     /* Register LVGL pointer indev. lv_init() was already called by
@@ -710,6 +856,10 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     const char *ctrl = "GT911";
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     const char *ctrl = "AXS5106L";
+#elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+    const char *ctrl = "FT6336U";
+#elif defined(CONFIG_DRAFTLING_TOUCH_FNK_ST77922)
+    const char *ctrl = "FNK-ST77922-touch";
 #else
     const char *ctrl = "?";
 #endif

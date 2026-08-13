@@ -46,6 +46,10 @@ with a remote Git repository via the GitHub REST API.
 |-------|---------|
 | Waveshare ESP32-S3-RLCD-4.2 | 4.2-inch reflective LCD, 400x300 |
 | M5Stack PaperS3 | 4.7-inch e-paper (ED047TC1), 540x960 |
+| Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
+| Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
+| Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, bundled touch |
+| Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
@@ -216,6 +220,23 @@ Per-board display backends behind a single C API:
   `display_set_pixel()`, and runs the LVGL tick/task timer. Thread
   safety is provided by a mutex exposed as `lvgl_port_lock()` /
   `lvgl_port_unlock()`.
+- **display_ili9341.cpp** -- shared SPI backend for the Freenove
+  FNK0104A/B (ILI9341) and FNK0104S (ST7796) color LCDs, selected by
+  `CONFIG_DRAFTLING_DISPLAY_ILI9341` / `CONFIG_DRAFTLING_DISPLAY_ST7796`
+  respectively. Both panels are wired identically (MOSI/SCK/CS/DC,
+  no hardware RST, GPIO45 active-high backlight) so one file holds
+  both controllers' init command sequences and a shared
+  `display_push_rgb565()` fast path that byte-swaps one row at a
+  time into a DMA scratch buffer.
+- **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
+  ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`). Pins are
+  hardcoded (not read from the board header) because the panel is
+  driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3) separate
+  from the shared SPI pins used elsewhere. The native panel is
+  320x480 portrait; `display_push_rgb565()` transposes each pushed
+  rect into native panel orientation in software before issuing a
+  QSPI pixel burst (`SPI_TRANS_MODE_QIO`), matching Freenove's own
+  `ST77922::Fill_Colors()` rotation-1 behavior.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -767,12 +788,27 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   on-board MicroSD on SPI3, BOOT button on GPIO0 used as
   the EXT0 deep-sleep wake source (the only RTC-capable user-input
   GPIO on the board). *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_FREENOVE_FNK0104A** -- Freenove FNK0104A: 2.8"
+  ILI9341 color SPI LCD, 320x240, no touch, on-board MicroSD on
+  SDMMC, BOOT button on GPIO0 as the wake source. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_FREENOVE_FNK0104B** -- same 2.8" ILI9341 panel
+  and SPI wiring as FNK0104A, plus an on-board FT6336U I2C
+  capacitive touch controller. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_FREENOVE_FNK0104N** -- Freenove FNK0104N: 3.5"
+  ST77922 color LCD over 4-wire QSPI (`display_st77922.cpp`), 480x320
+  landscape, with its bundled capacitive touch controller on a
+  16-bit-register I2C protocol. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
+  ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
+  controller. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
-- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3).
-- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3).
+- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
+  (FNK0104A/B), 480 (FNK0104N/S).
+- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
+  (FNK0104A/B), 320 (FNK0104N/S).
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -799,15 +835,20 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
+| DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
+| DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
+| DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (4-wire QSPI backend, hardcoded pins) | Freenove FNK0104N |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5 |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043 |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2 |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
+| DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
+| DRAFTLING_TOUCH_FNK_ST77922       | Adds the FNK0104N bundled-touch poll routine (16-bit register protocol) to `components/touchscreen/touchscreen.cpp` | Freenove FNK0104N |
 
 Components MUST key off these derived symbols; they MUST NOT
 test `DRAFTLING_MODEL_*` directly. Adding a new model means
@@ -884,8 +925,9 @@ The repository root ships a `CMakePresets.json` with one preset per
 supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`). Each preset points
-`SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
+`sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
+`freenove_fnk0104b`, `freenove_fnk0104n`, `freenove_fnk0104s`). Each
+preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),
 and places `binaryDir` / `SDKCONFIG` under `build/<board>` so every
