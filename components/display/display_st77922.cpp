@@ -225,6 +225,13 @@ static uint16_t *s_tx_buf = NULL;
 static int s_dirty_x1 = -1, s_dirty_y1 = -1, s_dirty_x2 = -1, s_dirty_y2 = -1;
 static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
 
+/* Last user-requested backlight percent, cached so display_sleep() /
+ * display_wake() can restore the brightness after blanking the panel
+ * (mirrors the same cache in display_axs15231b.cpp). Initialised to
+ * 100 to match the panel's initial full-brightness state after
+ * display_init(). */
+static int s_bl_last_pct = 100;
+
 static bool s_panel_asleep = false;
 
 static void write_reg(uint8_t cmd, const void *data, uint8_t len)
@@ -497,6 +504,9 @@ extern "C" int display_get_buffer_size(void)
 
 extern "C" void display_set_backlight(int percent)
 {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    s_bl_last_pct = percent;
     /* No PWM dimming in Freenove's reference driver for this panel;
      * treat as a simple on/off enable. */
     gpio_set_level((gpio_num_t)FNK_N_BL_PIN, percent > 0 ? 1 : 0);
@@ -506,7 +516,12 @@ extern "C" void display_sleep(void)
 {
     if (s_panel_asleep) return;
     s_panel_asleep = true;
+    /* Capture the user's brightness BEFORE display_set_backlight(0)
+     * overwrites s_bl_last_pct, so display_wake() can restore it
+     * accurately. */
+    int saved_pct = s_bl_last_pct;
     display_set_backlight(0);
+    s_bl_last_pct = saved_pct;
     write_reg(0x28, nullptr, 0); /* DISPOFF */
     write_reg(0x10, nullptr, 0); /* SLPIN */
 }
@@ -517,7 +532,7 @@ extern "C" void display_wake(void)
     write_reg(0x11, nullptr, 0); /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(120));
     write_reg(0x29, nullptr, 0); /* DISPON */
-    display_set_backlight(100);
+    display_set_backlight(s_bl_last_pct);
     s_panel_asleep = false;
     display_request_full_refresh();
 }

@@ -78,6 +78,12 @@ static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
 
 static uint8_t *s_row_buf = NULL;   /* byte-swapped DMA scratch, one row */
 
+/* Last user-requested backlight percent, cached so display_sleep() /
+ * display_wake() can restore the brightness after blanking the panel
+ * (mirrors the same cache in display_axs15231b.cpp). Initialised to
+ * 100 to match backlight_pwm_init()'s initial full-brightness duty. */
+static int s_bl_last_pct = 100;
+
 static bool s_panel_asleep = false;
 
 static void send_command(uint8_t cmd)
@@ -128,6 +134,7 @@ extern "C" void display_set_backlight(int percent)
 {
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
+    s_bl_last_pct = percent;
     uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
     ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
@@ -448,7 +455,12 @@ extern "C" void display_sleep(void)
 {
     if (s_panel_asleep) return;
     s_panel_asleep = true;
+    /* Capture the user's brightness BEFORE display_set_backlight(0)
+     * overwrites s_bl_last_pct, so display_wake() can restore it
+     * accurately. */
+    int saved_pct = s_bl_last_pct;
     display_set_backlight(0);
+    s_bl_last_pct = saved_pct;
     send_command(0x28); /* DISPOFF */
     send_command(0x10); /* SLPIN */
 }
@@ -459,6 +471,7 @@ extern "C" void display_wake(void)
     send_command(0x11); /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(120));
     send_command(0x29); /* DISPON */
+    display_set_backlight(s_bl_last_pct);
     s_panel_asleep = false;
     display_request_full_refresh();
 }
