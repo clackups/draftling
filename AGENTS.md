@@ -233,18 +233,25 @@ Per-board display backends behind a single C API:
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
 - **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
-  ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`). Pins are
-  hardcoded (not read from the board header) because the panel is
-  driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3) separate
-  from the shared SPI pins used elsewhere. The native panel is
-  320x480 portrait; `display_flush()` transposes each dirty rect
-  into native panel orientation in software (via `flush_rect()`)
-  before issuing a QSPI pixel burst (`SPI_TRANS_MODE_QIO`), matching
-  Freenove's own `ST77922::Fill_Colors()` rotation-1 behavior. Since
-  this panel has no discrete RST pin and its vendor init table issues
-  no SWRESET, `display_init()` waits 120 ms after SPI bus/device setup
-  before sending any configuration commands, giving the panel's power
-  rails/oscillator time to settle.
+  ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`), built on the
+  official `espressif/esp_lcd_st77922` managed component (from
+  espressif/esp-iot-solution) -- the same component Freenove's own
+  confirmed-working xiaozhi-esp32 firmware uses for this exact board.
+  Pins are hardcoded (not read from the board header) because the
+  panel is driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3)
+  separate from the shared SPI pins used elsewhere. The native panel
+  is 320x480 portrait; since the component's `panel_st77922_swap_xy()`
+  is unconditionally unsupported, `display_flush()` still transposes
+  each dirty rect into native panel orientation and byte-swaps each
+  pixel to big-endian in software (via `flush_rect()`) before calling
+  `esp_lcd_panel_draw_bitmap()`, matching Freenove's own
+  `ST77922::Fill_Colors()` rotation-1 behavior and its
+  `LV_COLOR_16_SWAP` LVGL config for this board. This panel has no
+  discrete RST pin; `esp_lcd_panel_reset()` sends a software reset
+  (SWRESET + 120 ms delay) instead. An earlier hand-rolled SPI
+  implementation never sent any reset at all, which left the panel's
+  GRAM showing whatever a previous firmware had last drawn even after
+  reflashing and resetting the MCU.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files

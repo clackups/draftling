@@ -5,26 +5,45 @@
  * ST77922 QSPI color-LCD backend for the Freenove FNK0104N (3.5"
  * 320x480 native panel, rendered landscape at 480x320).
  *
- * The protocol, pin assignments and vendor init table below are
- * ported verbatim from Freenove's own reference driver
- * (Libraries/FNK0104N/TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922.cpp,
- * bundled with https://github.com/Freenove/Freenove_ESP32_S3_Display),
- * which is structurally identical to the AXS15231B protocol already
- * used elsewhere in this component (single-line register writes
- * wrapped in a variable-cmd/addr QSPI preamble, 4-line pixel-write
- * bursts with CS held low across chunks) -- see display_axs15231b.cpp
- * for the general pattern this file follows.
+ * This backend is built on the official `espressif/esp_lcd_st77922`
+ * managed component (from espressif/esp-iot-solution), the same
+ * component Freenove's own confirmed-working xiaozhi-esp32 firmware
+ * uses for this exact board
+ * (main/boards/freenove-esp32s3-display-3.5-lcd/
+ * freenove-esp32s3-display-3.5-lcd.cc). Two earlier revisions of this
+ * file hand-rolled the QSPI protocol directly against
+ * spi_device_polling_transmit(), first porting Freenove's separate
+ * Arduino TFT_eSPI vendor driver (Libraries/FNK0104N/
+ * TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922.cpp) and then patching the
+ * RAMWR/RAMWRC command mismatch found by diffing against
+ * esp_lcd_st77922_general.c -- but the panel still showed the
+ * previous firmware's leftover image after a fresh flash + reset,
+ * because that hand-rolled init path never sent a reset of any kind
+ * (no discrete RST pin, no SWRESET command either). The official
+ * component's esp_lcd_panel_reset() sends a proper software reset
+ * (SWRESET, 0x01, + 120 ms delay) whenever reset_gpio_num < 0, fixing
+ * that class of bug outright, so this file now delegates panel
+ * bring-up (reset, vendor init table, CASET/RASET/RAMWR framing, CS
+ * management) to the component instead of re-implementing it.
+ *
+ * The vendor init command table below is unchanged from the earlier
+ * revisions (still ported from Freenove's driver and byte-identical
+ * to the table used by their own xiaozhi-esp32 board file), just
+ * retyped as `st77922_lcd_init_cmd_t` to match the component's
+ * `st77922_vendor_config_t::init_cmds` field.
  *
  * Unlike AXS15231B, the ST77922 does not offer a MADCTL row/column
- * swap for this panel's landscape orientation: Freenove's reference
- * driver keeps MADCTL at its portrait value and instead performs a
- * software pixel transpose in Fill_Colors() for rotation 1/3. This
- * file ports that same transpose (rotation "1": logical (lx, ly) ->
- * physical (LCD_NATIVE_WIDTH - 1 - ly, lx)) so CASET/RASET-equivalent
- * addressing always operates in the panel's native portrait frame,
- * while display_clear/display_set_pixel/display_push_rgb565 continue
- * to operate in logical (already-landscape) coordinates like every
- * other backend.
+ * swap for this panel's landscape orientation
+ * (`panel_st77922_swap_xy()` in the component unconditionally returns
+ * ESP_ERR_NOT_SUPPORTED). Freenove's own reference driver keeps
+ * MADCTL at its portrait value and instead performs a software pixel
+ * transpose in Fill_Colors() for rotation 1/3; this file ports that
+ * same transpose (rotation "1": logical (lx, ly) -> physical
+ * (LCD_NATIVE_WIDTH - 1 - ly, lx)) so the draw_bitmap window always
+ * addresses the panel's native portrait frame, while
+ * display_clear/display_set_pixel/display_push_rgb565 continue to
+ * operate in logical (already-landscape) coordinates like every other
+ * backend.
  *
  * Like AXS15231B, the ST77922 expects pixel data on the wire in
  * big-endian (MSB-first) RGB565 byte order. Freenove's own reference
@@ -37,7 +56,9 @@
  * transpose step below must perform the equivalent byte swap itself
  * when copying into s_tx_buf, or every pixel is sent MSB/LSB
  * reversed -- which silently corrupts colours enough that the
- * editor's mostly-dark-on-light text becomes invisible.
+ * editor's mostly-dark-on-light text becomes invisible. The official
+ * component's own tx_color()/draw_bitmap() do not byte-swap either,
+ * so this manual step is still required.
  *
  * All FNK0104N pins are hard-coded here (this is the only board using
  * this backend), matching the existing convention of
@@ -52,12 +73,18 @@
 #include <esp_heap_caps.h>
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_st77922.h>
 
 #include "display.h"
 
 static const char *TAG = "DisplayST77922";
 
-/* Pins, from Freenove's ST77922.h reference header. */
+/* Pins, from Freenove's ST77922.h reference header / xiaozhi-esp32
+ * board config.h (main/boards/freenove-esp32s3-display-3.5-lcd/
+ * config.h), which agree exactly. */
 #define FNK_N_CS_PIN     10
 #define FNK_N_BL_PIN     41
 #define FNK_N_SCLK_PIN   12
@@ -65,64 +92,28 @@ static const char *TAG = "DisplayST77922";
 #define FNK_N_D1_PIN     13
 #define FNK_N_D2_PIN     14
 #define FNK_N_D3_PIN     9
+#define FNK_N_RST_PIN    -1  /* No discrete RST pin; the component issues
+                              * a software reset (SWRESET) instead -- see
+                              * esp_lcd_panel_reset() in display_init(). */
 
 #define FNK_N_SPI_HOST       SPI2_HOST
-/* 80 MHz QSPI, matching Freenove's own reference driver
- * (QSPI_FREQUENCY in ST77922.h) exactly -- this is the value actually
- * validated on real FNK0104N hardware by the vendor's shipped
- * firmware. A prior revision of this file dropped the clock to 40 MHz
- * on the theory that 80 MHz signal integrity was the cause of a
- * persistent blank screen; that was speculation made without the
- * vendor source available for comparison and was never confirmed on
- * hardware. The actual root cause (see fill_native_rect() below) was
- * an incorrect RAMWR/RAMWRC command sequence, unrelated to clock
- * speed, so there is no reason to run slower than the vendor's tested
- * value. */
-#define FNK_N_SPI_CLOCK_HZ   (80 * 1000 * 1000)
+/* 40 MHz QSPI, matching Freenove's own confirmed-working
+ * xiaozhi-esp32 board file (DISPLAY_SPI_SCLK_HZ in
+ * freenove-esp32s3-display-3.5-lcd/config.h) exactly. A prior
+ * revision of this file ran at 80 MHz (the clock used by Freenove's
+ * separate Arduino TFT_eSPI vendor driver, QSPI_FREQUENCY in
+ * ST77922.h) on the theory that this was the vendor-tested value;
+ * that driver is a different, unconfirmed reference for our purposes.
+ * Since we are now porting the exact xiaozhi-esp32 init path, match
+ * its clock too rather than mixing values from two different vendor
+ * sources. */
+#define FNK_N_SPI_CLOCK_HZ   (40 * 1000 * 1000)
 
 /* Native panel resolution (portrait). The logical (landscape) frame
  * used by display_clear/set_pixel/push_rgb565 is
  * FNK_N_NATIVE_HEIGHT x FNK_N_NATIVE_WIDTH (480 x 320). */
 #define FNK_N_NATIVE_WIDTH   320
 #define FNK_N_NATIVE_HEIGHT  480
-
-#define QSPI_1W_CMD   0x02
-#define QSPI_4W_CMD   0x32
-#define WR_RAM_CMD    0x2C  /* RAMWR: standard MIPI DCS memory-write command,
-                             * used for every chunk of a pixel burst (see
-                             * fill_native_rect() below). Freenove's own
-                             * xiaozhi-esp32 board file for this exact panel
-                             * (main/boards/freenove-esp32s3-display-3.5-lcd,
-                             * confirmed working on real FNK0104N hardware)
-                             * builds on top of the official
-                             * espressif/esp_lcd_st77922 IDF component, whose
-                             * panel_st77922_draw_bitmap() always issues
-                             * LCD_CMD_RAMWR (0x2C) -- never RAMWRC (0x3C) --
-                             * for the color-data write, and that component's
-                             * tx_color() forwards the very same lcd_cmd to
-                             * esp_lcd_panel_io_tx_color(), which resends the
-                             * identical QSPI cmd/addr header on every
-                             * DMA-sized sub-transaction of a large burst (the
-                             * IDF SPI LCD IO layer does not swap to a
-                             * different "continuation" opcode mid-burst). A
-                             * prior revision of this file used RAMWRC (0x3C)
-                             * for every chunk instead, based on reading
-                             * Freenove's separate Arduino TFT_eSPI vendor
-                             * driver (ST77922.cpp); that turned out not to
-                             * match the officially confirmed-working
-                             * reference and left the FNK0104N screen blank. */
-#define SET_X_CMD     0x2A
-#define SET_Y_CMD     0x2B
-#define MADCTL_CMD    0x36
-
-#define TX_LEN  0x4000
-
-struct lcd_init_cmd {
-    uint8_t cmd;
-    const uint8_t *data;
-    uint8_t len;
-    uint32_t delay_ms;
-};
 
 /* Vendor init table, ported verbatim from Freenove's ST77922.cpp
  * (st77922_lcd_init[]). Do not reorder or "clean up" -- this is a
@@ -186,7 +177,7 @@ static const uint8_t d_3a[]  = {0x01};
 static const uint8_t d_36[]  = {0x00};
 static const uint8_t d_35[]  = {0x01};
 
-static const lcd_init_cmd s_init_seq[] = {
+static const st77922_lcd_init_cmd_t s_init_seq[] = {
     {0xF1, d_f1,  sizeof(d_f1),  0},
     {0x60, d_60,  sizeof(d_60),  0},
     {0x65, d_65,  sizeof(d_65),  0},
@@ -252,7 +243,8 @@ static const lcd_init_cmd s_init_seq[] = {
     {0x35, d_35,  sizeof(d_35),  20},
 };
 
-static spi_device_handle_t s_spi = NULL;
+static esp_lcd_panel_io_handle_t s_io    = NULL;
+static esp_lcd_panel_handle_t    s_panel = NULL;
 
 /* Logical (already-landscape) framebuffer, width x height =
  * FNK_N_NATIVE_HEIGHT x FNK_N_NATIVE_WIDTH (480 x 320). */
@@ -268,6 +260,13 @@ static int s_height = 0;   /* logical height (320) */
  * controller used by earlier chips). */
 static uint16_t *s_tx_buf = NULL;
 
+/* Alignment for s_tx_buf so the panel IO's psram_dma_direct fast path
+ * (see display_init() below) is always taken for the whole buffer
+ * instead of falling back to an internal-DRAM bounce copy for a
+ * misaligned chunk -- same rationale as display_ili9341.cpp's
+ * DMA_ALIGN_BYTES. */
+#define DMA_ALIGN_BYTES 64
+
 static int s_dirty_x1 = -1, s_dirty_y1 = -1, s_dirty_x2 = -1, s_dirty_y2 = -1;
 static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
 
@@ -280,85 +279,23 @@ static int s_bl_last_pct = 100;
 
 static bool s_panel_asleep = false;
 
-static void write_reg(uint8_t cmd, const void *data, uint8_t len)
+/* Send a raw command (with optional parameter bytes) directly to the
+ * panel IO, bypassing the panel object -- used for SLPIN/SLPOUT,
+ * which esp_lcd_panel_t has no generic entry point for (only
+ * disp_on_off() for DISPOFF/DISPON is exposed).
+ *
+ * Encodes the command exactly like the espressif/esp_lcd_st77922
+ * component's own internal tx_param() does when
+ * flags.use_qspi_interface is set: the panel IO was created with
+ * lcd_cmd_bits = 32 (see ST77922_PANEL_IO_QSPI_CONFIG), so the 32-bit
+ * "command" esp_lcd_panel_io_tx_param() receives packs the QSPI
+ * write-command opcode (0x02, matching LCD_OPCODE_WRITE_CMD in the
+ * component's private st77922_interface.h) into the top byte and the
+ * actual 1-byte MIPI DCS command into bits [15:8]. */
+static void tx_param_qspi(uint8_t cmd, const void *data, size_t len)
 {
-    spi_transaction_ext_t tx = {};
-    tx.base.flags = SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
-    tx.base.cmd   = QSPI_1W_CMD;
-    tx.base.addr  = ((uint32_t)cmd) << 8;
-    tx.command_bits = 8;
-    tx.address_bits = 24;
-    if (len != 0) {
-        tx.base.tx_buffer = data;
-        tx.base.length = 8u * len;
-    }
-    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
-    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 1);
-}
-
-static void set_windows(uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey)
-{
-    uint8_t x_data[] = {
-        (uint8_t)(sx >> 8), (uint8_t)(sx & 0xFF),
-        (uint8_t)((ex - 1) >> 8), (uint8_t)((ex - 1) & 0xFF)
-    };
-    uint8_t y_data[] = {
-        (uint8_t)(sy >> 8), (uint8_t)(sy & 0xFF),
-        (uint8_t)((ey - 1) >> 8), (uint8_t)((ey - 1) & 0xFF)
-    };
-    write_reg(SET_X_CMD, x_data, 4);
-    write_reg(SET_Y_CMD, y_data, 4);
-}
-
-/* Stream w*h pixels (already in native panel orientation, tightly
- * packed row-major) starting at native window (sx, sy, w, h). */
-static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
-                             const uint16_t *tx_buf)
-{
-    size_t total = (size_t)w * h;
-    set_windows(sx, sy, sx + w, sy + h);
-
-    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    /* Re-send the RAMWR (0x2C) command/address header on every chunk
-     * of the burst, including the first, while CS stays asserted low
-     * across the whole burst.
-     *
-     * A prior revision of this function used WR_RAM_C (0x3C,
-     * "RAMWRC"/write-memory-continue) exclusively instead, based on a
-     * reading of Freenove's separate Arduino TFT_eSPI vendor driver
-     * (Libraries/FNK0104N/TFT_eSPI_v2.5.43.zip -> TFT_eSPI/ST77922.cpp,
-     * Fill_Colors()). That turned out not to match Freenove's own
-     * xiaozhi-esp32 firmware for this exact panel/board
-     * (main/boards/freenove-esp32s3-display-3.5-lcd), which the user
-     * confirmed works correctly on real FNK0104N hardware (via
-     * CONFIG_BOARD_TYPE_Freenove_ESP32S3_DISPLAY_3_5_LCD=y) while ours
-     * showed a blank screen. That firmware is built on top of the
-     * official espressif/esp_lcd_st77922 IDF component
-     * (esp_lcd_st77922_general.c, panel_st77922_draw_bitmap()), which
-     * always issues plain MIPI DCS RAMWR (0x2C) for the color-data
-     * write and never sends RAMWRC (0x3C) at all; that component's
-     * tx_color() forwards the very same lcd_cmd to
-     * esp_lcd_panel_io_tx_color(), which resends the identical QSPI
-     * cmd/addr header on every DMA-sized sub-transaction of a large
-     * burst (the IDF SPI LCD IO layer does not switch to a different
-     * "continuation" opcode mid-burst) -- matching the resend-every-
-     * chunk pattern kept below. */
-    while (total > 0) {
-        size_t chunk = (total > TX_LEN) ? TX_LEN : total;
-        spi_transaction_ext_t tx = {};
-        tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
-        tx.base.cmd  = QSPI_4W_CMD;
-        tx.base.addr = ((uint32_t)WR_RAM_CMD) << 8;
-        tx.command_bits = 8;
-        tx.address_bits = 24;
-        tx.base.tx_buffer = tx_buf;
-        tx.base.length = chunk * 16;
-        ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
-        total  -= chunk;
-        tx_buf += chunk;
-    }
-    if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 1);
+    uint32_t lcd_cmd = ((uint32_t)cmd << 8) | (0x02u << 24);
+    ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, (int)lcd_cmd, data, len));
 }
 
 /* Transpose a logical (already-landscape) rectangle of the
@@ -384,8 +321,14 @@ static void flush_rect(int lx, int ly, int w, int h)
         }
     }
 
-    fill_native_rect((uint16_t)phys_sx, (uint16_t)phys_sy,
-                      (uint16_t)phys_w, (uint16_t)phys_h, s_tx_buf);
+    /* esp_lcd_panel_draw_bitmap() takes an exclusive end coordinate
+     * and issues CASET/RASET + RAMWR internally (via
+     * panel_st77922_draw_bitmap() in the espressif/esp_lcd_st77922
+     * component), including re-sending the QSPI cmd/addr header for
+     * every DMA-sized sub-transaction of a large burst. */
+    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(s_panel, phys_sx, phys_sy,
+                                              phys_sx + phys_w, phys_sy + phys_h,
+                                              s_tx_buf));
 }
 
 extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
@@ -395,19 +338,14 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     s_width  = width;
     s_height = height;
 
-    gpio_config_t cs_cfg = {};
-    cs_cfg.intr_type    = GPIO_INTR_DISABLE;
-    cs_cfg.mode         = GPIO_MODE_OUTPUT;
-    cs_cfg.pin_bit_mask = (1ULL << FNK_N_CS_PIN);
-    ESP_ERROR_CHECK(gpio_config(&cs_cfg));
-    gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 1);
-
     gpio_config_t bl_cfg = {};
     bl_cfg.intr_type    = GPIO_INTR_DISABLE;
     bl_cfg.mode         = GPIO_MODE_OUTPUT;
     bl_cfg.pin_bit_mask = (1ULL << FNK_N_BL_PIN);
     ESP_ERROR_CHECK(gpio_config(&bl_cfg));
     gpio_set_level((gpio_num_t)FNK_N_BL_PIN, 0);
+
+    s_fb_pixels = (size_t)width * height;
 
     spi_bus_config_t bus_cfg = {};
     bus_cfg.data0_io_num = FNK_N_D0_PIN;
@@ -436,51 +374,51 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     bus_cfg.data5_io_num = -1;
     bus_cfg.data6_io_num = -1;
     bus_cfg.data7_io_num = -1;
-    bus_cfg.max_transfer_sz = (TX_LEN * 2) + 8;
+    bus_cfg.max_transfer_sz = (int)(s_fb_pixels * sizeof(uint16_t));
     bus_cfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_IOMUX_PINS | SPICOMMON_BUSFLAG_QUAD;
     ESP_ERROR_CHECK(spi_bus_initialize(FNK_N_SPI_HOST, &bus_cfg, SPI_DMA_CH_AUTO));
 
-    spi_device_interface_config_t dev_cfg = {};
-    dev_cfg.command_bits   = 0;
-    dev_cfg.address_bits   = 0;
-    dev_cfg.mode           = 0;
-    dev_cfg.clock_speed_hz = FNK_N_SPI_CLOCK_HZ;
-    dev_cfg.spics_io_num   = -1; /* CS is driven manually, see write_reg() / fill_native_rect() */
-    dev_cfg.flags          = SPI_DEVICE_HALFDUPLEX;
-    dev_cfg.queue_size     = 17;
-    ESP_ERROR_CHECK(spi_bus_add_device(FNK_N_SPI_HOST, &dev_cfg, &s_spi));
+    esp_lcd_panel_io_spi_config_t io_cfg = ST77922_PANEL_IO_QSPI_CONFIG(
+        (gpio_num_t)FNK_N_CS_PIN, nullptr, nullptr);
+    io_cfg.pclk_hz = FNK_N_SPI_CLOCK_HZ;
+    /* See the DMA_ALIGN_BYTES comment above s_tx_buf's declaration:
+     * without this flag, esp_lcd_panel_io_tx_color() bounces every
+     * >32 KB chunk of a PSRAM color buffer through a freshly malloc'd
+     * internal-DRAM buffer, which can silently fail (and drop the
+     * rest of the flush) once internal SRAM is under pressure. */
+    io_cfg.flags.psram_dma_direct = 1;
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)FNK_N_SPI_HOST, &io_cfg, &s_io));
 
-    s_fb_pixels = (size_t)width * height;
     s_fb = (uint16_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    s_tx_buf = (uint16_t *)heap_caps_malloc(s_fb_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
+    size_t tx_buf_size = (s_fb_pixels * sizeof(uint16_t) + DMA_ALIGN_BYTES - 1) &
+                         ~(size_t)(DMA_ALIGN_BYTES - 1);
+    s_tx_buf = (uint16_t *)heap_caps_aligned_alloc(DMA_ALIGN_BYTES, tx_buf_size, MALLOC_CAP_SPIRAM);
     assert(s_fb && s_tx_buf);
     memset(s_fb, 0, s_fb_pixels * sizeof(uint16_t));
 
-    /* This board has no discrete RST pin (Freenove's TFT_eSPI setup
-     * header defines TFT_RST as -1 for this panel, same as the
-     * ILI9341/ST7796 FNK0104 SKUs) and the vendor init table below
-     * issues no software reset (SWRESET, 0x01) either, so the panel
-     * comes out of a cold power-on with no reset pulse at all. The
-     * controller needs time for its internal power rails/oscillator
-     * to settle before it will latch configuration registers -- without
-     * this delay, register writes sent immediately after
-     * spi_bus_add_device() are silently ignored and the panel never
-     * leaves its power-on default state (backlight turns on but the
-     * screen stays blank/garbled). 120 ms matches the settle time
-     * already used for the panel's own SLPOUT delay below and is
-     * within the panel datasheet's recommended >=100-120 ms power-on
-     * reset window. */
-    vTaskDelay(pdMS_TO_TICKS(120));
+    st77922_vendor_config_t vendor_cfg = {};
+    vendor_cfg.init_cmds = s_init_seq;
+    vendor_cfg.init_cmds_size = sizeof(s_init_seq) / sizeof(s_init_seq[0]);
+    vendor_cfg.flags.use_qspi_interface = 1;
 
-    for (size_t i = 0; i < sizeof(s_init_seq) / sizeof(s_init_seq[0]); i++) {
-        write_reg(s_init_seq[i].cmd, s_init_seq[i].data, s_init_seq[i].len);
-        if (s_init_seq[i].delay_ms) vTaskDelay(pdMS_TO_TICKS(s_init_seq[i].delay_ms));
-    }
-    /* MADCTL stays at the reference driver's rotation==1 value (row/
-     * column order untouched); the landscape orientation is achieved
-     * entirely by the software transpose in flush_rect(). */
-    static const uint8_t madctl_rot1[] = {0x00};
-    write_reg(MADCTL_CMD, madctl_rot1, sizeof(madctl_rot1));
+    esp_lcd_panel_dev_config_t panel_cfg = {};
+    panel_cfg.reset_gpio_num = FNK_N_RST_PIN;
+    panel_cfg.rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB;
+    panel_cfg.bits_per_pixel = 16;
+    panel_cfg.vendor_config  = &vendor_cfg;
+    ESP_ERROR_CHECK(esp_lcd_new_panel_st77922(s_io, &panel_cfg, &s_panel));
+
+    /* With FNK_N_RST_PIN < 0, esp_lcd_panel_reset() sends a proper
+     * software reset (SWRESET, 0x01) + 120 ms delay instead of toggling
+     * a GPIO. A prior revision of this file never sent any reset at
+     * all (see the removed comment this replaced), which meant that
+     * after reflashing new firmware the panel's GRAM could retain
+     * whatever a *previous* firmware had last written to it -- the
+     * user-reported symptom of the display still showing the picture
+     * from Freenove's own xiaozhi-esp32 firmware after flashing and
+     * resetting Draftling. */
+    ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
+    ESP_ERROR_CHECK(esp_lcd_panel_init(s_panel));
 
     gpio_set_level((gpio_num_t)FNK_N_BL_PIN, 1);
 
@@ -585,9 +523,11 @@ extern "C" void display_flush(void)
      * -- "area->x1 &= ~0x3; area->y1 &= ~0x3; area->x2 |= 0x3;
      * area->y2 |= 0x3;" -- and it is only wired up for the ST77922
      * board (the ILI9341/ST7796 branch of the same file needs no
-     * rounder). The panel's SET_X/SET_Y window is silently ignored
-     * (or renders garbage) when the requested window is not aligned
-     * to a 4-pixel boundary, so without this the initial full-screen
+     * rounder). The panel's window (CASET/RASET, programmed
+     * internally by esp_lcd_panel_draw_bitmap()) is silently ignored
+     * (or renders garbage) when the requested rectangle is not
+     * aligned to a 4-pixel boundary, so without this the initial
+     * full-screen
      * display_full_refresh() (already 480x320, both multiples of 4)
      * looks fine but every subsequent small, arbitrarily-positioned
      * LVGL partial redraw -- the actual editor UI text/title bar --
@@ -649,16 +589,16 @@ extern "C" void display_sleep(void)
     int saved_pct = s_bl_last_pct;
     display_set_backlight(0);
     s_bl_last_pct = saved_pct;
-    write_reg(0x28, nullptr, 0); /* DISPOFF */
-    write_reg(0x10, nullptr, 0); /* SLPIN */
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, false)); /* DISPOFF */
+    tx_param_qspi(0x10, nullptr, 0);                            /* SLPIN */
 }
 
 extern "C" void display_wake(void)
 {
     if (!s_panel_asleep) return;
-    write_reg(0x11, nullptr, 0); /* SLPOUT */
+    tx_param_qspi(0x11, nullptr, 0);                            /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(120));
-    write_reg(0x29, nullptr, 0); /* DISPON */
+    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));  /* DISPON */
     display_set_backlight(s_bl_last_pct);
     s_panel_asleep = false;
     display_request_full_refresh();
