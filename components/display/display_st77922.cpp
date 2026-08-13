@@ -274,32 +274,40 @@ static void fill_native_rect(uint16_t sx, uint16_t sy, uint16_t w, uint16_t h,
     set_windows(sx, sy, sx + w, sy + h);
 
     if (FNK_N_CS_PIN >= 0) gpio_set_level((gpio_num_t)FNK_N_CS_PIN, 0);
-    /* Re-send the WR_RAM_C (0x3C) command/address header for every
-     * chunk, not just the first. A previous version only framed the
-     * very first spi_device_polling_transmit() of a burst with the
-     * command/address and let later chunks stream as bare data
-     * (zero command/address bits) while CS stayed asserted the whole
-     * time. That is not what Freenove's own reference driver does --
-     * ST77922.cpp's Fill_Colors() re-issues the RAMWR_CONTINUE
-     * command (same cmd/addr fields) on every chunk of the do/while
-     * loop -- and on real ST77922 hardware each
-     * spi_device_polling_transmit() call restarts the QSPI engine's
-     * command-framing state machine even while CS is held low in
-     * software, so a headerless continuation chunk is silently
-     * dropped or misinterpreted by the panel. Any redraw larger than
-     * TX_LEN pixels (0x4000 = 16384, i.e. anything bigger than a
-     * small partial update -- including the very first full-screen
-     * paint of the editor UI) needed more than one chunk and never
-     * reached the panel correctly, which is why the screen stayed
-     * blank even though write_reg()/single-chunk pushes worked. */
+    /* Only the first chunk of the burst carries the WR_RAM_C (0x3C)
+     * command/address header; every later chunk streams raw pixel
+     * bytes with the cmd/addr/dummy phases explicitly sized to zero,
+     * while CS stays asserted low across the whole burst. This
+     * mirrors both Freenove's own reference driver (ST77922.cpp's
+     * Fill_Colors(): a `flag` bool frames only the very first
+     * do/while iteration with SPI_TRANS_VARIABLE_CMD/ADDR, and every
+     * later iteration clears those flags so the fixed dev_cfg
+     * command_bits=0 / address_bits=0 apply instead) and the
+     * already-working display_axs15231b.cpp burst helpers
+     * (spi_send_pixels_first() / spi_send_pixels_cont()). A prior
+     * version of this function re-sent the full command/address
+     * header on every chunk, which does not match either reference
+     * and left the panel blank on any redraw spanning more than one
+     * TX_LEN chunk (0x4000 = 16384 pixels), i.e. every partial LVGL
+     * redraw larger than a small rect -- including the very first
+     * full-screen paint of the editor UI. */
+    bool first = true;
     while (total > 0) {
         size_t chunk = (total > TX_LEN) ? TX_LEN : total;
         spi_transaction_ext_t tx = {};
-        tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD | SPI_TRANS_VARIABLE_ADDR;
-        tx.base.cmd  = QSPI_4W_CMD;
-        tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
-        tx.command_bits = 8;
-        tx.address_bits = 24;
+        tx.base.flags = SPI_TRANS_MODE_QIO | SPI_TRANS_VARIABLE_CMD |
+                        SPI_TRANS_VARIABLE_ADDR | SPI_TRANS_VARIABLE_DUMMY;
+        if (first) {
+            tx.base.cmd  = QSPI_4W_CMD;
+            tx.base.addr = ((uint32_t)WR_RAM_C_CMD) << 8;
+            tx.command_bits = 8;
+            tx.address_bits = 24;
+            first = false;
+        } else {
+            tx.command_bits = 0;
+            tx.address_bits = 0;
+            tx.dummy_bits   = 0;
+        }
         tx.base.tx_buffer = tx_buf;
         tx.base.length = chunk * 16;
         ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
