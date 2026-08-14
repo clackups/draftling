@@ -87,8 +87,8 @@ static int s_clip_x = 0, s_clip_y = 0, s_clip_w = 0, s_clip_h = 0;
  * as the top portion of the screen rendering correctly and the rest
  * being shifted by a few rows once the queue saturates. Building the
  * whole rect into one buffer and issuing a single tx_color call (the
- * same pattern used by display_rlcd.cpp and display_st77922.cpp)
- * avoids the race entirely. PSRAM is fine here: the ESP32-S3's GDMA
+ * same pattern used by display_rlcd.cpp) avoids the race entirely.
+ * PSRAM is fine here: the ESP32-S3's GDMA
  * can source SPI DMA transfers directly from PSRAM -- provided
  * io_cfg.flags.psram_dma_direct is set (see display_init()) and the
  * buffer is DMA/cache-line aligned; see the allocation below. */

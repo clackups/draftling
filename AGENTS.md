@@ -48,7 +48,6 @@ with a remote Git repository via the GitHub REST API.
 | M5Stack PaperS3 | 4.7-inch e-paper (ED047TC1), 540x960 |
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
-| Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, bundled touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
@@ -56,6 +55,20 @@ E-Paper Driver HAT) were previously supported but have been removed:
 the controller proved too slow for an interactive Markdown editor
 even with fast partial updates and accumulated ghosting too quickly
 to be usable.
+
+The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was previously
+supported but has been removed: despite an exhaustive series of fixes
+(matching the confirmed-working espressif/esp_lcd_st77922-based
+xiaozhi-esp32 reference board byte-for-byte -- vendor init table,
+landscape transpose math, RGB565 byte order, RAMWR opcode, 4-pixel
+window alignment, manual CS handling, QSPI clock rate, and a proper
+panel reset), the display could never be made to show anything on
+real hardware; every software-visible signal (SPI/DMA calls, LVGL
+flush rectangles, panel init sequence) looked correct, yet the screen
+stayed persistently blank. Reproducing the issue would require
+hardware-level debugging (backlight / power-rail verification, a
+logic analyzer on the QSPI lines) that is outside the scope of this
+project, so this board is not supported.
 
 ## Repository Layout
 
@@ -232,43 +245,6 @@ Per-board display backends behind a single C API:
   row-by-row across multiple queued `tx_color()` calls previously
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
-- **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
-  ST77922 panel (`CONFIG_DRAFTLING_DISPLAY_ST77922`), built on the
-  official `espressif/esp_lcd_st77922` managed component (from
-  espressif/esp-iot-solution) -- the same component and byte-identical
-  vendor init table used by the xiaozhi-esp32 board file
-  `main/boards/lcdwiki-es3c35p/lcdwiki-es3c35p.cc`, which drives a
-  different vendor's board (LCDWiki ES3C35P) built around the same LCD
-  module/controller.
-  Pins are hardcoded (not read from the board header) because the
-  panel is driven over a dedicated 4-wire QSPI bus (CS/SCLK/D0-D3)
-  separate from the shared SPI pins used elsewhere. The native panel
-  is 320x480 portrait; since the component's `panel_st77922_swap_xy()`
-  is unconditionally unsupported, `display_flush()` still transposes
-  each dirty rect into native panel orientation and byte-swaps each
-  pixel to big-endian in software (via `flush_rect()`) before calling
-  `esp_lcd_panel_draw_bitmap()`, matching Freenove's own
-  `ST77922::Fill_Colors_Landscape()` behavior (the vendor helper that
-  actually renders landscape UI on this native-portrait panel without
-  changing MADCTL) and its `LV_COLOR_16_SWAP` LVGL config for this
-  board. `flush_rect()`'s window-start mapping is
-  `(FNK_N_NATIVE_WIDTH - ly - h, lx)` (a width-complement, not a plain
-  axis swap), confirmed against `Fill_Colors_Landscape()` in two
-  independent unofficial mirrors of Freenove's own TFT_eSPI
-  `ST77922.cpp` driver with byte-identical init tables and matching
-  pin numbers; two earlier revisions instead used `(FNK_N_NATIVE_WIDTH
-  - 1 - ly, lx)` and later `(ly, lx)` (derived from the unrelated
-  `Fill_Colors()` rotation-1 branch, which also outright refuses
-  partial-rect writes), both of which only matched the true mapping
-  for a full-frame flush and left every partial-rect UI update landing
-  at the wrong native position, causing a permanently blank-looking
-  screen after the first full clear. This
-  panel has no
-  discrete RST pin; `esp_lcd_panel_reset()` sends a software reset
-  (SWRESET + 120 ms delay) instead. An earlier hand-rolled SPI
-  implementation never sent any reset at all, which left the panel's
-  GRAM showing whatever a previous firmware had last drawn even after
-  reflashing and resetting the MCU.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -826,10 +802,6 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 - **DRAFTLING_MODEL_FREENOVE_FNK0104B** -- same 2.8" ILI9341 panel
   and SPI wiring as FNK0104A, plus an on-board FT6336U I2C
   capacitive touch controller. *Requires ESP32-S3.*
-- **DRAFTLING_MODEL_FREENOVE_FNK0104N** -- Freenove FNK0104N: 3.5"
-  ST77922 color LCD over 4-wire QSPI (`display_st77922.cpp`), 480x320
-  landscape, with its bundled capacitive touch controller on a
-  16-bit-register I2C protocol. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
   ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
   controller. *Requires ESP32-S3.*
@@ -838,9 +810,9 @@ The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104N/S).
+  (FNK0104A/B), 480 (FNK0104S).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104N/S).
+  (FNK0104A/B), 320 (FNK0104S).
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -869,7 +841,6 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
-| DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (4-wire QSPI backend, hardcoded pins) | Freenove FNK0104N |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
@@ -880,7 +851,6 @@ in C / C++ code:
 | DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
-| DRAFTLING_TOUCH_FNK_ST77922       | Adds the FNK0104N bundled-touch poll routine (16-bit register protocol) to `components/touchscreen/touchscreen.cpp` | Freenove FNK0104N |
 
 Components MUST key off these derived symbols; they MUST NOT
 test `DRAFTLING_MODEL_*` directly. Adding a new model means
@@ -958,7 +928,7 @@ supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
-`freenove_fnk0104b`, `freenove_fnk0104n`, `freenove_fnk0104s`). Each
+`freenove_fnk0104b`, `freenove_fnk0104s`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

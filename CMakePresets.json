@@ -101,15 +101,6 @@
             }
         },
         {
-            "name": "freenove_fnk0104n",
-            "displayName": "Freenove FNK0104N (3.5in ST77922 QSPI, touch)",
-            "binaryDir": "build/freenove_fnk0104n",
-            "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104n",
-                "SDKCONFIG": "build/freenove_fnk0104n/sdkconfig"
-            }
-        },
-        {
             "name": "freenove_fnk0104s",
             "displayName": "Freenove FNK0104S (4.0in ST7796, touch)",
             "binaryDir": "build/freenove_fnk0104s",
