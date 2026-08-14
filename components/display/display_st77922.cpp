@@ -125,10 +125,21 @@ static const char *TAG = "DisplayST77922";
 /* TODO(temporary diagnostic, remove once root cause confirmed): see the
  * "still, all pixels remain black" bug report. Number of post-boot
  * flush_rect() calls to log (logical + mapped physical rectangle) -- see
- * the usage in flush_rect() below. The #warning below is intentional: it
- * flags this diagnostic in every build log so it is not accidentally
- * left in once the bug is resolved. */
-#warning "Temporary flush_rect() diagnostic logging is enabled (display_st77922.cpp); remove once the FNK0104N blank-screen bug is resolved"
+ * the usage in flush_rect() below. Every write-side check re-verified
+ * for that report (init table byte-for-byte diff against the
+ * confirmed-working espressif/esp_lcd_st77922-based lcdwiki-es3c35p
+ * board and the Freenove-derived Doll-OS-FNK0104 Arduino driver,
+ * landscape rotation math, byte order, 4px alignment, pin/bus flags,
+ * CS handling) came back clean, and this logging confirms LVGL is
+ * driving flush_rect() with sane, correctly-mapped rectangles on every
+ * update -- so display_init() now also calls log_display_power_mode()
+ * (see its own comment below) to read back RDDPM after init and check
+ * whether the QSPI link is getting *any* response from the panel at
+ * all, which is the one thing a write-only trace could never rule in
+ * or out. The #warning below is intentional: it flags this diagnostic
+ * in every build log so it is not accidentally left in once the bug
+ * is resolved. */
+#warning "Temporary flush_rect()/RDDPM diagnostic logging is enabled (display_st77922.cpp); remove once the FNK0104N blank-screen bug is resolved"
 #define FLUSH_RECT_LOG_LIMIT 12
 
 /* Vendor init table, ported verbatim from Freenove's ST77922.cpp
@@ -312,6 +323,44 @@ static void tx_param_qspi(uint8_t cmd, const void *data, size_t len)
 {
     uint32_t lcd_cmd = ((uint32_t)cmd << 8) | (0x02u << 24);
     ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(s_io, (int)lcd_cmd, data, len));
+}
+
+/* Read back a register through the panel IO, using the QSPI read
+ * opcode (0x0B, LCD_OPCODE_READ_CMD in the component's private
+ * st77922_interface.h) instead of the write opcode used by
+ * tx_param_qspi() above. Every check done so far for the FNK0104N
+ * "screen stays blank" bug (init table byte-for-byte diffed against
+ * the confirmed-working espressif/esp_lcd_st77922-based
+ * lcdwiki-es3c35p board and the Freenove-derived Doll-OS-FNK0104
+ * Arduino driver, landscape rotation math re-derived and matched
+ * pixel-for-pixel against that same driver's Fill_Colors_Landscape(),
+ * byte order, 4px alignment, pin/bus flags, and CS handling) has come
+ * back clean, and flush_rect()'s own diagnostic confirms LVGL is
+ * driving it with sane, correctly-mapped rectangles every time -- so
+ * the remaining unknown is whether the QSPI link is actually getting
+ * to the panel at all, which a write-only trace can never prove. RDDPM
+ * (Read Display Power Mode, 0x0A) reflects the panel's own internal
+ * state after our init sequence's DISPON/SLPOUT/NORON commands: a
+ * healthy panel replies with a non-0x00/non-0xFF byte here (per the
+ * MIPI DCS spec, bit 2 = booster on, bit 3 = normal display mode,
+ * bit 4 = sleep out, bit 7 = display on -- e.g. 0x9C after our init
+ * sequence). 0x00 or 0xFF (or an ESP_ERR_* from the rx call itself)
+ * means the QSPI bus/wiring itself is not getting responses back from
+ * the panel, which would explain a persistently blank screen despite
+ * every write-side check above passing. */
+static void log_display_power_mode(void)
+{
+    uint32_t lcd_cmd = ((uint32_t)0x0A << 8) | (0x0Bu << 24);
+    uint8_t rddpm = 0;
+    esp_err_t err = esp_lcd_panel_io_rx_param(s_io, (int)lcd_cmd, &rddpm, 1);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "RDDPM read failed: %s (QSPI bus may not be reaching the panel)",
+                esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "RDDPM (Display Power Mode) = 0x%02X%s", rddpm,
+            (rddpm == 0x00 || rddpm == 0xFF) ?
+                " (suspicious: looks like a stuck/unconnected QSPI bus, not a real reply)" : "");
 }
 
 /* Transpose a logical (already-landscape) rectangle of the
@@ -526,6 +575,13 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     ESP_ERROR_CHECK(esp_lcd_panel_invert_color(s_panel, false));
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(s_panel, false, false));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(s_panel, true));
+
+    /* Temporary diagnostic (see log_display_power_mode() comment
+     * above): confirms whether the QSPI link is actually getting
+     * responses back from the panel at all, which none of the
+     * write-only checks so far can distinguish from "writes reach the
+     * panel but render nothing" or "writes never reach the panel". */
+    log_display_power_mode();
 
     gpio_set_level((gpio_num_t)FNK_N_BL_PIN, 1);
 
