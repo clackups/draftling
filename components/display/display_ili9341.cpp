@@ -144,6 +144,21 @@ static void send_cmd_data(uint8_t cmd, const uint8_t *data, size_t n)
 
 static void backlight_pwm_init(void)
 {
+    /* display_deep_sleep_prepare() below latches this pin LOW with
+     * gpio_hold_en() + gpio_deep_sleep_hold_en() so the backlight
+     * stays off through deep sleep. That hold survives the wake
+     * reset on ESP32-S3 (deep sleep re-runs app_main() from scratch,
+     * it is not a resume), so without releasing it here the pad
+     * stays clamped LOW forever: gpio_config() / ledc_channel_config()
+     * below reconfigure the peripheral side but the physical pad
+     * keeps ignoring it, leaving the backlight (and thus the whole
+     * screen) dark after every wake from deep sleep. Matches the
+     * same gpio_hold_dis() call in display_epdiy.cpp, display_h752.cpp
+     * and display_axs15231b.cpp's backlight init. Safe to call
+     * unconditionally on a cold boot too: releasing a pad that was
+     * never held is a no-op. */
+    gpio_hold_dis((gpio_num_t)FNK_LCD_BL_PIN);
+
     gpio_config_t g = {};
     g.intr_type    = GPIO_INTR_DISABLE;
     g.mode         = GPIO_MODE_OUTPUT;
