@@ -4,7 +4,7 @@
 /*
  * I2C touchscreen driver + LVGL pointer input device.
  *
- * Supports two controllers, picked at build time via
+ * Supports three controllers, picked at build time via
  * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
  *
  *   * AXS5106L (Allystar, e.g. Guition JC3248W535):
@@ -27,7 +27,13 @@
  *     not wired to an ESP32 GPIO (PaperS3) the address-select
  *     reset sequence cannot be performed, but probing covers it.
  *
- * In both cases the driver registers an LVGL pointer indev which
+ *   * FT6336U (FocalTech, e.g. Freenove FNK0104B / FNK0104S):
+ *     Register-addressed protocol -- 8-bit register address, touch
+ *     count at 0x02 (TD_STATUS), first point's X/Y at 0x03..0x06
+ *     (top nibble of each 16-bit value is an event/id code, low 12
+ *     bits are the coordinate).
+ *
+ * In all cases the driver registers an LVGL pointer indev which
  * feeds touch coordinates to the LVGL event system, so widgets
  * receive standard click / press / gesture events. The transform
  * from the controller's native coordinate space to LVGL logical
@@ -405,6 +411,52 @@ static bool poll_gt911(int *out_x, int *out_y)
 
 #endif /* CONFIG_DRAFTLING_TOUCH_GT911 */
 
+/* ---- FT6336U (register-based) driver ---- */
+#if defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+
+/* FocalTech FT6336U register map (also shared by the FT6206/FT6236
+ * family this chip descends from). 8-bit register address, single
+ * I2C transaction each for status and point data. Used by the
+ * Freenove FNK0104B / FNK0104S. */
+#define FT6336U_REG_TD_STATUS  0x02  /* number of touch points, 0..2 */
+#define FT6336U_REG_P1_XH      0x03  /* event(2b) | x[11:8] */
+#define FT6336U_REG_P1_XL      0x04
+#define FT6336U_REG_P1_YH      0x05  /* id(4b) | y[11:8] */
+#define FT6336U_REG_P1_YL      0x06
+
+static esp_err_t ft6336u_read_reg(uint8_t reg, uint8_t *buf, size_t len)
+{
+    return i2c_master_transmit_receive(
+        s_dev, &reg, 1, buf, len, 50 /* ms */);
+}
+
+static bool poll_ft6336u(int *out_x, int *out_y)
+{
+    if (!s_dev) return false;
+
+    uint8_t pt[5] = { 0 };
+    /* Read TD_STATUS through P1_YL in one burst -- registers are
+     * contiguous (0x02..0x06). */
+    if (ft6336u_read_reg(FT6336U_REG_TD_STATUS, pt, sizeof(pt)) != ESP_OK) {
+        ESP_LOGD(TAG, "ft6336u read failed");
+        return false;
+    }
+
+    uint8_t points = pt[0] & 0x0F;
+    if (points < 1 || points > 2) return false;
+
+    int nx = ((int)(pt[1] & 0x0F) << 8) | pt[2];
+    int ny = ((int)(pt[3] & 0x0F) << 8) | pt[4];
+
+    int lx, ly;
+    native_to_logical(nx, ny, &lx, &ly);
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
+    return true;
+}
+
+#endif /* CONFIG_DRAFTLING_TOUCH_FT6336U */
+
 /* ---- M5Stack Tab5 (BSP-delegated) driver ---- */
 #if defined(DRAFTLING_TOUCH_BSP_M5STACK_TAB5)
 
@@ -460,6 +512,8 @@ static bool poll_controller(int *out_x, int *out_y)
     return poll_gt911(out_x, out_y);
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     return poll_axs5106l(out_x, out_y);
+#elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+    return poll_ft6336u(out_x, out_y);
 #else
 #  error "No touch controller driver selected (CONFIG_DRAFTLING_TOUCH_*)"
 #endif
@@ -710,6 +764,8 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     const char *ctrl = "GT911";
 #elif defined(CONFIG_DRAFTLING_TOUCH_AXS5106L)
     const char *ctrl = "AXS5106L";
+#elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+    const char *ctrl = "FT6336U";
 #else
     const char *ctrl = "?";
 #endif

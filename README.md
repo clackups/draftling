@@ -151,8 +151,8 @@ imprecise taps.
 
 ## Supported hardware
 
-Draftling currently runs on seven development boards (six ESP32-S3 and
-one ESP32-P4). All of them share the same firmware image; the target
+Draftling currently runs on twelve development boards (eleven ESP32-S3
+and one ESP32-P4). All of them share the same firmware image; the target
 board is picked at build time with `idf.py menuconfig` -> **DRAFTLING
 Configuration > Hardware Model**. Display resolution, driver, pin map,
 touch controller and the deep-sleep wake source are derived
@@ -227,6 +227,28 @@ automatically from that choice.
   [ESP32-8048S070C](docs/sunton-esp32-8048S070c.md)** -- ESP32-S3 HMI
   development boards with 16-bit parallel RGB565 interface and a GT911
   capacitive touch controller.
+
+- **[Freenove
+  FNK0104A](https://github.com/Freenove/Freenove_ESP32_S3_Display)** --
+  2.8" ILI9341 color LCD (240x320 native panel, rendered landscape at
+  320x240) over standard 4-wire SPI. No touch controller. Battery on
+  GPIO9 ADC (1:2 divider). On-board MicroSD on the SDMMC 1-bit
+  peripheral. BOOT (GPIO0) wakes from deep sleep.
+
+- **[Freenove
+  FNK0104B](https://github.com/Freenove/Freenove_ESP32_S3_Display)** --
+  Same 2.8" ILI9341 panel and SPI wiring as the FNK0104A, plus an
+  on-board FT6336U capacitive touch controller on I2C (address 0x38).
+
+- **[Freenove
+  FNK0104S](https://github.com/Freenove/Freenove_ESP32_S3_Display)** --
+  4.0" ST7796 color LCD (320x480 native panel, rendered landscape at
+  480x320) over standard 4-wire SPI, with the same FT6336U capacitive
+  touch controller as the FNK0104B. Battery on GPIO9 ADC (1:2 divider).
+  On-board MicroSD on the SDMMC 1-bit peripheral. BOOT (GPIO0) wakes
+  from deep sleep. Freenove's own board silkscreen and README call
+  this panel "ST7789", but the vendor init sequence is unambiguously
+  ST7796.
 
 All ESP32-S3 boards use at least 8 MB of PSRAM and 16 MB of flash, BLE
 for the HID keyboard and 802.11 b/g/n Wi-Fi for Git sync. The Tab5
@@ -305,6 +327,13 @@ wake is armed on the touch INT line and any tap wakes the device.
 Touch also drives the editor and the menu lists; see
 [Touch Operations](#touch-operations) below.
 
+The **Freenove FNK0104A/B/S** boards are small, inexpensive color-LCD
+kits (2.8" for the A/B, 4.0" for the S) that ship with a MicroSD slot
+and a battery ADC input out of the box. The FNK0104A has no touch
+controller and is keyboard-only; the FNK0104B and FNK0104S add an
+FT6336U capacitive touch controller, so touch works alongside the BLE
+keyboard as described in [Touch Operations](#touch-operations).
+
 UC8179-based e-paper displays (such as those used by the Seeed Studio
 reTerminal E1001 and the Waveshare E-Paper Driver HAT) were previously
 supported but proved too slow for an interactive Markdown editor: even
@@ -374,7 +403,8 @@ idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
 Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`.
+`sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
+`freenove_fnk0104b`, `freenove_fnk0104s`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:
@@ -409,7 +439,7 @@ Found at the top-level **DRAFTLING Configuration** menu.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all six options. |
+| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all twelve options. |
 | **Display rotation angle** | choice | 0 degrees | Rotate the display by 0, 90, 180, or 270 degrees. |
 | **E-paper full-refresh interval** | int | 30 | E-paper boards only: number of partial refreshes between full refreshes. |
 | **Enable touchscreen input** | bool | y on PaperS3 and JC3248W535, n otherwise | Enable the I2C touch driver and LVGL pointer input device. |
@@ -482,14 +512,16 @@ components/
   ble_keyboard/      BLE HID keyboard host (Bluedroid)
   display/           Display backends (RLCD SPI, epdiy e-paper for
                      PaperS3 + LilyGO T5, AXS15231B QSPI,
-                     MIPI-DSI for Tab5) and LVGL v9 port
+                     MIPI-DSI for Tab5, RGB565 parallel for Sunton,
+                     ILI9341/ST7796 SPI for Freenove FNK0104) and
+                     LVGL v9 port
   editor/            Gap-buffer editor, Markdown parser, LVGL UI, menu
   fonts/             Custom LVGL fonts (Latin, Latin-1 Supplement, Cyrillic)
   git_sync/          GitHub REST API file synchronization
   kb_layout/         Keyboard layout translation (US/UA/DE/FR)
   sd_card/           SD card (SDMMC or SPI) file operations
   standby/           Deep-sleep / standby timer manager
-  touchscreen/       I2C touch driver (AXS5106L, GT911) + LVGL pointer indev
+  touchscreen/       I2C touch driver (AXS5106L, GT911, FT6336U) + LVGL pointer indev
   wifi_manager/      WiFi STA connection manager
 ```
 

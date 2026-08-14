@@ -1221,6 +1221,12 @@ extern "C" void app_main(void)
      * (components/display/display_rgb.cpp); pin parameters are
      * ignored, only width/height are used. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
+    /* Freenove FNK0104A/B (ILI9341) / FNK0104S (ST7796). 4-wire SPI
+     * color LCD; all panel GPIOs (MOSI/SCK/DC/CS/BL) are hard-coded
+     * inside display_ili9341.cpp since every FNK0104 SPI-TFT SKU
+     * shares the same pinout. Pin parameters are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend

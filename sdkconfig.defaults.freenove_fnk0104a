@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: Freenove FNK0104A
+# Sets the hardware model and IDF target used by the "freenove_fnk0104a" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A=y

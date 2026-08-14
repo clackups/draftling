@@ -39,6 +39,12 @@
 #include "boards/sunton_8048s070.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SUNTON_8048S043)
 #include "boards/sunton_8048s043.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A)
+#include "boards/freenove_fnk0104a.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B)
+#include "boards/freenove_fnk0104b.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S)
+#include "boards/freenove_fnk0104s.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

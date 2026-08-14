@@ -81,6 +81,33 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s043",
                 "SDKCONFIG": "build/sunton_8048s043/sdkconfig"
             }
+        },
+        {
+            "name": "freenove_fnk0104a",
+            "displayName": "Freenove FNK0104A (2.8in ILI9341, no touch)",
+            "binaryDir": "build/freenove_fnk0104a",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104a",
+                "SDKCONFIG": "build/freenove_fnk0104a/sdkconfig"
+            }
+        },
+        {
+            "name": "freenove_fnk0104b",
+            "displayName": "Freenove FNK0104B (2.8in ILI9341, touch)",
+            "binaryDir": "build/freenove_fnk0104b",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104b",
+                "SDKCONFIG": "build/freenove_fnk0104b/sdkconfig"
+            }
+        },
+        {
+            "name": "freenove_fnk0104s",
+            "displayName": "Freenove FNK0104S (4.0in ST7796, touch)",
+            "binaryDir": "build/freenove_fnk0104s",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104s",
+                "SDKCONFIG": "build/freenove_fnk0104s/sdkconfig"
+            }
         }
     ]
 }

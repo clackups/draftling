@@ -111,6 +111,37 @@ config DRAFTLING_MODEL_SUNTON_8048S043
         Backlight on GPIO2. Keyboard-driven (USB / BLE) like every
         other Draftling board.
 
+config DRAFTLING_MODEL_FREENOVE_FNK0104A
+    bool "Freenove FNK0104A (ESP32-S3, ILI9341, 2.8\" color LCD, 320x240, no touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Freenove FNK0104A development board: 2.8" ILI9341 color LCD,
+        240x320 native panel rendered landscape at 320x240, driven
+        over a standard SPI interface. No touch controller. Has an
+        on-board MicroSD slot (SDMMC 1-bit) and a battery ADC input.
+        The BOOT button (GPIO0) is the deep-sleep wakeup source.
+        See https://github.com/Freenove/Freenove_ESP32_S3_Display
+
+config DRAFTLING_MODEL_FREENOVE_FNK0104B
+    bool "Freenove FNK0104B (ESP32-S3, ILI9341, 2.8\" color LCD, 320x240, touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Same 2.8" ILI9341 panel and SPI wiring as the FNK0104A, plus
+        an on-board FT6336U I2C capacitive touch controller.
+        See https://github.com/Freenove/Freenove_ESP32_S3_Display
+
+config DRAFTLING_MODEL_FREENOVE_FNK0104S
+    bool "Freenove FNK0104S (ESP32-S3, ST7796, 4.0\" color LCD, 480x320, touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Freenove FNK0104S development board: 4.0" ST7796 color LCD,
+        320x480 native panel rendered landscape at 480x320, driven
+        over a standard SPI interface. Has an on-board FT6336U I2C
+        capacitive touch controller, a MicroSD slot (SDMMC 1-bit)
+        and a battery ADC input. The BOOT button (GPIO0) is the
+        deep-sleep wakeup source.
+        See https://github.com/Freenove/Freenove_ESP32_S3_Display
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -126,6 +157,9 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default n
 
 # DRAFTLING_DISPLAY_AXS15231B is set automatically when the selected
@@ -179,6 +213,28 @@ config DRAFTLING_DISPLAY_RGB
 config DRAFTLING_RGB_BOARD_S043
     bool
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default n
+
+# DRAFTLING_DISPLAY_ILI9341 is set automatically when the selected
+# board uses an ILI9341 SPI color LCD (Freenove FNK0104A / FNK0104B,
+# 2.8" 240x320 panel). The display backend
+# (components/display/display_ili9341.cpp) is compiled in for these
+# boards.
+config DRAFTLING_DISPLAY_ILI9341
+    bool
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default n
+
+# DRAFTLING_DISPLAY_ST7796 is set automatically when the selected
+# board uses an ST7796 SPI color LCD (Freenove FNK0104S, 4.0"
+# 320x480 panel). Shares the same SPI wiring convention and pixel
+# pipeline as DRAFTLING_DISPLAY_ILI9341
+# (components/display/display_ili9341.cpp handles both controllers,
+# selecting the correct vendor init sequence at build time).
+config DRAFTLING_DISPLAY_ST7796
+    bool
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default n
 
 # DRAFTLING_DISPLAY_CAN_ROTATE enables a runtime "Rotate 180" entry in
@@ -251,6 +307,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_AXS15231B
     default y if DRAFTLING_DISPLAY_MIPI_DSI
     default y if DRAFTLING_DISPLAY_RGB
+    default y if DRAFTLING_DISPLAY_ILI9341
+    default y if DRAFTLING_DISPLAY_ST7796
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
     # front-light edge-lit LED on GPIO 11 (BOARD_BL_EN in the LilyGO
     # factory firmware). The EPDIY display backend drives it with
@@ -332,6 +390,11 @@ config DRAFTLING_HAS_BATTERY
     # DRAFTLING_BATTERY_INA226 below). main.cpp calls
     # battery_init_ina226() with the BSP-owned I2C handle.
     default y if DRAFTLING_MODEL_M5STACK_TAB5
+    # Freenove FNK0104 family: LiPo cell monitored through a 1:2
+    # divider on a dedicated ADC pin (GPIO9 on FNK0104A/B/S).
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default n
 
 # Selects the BQ27220 fuel-gauge backend in components/battery/
@@ -484,6 +547,13 @@ config DRAFTLING_HAS_POWER_LATCH
 config DRAFTLING_SD_SDMMC
     bool
     default y if DRAFTLING_MODEL_WAVESHARE_RLCD42
+    # Freenove FNK0104 family: on-board MicroSD wired to SDMMC.
+    # Draftling only uses the 1-bit mode (CLK/CMD/D0); the D1-D3
+    # lines are left unconfigured (relying on the module's own
+    # pull-ups), matching the existing RLCD-4.2 usage.
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default n
 
 # DRAFTLING_WAKEUP_GPIO is the per-board RTC-capable GPIO used as
@@ -514,6 +584,11 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_M5STACK_TAB5
     default 0  if DRAFTLING_MODEL_SUNTON_8048S070
     default 0  if DRAFTLING_MODEL_SUNTON_8048S043
+    # Freenove FNK0104 family: BOOT button on GPIO0 (KEY_PIN in the
+    # Freenove reference sketches).
+    default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 0
 
 # ---- Touchscreen support ----
@@ -548,6 +623,10 @@ config DRAFTLING_TOUCHSCREEN
     # so default touch on for both SKUs.
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    # Freenove FNK0104 touch variants (FNK0104B / FNK0104S).
+    # FNK0104A has no touch controller wired and is left off.
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -588,6 +667,20 @@ config DRAFTLING_TOUCH_GT911
         address sent MSB-first, status byte at 0x814E, touch points
         at 0x814F+. Default I2C address 0x5D (0x14 as backup).
 
+config DRAFTLING_TOUCH_FT6336U
+    bool
+    depends on DRAFTLING_TOUCHSCREEN
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default n
+    help
+        FocalTech FT6336U. Register-addressed protocol: 8-bit
+        register address, touch-point count at register 0x02
+        (TD_STATUS), first point's X/Y at registers 0x03/0x05 (top
+        nibble of each 16-bit value is the event/id, low 12 bits are
+        the coordinate). Default I2C address 0x38. Used by the
+        Freenove FNK0104B / FNK0104S.
+
 # Touchscreen INT GPIO. The touch controller pulses this line low
 # on touch. Used by the LVGL pointer indev (the read_cb only polls
 # I2C when INT is low to avoid bus noise on every LVGL tick) and,
@@ -623,6 +716,9 @@ config DRAFTLING_TOUCH_INT_GPIO
     # restored). DRAFTLING_STANDBY_WAKE_ON_TOUCH must NOT be set
     # on Tab5 -- it would try to arm EXT0 on a non-LP_IO pin.
     default 23 if DRAFTLING_MODEL_M5STACK_TAB5
+    # Freenove FNK0104B / FNK0104S: FT6336U INT_N_PIN.
+    default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default -1
 
 # Touchscreen reset GPIO. The reset line is often tied to the LCD
@@ -640,7 +736,11 @@ config DRAFTLING_TOUCH_RST_GPIO
     default 41 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 38 if DRAFTLING_MODEL_SUNTON_8048S070
     default 38 if DRAFTLING_MODEL_SUNTON_8048S043
+    # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
+    default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default -1
+
 
 config DRAFTLING_TOUCH_DEBUG_LOG
     bool "Log every raw/logical touch coordinate (verbose)"
@@ -719,6 +819,12 @@ config DRAFTLING_DISPLAY_WIDTH
     default 720 if DRAFTLING_MODEL_M5STACK_TAB5
     default 800 if DRAFTLING_MODEL_SUNTON_8048S070
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
+    # Freenove FNK0104 family: native panel is portrait (240x320 on
+    # the 2.8" ILI9341 boards, 320x480 on the 4.0" board); the
+    # display backend rotates 90 deg so the editor renders landscape.
+    default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -735,6 +841,9 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 1280 if DRAFTLING_MODEL_M5STACK_TAB5
     default 480 if DRAFTLING_MODEL_SUNTON_8048S070
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
