@@ -4,7 +4,7 @@
 /*
  * I2C touchscreen driver + LVGL pointer input device.
  *
- * Supports four controllers, picked at build time via
+ * Supports three controllers, picked at build time via
  * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
  *
  *   * AXS5106L (Allystar, e.g. Guition JC3248W535):
