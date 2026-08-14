@@ -122,6 +122,15 @@ static const char *TAG = "DisplayST77922";
 #define FNK_N_NATIVE_WIDTH   320
 #define FNK_N_NATIVE_HEIGHT  480
 
+/* TODO(temporary diagnostic, remove once root cause confirmed): see the
+ * "still, all pixels remain black" bug report. Number of post-boot
+ * flush_rect() calls to log (logical + mapped physical rectangle) -- see
+ * the usage in flush_rect() below. The #warning below is intentional: it
+ * flags this diagnostic in every build log so it is not accidentally
+ * left in once the bug is resolved. */
+#warning "Temporary flush_rect() diagnostic logging is enabled (display_st77922.cpp); remove once the FNK0104N blank-screen bug is resolved"
+#define FLUSH_RECT_LOG_LIMIT 12
+
 /* Vendor init table, ported verbatim from Freenove's ST77922.cpp
  * (st77922_lcd_init[]). Do not reorder or "clean up" -- this is a
  * black-box vendor timing/gamma/power recipe for this exact panel. */
@@ -346,6 +355,22 @@ static void flush_rect(int lx, int ly, int w, int h)
     int phys_sy = lx;
     int phys_w  = h;
     int phys_h  = w;
+
+    /* TODO(temporary diagnostic, remove once root cause confirmed): see
+     * the "still, all pixels remain black" bug report. Logs the logical
+     * and mapped physical rectangle for the first
+     * FLUSH_RECT_LOG_LIMIT post-boot flush_rect() calls, to confirm
+     * whether display_push_rgb565() / display_flush() are even reaching
+     * this function with sane, non-degenerate rectangles once the editor
+     * UI starts drawing (step 3 of the diagnostic plan). */
+    static int s_flush_log_count = 0;
+    if (s_flush_log_count < FLUSH_RECT_LOG_LIMIT) {
+        ESP_LOGI(TAG,
+                "flush_rect #%d: logical(x=%d,y=%d,w=%d,h=%d) -> "
+                "physical(x=%d,y=%d,w=%d,h=%d)",
+                s_flush_log_count, lx, ly, w, h, phys_sx, phys_sy, phys_w, phys_h);
+        s_flush_log_count++;
+    }
 
     for (int row = 0; row < h; row++) {
         const uint16_t *src = s_fb + (size_t)(ly + row) * s_width + lx;
