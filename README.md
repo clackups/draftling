@@ -344,7 +344,7 @@ therefore been removed from the codebase.
 On color LCD boards (Touch-LCD-3.49, JC3248W535) the
 editor offers a runtime-selectable color theme (F1 -> Settings ->
 Color theme): light green on black (default), dark green on black,
-amber/orange on black, or white on black.
+amber/orange on black, white on black, or black on beige.
 
 
 

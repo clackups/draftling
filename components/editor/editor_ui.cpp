@@ -255,7 +255,7 @@ typedef struct {
     uint32_t    bg_rgb;
 } color_theme_t;
 
-#define COLOR_THEME_COUNT 4
+#define COLOR_THEME_COUNT 5
 static const color_theme_t COLOR_THEMES[COLOR_THEME_COUNT] = {
     /* "Light green on black" is the default for color LCDs: pure
      * 100 % green at 0x00FF00 evokes a classic CRT terminal and
@@ -268,6 +268,7 @@ static const color_theme_t COLOR_THEMES[COLOR_THEME_COUNT] = {
     { "Dark green on black",  0x15631A, 0x000000 },
     { "Orange on black",      0xCC6600, 0x000000 },
     { "White on black",       0xFFFFFF, 0x000000 },
+    { "Black on beige",       0x000000, 0xF3EFEA },
 };
 
 #define NVS_KEY_THEME "theme"
