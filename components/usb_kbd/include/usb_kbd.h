@@ -4,9 +4,12 @@
  * USB HID keyboard host.
  *
  * Brings up the ESP-IDF USB Host stack + espressif/usb_host_hid HID
- * driver, opens any attached USB HID keyboard interface in boot
- * protocol mode, and translates boot keyboard reports into the same
- * kb_event_t event stream emitted by the ble_keyboard component.
+ * driver, opens any attached USB HID keyboard interface -- boot
+ * protocol or a generic report-protocol interface whose descriptor
+ * contains a standard keyboard collection (e.g. a composite
+ * keyboard+mouse device built with TinyUSB) -- and translates its
+ * reports into the same kb_event_t event stream emitted by the
+ * ble_keyboard component.
  *
  * Designed as a sibling to ble_keyboard: callers wire the same
  * editor key-handler into both via *_set_callback(), and pick which
