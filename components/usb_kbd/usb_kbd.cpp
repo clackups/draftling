@@ -274,15 +274,23 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
         break;
     }
     case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
+        hid_host_device_close(hid_dev_handle);
+        if (hid_dev_handle != s_active_kbd_handle) {
+            /* Not the interface we recognised as the keyboard: e.g.
+             * a companion mouse / vendor interface on a composite
+             * device, or an interface we opened only to inspect its
+             * report descriptor and then rejected as non-keyboard.
+             * Its disconnect (including one we trigger ourselves by
+             * closing it right after probing) must not be mistaken
+             * for the real keyboard going away. */
+            break;
+        }
         ESP_LOGI(TAG, "USB HID keyboard disconnected");
         s_kbd_connected = false;
-        hid_host_device_close(hid_dev_handle);
-        if (hid_dev_handle == s_active_kbd_handle) {
-            s_active_kbd_handle   = NULL;
-            s_active_kbd_is_boot  = false;
-            s_active_kbd_uses_id  = false;
-            s_active_kbd_report_id = 0;
-        }
+        s_active_kbd_handle   = NULL;
+        s_active_kbd_is_boot  = false;
+        s_active_kbd_uses_id  = false;
+        s_active_kbd_report_id = 0;
         /* Release any held keys so the editor does not see stuck
          * modifiers after a hot-unplug. */
         for (int i = 0; i < KBD_BOOT_KEY_SLOTS; i++) {
