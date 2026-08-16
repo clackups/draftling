@@ -77,21 +77,79 @@ static QueueHandle_t s_hid_event_queue = NULL;
 static uint8_t s_prev_keys[KBD_BOOT_KEY_SLOTS] = {0};
 static uint8_t s_prev_mod = 0;
 
-/* Currently recognised keyboard interface. Some devices (e.g. a
- * composite USB keyboard+mouse built with TinyUSB, as used by the
- * Smart Inclusive Keyboard project) do not implement the boot
- * protocol at all: they expose a single generic "report protocol"
- * HID interface (bInterfaceSubClass = 0, bInterfaceProtocol = 0)
- * whose report descriptor multiplexes a keyboard collection and a
- * mouse collection via distinct Report IDs. hid_host_dev_params_t
+/* Recognised keyboard interfaces. Some physical keyboards expose
+ * more than one HID interface that we identify as a keyboard, e.g.
+ * a primary boot-protocol interface for the main key matrix plus a
+ * second boot-protocol-flavoured interface for extra keys, or (as
+ * with a composite USB keyboard+mouse built with TinyUSB, used by
+ * the Smart Inclusive Keyboard project) a single generic "report
+ * protocol" HID interface (bInterfaceSubClass = 0, bInterfaceProtocol
+ * = 0) whose report descriptor multiplexes a keyboard collection and
+ * a mouse collection via distinct Report IDs. hid_host_dev_params_t
  * for such an interface never matches HID_SUBCLASS_BOOT_INTERFACE /
  * HID_PROTOCOL_KEYBOARD, so we additionally parse the report
  * descriptor ourselves to find a top-level keyboard Application
- * collection and its Report ID (if any). */
-static hid_host_device_handle_t s_active_kbd_handle = NULL;
-static bool    s_active_kbd_is_boot   = false;
-static bool    s_active_kbd_uses_id   = false;
-static uint8_t s_active_kbd_report_id = 0;
+ * collection and its Report ID (if any).
+ *
+ * We used to track only a single "active" keyboard handle, which
+ * silently dropped all key input whenever a keyboard enumerated more
+ * than one recognised interface: the second CONNECTED event
+ * overwrote the single active handle, so input reports arriving on
+ * the first (still open) interface were rejected by the handle
+ * check and never reached the editor. Track every recognised
+ * interface in a small fixed table instead so all of them can feed
+ * key events. */
+#define MAX_KBD_IFACES 4
+
+typedef struct {
+    hid_host_device_handle_t handle;
+    bool    in_use;
+    bool    is_boot;
+    bool    uses_id;
+    uint8_t report_id;
+} kbd_iface_t;
+
+static kbd_iface_t s_kbd_ifaces[MAX_KBD_IFACES] = {};
+static int s_kbd_iface_count = 0; /* number of slots with in_use == true */
+
+static kbd_iface_t *find_kbd_iface(hid_host_device_handle_t handle)
+{
+    for (int i = 0; i < MAX_KBD_IFACES; i++) {
+        if (s_kbd_ifaces[i].in_use && s_kbd_ifaces[i].handle == handle) {
+            return &s_kbd_ifaces[i];
+        }
+    }
+    return NULL;
+}
+
+static bool add_kbd_iface(hid_host_device_handle_t handle, bool is_boot,
+                          bool uses_id, uint8_t report_id)
+{
+    for (int i = 0; i < MAX_KBD_IFACES; i++) {
+        if (!s_kbd_ifaces[i].in_use) {
+            s_kbd_ifaces[i].handle     = handle;
+            s_kbd_ifaces[i].in_use     = true;
+            s_kbd_ifaces[i].is_boot    = is_boot;
+            s_kbd_ifaces[i].uses_id    = uses_id;
+            s_kbd_ifaces[i].report_id  = report_id;
+            s_kbd_iface_count++;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool remove_kbd_iface(hid_host_device_handle_t handle)
+{
+    for (int i = 0; i < MAX_KBD_IFACES; i++) {
+        if (s_kbd_ifaces[i].in_use && s_kbd_ifaces[i].handle == handle) {
+            s_kbd_ifaces[i] = (kbd_iface_t){};
+            s_kbd_iface_count--;
+            return true;
+        }
+    }
+    return false;
+}
 
 /* Minimal HID report descriptor parser: looks for a top-level
  * Application collection tagged Usage Page "Generic Desktop"
@@ -249,7 +307,8 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
 {
     switch (event) {
     case HID_HOST_INTERFACE_EVENT_INPUT_REPORT: {
-        if (hid_dev_handle != s_active_kbd_handle) return;
+        kbd_iface_t *iface = find_kbd_iface(hid_dev_handle);
+        if (!iface) return;
 
         uint8_t buf[64];
         size_t  buf_len = 0;
@@ -260,13 +319,13 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
         }
         const uint8_t *report = buf;
         size_t report_len = buf_len;
-        if (!s_active_kbd_is_boot && s_active_kbd_uses_id) {
+        if (!iface->is_boot && iface->uses_id) {
             /* Generic report-protocol interface with Report IDs (e.g.
              * a composite keyboard+mouse HID interface): each report
              * is prefixed with its Report ID byte. Only process
              * reports carrying the keyboard's own ID; a mouse report
              * on the same interface is silently ignored here. */
-            if (report_len < 1 || buf[0] != s_active_kbd_report_id) return;
+            if (report_len < 1 || buf[0] != iface->report_id) return;
             report++;
             report_len--;
         }
@@ -275,22 +334,24 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
     }
     case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
         hid_host_device_close(hid_dev_handle);
-        if (hid_dev_handle != s_active_kbd_handle) {
-            /* Not the interface we recognised as the keyboard: e.g.
-             * a companion mouse / vendor interface on a composite
+        if (!remove_kbd_iface(hid_dev_handle)) {
+            /* Not an interface we recognised as a keyboard: e.g. a
+             * companion mouse / vendor interface on a composite
              * device, or an interface we opened only to inspect its
              * report descriptor and then rejected as non-keyboard.
              * Its disconnect (including one we trigger ourselves by
              * closing it right after probing) must not be mistaken
-             * for the real keyboard going away. */
+             * for a keyboard going away. */
+            break;
+        }
+        if (s_kbd_iface_count > 0) {
+            /* Another recognised keyboard interface on the same (or
+             * a different) device is still open; the keyboard as a
+             * whole is still connected. */
             break;
         }
         ESP_LOGI(TAG, "USB HID keyboard disconnected");
         s_kbd_connected = false;
-        s_active_kbd_handle   = NULL;
-        s_active_kbd_is_boot  = false;
-        s_active_kbd_uses_id  = false;
-        s_active_kbd_report_id = 0;
         /* Release any held keys so the editor does not see stuck
          * modifiers after a hot-unplug. */
         for (int i = 0; i < KBD_BOOT_KEY_SLOTS; i++) {
@@ -412,11 +473,21 @@ static void hid_event_task(void *arg)
             continue;
         }
         ESP_LOGI(TAG, "USB HID keyboard ready");
-        s_active_kbd_handle    = evt.handle;
-        s_active_kbd_is_boot   = is_boot_kbd;
-        s_active_kbd_uses_id   = uses_report_id;
-        s_active_kbd_report_id = report_id;
+        bool was_connected = (s_kbd_iface_count > 0);
+        if (!add_kbd_iface(evt.handle, is_boot_kbd, uses_report_id, report_id)) {
+            ESP_LOGW(TAG, "too many keyboard interfaces, dropping this one");
+            hid_host_device_close(evt.handle);
+            continue;
+        }
         s_kbd_connected = true;
+
+        if (was_connected) {
+            /* Another keyboard interface (e.g. a second interface on
+             * the same physical keyboard) was already recognised;
+             * the keyboard-connected state and BLE handoff already
+             * happened for the first one. */
+            continue;
+        }
 
         /* A wired keyboard now owns input. If BLE was brought up
          * earlier this boot (BLE keyboard was already paired and
