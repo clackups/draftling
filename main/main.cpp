@@ -13,7 +13,8 @@
 #include <driver/rtc_io.h>
 #include <driver/uart.h>
 #include <esp_sleep.h>
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -694,6 +695,19 @@ static void pre_sleep_h752_deinit(void)
 #endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
 #endif /* LilyGO T5 EPD S3 family */
 
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+static void pre_sleep_xteink_x4_pro_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Xteink X4 Pro peripheral teardown");
+
+    pre_sleep_autosave();
+    touchscreen_sleep();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
+
 /* Poll period and long-press threshold shared by the H752 side-key
  * handler and the generic wakeup-GPIO handler below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -807,6 +821,73 @@ static void h752_user_key_init(void)
              WAKEUP_GPIO_NUM, gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
 #endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
+
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+/* ---- Xteink X4 Pro Left/Right buttons ----
+ *
+ * Left and Right (active-low, RTC-capable GPIOs) scroll the editor a
+ * screen at a time by injecting Page Up / Page Down through the same
+ * editor_ui_handle_key() path the BLE/USB keyboards use -- so a page
+ * can be turned without a keyboard connected. Power (WAKEUP_GPIO_NUM)
+ * keeps using the generic wakeup_btn_init() path below unchanged
+ * (deep-sleep wake source + 2 s hold to forget BLE keyboards). */
+
+static void xteink_x4_pro_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void xteink_x4_pro_btn_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_LEFT_PIN,  KB_KEY_PAGEUP },
+        { BTN_RIGHT_PIN, KB_KEY_PAGEDOWN },
+    };
+    static bool down[2]   = { false, false };
+    static int  stable[2] = { 0, 0 };
+
+    for (int i = 0; i < 2; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            continue;
+        }
+        if (++stable[i] < 2) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i]) {
+            /* Inject on release, matching the H752 side-key convention. */
+            xteink_x4_pro_inject_key(kButtons[i].keycode);
+        }
+    }
+}
+
+static void xteink_x4_pro_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << BTN_LEFT_PIN) | (1ULL << BTN_RIGHT_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = xteink_x4_pro_btn_poll_cb;
+    targs.name     = "x4pro_btn";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Xteink X4 Pro Left/Right button poller started "
+                  "(GPIO%d/GPIO%d)", BTN_LEFT_PIN, BTN_RIGHT_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
 
 /* ---- Generic wakeup-GPIO long-press handler ----
  *
@@ -1025,7 +1106,22 @@ extern "C" void app_main(void)
      * those bring-up paths see fresh, un-latched pads. */
     t5_release_held_gpios_after_wake();
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* Master peripheral-rail latch. Must be driven HIGH before any
+     * SPI/display/SD bring-up -- without it, the e-paper panel rail
+     * and the SD slot both stay unpowered. No I2C expander involved
+     * (unlike the components/power TCA9554 latch on the Touch-LCD-3.49). */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << XTEINK_POWER_LATCH_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
+    }
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
@@ -1207,6 +1303,12 @@ extern "C" void app_main(void)
      * the vendored LilyGO shift-register driver. Pin parameters are
      * ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
+    /* Xteink X4 Pro SPI e-paper backend. Owns all panel GPIOs
+     * internally (see main/boards/xteink_x4_pro.h) and auto-detects
+     * which of three possible controllers (SSD1677, UC8179, UC8279)
+     * the panel is wired to. Pin parameters are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
     /* M5Stack Tab5 MIPI-DSI panel. All panel GPIOs, the MIPI-DSI
      * PHY LDO, the I/O expander wiring and the LEDC backlight
@@ -1315,6 +1417,14 @@ extern "C" void app_main(void)
     if (battery_init_ina226(bsp_i2c_get_handle(), 0x41, 2) != 0) {
         ESP_LOGW(TAG, "INA226 init failed; battery indicator disabled");
     }
+#elif defined(CONFIG_DRAFTLING_BATTERY_CW2017)
+    /* Xteink X4 Pro: CW2017 fuel gauge on the shared I2C bus created
+     * above (also carrying the GT911 touch controller). No charger
+     * IC on this bus, so battery_read_charging() always reports
+     * "unknown" for this backend. */
+    if (battery_init_cw2017(shared_i2c_bus) != 0) {
+        ESP_LOGW(TAG, "CW2017 fuel gauge init failed; battery indicator disabled");
+    }
 #else
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
 #endif
@@ -1388,6 +1498,17 @@ extern "C" void app_main(void)
      * epdiy's shared SPI IRQ" theory does not hold; this serialization
      * is the actual fix.) */
     bool sd_lvgl_held = draftling_lvgl_port_lock(-1);
+#endif
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* SD slot power-enable, active-low. Drive it before mounting. */
+    {
+        gpio_config_t sd_pwr = {};
+        sd_pwr.intr_type    = GPIO_INTR_DISABLE;
+        sd_pwr.mode         = GPIO_MODE_OUTPUT;
+        sd_pwr.pin_bit_mask = (1ULL << SD_POWER_EN_PIN);
+        gpio_config(&sd_pwr);
+        gpio_set_level((gpio_num_t)SD_POWER_EN_PIN, 0);
+    }
 #endif
 #if defined(CONFIG_DRAFTLING_SD_SDMMC)
     /* Boards with the SD slot wired to the on-chip SDMMC peripheral
@@ -1783,6 +1904,19 @@ extern "C" void app_main(void)
      * tcfg.i2c_bus; on every other board tcfg.i2c_bus stays NULL
      * and the component creates its own bus from sda/scl as before. */
     ESP_LOGI(TAG, "Initializing touchscreen...");
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* GT911 power-enable, active-low. Drive it before touch bring-up;
+     * there is no touchscreen_config_t field for this, so it is a
+     * one-off poke here (same style as the SD power-enable above). */
+    {
+        gpio_config_t touch_pwr = {};
+        touch_pwr.intr_type    = GPIO_INTR_DISABLE;
+        touch_pwr.mode         = GPIO_MODE_OUTPUT;
+        touch_pwr.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
+        gpio_config(&touch_pwr);
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);
+    }
+#endif
     {
         touchscreen_config_t tcfg = {};
         tcfg.sda      = I2C_SDA_PIN;
@@ -1816,7 +1950,8 @@ extern "C" void app_main(void)
         tcfg.mirror_x = TOUCH_MIRROR_X ? true : false;
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;
         tcfg.user_rotate_deg = 0;
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
         tcfg.i2c_bus = (void *)shared_i2c_bus;
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* The m5stack_tab5 BSP owns the I2C master bus (created
@@ -1841,6 +1976,12 @@ extern "C" void app_main(void)
     /* Generic wakeup-button long-press monitor: hold 2 s to forget
      * all stored BLE keyboard pairings and start a fresh scan. */
     wakeup_btn_init();
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* Left/Right buttons scroll the editor (Page Up / Page Down),
+     * alongside (not instead of) the generic Power/wakeup handler
+     * above. */
+    xteink_x4_pro_btn_init();
+#endif
 #endif
 
     /* WiFi is lazy-initialized on first wifi_manager_connect() call.
@@ -1863,6 +2004,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_h752_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
     standby_set_pre_sleep_cb(pre_sleep_tab5_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    standby_set_pre_sleep_cb(pre_sleep_xteink_x4_pro_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

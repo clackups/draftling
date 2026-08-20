@@ -49,12 +49,15 @@ with a remote Git repository via the GitHub REST API.
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
+| Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
 the controller proved too slow for an interactive Markdown editor
 even with fast partial updates and accumulated ghosting too quickly
-to be usable.
+to be usable. The Xteink X4 Pro's UC8179 / UC8279 panel variants (see
+below) use a different, faster waveform than those panels and are
+supported.
 
 The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was previously
 supported but has been removed: despite an exhaustive series of fixes
@@ -159,6 +162,19 @@ Two backends:
   current is flowing into the pack (the Tab5 wires the shunt so
   the IP2326 charger pushes positive current into the cell). See
   `docs/tab5-esp-hosted.md` for the CHG_EN enable path.
+* **CellWise CW2017 fuel gauge** over I2C
+  (`battery_init_cw2017(bus)`): used on the Xteink X4 Pro, at 0x63 on
+  the I2C bus shared with GT911 touch. Unlike BQ27220, the CW2017's
+  SOC register (0x04) reports a direct integer percentage -- no
+  voltage-to-percent LUT needed -- but only once a matching 80-byte
+  "BATINFO" battery profile is resident; `battery_init_cw2017()`
+  verifies (or uploads, on first boot) that profile before returning.
+  Register map, reset sequence and the profile bytes were recovered
+  from the X4 Pro OEM firmware by the FreeInk SDK
+  (github.com/Free-Ink/freeink-sdk). There is no charger IC on this
+  board's I2C bus and the CW2017 has no current register, so
+  `battery_read_charging()` always returns -1 (unknown) for this
+  backend.
 
 When no backend has been initialized, `battery_read_percent()`
 returns -1 and the editor UI hides the battery indicator.
@@ -171,7 +187,7 @@ cannot detect charge state (the GPIO-ADC backend), so the UI auto-
 hides the `+` charging glyph on those boards.
 
 Public API: `battery_init()`, `battery_init_bq27220()`,
-`battery_init_ina226()`, `battery_read_mv()`,
+`battery_init_ina226()`, `battery_init_cw2017()`, `battery_read_mv()`,
 `battery_read_percent()`, `battery_read_charging()`.
 
 ### components/ble_keyboard/
@@ -245,6 +261,24 @@ Per-board display backends behind a single C API:
   row-by-row across multiple queued `tx_color()` calls previously
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
+- **display_xteink_epd.cpp** -- from-scratch SPI e-paper backend for
+  the Xteink X4 Pro, gated on `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`.
+  Unlike the other e-paper backends this board carries one of three
+  possible panel controllers depending on manufacturing run (SSD1677,
+  or one of two UltraChip parts, UC8179 / UC8279); `display_init()`
+  bit-bangs a small VER/FLG identification probe over the panel pins
+  before the SPI peripheral claims them, then drives whichever
+  controller is present through its own register sequence (SSD1677:
+  dual-RAM 0x24/0x26 differential refresh; UC8179 / UC8279: KW-mode
+  DTM1/DTM2 differential refresh via PARTIAL_IN/PARTIAL_OUT). A 1bpp
+  PSRAM framebuffer + dirty-rect tracking and the full-vs-partial
+  promotion policy (`CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL`)
+  mirror `display_h752.cpp`. Only the black/white differential path
+  is implemented; grayscale / anti-aliasing is out of scope. Register
+  sequences, timing and the controller probe are ported from the
+  FreeInk SDK (github.com/Free-Ink/freeink-sdk, MIT licensed), which
+  reverse-engineered the OEM firmware. Drives a dual-channel (cool/
+  warm) front-light LEDC PWM, both channels always driven identically.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -805,14 +839,22 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 - **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
   ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
   controller. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
+  e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
+  UC8279) auto-detected at boot by
+  `components/display/display_xteink_epd.cpp`. GT911 touch and a
+  CW2017 fuel gauge on a shared I2C bus, dual-channel PWM front-light,
+  on-board MicroSD on SDMMC. Left/Right buttons inject Page Up / Page
+  Down; Power is the wake/BLE-forget button. Added without on-hardware
+  testing; see HARDWARE.md. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S).
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S).
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro).
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -835,20 +877,22 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
+| DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043 |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Xteink X4 Pro |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
 
@@ -928,7 +972,7 @@ supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
-`freenove_fnk0104b`, `freenove_fnk0104s`). Each
+`freenove_fnk0104b`, `freenove_fnk0104s`, `xteink_x4_pro`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

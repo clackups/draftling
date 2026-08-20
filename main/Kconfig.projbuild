@@ -142,6 +142,30 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104S
         deep-sleep wakeup source.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
 
+config DRAFTLING_MODEL_XTEINK_X4_PRO
+    bool "Xteink X4 Pro (ESP32-S3, SSD1677/UC8179/UC8279, 4.26\" e-paper, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Xteink X4 Pro e-reader: 4.26" 800x480 e-paper panel driven
+        over plain SPI. Different manufacturing runs ship one of
+        three panel controllers (SSD1677, or one of two UltraChip
+        parts, UC8179 / UC8279); the display backend
+        (components/display/display_xteink_epd.cpp) probes the
+        controller at boot and drives whichever one is present, so a
+        single firmware image works on any run. GT911 capacitive
+        touch and a CW2017 I2C fuel gauge share one I2C bus. Dual-
+        channel (cool/warm) PWM front-light. Three buttons: Left and
+        Right scroll the editor a screen at a time (Page Up / Page
+        Down), Power is the deep-sleep wake / BLE-forget button.
+        On-board MicroSD on SDMMC 1-bit.
+
+        This board has been added without on-hardware testing: the
+        register sequences and timing are ported from the FreeInk
+        SDK (github.com/Free-Ink/freeink-sdk, MIT licensed), which
+        reverse-engineered the OEM firmware and validated the paths
+        used here on real units. Grayscale / anti-aliasing rendering
+        is not implemented (matches the existing e-paper boards).
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -261,6 +285,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -286,6 +311,17 @@ config DRAFTLING_DISPLAY_EPDIY
 config DRAFTLING_DISPLAY_H752_EPD
     bool
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default n
+
+# DRAFTLING_DISPLAY_XTEINK_EPD selects the from-scratch SPI e-paper
+# backend for the Xteink X4 Pro (components/display/display_xteink_epd.cpp).
+# Unlike the other e-paper backends it drives the panel directly over
+# SPI (no parallel LCD/I80 bus, no vroland/epdiy) and auto-detects
+# which of three possible controllers (SSD1677, UC8179, UC8279) the
+# panel is wired to at boot.
+config DRAFTLING_DISPLAY_XTEINK_EPD
+    bool
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
 # DRAFTLING_EPDIY_BOARD_PAPERS3 selects the in-tree PaperS3 board
@@ -316,6 +352,10 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # Ctrl+B shortcut work on these boards too.
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    # Xteink X4 Pro: dual-channel (cool/warm) PWM front-light, both
+    # channels driven identically from this single percentage since
+    # Draftling has no warm/cool color-temperature UI.
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
 # Minimum backlight percentage offered by the Settings menu. The
@@ -336,6 +376,7 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     # the user dial brightness all the way down to 0 %.
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default 0 if DRAFTLING_MODEL_XTEINK_X4_PRO
     default 10
 
 # DRAFTLING_BL_DUTY_FLOOR_PCT shifts the bottom of the PWM duty
@@ -395,6 +436,21 @@ config DRAFTLING_HAS_BATTERY
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Xteink X4 Pro: battery is monitored via a CW2017 fuel gauge on
+    # the shared I2C bus (driver in components/battery, gated on
+    # DRAFTLING_BATTERY_CW2017 below).
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default n
+
+# Selects the CW2017 fuel-gauge backend in components/battery/
+# instead of the GPIO ADC backend. main.cpp calls
+# battery_init_cw2017(shared_i2c_bus) when this symbol is set. There
+# is no charger IC on this board's I2C bus, so
+# battery_read_charging() always reports "unknown" (-1) for this
+# backend.
+config DRAFTLING_BATTERY_CW2017
+    bool
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
 # Selects the BQ27220 fuel-gauge backend in components/battery/
@@ -554,6 +610,8 @@ config DRAFTLING_SD_SDMMC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Xteink X4 Pro: on-board MicroSD wired to SDMMC 1-bit.
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
 # DRAFTLING_WAKEUP_GPIO is the per-board RTC-capable GPIO used as
@@ -589,6 +647,8 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Xteink X4 Pro: Power button on GPIO3 (active-low, RTC-capable).
+    default 3  if DRAFTLING_MODEL_XTEINK_X4_PRO
     default 0
 
 # ---- Touchscreen support ----
@@ -627,6 +687,7 @@ config DRAFTLING_TOUCHSCREEN
     # FNK0104A has no touch controller wired and is left off.
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -661,6 +722,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
     help
         Goodix GT911. Register-addressed protocol: 16-bit register
@@ -719,6 +781,8 @@ config DRAFTLING_TOUCH_INT_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U INT_N_PIN.
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Xteink X4 Pro: GT911 INT.
+    default 10 if DRAFTLING_MODEL_XTEINK_X4_PRO
     default -1
 
 # Touchscreen reset GPIO. The reset line is often tied to the LCD
@@ -739,6 +803,8 @@ config DRAFTLING_TOUCH_RST_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Xteink X4 Pro: GT911 RST.
+    default 4  if DRAFTLING_MODEL_XTEINK_X4_PRO
     default -1
 
 
@@ -825,6 +891,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 800 if DRAFTLING_MODEL_XTEINK_X4_PRO
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -844,6 +911,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 480 if DRAFTLING_MODEL_XTEINK_X4_PRO
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -896,6 +964,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"

@@ -202,6 +202,35 @@ FT6336U capacitive touch controller, so touch works alongside the BLE
 keyboard.
 
 
+## Xteink X4 Pro
+
+Xteink X4 Pro -- ESP32-S3 e-reader with a 4.26" 800x480 e-paper panel
+driven over plain SPI. Different manufacturing runs ship one of three
+panel controllers -- SSD1677, or one of two UltraChip parts (UC8179 /
+UC8279) -- which cannot be told apart from the outside; the display
+backend (`components/display/display_xteink_epd.cpp`) probes the
+controller over the bus at boot and drives whichever one is actually
+present, so a single firmware image works on any run. GT911
+capacitive touch and a CW2017 I2C fuel gauge share one I2C bus.
+Dual-channel (cool/warm) PWM front-light, both channels driven
+identically since Draftling has no warm/cool color-temperature UI.
+Three buttons: Left and Right scroll the editor a screen at a time
+(Page Up / Page Down), Power is the deep-sleep wake / BLE-forget
+button, matching the BOOT button convention on every other board.
+On-board MicroSD on SDMMC 1-bit.
+
+**This board has been added without on-hardware testing** (same
+caveat as the M5Stack Tab5 above): the register sequences, timing and
+the controller-detection probe are ported from the [FreeInk
+SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed), which
+reverse-engineered the Xteink X4 Pro OEM firmware down to exact
+register values and validated the non-grayscale paths used here on
+real units. Grayscale / anti-aliasing rendering is not implemented,
+matching every other e-paper board. The GT911 touch orientation
+(`TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in
+`main/boards/xteink_x4_pro.h`) is a best-effort starting point and
+may need a dial-in pass with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG` on
+real hardware.
 
 
 
@@ -222,4 +251,8 @@ reTerminal E1001 and the Waveshare E-Paper Driver HAT) were previously
 supported, but proved too slow for an interactive Markdown editor:
 even with fast partial updates, the panel cannot keep up with typing
 and quickly accumulates ghosting artefacts. Support for UC8179 has
-therefore been removed from the codebase.
+therefore been removed from the codebase, except for the specific
+waveform/timing combination used by the Xteink X4 Pro's UC8179 /
+UC8279 panel controller variants (see above), which use a different,
+faster partial-refresh waveform than the panels that prompted the
+earlier removal.

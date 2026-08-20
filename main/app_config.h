@@ -45,6 +45,8 @@
 #include "boards/freenove_fnk0104b.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S)
 #include "boards/freenove_fnk0104s.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+#include "boards/xteink_x4_pro.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif
