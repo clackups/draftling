@@ -8,7 +8,7 @@ idf_component_register(
     ## `driver/i2c_master.h`, and `driver/ledc.h`, so the matching
     ## `esp_driver_*` components must be listed explicitly. They
     ## also exist on IDF 5.3+, so the same list works on older IDFs.
-    PRIV_REQUIRES driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_ledc esp_lcd esp_timer lvgl__lvgl fastepd
+    PRIV_REQUIRES driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_ledc esp_lcd esp_timer lvgl__lvgl fastepd io_expander
 )
 
 # Inject the LVGL custom-allocator hooks (lv_mem_init / lv_malloc_core /

@@ -11,7 +11,7 @@
 ## `driver/i2c_master.h`, and `driver/uart.h` (now in esp_driver_spi /
 ## esp_driver_gpio / esp_driver_i2c / esp_driver_uart) and
 ## `driver/rtc_io.h` (still in the legacy `driver` component).
-set(MAIN_PRIV_REQS display sd_card ble_keyboard editor wifi_manager git_sync standby battery touchscreen power nvs_flash bt esp_hid driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_uart esp_event)
+set(MAIN_PRIV_REQS display sd_card ble_keyboard editor wifi_manager git_sync standby battery touchscreen power io_expander nvs_flash bt esp_hid driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_uart esp_event)
 if(CONFIG_ESP_HOSTED_ENABLED)
     list(APPEND MAIN_PRIV_REQS espressif__esp_hosted)
 endif()

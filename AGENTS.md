@@ -95,6 +95,7 @@ components/                 Reusable IDF components
   editor/                   Gap-buffer text editor, Markdown parser, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
   git_sync/                 GitHub REST API file synchronization
+  io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/                Keyboard layout translation (US/UA/DE/FR)
   power/                    TCA9554-latched battery rail + PWR-button driver
   sd_card/                  SD card (SDMMC 1-bit) file operations
@@ -233,6 +234,18 @@ Per-board display backends behind a single C API:
   `display_set_pixel()`, and runs the LVGL tick/task timer. Thread
   safety is provided by a mutex exposed as `lvgl_port_lock()` /
   `lvgl_port_unlock()`.
+- **display_rgb.cpp** -- parallel RGB565 backend for the ESP32-S3 LCD
+  RGB peripheral (`esp_lcd_new_rgb_panel`), selected by
+  `CONFIG_DRAFTLING_DISPLAY_RGB`. Shared by the Sunton ESP32-8048S070C
+  / ESP32-8048S043C (direct-GPIO backlight via LEDC PWM, no LCD reset
+  line) and the Waveshare ESP32-S3-Touch-LCD-7
+  (`CONFIG_DRAFTLING_HAS_CH422G`: backlight and LCD reset instead
+  routed through a CH422G I2C IO-expander -- see
+  `components/io_expander/`). Each board selects its own pin/timing
+  branch and data-line order at build time; keeps its own RGB565
+  framebuffer in PSRAM with the same dirty-bbox
+  `display_push_rgb565()` / `display_flush()` pattern as the epdiy
+  backend.
 - **display_ili9341.cpp** -- shared SPI backend for the Freenove
   FNK0104A/B (ILI9341) and FNK0104S (ST7796) color LCDs, selected by
   `CONFIG_DRAFTLING_DISPLAY_ILI9341` / `CONFIG_DRAFTLING_DISPLAY_ST7796`
@@ -417,6 +430,39 @@ comparison (saved vs local vs remote) so that:
 
 Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_state()`, `git_sync_is_configured()`.
+
+### components/io_expander/
+
+WCH CH422G I2C IO-expander driver. Compiled in only when
+`CONFIG_DRAFTLING_HAS_CH422G` is set (currently only the Waveshare
+ESP32-S3-Touch-LCD-7); on every other board `ch422g_init()` /
+`ch422g_set_pin()` are no-op stubs, matching the `power` component's
+stub pattern.
+
+The CH422G has no single "register address" the way a TCA9554 or
+PCA9535 does -- each internal register is a distinct 7-bit I2C slave
+address that accepts exactly one data byte. This driver implements
+only the two registers Draftling needs: the system/mode register
+(address 0x24, used once at init to switch all 8 EXIO pins to
+push-pull outputs) and the EXIO0-7 output-level register (address
+0x38). The chip has no read-modify-write, so the output byte is
+shadowed in RAM and re-sent in full on every `ch422g_set_pin()` call.
+
+`main.cpp` calls `ch422g_init()` on the shared I2C bus (also carrying
+the GT911 touch controller on this board) before `display_init()`
+runs, since the RGB display backend
+(`components/display/display_rgb.cpp`) pulses the LCD reset line and
+drives the backlight through CH422G EXIO pins as part of its own
+init. `main.cpp` also uses `ch422g_set_pin()` directly to pulse the
+touch-reset line (with INT held low so the GT911 latches its primary
+I2C address) and to assert the SD card chip-select line once at boot
+(the SD card is the only device on its SPI bus, so the CS line never
+needs to toggle again -- see `sd_card_init_spi()`'s handling of
+`cs = -1` / `GPIO_NUM_NC`). See
+[docs/waveshare-esp32-s3-touch-lcd-7.md](docs/waveshare-esp32-s3-touch-lcd-7.md)
+for the full EXIO pin map.
+
+Public API: `ch422g_init()`, `ch422g_set_pin()`.
 
 ### components/kb_layout/
 
@@ -842,9 +888,11 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043 |
+| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
+| DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
@@ -927,8 +975,8 @@ The repository root ships a `CMakePresets.json` with one preset per
 supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
-`freenove_fnk0104b`, `freenove_fnk0104s`). Each
+`sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
+`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),
