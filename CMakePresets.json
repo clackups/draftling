@@ -83,6 +83,15 @@
             }
         },
         {
+            "name": "waveshare_touch_lcd_7",
+            "displayName": "Waveshare ESP32-S3-Touch-LCD-7",
+            "binaryDir": "build/waveshare_touch_lcd_7",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_touch_lcd_7",
+                "SDKCONFIG": "build/waveshare_touch_lcd_7/sdkconfig"
+            }
+        },
+        {
             "name": "freenove_fnk0104a",
             "displayName": "Freenove FNK0104A (2.8in ILI9341, no touch)",
             "binaryDir": "build/freenove_fnk0104a",

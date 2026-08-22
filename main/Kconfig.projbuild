@@ -111,6 +111,21 @@ config DRAFTLING_MODEL_SUNTON_8048S043
         Backlight on GPIO2. Keyboard-driven (USB / BLE) like every
         other Draftling board.
 
+config DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    bool "Waveshare ESP32-S3-Touch-LCD-7 (ESP32-S3, 7\" RGB color LCD, 800x480, CH422G expander)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Waveshare ESP32-S3-Touch-LCD-7 development board: 7" IPS color
+        LCD, 800x480, ST7262 panel on a 16-bit parallel RGB565
+        interface driven by the ESP32-S3 LCD RGB peripheral
+        (esp_lcd_new_rgb_panel), same display backend as the Sunton
+        ESP32-8048S0xx family. Unlike the Sunton boards, the LCD
+        reset, backlight enable, touch reset and SD card chip-select
+        lines are not wired to direct GPIOs but sit behind an
+        on-board CH422G I2C IO-expander shared with the GT911
+        capacitive touchscreen's I2C bus. 16 MB flash, 8 MB PSRAM
+        (ESP32-S3N16R8 module).
+
 config DRAFTLING_MODEL_FREENOVE_FNK0104A
     bool "Freenove FNK0104A (ESP32-S3, ILI9341, 2.8\" color LCD, 320x240, no touch)"
     depends on IDF_TARGET_ESP32S3
@@ -181,6 +196,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -222,11 +238,12 @@ config DRAFTLING_DISPLAY_MIPI_DSI
 # drives a parallel RGB565 color panel through the ESP32-S3 LCD RGB
 # peripheral (esp_lcd_new_rgb_panel). The RGB backend
 # (components/display/display_rgb.cpp) is compiled in only when this
-# symbol is set. Currently only the Sunton ESP32-8048S070C.
+# symbol is set.
 config DRAFTLING_DISPLAY_RGB
     bool
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
 
 # DRAFTLING_RGB_BOARD_S043 switches components/display/display_rgb.cpp
@@ -237,6 +254,24 @@ config DRAFTLING_DISPLAY_RGB
 config DRAFTLING_RGB_BOARD_S043
     bool
     default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default n
+
+# DRAFTLING_HAS_CH422G is set automatically on boards whose LCD reset,
+# backlight enable, touch reset and/or SD card chip-select lines sit
+# behind an on-board CH422G I2C IO-expander instead of direct ESP32-S3
+# GPIOs. The `io_expander` component (components/io_expander/) is a
+# no-op stub on every other board. Currently only the Waveshare
+# ESP32-S3-Touch-LCD-7, whose CH422G shares the I2C bus with the
+# GT911 capacitive touchscreen (SDA=8, SCL=9). When set,
+# components/display/display_rgb.cpp switches to the CH422G-based
+# panel-reset / on-off backlight path (instead of a direct GPIO
+# reset / LEDC PWM backlight), and main.cpp brings up the shared I2C
+# bus + CH422G before display_init(), pulses the LCD and touch reset
+# lines through it, and holds the SD card chip-select line low
+# (see main/boards/waveshare_touch_lcd_7.h).
+config DRAFTLING_HAS_CH422G
+    bool
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
 
 # DRAFTLING_DISPLAY_ILI9341 is set automatically when the selected
@@ -358,6 +393,25 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
+# DRAFTLING_DISPLAY_BACKLIGHT_BINARY is set automatically on boards
+# whose backlight enable line can only be switched fully on or off --
+# no PWM dimming is physically possible, so a brightness control would
+# be misleading (every intermediate step of the usual percentage
+# ladder would look identical to the user). Currently the CH422G-
+# driven backlight (Waveshare Touch-LCD-7): the expander pin is a
+# plain digital output, not a PWM channel. When set, the editor omits
+# the backlight feature entirely -- no "Backlight: NN%" entry in F1 ->
+# Settings and no Ctrl+B shortcut (every
+# CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT guard in
+# components/editor/editor_ui.cpp also requires this symbol to be
+# unset) -- rather than expose a control that can only toggle the
+# backlight fully on or off. The backlight is left at the display
+# backend's own default (on).
+config DRAFTLING_DISPLAY_BACKLIGHT_BINARY
+    bool
+    default y if DRAFTLING_HAS_CH422G
+    default n
+
 # Minimum backlight percentage offered by the Settings menu. The
 # editor cycles through the steps {0, 10, 25, 50, 75, 100} % (with
 # an extra 5 % step on the LilyGO T5 E-Paper S3 Pro / Pro Lite
@@ -368,7 +422,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
 # only included when this value is 0 (it makes sense for reflective
 # / e-paper panels that stay readable without any back/front-light;
 # transmissive LCDs would just go fully dark). Non-prompted; set
-# per model below.
+# per model below. Irrelevant on DRAFTLING_DISPLAY_BACKLIGHT_BINARY
+# boards -- the whole Settings/Ctrl+B feature is compiled out there.
 config DRAFTLING_BACKLIGHT_MIN_PCT
     int
     depends on DRAFTLING_DISPLAY_HAS_BACKLIGHT
@@ -642,6 +697,7 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_M5STACK_TAB5
     default 0  if DRAFTLING_MODEL_SUNTON_8048S070
     default 0  if DRAFTLING_MODEL_SUNTON_8048S043
+    default 0  if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Freenove FNK0104 family: BOOT button on GPIO0 (KEY_PIN in the
     # Freenove reference sketches).
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -688,6 +744,14 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Waveshare ESP32-S3-Touch-LCD-7: unlike the Sunton RGB boards
+    # (touch left opt-in there because their GT911 INT is unwired, so
+    # bring-up falls back to a dual-address probe), this board wires
+    # both GT911 INT (GPIO4) and RST (via CH422G EXIO1), giving a
+    # deterministic address-select reset -- see the CH422G bring-up
+    # block in main.cpp. Default touch on to match the "Touch-LCD"
+    # naming and the reliable wiring.
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -723,6 +787,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
     help
         Goodix GT911. Register-addressed protocol: 16-bit register
@@ -778,6 +843,14 @@ config DRAFTLING_TOUCH_INT_GPIO
     # restored). DRAFTLING_STANDBY_WAKE_ON_TOUCH must NOT be set
     # on Tab5 -- it would try to arm EXT0 on a non-LP_IO pin.
     default 23 if DRAFTLING_MODEL_M5STACK_TAB5
+    # Waveshare ESP32-S3-Touch-LCD-7: GT911 INT on GPIO4. main.cpp
+    # pre-drives this pin LOW as a push-pull output while pulsing the
+    # CH422G-based touch reset line (EXIO1) so the GT911 latches its
+    # primary I2C address 0x5D, then releases INT back to input
+    # before touchscreen_init() runs (same address-select technique
+    # used on the M5Stack Tab5, minus the TOUCH_EN power-cycle since
+    # this board's GT911 does have a dedicated reset line).
+    default 4  if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Freenove FNK0104B / FNK0104S: FT6336U INT_N_PIN.
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -885,6 +958,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 720 if DRAFTLING_MODEL_M5STACK_TAB5
     default 800 if DRAFTLING_MODEL_SUNTON_8048S070
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Freenove FNK0104 family: native panel is portrait (240x320 on
     # the 2.8" ILI9341 boards, 320x480 on the 4.0" board); the
     # display backend rotates 90 deg so the editor renders landscape.
@@ -908,6 +982,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 1280 if DRAFTLING_MODEL_M5STACK_TAB5
     default 480 if DRAFTLING_MODEL_SUNTON_8048S070
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -965,6 +1040,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"

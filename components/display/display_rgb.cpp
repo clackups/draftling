@@ -7,6 +7,10 @@
  * Used by:
  *   - Sunton ESP32-8048S070C (7", 800x480, 16-bit parallel RGB)
  *   - Sunton ESP32-8048S043C (4.3", 800x480, ST7262, 16-bit RGB)
+ *   - Waveshare ESP32-S3-Touch-LCD-7 (7", 800x480, ST7262, 16-bit
+ *     RGB; LCD reset and backlight sit behind a CH422G I2C
+ *     IO-expander instead of direct GPIOs -- see
+ *     CONFIG_DRAFTLING_HAS_CH422G below)
  *
  * The ESP32-S3 LCD peripheral drives a "dumb" RGB TFT directly:
  * a continuously-scanned-out framebuffer in PSRAM is shifted out
@@ -26,14 +30,31 @@
  * fallback (display_set_pixel, interpreting 0/0xFF as black/white) is
  * provided for the splash-screen logo path in editor_ui.cpp.
  *
- * Per-board pin map / timings are selected at build time on
- * CONFIG_DRAFTLING_RGB_BOARD_S043 (set for the 4.3" ESP32-8048S043C;
- * unset for the default 7" ESP32-8048S070C). The two boards share the
- * 800x480 resolution but differ in their control-pin map (VSYNC/DE
- * swapped), panel timings (12.5 MHz pclk_active_neg vs 12 MHz
- * pclk_idle_high) and data-line order (R,G,B vs B,G,R). The data
- * GPIOs are always listed in the order required by the panel so a
- * standard RGB565 pixel lands on the correct color lines.
+ * Per-board pin map / timings are selected at build time:
+ * CONFIG_DRAFTLING_RGB_BOARD_S043 (4.3" Sunton ESP32-8048S043C) and
+ * CONFIG_DRAFTLING_HAS_CH422G (Waveshare ESP32-S3-Touch-LCD-7) each
+ * select their own branch; the default (neither set) is the 7"
+ * Sunton ESP32-8048S070C. All three boards share the 800x480
+ * resolution but differ in their control-pin map, panel timings and
+ * data-line order. The data GPIOs are always listed in the order
+ * required by the panel so a standard RGB565 pixel lands on the
+ * correct color lines.
+ *
+ * Backlight and reset
+ * --------------------
+ * The Sunton boards drive backlight via LEDC PWM on a direct GPIO and
+ * have no software-controlled LCD reset line. The Waveshare
+ * ESP32-S3-Touch-LCD-7 instead routes both through a CH422G I2C
+ * IO-expander shared with the GT911 touchscreen bus: the backlight
+ * EXIO pin is on/off only (no PWM), and the LCD reset EXIO pin must
+ * be pulsed low-then-high before esp_lcd_new_rgb_panel() /
+ * esp_lcd_panel_init() run (the RGB peripheral's own
+ * esp_lcd_panel_reset() is a no-op for this panel type -- there is no
+ * dedicated reset_gpio_num field in esp_lcd_rgb_panel_config_t).
+ * main.cpp has already called ch422g_init() on the shared I2C bus by
+ * the time display_init() runs (see CONFIG_DRAFTLING_HAS_CH422G in
+ * main.cpp), so this file only needs to pulse/set individual EXIO
+ * pins via ch422g_set_pin().
  */
 
 #include <cstdio>
@@ -49,6 +70,7 @@
 #include <esp_lcd_panel_rgb.h>
 
 #include "display.h"
+#include "io_expander_ch422g.h"
 
 static const char *TAG = "DisplayRGB";
 
@@ -64,9 +86,41 @@ static const char *TAG = "DisplayRGB";
  * order its panel wiring requires so a standard RGB565 pixel lands on
  * the correct color lines. */
 #define RGB_DISP_GPIO       -1
-#define RGB_BL_GPIO         2
 
-#if defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+/* ---- Waveshare ESP32-S3-Touch-LCD-7 (7", ST7262, CH422G) ----
+ * Backlight (EXIO2) and LCD reset (EXIO3) are on the CH422G, not a
+ * direct GPIO -- see backlight_ch422g_set() / display_init() below.
+ * Timings and data-line map are from the upstream
+ * esp-arduino-libs/ESP32_Display_Panel board file
+ * (BOARD_WAVESHARE_ESP32_S3_TOUCH_LCD_7.h), which lists the 16 data
+ * GPIOs in B0-4, G0-5, R0-4 order -- already the order
+ * esp_lcd_new_rgb_panel needs (data_gpio_nums[0] = RGB565 LSB), so
+ * no B,G,R reordering is needed here (unlike the Sunton 7" board). */
+#define RGB_CH422G_BL_EXIO   2
+#define RGB_CH422G_RST_EXIO  3
+#define RGB_PCLK_HZ         (16 * 1000 * 1000)   /* 16 MHz */
+#define RGB_HSYNC_GPIO      46
+#define RGB_VSYNC_GPIO      3
+#define RGB_DE_GPIO         5
+#define RGB_PCLK_GPIO       7
+#define RGB_HSYNC_PULSE     4
+#define RGB_HSYNC_BACK      8
+#define RGB_HSYNC_FRONT     8
+#define RGB_VSYNC_PULSE     4
+#define RGB_VSYNC_BACK      8
+#define RGB_VSYNC_FRONT     8
+#define RGB_PCLK_ACTIVE_NEG 1
+#define RGB_PCLK_IDLE_HIGH  0
+
+static const int kDataGpios[16] = {
+    14, 38, 18, 17, 10,     /* B0-B4 */
+    39, 0, 45, 48, 47, 21,  /* G0-G5 */
+    1, 2, 42, 41, 40        /* R0-R4 */
+};
+
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
+#define RGB_BL_GPIO         2
 /* ---- Sunton ESP32-8048S043C (4.3", ST7262) ---- */
 #define RGB_PCLK_HZ         (12500 * 1000)   /* 12.5 MHz */
 #define RGB_HSYNC_GPIO      39
@@ -91,6 +145,7 @@ static const int kDataGpios[16] = {
 };
 
 #else
+#define RGB_BL_GPIO         2
 /* ---- Sunton ESP32-8048S070C (7", default) ---- */
 #define RGB_PCLK_HZ         (12 * 1000 * 1000)   /* 12 MHz */
 #define RGB_HSYNC_GPIO      39
@@ -119,13 +174,15 @@ static const int kDataGpios[16] = {
 };
 #endif
 
-/* ---- Backlight LEDC ---- */
+#if !defined(CONFIG_DRAFTLING_HAS_CH422G)
+/* ---- Backlight LEDC (Sunton boards: direct GPIO) ---- */
 #define BL_LEDC_TIMER       LEDC_TIMER_0
 #define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_8_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 8) - 1)
 #define BL_LEDC_FREQ_HZ     1000
+#endif
 
 /* Logical-to-panel pixel scale (Kconfig). Each logical LVGL pixel is
  * rendered as SCALE x SCALE physical panel pixels. */
@@ -150,6 +207,17 @@ static int s_dirty_y2 = -1;
 static int  s_bl_pin = -1;
 static int  s_bl_last_pct = 100;
 
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+/* Waveshare ESP32-S3-Touch-LCD-7: the backlight EXIO is a plain
+ * on/off switch (ESP_PANEL_BACKLIGHT_TYPE_SWITCH_EXPANDER in the
+ * upstream reference), not a PWM-capable pin, so any non-zero
+ * percent turns it fully on -- matching every other CH422G-based
+ * Waveshare board port. */
+static void backlight_ch422g_set(int percent)
+{
+    ch422g_set_pin(RGB_CH422G_BL_EXIO, percent > 0);
+}
+#else
 static void backlight_pwm_init(int bl_pin)
 {
     if (bl_pin < 0) return;
@@ -172,6 +240,7 @@ static void backlight_pwm_init(int bl_pin)
     c.hpoint     = 0;
     ESP_ERROR_CHECK(ledc_channel_config(&c));
 }
+#endif
 
 extern "C" void display_set_backlight(int percent)
 {
@@ -179,9 +248,13 @@ extern "C" void display_set_backlight(int percent)
     if (percent > 100) percent = 100;
     if (s_bl_pin < 0) return;
     s_bl_last_pct = percent;
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+    backlight_ch422g_set(percent);
+#else
     uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
     ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+#endif
 }
 
 /* ---------------- Public API ---------------- */
@@ -193,8 +266,22 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     s_width  = width;
     s_height = height;
 
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+    /* Pulse the LCD reset line through the CH422G before touching the
+     * RGB peripheral. main.cpp has already called ch422g_init() on
+     * the shared I2C bus by the time this runs. esp_lcd_panel_reset()
+     * a few lines below is a no-op for the RGB panel type (there is
+     * no reset_gpio_num field in esp_lcd_rgb_panel_config_t), so this
+     * is the only reset the ST7262 bridge gets. */
+    ch422g_set_pin(RGB_CH422G_RST_EXIO, false);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ch422g_set_pin(RGB_CH422G_RST_EXIO, true);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    s_bl_pin = RGB_CH422G_BL_EXIO;   /* marks "backlight available" below; not a real GPIO */
+#else
     s_bl_pin = RGB_BL_GPIO;
     backlight_pwm_init(s_bl_pin);
+#endif
 
     esp_lcd_rgb_panel_config_t cfg = {};
     cfg.clk_src   = LCD_CLK_SRC_DEFAULT;
@@ -210,16 +297,19 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     cfg.timings.flags.pclk_active_neg = RGB_PCLK_ACTIVE_NEG;
     cfg.timings.flags.pclk_idle_high  = RGB_PCLK_IDLE_HIGH;
     cfg.data_width   = 16;
-    cfg.bits_per_pixel = 16;
+    /* esp_lcd_rgb_panel_config_t dropped the old bits_per_pixel field;
+     * pixel depth is now derived from in_color_format (out_color_format
+     * defaults to in_color_format when left at 0). */
+    cfg.in_color_format = LCD_COLOR_FMT_RGB565;
     cfg.num_fbs      = 1;
     cfg.bounce_buffer_size_px = s_width * 16;  /* 16 lines */
     cfg.flags.fb_in_psram = 1;
-    cfg.hsync_gpio_num = RGB_HSYNC_GPIO;
-    cfg.vsync_gpio_num = RGB_VSYNC_GPIO;
-    cfg.de_gpio_num    = RGB_DE_GPIO;
-    cfg.pclk_gpio_num  = RGB_PCLK_GPIO;
-    cfg.disp_gpio_num  = RGB_DISP_GPIO;
-    for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = kDataGpios[i];
+    cfg.hsync_gpio_num = (gpio_num_t)RGB_HSYNC_GPIO;
+    cfg.vsync_gpio_num = (gpio_num_t)RGB_VSYNC_GPIO;
+    cfg.de_gpio_num    = (gpio_num_t)RGB_DE_GPIO;
+    cfg.pclk_gpio_num  = (gpio_num_t)RGB_PCLK_GPIO;
+    cfg.disp_gpio_num  = (gpio_num_t)RGB_DISP_GPIO;
+    for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = (gpio_num_t)kDataGpios[i];
 
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&cfg, &s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
@@ -423,10 +513,13 @@ extern "C" void display_wake(void)
 
 extern "C" void display_deep_sleep_prepare(void)
 {
-    if (s_bl_pin >= 0) {
-        ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
-        ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);
-    }
+    if (s_bl_pin < 0) return;
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+    backlight_ch422g_set(0);
+#else
+    ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
+    ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);
+#endif
 }
 
 extern "C" void display_set_shared_i2c_bus(void * /*bus_handle*/)

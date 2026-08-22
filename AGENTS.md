@@ -98,6 +98,7 @@ components/                 Reusable IDF components
   editor/                   Gap-buffer text editor, Markdown parser, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
   git_sync/                 GitHub REST API file synchronization
+  io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/                Keyboard layout translation (US/UA/DE/FR)
   power/                    TCA9554-latched battery rail + PWR-button driver
   sd_card/                  SD card (SDMMC 1-bit) file operations
@@ -249,6 +250,18 @@ Per-board display backends behind a single C API:
   `display_set_pixel()`, and runs the LVGL tick/task timer. Thread
   safety is provided by a mutex exposed as `lvgl_port_lock()` /
   `lvgl_port_unlock()`.
+- **display_rgb.cpp** -- parallel RGB565 backend for the ESP32-S3 LCD
+  RGB peripheral (`esp_lcd_new_rgb_panel`), selected by
+  `CONFIG_DRAFTLING_DISPLAY_RGB`. Shared by the Sunton ESP32-8048S070C
+  / ESP32-8048S043C (direct-GPIO backlight via LEDC PWM, no LCD reset
+  line) and the Waveshare ESP32-S3-Touch-LCD-7
+  (`CONFIG_DRAFTLING_HAS_CH422G`: backlight and LCD reset instead
+  routed through a CH422G I2C IO-expander -- see
+  `components/io_expander/`). Each board selects its own pin/timing
+  branch and data-line order at build time; keeps its own RGB565
+  framebuffer in PSRAM with the same dirty-bbox
+  `display_push_rgb565()` / `display_flush()` pattern as the epdiy
+  backend.
 - **display_ili9341.cpp** -- shared SPI backend for the Freenove
   FNK0104A/B (ILI9341) and FNK0104S (ST7796) color LCDs, selected by
   `CONFIG_DRAFTLING_DISPLAY_ILI9341` / `CONFIG_DRAFTLING_DISPLAY_ST7796`
@@ -451,6 +464,39 @@ comparison (saved vs local vs remote) so that:
 
 Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_state()`, `git_sync_is_configured()`.
+
+### components/io_expander/
+
+WCH CH422G I2C IO-expander driver. Compiled in only when
+`CONFIG_DRAFTLING_HAS_CH422G` is set (currently only the Waveshare
+ESP32-S3-Touch-LCD-7); on every other board `ch422g_init()` /
+`ch422g_set_pin()` are no-op stubs, matching the `power` component's
+stub pattern.
+
+The CH422G has no single "register address" the way a TCA9554 or
+PCA9535 does -- each internal register is a distinct 7-bit I2C slave
+address that accepts exactly one data byte. This driver implements
+only the two registers Draftling needs: the system/mode register
+(address 0x24, used once at init to switch all 8 EXIO pins to
+push-pull outputs) and the EXIO0-7 output-level register (address
+0x38). The chip has no read-modify-write, so the output byte is
+shadowed in RAM and re-sent in full on every `ch422g_set_pin()` call.
+
+`main.cpp` calls `ch422g_init()` on the shared I2C bus (also carrying
+the GT911 touch controller on this board) before `display_init()`
+runs, since the RGB display backend
+(`components/display/display_rgb.cpp`) pulses the LCD reset line and
+drives the backlight through CH422G EXIO pins as part of its own
+init. `main.cpp` also uses `ch422g_set_pin()` directly to pulse the
+touch-reset line (with INT held low so the GT911 latches its primary
+I2C address) and to assert the SD card chip-select line once at boot
+(the SD card is the only device on its SPI bus, so the CS line never
+needs to toggle again -- see `sd_card_init_spi()`'s handling of
+`cs = -1` / `GPIO_NUM_NC`). See
+[docs/waveshare-esp32-s3-touch-lcd-7.md](docs/waveshare-esp32-s3-touch-lcd-7.md)
+for the full EXIO pin map.
+
+Public API: `ch422g_init()`, `ch422g_set_pin()`.
 
 ### components/kb_layout/
 
@@ -751,17 +797,22 @@ that depends on `lvgl__lvgl`.
 Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
 typeface instead of scaling Greybeard. Hack is a monospaced outline
-font (MIT, https://github.com/source-foundry/Hack). Seven sizes are
+font (MIT, https://github.com/source-foundry/Hack). Eight sizes are
 generated with `lv_font_conv`. Six mirror the Greybeard "slots",
 chosen so each text row is approximately the height the user saw with
-Greybeard rendered at the old 2x scale; a seventh Hack-only slot (30)
-has no Greybeard counterpart and provides an H1 heading larger than
-slot 26 for the HIDPI-only 20 px base font size. The file names mirror
-the Greybeard slots (`hack_11` .. `hack_26`) plus the extra `hack_30`;
-the number is the slot, not the Hack pixel size:
+Greybeard rendered at the old 2x scale; two are Hack-only slots with
+no Greybeard counterpart (Greybeard's own range is 11-26 px):
+slot 30 provides an H1 heading larger than slot 26 for the HIDPI-only
+20 px base font size, and slot 9 is an extra-compact body size below
+Greybeard's smallest (11), for users who want to fit more text on a
+large, dense panel (e.g. the Waveshare Touch-LCD-7's 7" 800x480
+panel). The file names mirror the Greybeard slots (`hack_11` ..
+`hack_26`) plus the two extras (`hack_9`, `hack_30`); the number is
+the slot, not the Hack pixel size:
 
 | File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
 |------|-----------------|------------|-------------|-------------------------|
+| hack_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
 | hack_11.c | 19 | 11 | 23 | greybeard_11 (x2) |
 | hack_14.c | 21 | 13 | 26 | greybeard_14 (x2) |
 | hack_16.c | 25 | 15 | 30 | greybeard_16 (x2) |
@@ -769,6 +820,12 @@ the number is the slot, not the Hack pixel size:
 | hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
 | hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
 | hack_30.c | 47 | 28 | 58 | (none; Hack-only H1 slot for the 20 px base size) |
+
+Slot 9's heading fonts (h1/h2/h3) reuse the existing slot 11/14/16
+fonts rather than needing new dedicated assets -- the heading scale
+just shifts down by one slot compared to the body-11 tier (body 9 ->
+h3 11, h2 14, h1 16; see `body_font()` / `h1_font()` / `h2_font()` /
+`h3_font()` in `components/editor/editor_ui.cpp`).
 
 The generated advance widths are fractional (Hack is not a native
 pixel font), so after generation every full-width glyph's `adv_w` is
@@ -786,10 +843,18 @@ layout options:
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
-Greybeard TTFs at twice the native pixel size (a clean 2x pixel-double
-that matches what the old scaled path produced). The base fonts are
-generated with `--lv-fallback hack_NN_ext` and the Hebrew subset with
-`--lv-fallback hack_NN_he_next`; the router structs live in
+Greybeard TTFs. For slots 11-30, that's at twice the corresponding
+Greybeard slot's native pixel size (a clean 2x pixel-double that
+matches what the old scaled path produced). Slot 9 has no Greybeard
+source of its own to double (Greybeard's smallest is 11px), so
+`hack_hebrew_9.c` is instead rendered directly from
+`Greybeard-11px.ttf` (the smallest available source) at 18px --
+close to, but not an exact 2x multiple of, the source's native size;
+freetype rasterizes any target size cleanly from the vector outline
+regardless, so this is a minor deviation from the other slots'
+"clean double" convention, not a technical limitation. The base fonts
+are generated with `--lv-fallback hack_NN_ext` and the Hebrew subset
+with `--lv-fallback hack_NN_he_next`; the router structs live in
 `components/fonts/hack.c` and are chained at boot by `hack_init()`,
 exactly like `greybeard_init()`. The same post-generation include
 fix-up applies (replace the `#ifdef LV_LVGL_H_INCLUDE_SIMPLE ... #endif`
@@ -799,7 +864,7 @@ builds do not pay for them.
 
 The editor (`components/editor/editor_ui.cpp`) selects the family with
 a compile-time `#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI`: the `FONT_11`
-.. `FONT_26` macros (plus the HIDPI-only `FONT_30`),
+.. `FONT_26` macros (plus the HIDPI-only `FONT_9` and `FONT_30`),
 `char_width_for_font()` and the boot-time init call all switch between
 Greybeard and Hack. Everything else in the editor is family-agnostic
 because it works through those slots. `FONT_30` is only defined and
@@ -885,9 +950,12 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Xteink X4 Pro |
+| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
+| DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro |
@@ -971,8 +1039,9 @@ The repository root ships a `CMakePresets.json` with one preset per
 supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
-`freenove_fnk0104b`, `freenove_fnk0104s`, `xteink_x4_pro`). Each
+`sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
+`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
+`xteink_x4_pro`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),
