@@ -38,6 +38,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     # Greybeard TTFs because Hack has no Hebrew coverage.
     list(APPEND srcs
         "hack.c"
+        "hack_9.c"
         "hack_11.c"
         "hack_14.c"
         "hack_16.c"
@@ -48,6 +49,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     )
     if(CONFIG_KB_LAYOUT_ENABLE_UA)
         list(APPEND srcs
+            "hack_cyrillic_9.c"
             "hack_cyrillic_11.c"
             "hack_cyrillic_14.c"
             "hack_cyrillic_16.c"
@@ -59,6 +61,7 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     endif()
     if(CONFIG_KB_LAYOUT_ENABLE_HE)
         list(APPEND srcs
+            "hack_hebrew_9.c"
             "hack_hebrew_11.c"
             "hack_hebrew_14.c"
             "hack_hebrew_16.c"

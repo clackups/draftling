@@ -13,7 +13,8 @@
 #include <driver/rtc_io.h>
 #include <driver/uart.h>
 #include <esp_sleep.h>
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_HAS_CH422G)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -41,6 +42,7 @@
 #include "battery.h"
 #include "touchscreen.h"
 #include "power.h"
+#include "io_expander_ch422g.h"
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
 #include "usb_kbd.h"
 #endif
@@ -1025,22 +1027,26 @@ extern "C" void app_main(void)
      * those bring-up paths see fresh, un-latched pads. */
     t5_release_held_gpios_after_wake();
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_HAS_CH422G)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
      * BQ27220 battery fuel gauge (battery_init_bq27220 further
-     * below). All consumers use driver-NG (driver/i2c_master.h), and
-     * ESP-IDF only allows one i2c_new_master_bus() per port. We
+     * below). The Waveshare ESP32-S3-Touch-LCD-7 similarly shares its
+     * I2C bus between the CH422G IO-expander and the GT911 touch
+     * controller. All consumers use driver-NG (driver/i2c_master.h),
+     * and ESP-IDF only allows one i2c_new_master_bus() per port. We
      * therefore create the bus here, ahead of any consumer, and hand
      * the handle to each: display_set_shared_i2c_bus() before
      * display_init() (epdiy routes through epd_init_with_config() +
      * EpdInitConfig.i2c.bus_handle), battery_init_bq27220() right
-     * after, and touchscreen_config_t.i2c_bus before
-     * touchscreen_init() further below. This is the resolution for
-     * the legacy/driver-NG conflict that previously forced touch off
-     * on these boards; see components/display/idf_component.yml for
-     * why epdiy is pinned to a git commit. */
+     * after, ch422g_init() immediately below (CH422G boards), and
+     * touchscreen_config_t.i2c_bus before touchscreen_init() further
+     * below. This is the resolution for the legacy/driver-NG conflict
+     * that previously forced touch off on the epdiy boards; see
+     * components/display/idf_component.yml for why epdiy is pinned to
+     * a git commit. */
     i2c_master_bus_handle_t shared_i2c_bus = NULL;
     {
         i2c_master_bus_config_t bus_cfg = {};
@@ -1063,6 +1069,37 @@ extern "C" void app_main(void)
         }
     }
     display_set_shared_i2c_bus(shared_i2c_bus);
+#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+    /* Bring up the CH422G before display_init() -- the RGB backend
+     * pulses the LCD reset line (EXIO3) and drives the backlight
+     * (EXIO2) through it as part of its own init (see
+     * components/display/display_rgb.cpp). Then pulse the GT911
+     * touch-reset line (EXIO1) with INT held low as a push-pull
+     * output so the controller latches its primary I2C address 0x5D
+     * (same address-select technique used on the M5Stack Tab5,
+     * without the TOUCH_EN power-cycle since this board's GT911 has
+     * its own dedicated reset line). touchscreen_init() further below
+     * reconfigures TOUCH_INT_PIN as an input before it starts polling. */
+    ch422g_init((void *)shared_i2c_bus);
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN) && (TOUCH_INT_PIN >= 0)
+    {
+        gpio_config_t int_cfg = {};
+        int_cfg.intr_type    = GPIO_INTR_DISABLE;
+        int_cfg.mode         = GPIO_MODE_OUTPUT;
+        int_cfg.pin_bit_mask = (1ULL << TOUCH_INT_PIN);
+        int_cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
+        int_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
+        gpio_config(&int_cfg);
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        ch422g_set_pin(CH422G_TOUCH_RST_PIN, false);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        ch422g_set_pin(CH422G_TOUCH_RST_PIN, true);
+        vTaskDelay(pdMS_TO_TICKS(200));
+        gpio_reset_pin((gpio_num_t)TOUCH_INT_PIN);
+    }
+#endif
+#endif
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
     /* M5Stack Tab5 shares its on-board I2C bus (SDA=31, SCL=32)
@@ -1420,8 +1457,17 @@ extern "C" void app_main(void)
      *   - LilyGO T5 E-Paper S3 Pro: on-board MicroSD on SPI3 (shared
      *     with the SX1262 LoRa radio CS; we drive LoRa CS HIGH above
      *     so the radio does not snoop the SD traffic).
+     *   - Waveshare ESP32-S3-Touch-LCD-7: SD chip-select is CH422G
+     *     EXIO4, not a direct GPIO (SD_SPI_CS_PIN is -1). The SD card
+     *     is the only device on this SPI bus, so we assert CS once
+     *     here instead of letting sdspi_host toggle a GPIO per
+     *     transaction -- it cannot toggle a pin that lives behind an
+     *     I2C expander.
      * sd_card_init_spi() returns gracefully if no card is present. */
-    sd_ret = sd_card_init_spi(SPI3_HOST,
+#if defined(CONFIG_DRAFTLING_HAS_CH422G) && defined(CH422G_SD_CS_PIN)
+    ch422g_set_pin(CH422G_SD_CS_PIN, false);
+#endif
+    sd_ret = sd_card_init_spi(SD_SPI_HOST_NUM,
                               SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_SCK_PIN,
                               SD_SPI_CS_PIN, SD_EN_PIN,
                               SD_MOUNT_POINT);
@@ -1816,7 +1862,8 @@ extern "C" void app_main(void)
         tcfg.mirror_x = TOUCH_MIRROR_X ? true : false;
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;
         tcfg.user_rotate_deg = 0;
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
+    defined(CONFIG_DRAFTLING_HAS_CH422G)
         tcfg.i2c_bus = (void *)shared_i2c_bus;
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* The m5stack_tab5 BSP owns the I2C master bus (created

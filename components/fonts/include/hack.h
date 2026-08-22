@@ -12,18 +12,28 @@
  * used to set DRAFTLING_DISPLAY_SCALE = 2). Instead of scaling the
  * framebuffer, those boards now render 1:1 and pick a larger native
  * font whose row height approximately matches what the user saw with
- * Greybeard at 2x. The six sizes below mirror the six Greybeard
+ * Greybeard at 2x. Six of the sizes below mirror the six Greybeard
  * "slots" (11/14/16/18/22/26) so the editor can swap font families
  * without changing its slot logic; the number in each symbol is the
  * Greybeard slot it replaces, NOT the Hack pixel size.
  *
- * A seventh slot (30) is Hack-only: it has no Greybeard counterpart
- * and exists so the HIDPI-only 20 px base font size can render an H1
- * heading larger than its H2 (which uses slot 26). Its number follows
- * the Greybeard slot progression (11/14/16/18/22/26/30) even though no
- * Greybeard 30 px font is generated.
+ * Two slots are Hack-only (no Greybeard counterpart, since Greybeard's
+ * smallest size is 11 and largest is 26):
+ *   - Slot 30 exists so the HIDPI-only 20 px base font size can render
+ *     an H1 heading larger than its H2 (which uses slot 26). Its
+ *     number follows the Greybeard slot progression
+ *     (11/14/16/18/22/26/30) even though no Greybeard 30 px font is
+ *     generated.
+ *   - Slot 9 is smaller than the smallest Greybeard-mirrored slot
+ *     (11): an extra-compact body font size offered only on
+ *     high-density boards, for users who want to fit more text on a
+ *     large, dense panel. Its Hebrew subset is rendered from
+ *     Greybeard-11px.ttf (the smallest Greybeard source available)
+ *     at a reduced target size rather than a clean 2x pixel-double,
+ *     since there is no smaller Greybeard source to double from.
  *
  * Slot -> Hack pixel size -> line_height -> monospace cell width:
+ *   hack_9:  16 px, line_height 19, cell 10
  *   hack_11: 19 px, line_height 23, cell 11
  *   hack_14: 21 px, line_height 26, cell 13
  *   hack_16: 25 px, line_height 30, cell 15
@@ -64,6 +74,7 @@
 extern "C" {
 #endif
 
+extern const lv_font_t hack_9;
 extern const lv_font_t hack_11;
 extern const lv_font_t hack_14;
 extern const lv_font_t hack_16;
@@ -73,6 +84,7 @@ extern const lv_font_t hack_26;
 extern const lv_font_t hack_30;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
+extern const lv_font_t hack_cyrillic_9;
 extern const lv_font_t hack_cyrillic_11;
 extern const lv_font_t hack_cyrillic_14;
 extern const lv_font_t hack_cyrillic_16;
@@ -83,6 +95,7 @@ extern const lv_font_t hack_cyrillic_30;
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
+extern const lv_font_t hack_hebrew_9;
 extern const lv_font_t hack_hebrew_11;
 extern const lv_font_t hack_hebrew_14;
 extern const lv_font_t hack_hebrew_16;

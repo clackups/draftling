@@ -39,6 +39,8 @@
 #include "boards/sunton_8048s070.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SUNTON_8048S043)
 #include "boards/sunton_8048s043.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7)
+#include "boards/waveshare_touch_lcd_7.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A)
 #include "boards/freenove_fnk0104a.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B)
@@ -66,4 +68,15 @@
  * Waveshare ESP32-S3-Touch-LCD-3.49. */
 #ifndef LCD_BL_ACTIVE_LOW
 #define LCD_BL_ACTIVE_LOW   0
+#endif
+
+/* Default: SD card SPI host is SPI3. Boards whose SD SPI pins happen
+ * to be the ESP32-S3's native SPI2 IOMUX pins (SPI2_IOMUX_PIN_NUM_*
+ * = GPIO9/10/11/12/13/14) and don't need SPI2 for anything else may
+ * override this to SPI2_HOST to route through the fast/direct IOMUX
+ * path instead of the GPIO matrix (SPI3 has no IOMUX pins on the
+ * ESP32-S3 -- every SPI3 pin assignment goes through the matrix). See
+ * boards/waveshare_touch_lcd_7.h. */
+#ifndef SD_SPI_HOST_NUM
+#define SD_SPI_HOST_NUM SPI3_HOST
 #endif

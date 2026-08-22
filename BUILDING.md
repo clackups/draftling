@@ -28,8 +28,8 @@ idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash
 Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`, `freenove_fnk0104a`,
-`freenove_fnk0104b`, `freenove_fnk0104s`.
+`sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
+`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:
@@ -65,7 +65,7 @@ Found at the top-level **DRAFTLING Configuration** menu.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all twelve options. |
+| **Hardware Model** | choice | M5Stack PaperS3 | Select the target board. Display resolution, driver, pin map, touch controller and the deep-sleep wake source are derived automatically. See the [Supported hardware](#supported-hardware) section for all thirteen options. |
 | **Display rotation angle** | choice | 0 degrees | Rotate the display by 0, 90, 180, or 270 degrees. |
 | **E-paper full-refresh interval** | int | 30 | E-paper boards only: number of partial refreshes between full refreshes. |
 | **Enable touchscreen input** | bool | y on PaperS3 and JC3248W535, n otherwise | Enable the I2C touch driver and LVGL pointer input device. |
@@ -103,12 +103,14 @@ components/
   ble_keyboard/      BLE HID keyboard host (Bluedroid)
   display/           Display backends (RLCD SPI, epdiy e-paper for
                      PaperS3 + LilyGO T5, AXS15231B QSPI,
-                     MIPI-DSI for Tab5, RGB565 parallel for Sunton,
+                     MIPI-DSI for Tab5, RGB565 parallel for Sunton and
+                     Waveshare Touch-LCD-7,
                      ILI9341/ST7796 SPI for Freenove FNK0104) and
                      LVGL v9 port
   editor/            Gap-buffer editor, Markdown parser, LVGL UI, menu
   fonts/             Custom LVGL fonts (Latin, Latin-1 Supplement, Cyrillic)
   git_sync/          GitHub REST API file synchronization
+  io_expander/       CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/         Keyboard layout translation (US/UA/DE/FR)
   sd_card/           SD card (SDMMC or SPI) file operations
   standby/           Deep-sleep / standby timer manager

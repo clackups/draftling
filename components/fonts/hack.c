@@ -82,6 +82,7 @@ static const void *router_get_glyph_bitmap(lv_font_glyph_dsc_t *dsc,
  * line_height / base_line match the corresponding base font so that
  * LVGL's row geometry stays consistent if it ever queries the router
  * directly. */
+ROUTER(hack_9_ext,  19, 4);
 ROUTER(hack_11_ext, 23, 5);
 ROUTER(hack_14_ext, 26, 6);
 ROUTER(hack_16_ext, 30, 6);
@@ -93,6 +94,7 @@ ROUTER(hack_30_ext, 58, 12);
 /* Routers chained after the Hebrew font so that Hebrew can hand off
  * to Cyrillic when both layouts are enabled. Defined unconditionally
  * because the Hebrew .c files reference these symbols. */
+ROUTER(hack_9_he_next,  19, 4);
 ROUTER(hack_11_he_next, 23, 5);
 ROUTER(hack_14_he_next, 26, 6);
 ROUTER(hack_16_he_next, 30, 6);
@@ -105,6 +107,7 @@ void hack_init(void)
 {
 #if defined(CONFIG_KB_LAYOUT_ENABLE_HE)
     /* Base -> Hebrew (-> Cyrillic if UA also enabled) */
+    hack_9_ext.fallback  = &hack_hebrew_9;
     hack_11_ext.fallback = &hack_hebrew_11;
     hack_14_ext.fallback = &hack_hebrew_14;
     hack_16_ext.fallback = &hack_hebrew_16;
@@ -113,6 +116,7 @@ void hack_init(void)
     hack_26_ext.fallback = &hack_hebrew_26;
     hack_30_ext.fallback = &hack_hebrew_30;
 #  ifdef CONFIG_KB_LAYOUT_ENABLE_UA
+    hack_9_he_next.fallback  = &hack_cyrillic_9;
     hack_11_he_next.fallback = &hack_cyrillic_11;
     hack_14_he_next.fallback = &hack_cyrillic_14;
     hack_16_he_next.fallback = &hack_cyrillic_16;
@@ -123,6 +127,7 @@ void hack_init(void)
 #  endif
 #elif defined(CONFIG_KB_LAYOUT_ENABLE_UA)
     /* Base -> Cyrillic (no Hebrew) */
+    hack_9_ext.fallback  = &hack_cyrillic_9;
     hack_11_ext.fallback = &hack_cyrillic_11;
     hack_14_ext.fallback = &hack_cyrillic_14;
     hack_16_ext.fallback = &hack_cyrillic_16;

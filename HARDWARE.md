@@ -171,6 +171,22 @@ development boards with 16-bit parallel RGB565 interface and a GT911
 capacitive touch controller.
 
 
+## Waveshare ESP32-S3-Touch-LCD-7
+
+[Waveshare
+ESP32-S3-Touch-LCD-7](docs/waveshare-esp32-s3-touch-lcd-7.md) -- ESP32-S3
+HMI development board (16 MB flash, 8 MB PSRAM) with the same 800x480
+16-bit parallel RGB565 interface and GT911 capacitive touch controller
+as the Sunton boards, but with the LCD reset, backlight, touch reset
+and SD card chip-select lines routed through an on-board CH422G I2C
+IO-expander instead of direct GPIOs. Unlike the Sunton boards, GT911
+INT and RST are both wired (RST via the CH422G), giving a
+deterministic address-select reset, so touch is enabled by default
+(toggle it off in `menuconfig` if not wanted). BOOT (GPIO0) wakes
+from deep sleep. No on-board battery monitor. See the linked doc for
+the full CH422G EXIO pin map.
+
+
 ## Freenove FNK0104A, FNK0104B, FNK0104S
 
 [Freenove
