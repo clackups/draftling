@@ -20,8 +20,8 @@ References:
   against the wiki).
 
 The board is keyboard-driven like every other Draftling target (USB /
-BLE). Touch is optional and off by default -- see "Touchscreen"
-below.
+BLE), with touch as a secondary input, enabled by default -- see
+"Touchscreen" below.
 
 ## The CH422G IO-expander
 
@@ -148,15 +148,29 @@ hides the battery indicator.
 ## Touchscreen
 
 The on-board GT911 is supported (`CONFIG_DRAFTLING_TOUCH_GT911`,
-derived from the model choice) but `CONFIG_DRAFTLING_TOUCHSCREEN` is
-opt-in, matching the Sunton boards -- Draftling is keyboard-driven, so
-touch is left off unless enabled in `menuconfig`. Both INT (GPIO4)
-and RST (CH422G EXIO1) are wired, so -- unlike the Sunton 7" board,
-whose GT911 INT is unpopulated -- this board gets a deterministic
-address-select reset instead of a dual-address probe fallback (see
-"The CH422G IO-expander" above). The panel is natively landscape
+derived from the model choice) and `CONFIG_DRAFTLING_TOUCHSCREEN`
+defaults to **on** for this board -- unlike the Sunton RGB boards
+(where touch defaults off because their GT911 INT is unpopulated, so
+bring-up has to fall back to a dual-address I2C probe), this board
+wires both INT (GPIO4) and RST (CH422G EXIO1), giving a deterministic
+address-select reset (see "The CH422G IO-expander" above), so touch is
+reliable enough to enable out of the box. It can still be turned off
+in `menuconfig` if not wanted. The panel is natively landscape
 800x480, so no axis swap or mirror is needed
 (`TOUCH_SWAP_XY = TOUCH_MIRROR_X = TOUCH_MIRROR_Y = 0`).
+
+If touch still doesn't respond after flashing, make sure your build
+actually picked up the current default: a `build/waveshare_touch_lcd_7/
+sdkconfig` generated before this default changed will keep whatever
+value it already resolved (Kconfig's `sdkconfig`-policy defaults don't
+retroactively flip settings already written to an existing sdkconfig).
+Delete it and reconfigure, or just toggle **Enable touchscreen input**
+on directly:
+
+```
+rm -f build/waveshare_touch_lcd_7/sdkconfig
+idf.py --preset waveshare_touch_lcd_7 build
+```
 
 ## Building
 
@@ -166,9 +180,9 @@ idf.py --preset waveshare_touch_lcd_7 -p /dev/ttyACM0 flash monitor
 ```
 
 `sdkconfig.defaults.waveshare_touch_lcd_7` selects
-`CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7`. Touch is opt-in;
-enable it with `idf.py --preset waveshare_touch_lcd_7 menuconfig`
-under **DRAFTLING Configuration**.
+`CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7`. Touch is on by
+default; disable it with `idf.py --preset waveshare_touch_lcd_7
+menuconfig` under **DRAFTLING Configuration** if not wanted.
 
 ## Cross-references
 

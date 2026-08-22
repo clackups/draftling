@@ -663,6 +663,14 @@ config DRAFTLING_TOUCHSCREEN
     # FNK0104A has no touch controller wired and is left off.
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Waveshare ESP32-S3-Touch-LCD-7: unlike the Sunton RGB boards
+    # (touch left opt-in there because their GT911 INT is unwired, so
+    # bring-up falls back to a dual-address probe), this board wires
+    # both GT911 INT (GPIO4) and RST (via CH422G EXIO1), giving a
+    # deterministic address-select reset -- see the CH422G bring-up
+    # block in main.cpp. Default touch on to match the "Touch-LCD"
+    # naming and the reliable wiring.
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer

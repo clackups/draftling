@@ -1467,7 +1467,7 @@ extern "C" void app_main(void)
 #if defined(CONFIG_DRAFTLING_HAS_CH422G) && defined(CH422G_SD_CS_PIN)
     ch422g_set_pin(CH422G_SD_CS_PIN, false);
 #endif
-    sd_ret = sd_card_init_spi(SPI3_HOST,
+    sd_ret = sd_card_init_spi(SD_SPI_HOST_NUM,
                               SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_SCK_PIN,
                               SD_SPI_CS_PIN, SD_EN_PIN,
                               SD_MOUNT_POINT);

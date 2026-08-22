@@ -65,6 +65,19 @@
 #define SD_SPI_CS_PIN   -1
 #define SD_EN_PIN       -1
 
+/* GPIO 11/12/13 are exactly the ESP32-S3's native SPI2 (FSPI) IOMUX
+ * pins (SPI2_IOMUX_PIN_NUM_MOSI/CLK/MISO in soc/spi_pins.h) -- not a
+ * coincidence, this is why Waveshare's own reference firmware
+ * (examples/ESP-IDF/03_SD_Test) uses SDSPI_HOST_DEFAULT(), whose
+ * default slot is SPI2_HOST on the S3. SPI3 has no IOMUX pins on this
+ * chip (every SPI3 pin assignment is routed through the slower GPIO
+ * matrix), so using SPI3_HOST here -- as main.cpp's generic SD-init
+ * path does by default for every other board -- forces matrix routing
+ * on pins that don't need it and diverges from the verified-working
+ * official reference. SPI2 is otherwise free on this board (the RGB
+ * panel uses the dedicated LCD_CAM peripheral, not SPI). */
+#define SD_SPI_HOST_NUM SPI2_HOST
+
 /* GT911 capacitive touch controller. INT is a direct GPIO (used both
  * for the LVGL pointer indev and, during boot, as a push-pull output
  * held low while main.cpp pulses the CH422G touch-reset line so the
