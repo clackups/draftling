@@ -344,7 +344,16 @@ static inline lv_color_t theme_bg(void)
  * either (a) raise CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT to exclude
  * them at compile time, or (b) set CONFIG_DRAFTLING_BL_DUTY_FLOOR_PCT
  * so the display backend remaps low percents into a higher PWM
- * duty range (preferred -- keeps the full UI range). */
+ * duty range (preferred -- keeps the full UI range).
+ *
+ * Boards with CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY (no PWM --
+ * the backlight enable line is a plain on/off switch) skip the
+ * percentage ladder entirely: every step above 0 % would drive the
+ * exact same physical "on" state, so cycling through {10, 25, 50,
+ * 75, 100} would look like Ctrl+B does nothing. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+static const int BACKLIGHT_OPTIONS[] = { 0, 100 };
+#else
 static const int BACKLIGHT_OPTIONS[] = {
 #if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 0
     /* Only meaningful on reflective / e-paper panels that stay
@@ -377,13 +386,19 @@ static const int BACKLIGHT_OPTIONS[] = {
 #endif
     100
 };
+#endif  /* CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY */
 #define BACKLIGHT_OPTION_COUNT \
     ((int)(sizeof(BACKLIGHT_OPTIONS) / sizeof(BACKLIGHT_OPTIONS[0])))
 
 #define NVS_KEY_BACKLIGHT "backlight"
 /* Default to 50 % when available, else the lowest still-allowed
- * step (set per board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT). */
-#if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 50
+ * step (set per board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT).
+ * Binary (on/off-only) boards default straight to 100 % (the only
+ * "on" value in their 2-step {0, 100} cycle -- 50 would still
+ * physically mean "on" here, but 100 reads correctly in the UI). */
+#if defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+static int s_backlight_pct = 100;
+#elif CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 50
 static int s_backlight_pct = 50;
 #else
 static int s_backlight_pct = CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT;

@@ -353,6 +353,22 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default n
 
+# DRAFTLING_DISPLAY_BACKLIGHT_BINARY is set automatically on boards
+# whose backlight enable line can only be switched fully on or off --
+# no PWM dimming is physically possible, so every intermediate step
+# of the usual percentage ladder would look identical to the user.
+# Currently the CH422G-driven backlight (Waveshare Touch-LCD-7): the
+# expander pin is a plain digital output, not a PWM channel. When set,
+# the editor's F1 -> Settings backlight cycle
+# (components/editor/editor_ui.cpp) collapses to a single on/off step
+# instead of {10, 25, 50, 75, 100} % -- with the percentage ladder,
+# every one of those steps maps to the same "on" state and Ctrl+B
+# would appear to do nothing.
+config DRAFTLING_DISPLAY_BACKLIGHT_BINARY
+    bool
+    default y if DRAFTLING_HAS_CH422G
+    default n
+
 # Minimum backlight percentage offered by the Settings menu. The
 # editor cycles through the steps {0, 10, 25, 50, 75, 100} % (with
 # an extra 5 % step on the LilyGO T5 E-Paper S3 Pro / Pro Lite
@@ -371,6 +387,10 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     # the user dial brightness all the way down to 0 %.
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    # Binary (on/off-only) backlights must allow 0 too, otherwise a
+    # persisted "off" choice would be clamped back up to this minimum
+    # on the next boot (see load_backlight_from_nvs() in editor_ui.cpp).
+    default 0 if DRAFTLING_DISPLAY_BACKLIGHT_BINARY
     default 10
 
 # DRAFTLING_BL_DUTY_FLOOR_PCT shifts the bottom of the PWM duty
