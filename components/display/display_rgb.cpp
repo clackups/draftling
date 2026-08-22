@@ -297,16 +297,19 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     cfg.timings.flags.pclk_active_neg = RGB_PCLK_ACTIVE_NEG;
     cfg.timings.flags.pclk_idle_high  = RGB_PCLK_IDLE_HIGH;
     cfg.data_width   = 16;
-    cfg.bits_per_pixel = 16;
+    /* esp_lcd_rgb_panel_config_t dropped the old bits_per_pixel field;
+     * pixel depth is now derived from in_color_format (out_color_format
+     * defaults to in_color_format when left at 0). */
+    cfg.in_color_format = LCD_COLOR_FMT_RGB565;
     cfg.num_fbs      = 1;
     cfg.bounce_buffer_size_px = s_width * 16;  /* 16 lines */
     cfg.flags.fb_in_psram = 1;
-    cfg.hsync_gpio_num = RGB_HSYNC_GPIO;
-    cfg.vsync_gpio_num = RGB_VSYNC_GPIO;
-    cfg.de_gpio_num    = RGB_DE_GPIO;
-    cfg.pclk_gpio_num  = RGB_PCLK_GPIO;
-    cfg.disp_gpio_num  = RGB_DISP_GPIO;
-    for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = kDataGpios[i];
+    cfg.hsync_gpio_num = (gpio_num_t)RGB_HSYNC_GPIO;
+    cfg.vsync_gpio_num = (gpio_num_t)RGB_VSYNC_GPIO;
+    cfg.de_gpio_num    = (gpio_num_t)RGB_DE_GPIO;
+    cfg.pclk_gpio_num  = (gpio_num_t)RGB_PCLK_GPIO;
+    cfg.disp_gpio_num  = (gpio_num_t)RGB_DISP_GPIO;
+    for (int i = 0; i < 16; i++) cfg.data_gpio_nums[i] = (gpio_num_t)kDataGpios[i];
 
     ESP_ERROR_CHECK(esp_lcd_new_rgb_panel(&cfg, &s_panel));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(s_panel));
