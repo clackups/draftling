@@ -355,15 +355,18 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
 
 # DRAFTLING_DISPLAY_BACKLIGHT_BINARY is set automatically on boards
 # whose backlight enable line can only be switched fully on or off --
-# no PWM dimming is physically possible, so every intermediate step
-# of the usual percentage ladder would look identical to the user.
-# Currently the CH422G-driven backlight (Waveshare Touch-LCD-7): the
-# expander pin is a plain digital output, not a PWM channel. When set,
-# the editor's F1 -> Settings backlight cycle
-# (components/editor/editor_ui.cpp) collapses to a single on/off step
-# instead of {10, 25, 50, 75, 100} % -- with the percentage ladder,
-# every one of those steps maps to the same "on" state and Ctrl+B
-# would appear to do nothing.
+# no PWM dimming is physically possible, so a brightness control would
+# be misleading (every intermediate step of the usual percentage
+# ladder would look identical to the user). Currently the CH422G-
+# driven backlight (Waveshare Touch-LCD-7): the expander pin is a
+# plain digital output, not a PWM channel. When set, the editor omits
+# the backlight feature entirely -- no "Backlight: NN%" entry in F1 ->
+# Settings and no Ctrl+B shortcut (every
+# CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT guard in
+# components/editor/editor_ui.cpp also requires this symbol to be
+# unset) -- rather than expose a control that can only toggle the
+# backlight fully on or off. The backlight is left at the display
+# backend's own default (on).
 config DRAFTLING_DISPLAY_BACKLIGHT_BINARY
     bool
     default y if DRAFTLING_HAS_CH422G
@@ -379,7 +382,8 @@ config DRAFTLING_DISPLAY_BACKLIGHT_BINARY
 # only included when this value is 0 (it makes sense for reflective
 # / e-paper panels that stay readable without any back/front-light;
 # transmissive LCDs would just go fully dark). Non-prompted; set
-# per model below.
+# per model below. Irrelevant on DRAFTLING_DISPLAY_BACKLIGHT_BINARY
+# boards -- the whole Settings/Ctrl+B feature is compiled out there.
 config DRAFTLING_BACKLIGHT_MIN_PCT
     int
     depends on DRAFTLING_DISPLAY_HAS_BACKLIGHT
@@ -387,10 +391,6 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     # the user dial brightness all the way down to 0 %.
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
-    # Binary (on/off-only) backlights must allow 0 too, otherwise a
-    # persisted "off" choice would be clamped back up to this minimum
-    # on the next boot (see load_backlight_from_nvs() in editor_ui.cpp).
-    default 0 if DRAFTLING_DISPLAY_BACKLIGHT_BINARY
     default 10
 
 # DRAFTLING_BL_DUTY_FLOOR_PCT shifts the bottom of the PWM duty

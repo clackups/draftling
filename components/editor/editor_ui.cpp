@@ -45,13 +45,16 @@
  * with an approximately matching row height.
  *
  * The body font is selected at runtime via the base font size user
- * setting (11, 14, or 16 px; high-density boards add a 20 px step).
+ * setting (11, 14, or 16 px; high-density boards add a 20 px step,
+ * plus a 9 px step even smaller than the smallest Greybeard-mirrored
+ * slot for users who want to fit more text on a large, dense panel).
  * Heading fonts are scaled relative to the body size, using the 26 px
  * slot for the largest headings.
  * Status bars always use FONT_11 regardless of the body font setting.
  */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 #include "hack.h"
+#define FONT_9  (&hack_9)
 #define FONT_11 (&hack_11)
 #define FONT_14 (&hack_14)
 #define FONT_16 (&hack_16)
@@ -104,13 +107,15 @@ static const char *TAG = "EditorUI";
 /* ---- Base font size setting ----
  * The user can pick 11, 14, or 16 px as the editor body font.
  * Heading fonts are scaled up from the body size. High-density
- * (HIDPI) boards render with the larger Hack family and expose one
- * extra step, 20 px, since their panels have the resolution to show
- * a bigger body font comfortably. */
+ * (HIDPI) boards render with the larger Hack family and expose two
+ * extra steps: 20 px, since their panels have the resolution to show
+ * a bigger body font comfortably, and 9 px -- smaller than the
+ * smallest Greybeard-mirrored slot -- for users who want to fit more
+ * text on a large, dense panel. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-#define FONT_SIZE_COUNT 4
-static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16, 20 };
-static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "11 px", "14 px", "16 px", "20 px" };
+#define FONT_SIZE_COUNT 5
+static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 9, 11, 14, 16, 20 };
+static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "9 px", "11 px", "14 px", "16 px", "20 px" };
 #else
 #define FONT_SIZE_COUNT 3
 static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16 };
@@ -152,6 +157,7 @@ static const lv_font_t *body_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_18;
+    if (s_font_size == 9)  return FONT_9;
 #endif
     if (s_font_size == 16) return FONT_16;
     if (s_font_size == 14) return FONT_14;
@@ -159,6 +165,7 @@ static const lv_font_t *body_font(void)
 }
 
 /* Return heading fonts (h1/h2/h3) scaled relative to the body size.
+ *   body 9  -> h3 11, h2 14, h1 16 (HIDPI only)
  *   body 11 -> h3 14, h2 16, h1 18
  *   body 14 -> h3 16, h2 18, h1 22
  *   body 16 -> h3 18, h2 22, h1 26
@@ -168,6 +175,7 @@ static const lv_font_t *h1_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_30;
+    if (s_font_size == 9)  return FONT_16;
 #endif
     if (s_font_size == 16) return FONT_26;
     if (s_font_size == 14) return FONT_22;
@@ -178,6 +186,7 @@ static const lv_font_t *h2_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_26;
+    if (s_font_size == 9)  return FONT_14;
 #endif
     if (s_font_size == 16) return FONT_22;
     if (s_font_size == 14) return FONT_18;
@@ -188,6 +197,7 @@ static const lv_font_t *h3_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_22;
+    if (s_font_size == 9)  return FONT_11;
 #endif
     if (s_font_size == 16) return FONT_18;
     if (s_font_size == 14) return FONT_16;
@@ -330,30 +340,32 @@ static inline lv_color_t theme_bg(void)
 
 /* ---- Backlight setting ----
  *
- * Boards whose display backend exposes a controllable backlight
- * (CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) let the user pick a
- * brightness percentage from F1 -> Settings. The selection is
+ * Boards whose display backend exposes a controllable (dimmable)
+ * backlight (CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT, and not
+ * CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY -- see below) let the user
+ * pick a brightness percentage from F1 -> Settings. The selection is
  * persisted in NVS and applied at boot (and immediately on change)
  * via display_set_backlight().
  *
  * The available steps are coarse on purpose: a single Enter on the
  * Settings list cycles through them, so finer granularity would be
- * tedious to dial in. */
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+ * tedious to dial in.
+ *
+ * Boards with CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY (no PWM --
+ * the backlight enable line is a plain on/off switch) skip this
+ * entire feature: the Settings entry and the Ctrl+B shortcut are
+ * both compiled out (every occurrence of
+ * CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT in this file is guarded with
+ * `&& !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)`), rather
+ * than exposing a control that can only toggle the backlight fully
+ * on or off. The backlight itself is left at whatever the display
+ * backend's own default is (on) with no user override. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
 /* The cycle steps. Boards whose lowest steps are unusably dim
  * either (a) raise CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT to exclude
  * them at compile time, or (b) set CONFIG_DRAFTLING_BL_DUTY_FLOOR_PCT
  * so the display backend remaps low percents into a higher PWM
- * duty range (preferred -- keeps the full UI range).
- *
- * Boards with CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY (no PWM --
- * the backlight enable line is a plain on/off switch) skip the
- * percentage ladder entirely: every step above 0 % would drive the
- * exact same physical "on" state, so cycling through {10, 25, 50,
- * 75, 100} would look like Ctrl+B does nothing. */
-#if defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-static const int BACKLIGHT_OPTIONS[] = { 0, 100 };
-#else
+ * duty range (preferred -- keeps the full UI range). */
 static const int BACKLIGHT_OPTIONS[] = {
 #if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 0
     /* Only meaningful on reflective / e-paper panels that stay
@@ -386,19 +398,13 @@ static const int BACKLIGHT_OPTIONS[] = {
 #endif
     100
 };
-#endif  /* CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY */
 #define BACKLIGHT_OPTION_COUNT \
     ((int)(sizeof(BACKLIGHT_OPTIONS) / sizeof(BACKLIGHT_OPTIONS[0])))
 
 #define NVS_KEY_BACKLIGHT "backlight"
 /* Default to 50 % when available, else the lowest still-allowed
- * step (set per board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT).
- * Binary (on/off-only) boards default straight to 100 % (the only
- * "on" value in their 2-step {0, 100} cycle -- 50 would still
- * physically mean "on" here, but 100 reads correctly in the UI). */
-#if defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-static int s_backlight_pct = 100;
-#elif CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 50
+ * step (set per board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT). */
+#if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 50
 static int s_backlight_pct = 50;
 #else
 static int s_backlight_pct = CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT;
@@ -530,7 +536,8 @@ static void recalc_layout(void)
 }
 
 /* Return the index into FONT_SIZE_OPTIONS for the given pixel size.
- * Falls back to 0 (11 px) when the size is not recognized. */
+ * Falls back to index 0 (the smallest offered size) when the size is
+ * not recognized. */
 static int find_font_size_option(int sz)
 {
     for (int i = 0; i < FONT_SIZE_COUNT; i++) {
@@ -1344,6 +1351,7 @@ static int char_width_for_font(const lv_font_t *font)
     if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */
     if (font == FONT_16) return 15;   /* hack_16 (25 px): adv_w 240 / 16 */
     if (font == FONT_14) return 13;   /* hack_14 (21 px): adv_w 208 / 16 */
+    if (font == FONT_9)  return 10;   /* hack_9  (16 px): adv_w 160 / 16 */
     return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
 #else
     if (font == FONT_26) return 13;   /* adv_w 208 / 16 = 13 */
@@ -3034,7 +3042,7 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_TIMEOUT  0
 #define SETTINGS_IDX_FONTSZ   1
 #define SETTINGS_IDX_MAXFILE  2
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
 #define SETTINGS_IDX_BACKLIGHT 3
 #define _SETTINGS_NEXT_AFTER_BACKLIGHT 4
 #else
@@ -3092,7 +3100,7 @@ static void refresh_settings_items(void)
              (unsigned)(editor_get_max_doc_size() / 1024));
     lv_list_add_btn(s_settings_list, NULL, buf);
 
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
     /* Backlight brightness (LCD boards with a controllable backlight) */
     snprintf(buf, sizeof(buf), "Backlight: %d%%", s_backlight_pct);
     lv_list_add_btn(s_settings_list, NULL, buf);
@@ -3267,7 +3275,7 @@ static void settings_activate_item(int idx)
     } else if (idx == SETTINGS_IDX_MAXFILE) {
         /* Read-only display of the dynamically-sized editor buffer.
          * Enter is a no-op; the value is fixed at editor_init() time. */
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
     } else if (idx == SETTINGS_IDX_BACKLIGHT) {
         /* Cycle to next backlight brightness step. Apply immediately
          * so the user sees the change without leaving the menu. */
@@ -4570,7 +4578,7 @@ static void handle_editor_key(const kb_event_t *ev)
             /* Ctrl+M: menu, equivalent to F1 */
             show_menu();
             return;
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
         case 'b': {
             /* Ctrl+B: cycle to the next backlight / front-light
              * brightness step (same cycle as F1 -> Settings ->
@@ -5036,7 +5044,7 @@ static void handle_browser_key(const kb_event_t *ev)
             }
             return;
         }
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
         if (ck == 'b') {
             /* Ctrl+B: cycle to the next backlight / front-light
              * brightness step (same behaviour as in the editor). */
@@ -6485,7 +6493,7 @@ extern "C" void editor_ui_init(void)
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     load_theme_from_nvs();
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
     load_backlight_from_nvs();
     display_set_backlight(s_backlight_pct);
 #endif

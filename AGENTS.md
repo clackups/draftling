@@ -763,17 +763,22 @@ that depends on `lvgl__lvgl`.
 Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
 typeface instead of scaling Greybeard. Hack is a monospaced outline
-font (MIT, https://github.com/source-foundry/Hack). Seven sizes are
+font (MIT, https://github.com/source-foundry/Hack). Eight sizes are
 generated with `lv_font_conv`. Six mirror the Greybeard "slots",
 chosen so each text row is approximately the height the user saw with
-Greybeard rendered at the old 2x scale; a seventh Hack-only slot (30)
-has no Greybeard counterpart and provides an H1 heading larger than
-slot 26 for the HIDPI-only 20 px base font size. The file names mirror
-the Greybeard slots (`hack_11` .. `hack_26`) plus the extra `hack_30`;
-the number is the slot, not the Hack pixel size:
+Greybeard rendered at the old 2x scale; two are Hack-only slots with
+no Greybeard counterpart (Greybeard's own range is 11-26 px):
+slot 30 provides an H1 heading larger than slot 26 for the HIDPI-only
+20 px base font size, and slot 9 is an extra-compact body size below
+Greybeard's smallest (11), for users who want to fit more text on a
+large, dense panel (e.g. the Waveshare Touch-LCD-7's 7" 800x480
+panel). The file names mirror the Greybeard slots (`hack_11` ..
+`hack_26`) plus the two extras (`hack_9`, `hack_30`); the number is
+the slot, not the Hack pixel size:
 
 | File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
 |------|-----------------|------------|-------------|-------------------------|
+| hack_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
 | hack_11.c | 19 | 11 | 23 | greybeard_11 (x2) |
 | hack_14.c | 21 | 13 | 26 | greybeard_14 (x2) |
 | hack_16.c | 25 | 15 | 30 | greybeard_16 (x2) |
@@ -781,6 +786,12 @@ the number is the slot, not the Hack pixel size:
 | hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
 | hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
 | hack_30.c | 47 | 28 | 58 | (none; Hack-only H1 slot for the 20 px base size) |
+
+Slot 9's heading fonts (h1/h2/h3) reuse the existing slot 11/14/16
+fonts rather than needing new dedicated assets -- the heading scale
+just shifts down by one slot compared to the body-11 tier (body 9 ->
+h3 11, h2 14, h1 16; see `body_font()` / `h1_font()` / `h2_font()` /
+`h3_font()` in `components/editor/editor_ui.cpp`).
 
 The generated advance widths are fractional (Hack is not a native
 pixel font), so after generation every full-width glyph's `adv_w` is
@@ -798,10 +809,18 @@ layout options:
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
-Greybeard TTFs at twice the native pixel size (a clean 2x pixel-double
-that matches what the old scaled path produced). The base fonts are
-generated with `--lv-fallback hack_NN_ext` and the Hebrew subset with
-`--lv-fallback hack_NN_he_next`; the router structs live in
+Greybeard TTFs. For slots 11-30, that's at twice the corresponding
+Greybeard slot's native pixel size (a clean 2x pixel-double that
+matches what the old scaled path produced). Slot 9 has no Greybeard
+source of its own to double (Greybeard's smallest is 11px), so
+`hack_hebrew_9.c` is instead rendered directly from
+`Greybeard-11px.ttf` (the smallest available source) at 18px --
+close to, but not an exact 2x multiple of, the source's native size;
+freetype rasterizes any target size cleanly from the vector outline
+regardless, so this is a minor deviation from the other slots'
+"clean double" convention, not a technical limitation. The base fonts
+are generated with `--lv-fallback hack_NN_ext` and the Hebrew subset
+with `--lv-fallback hack_NN_he_next`; the router structs live in
 `components/fonts/hack.c` and are chained at boot by `hack_init()`,
 exactly like `greybeard_init()`. The same post-generation include
 fix-up applies (replace the `#ifdef LV_LVGL_H_INCLUDE_SIMPLE ... #endif`
@@ -811,7 +830,7 @@ builds do not pay for them.
 
 The editor (`components/editor/editor_ui.cpp`) selects the family with
 a compile-time `#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI`: the `FONT_11`
-.. `FONT_26` macros (plus the HIDPI-only `FONT_30`),
+.. `FONT_26` macros (plus the HIDPI-only `FONT_9` and `FONT_30`),
 `char_width_for_font()` and the boot-time init call all switch between
 Greybeard and Hack. Everything else in the editor is family-agnostic
 because it works through those slots. `FONT_30` is only defined and
@@ -891,7 +910,8 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
 | DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |

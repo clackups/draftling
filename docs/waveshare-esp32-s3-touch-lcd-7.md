@@ -107,8 +107,17 @@ via `CONFIG_DRAFTLING_HAS_CH422G`.
 | `pclk_idle_high`   | 0  |
 
 Backlight and LCD reset are CH422G EXIO2 / EXIO3 (see above), not
-GPIOs -- `display_set_backlight()` quantizes any non-zero percent to
-"on" (the expander pin is a plain switch, no PWM).
+GPIOs. The backlight EXIO is a plain on/off switch with no PWM
+capability, so `CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY` is set for
+this board: the editor omits the "Backlight: NN%" Settings entry and
+the Ctrl+B shortcut entirely (a brightness control that can only
+toggle fully on or off would be misleading), and the backlight simply
+stays on (`display_set_backlight()` is still callable and still
+treats any non-zero percent as "on", but nothing in the UI calls it
+on this board). Standby's display-off / deep-sleep paths still cut
+and restore the backlight through `display_sleep()` / `display_wake()`
+/ `display_deep_sleep_prepare()` in `display_rgb.cpp`, independently
+of the (unused, on this board) Settings-menu state.
 
 ### Color line order
 
