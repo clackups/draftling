@@ -9,20 +9,17 @@ extern "C" {
 #include <stddef.h>
 
 /* Maximum size (in bytes) of a single file that git_sync can currently
- * push to GitHub.
+ * handle during a sync.
  *
  * Not a fixed constant: derived at call time from the SPIRAM that is
- * free *right now*. The GitHub Contents API requires the file to be
- * base64-encoded (~1.34x growth) and wrapped in a JSON body, but the
- * push path stream-encodes the base64 into a temporary file on the SD
- * card and streams the HTTP PUT body in small chunks, so the transient
- * peak in PSRAM is dominated by the raw file content alone (~1x raw
- * size). We additionally reserve some headroom for the HTTPS / TLS
- * buffers and any other concurrent allocations.
+ * free *right now*. The native Git client streams objects through the SD
+ * card, so the transient PSRAM peak during a sync is dominated by a
+ * single file's content plus the diff3 LCS matrix; headroom is reserved
+ * for the TLS buffers and other concurrent allocations.
  *
  * The editor uses this same function at editor_init() time to clamp
  * its own per-buffer ceiling, so the editor never produces a document
- * larger than what git_sync can push. Git is the tighter constraint
+ * larger than what a sync can process. Git is the tighter constraint
  * and therefore the determining factor for the maximum file size. */
 size_t git_sync_max_file_size(void);
 

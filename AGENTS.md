@@ -38,7 +38,9 @@ interface.
 The user connects a Bluetooth keyboard and edits Markdown files stored on
 a MicroSD card. The reflective LCD needs no backlight and works well in
 daylight. On request the device connects to WiFi and synchronizes files
-with a remote Git repository via the GitHub REST API.
+with a remote Git repository using a built-in Git client that speaks the
+standard smart HTTP protocol (a local commit history is kept on the SD
+card).
 
 ### Supported Hardware
 
@@ -94,7 +96,7 @@ components/                 Reusable IDF components
   display/                  RLCD SPI display driver and LVGL port
   editor/                   Gap-buffer text editor, Markdown parser, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
-  git_sync/                 GitHub REST API file synchronization
+  git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/                Keyboard layout translation (US/UA/DE/FR)
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -407,29 +409,57 @@ process.
 
 ### components/git_sync/
 
-Synchronizes Markdown files between the SD card and a remote GitHub
-repository using the GitHub REST API over HTTPS. Reads configuration
-(repo URL, branch, token, path prefix) from `/sdcard/git.cfg`. Supports
-pull, push, or bidirectional sync with state callbacks and error tracking.
+A minimal but real **native Git client**. It keeps a genuine commit
+history under `<sdcard>/.git` and exchanges objects with the remote over
+the standard smart HTTP protocol (`gitprotocol-http`): `info/refs`,
+`git-upload-pack` (fetch) and `git-receive-pack` (push), pkt-line
+framing, packfile v2 transfer. No host-specific REST API is used, so any
+standard Git HTTP host works. Configuration (`repo_url`, `branch`,
+`token`, `username`, `path`, `author_name`, `author_email`) is read from
+`/sdcard/git.cfg`. User-facing docs: `docs/git-sync.md`.
 
-The last-synced per-file blob SHAs are persisted in a hidden
-`.git_state` file under the SD mount point. Every sync does a 3-way
-comparison (saved vs local vs remote) so that:
+Source layout (all in-tree, no managed components):
 
-- a file modified only on one side is propagated to the other;
-- a file deleted on the remote is also deleted locally (provided the
-  local copy still matches the last-synced SHA); otherwise the local
-  edits "win" and the file is recreated on the remote next push;
-- a file deleted locally is also deleted on the remote (via the GitHub
-  Contents DELETE API, conditional on the saved SHA still being current);
-  otherwise the remote-modified copy "wins" and is re-downloaded next
-  pull;
-- a file renamed on either side is handled correctly because Git models
-  renames as a delete + add of two distinct paths, which the rules
-  above cover automatically (no duplicate copies left behind).
+- `git_sync.cpp` -- config parsing, the sync task, and the orchestration
+  (advertise -> clone -> local commit -> fetch -> fast-forward/rebase ->
+  three-way merge -> checkout -> push). Keeps the historical public API.
+- `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA), and
+  zlib inflate/deflate via the ROM miniz (`tinfl_*` / `tdefl_*` from
+  `esp_rom/include/miniz.h`).
+- `git_odb.c` -- repo layout, loose object store, refs, tree/commit
+  parse+build, subtree splicing, merge-base and reachability walks.
+- `git_pack.c` -- packfile v2 reader (incl. OFS_DELTA / REF_DELTA and
+  delta application) and a non-delta packfile writer.
+- `git_net.c` -- pkt-line framing and the `esp_http_client`-based
+  transport (`info/refs`, `git-upload-pack`, `git-receive-pack`), HTTP
+  Basic auth.
+- `git_merge.c` -- flat three-way tree merge with an LCS-based diff3 line
+  merge; overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
+  markers and **committed as-is** (never discarded).
 
-Public API: `git_sync_init()`, `git_sync_start()`,
-`git_sync_get_state()`, `git_sync_is_configured()`.
+Behaviour:
+
+- The working tree is the flat set of `*.md` files in the sync dir. An
+  optional `path=` maps that set onto a sub-tree of the repository (the
+  rest of the repo tree is preserved across commits).
+- First sync clones full history; later syncs send `have` lines so the
+  server returns a minimal pack.
+- Divergent histories are rebased commit-by-commit onto the remote tip.
+  Conflicts are committed with markers; the commit message gets a
+  `[draftling] N conflict(s)` note. The editor UI reloads the open
+  buffer on `GIT_SYNC_SUCCESS`.
+- Push is a fast-forward ref update; a race (remote moved mid-sync) is
+  reported and the user re-syncs.
+- Wall-clock for commit timestamps comes from a best-effort SNTP query
+  (`esp_netif_sntp`) on the first sync, floored at 2025-01-01 otherwise.
+
+Scope limits: one branch, no tags/submodules/signing, no shallow clone,
+flat `*.md` working tree only, HTTP Basic auth only (no SSH). LCS merge
+falls back to a whole-file conflict above ~1400 lines per side.
+
+Public API (unchanged): `git_sync_init()`, `git_sync_start()`,
+`git_sync_get_state()`, `git_sync_is_configured()`,
+`git_sync_get_last_error()`, `git_sync_max_file_size()`.
 
 ### components/io_expander/
 
@@ -983,7 +1013,8 @@ PSRAM is required on every supported board. The editor gap buffer
 `editor_init()` runs -- typically a few hundred KB up to a few MB
 depending on the board), the display
 framebuffers, the LVGL widget heap (`CONFIG_LV_USE_CUSTOM_MALLOC` routes
-through PSRAM), the Git-sync HTTPS response buffers + task stack, and
+through PSRAM), the Git client's object buffers, ~24 KB task stack and
+diff3 LCS matrix, and
 the Bluedroid host environment (`CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY` plus
 `CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST`) all assume `MALLOC_CAP_SPIRAM`
 is available. The top-level `CMakeLists.txt` aborts the configure step

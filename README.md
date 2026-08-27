@@ -33,10 +33,18 @@ An M5Stack Tab5 with AJAZZ NKL61 keyboard and my messy working desk:
   or comments. Draftling supports also editing thge same file in both
   windows.
 
-- **Synchronizing your files with a Github repository** via GitHub
-  REST API. The WiFi client and Git credentials need to be configured
-  in `wifi.cfg` and `git.cfg` on your SD card. Both publuc and private
-  repositories are supported.
+- **Synchronizing your files with a Git repository** using a real,
+  built-in Git client that speaks the standard smart-HTTP protocol
+  (`git-upload-pack` / `git-receive-pack`). A full commit history is
+  kept locally in `.git/` on the SD card. Each sync commits your
+  local edits, fetches the remote branch, fast-forwards or rebases
+  your commits on top of it, performs a three-way merge (conflicts
+  are committed as-is with `<<<<<<<` / `=======` / `>>>>>>>` markers),
+  writes the result back to the SD card and pushes to the server. The
+  WiFi client and Git credentials are configured in `wifi.cfg` and
+  `git.cfg` on the SD card. Public and private repositories on GitHub
+  and other standard Git HTTP hosts are supported. See
+  [docs/git-sync.md](docs/git-sync.md).
 
 - **Per-file metadata saved**: when a `.md` file is closed (or
   before the device enters deep sleep), the editor records the current
@@ -45,8 +53,8 @@ An M5Stack Tab5 with AJAZZ NKL61 keyboard and my messy working desk:
   `.notes.md.meta`). The next time the file is opened, the cursor is
   restored to its previous position and the view scrolls so the cursor
   is visible. The `.meta` files are hidden from the file browser (they
-  start with a dot) and are ignored by Git sync (which only handles
-  `*.md`).
+  start with a dot) and are ignored by Git sync (which only commits
+  `*.md` files).
 
 - **Color themes** On color LCD boards the editor offers a
   runtime-selectable color theme (F1 -> Settings -> Color theme):
@@ -68,7 +76,7 @@ An M5Stack Tab5 with AJAZZ NKL61 keyboard and my messy working desk:
 | Ctrl+L | Cycle keyboard layout |
 | Win+Space | Cycle keyboard layout (same as Ctrl+L) |
 | Ctrl+M | Menu (same as F1) |
-| Ctrl+G | Git sync (pull + push) |
+| Ctrl+G | Git sync (commit, fetch, rebase/merge, push) |
 | Ctrl+W | Toggle WiFi (connect / disconnect) |
 | Ctrl+F | Find |
 | Ctrl+H | Find + Replace (Tab switches field, Enter = next match, Ctrl+Enter = replace + next) |
@@ -205,16 +213,33 @@ MyPassword
 
 ### Git Sync (`git.cfg`)
 
-The file consists of several key=value lines, providing access to a
-Github repository (private or public). The `token` is a GitHub
-Personal Access Token with `repo` scope.  **Keep this file private.**
+The file consists of several `key=value` lines. `repo_url` and `token`
+are required; everything else is optional. The `token` is used as the
+HTTP Basic password -- on GitHub this is a Personal Access Token (a
+classic token needs `repo` scope; a fine-grained token needs
+read/write "Contents" permission). **Keep this file private.**
 
 ```
 repo_url=https://github.com/user/repo
 branch=main
 token=ghp_xxxxxxxxxxxx
-path=docs/
+path=notes/
+username=x-access-token
+author_name=Jane Doe
+author_email=jane@example.com
 ```
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `repo_url` | yes | Repository URL. A trailing `.git` is optional. |
+| `token` | yes | HTTP Basic password / access token. |
+| `branch` | no | Branch to sync (default `main`). |
+| `path` | no | Sync into this sub-directory of the repo instead of its root. |
+| `username` | no | HTTP Basic user (default `x-access-token`, which works for GitHub). |
+| `author_name` / `author_email` | no | Identity stamped on commits Draftling creates. |
+
+The full protocol, history layout and conflict behaviour are described
+in [docs/git-sync.md](docs/git-sync.md).
 
 ## Building the firmware
 

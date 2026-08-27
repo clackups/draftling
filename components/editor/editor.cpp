@@ -144,19 +144,19 @@ static size_t compute_doc_buf_size(void)
      * The other half is reserved for the rest of the system that
      * initializes after the editor: BLE/Bluedroid
      * (CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST), the WiFi/LWIP dynamic
-     * pools (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP), the Git-sync HTTPS
-     * task stack and response buffers, the LVGL widget heap growth, and
+     * pools (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP), the Git client's
+     * task stack / object buffers / diff3 matrix, the LVGL widget heap growth, and
      * ad-hoc heap_caps_malloc(SPIRAM) allocations during editing
      * (clipboard, file I/O staging, Markdown re-rendering, etc.).
      *
      * Clamped to a sensible min/max so very small or very large PSRAM
      * configurations still get a usable editor:
      *   - Min 64 KB per buffer keeps editor_open_file() useful.
-     *   - Max git_sync_max_file_size() per buffer: git_sync cannot push
-     *     anything larger than what its base64 + JSON encode transient
-     *     fits into the currently-free PSRAM. Git is the tighter of the
-     *     two constraints, so it determines the effective maximum file
-     *     size for the whole application. */
+     *   - Max git_sync_max_file_size() per buffer: a sync cannot process
+     *     a file larger than what fits (with its object buffers and the
+     *     diff3 matrix) into the currently-free PSRAM. Git is the tighter
+     *     of the two constraints, so it determines the effective maximum
+     *     file size for the whole application. */
     const size_t MIN_BUF = 64  * 1024;
     const size_t MAX_BUF = git_sync_max_file_size();
     const size_t RUNTIME_RESERVE = 2 * 1024 * 1024;
@@ -279,7 +279,7 @@ extern "C" size_t editor_get_max_doc_size(void)
  *
  * The leading dot keeps the sidecar hidden from sd_card_list_dir()
  * (which already filters dotfiles), and the .meta extension keeps it
- * out of the git_sync push/pull (which only matches *.md). The format
+ * out of the git_sync commits (which only match *.md). The format
  * is line-oriented "key=value" so future metadata fields can be
  * appended without breaking older sidecars.
  */
