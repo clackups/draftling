@@ -484,6 +484,40 @@ static void save_rotate180_to_nvs(void)
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE */
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+/* ---- Inverted screen ----
+ * Toggled from the F1 -> Settings menu and persisted in NVS. When
+ * enabled, active (drawn / ink) pixels show the background and
+ * inactive pixels show the text -- a full visual invert, applied by
+ * display_set_invert() at flush time without touching the framebuffer
+ * or the LVGL widget tree. Currently only offered on the Waveshare
+ * ESP32-S3-RLCD-4.2 (see display_rlcd.cpp). */
+#define NVS_KEY_INVERT "invert"
+static bool s_invert = false;
+
+static void load_invert_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_INVERT, &v) == ESP_OK) {
+            s_invert = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_invert_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_INVERT, s_invert ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+#endif  /* CONFIG_DRAFTLING_DISPLAY_CAN_INVERT */
+
 /* ---- Append-only editing ----
  * Toggled from the F1 -> Settings menu and persisted in NVS. When
  * active, existing text can no longer be deleted or edited: Backspace,
@@ -3063,11 +3097,18 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_ROTATE   (-1)
 #define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 0)
 #endif
-#define SETTINGS_IDX_APPEND_ONLY (_SETTINGS_NEXT_AFTER_ROTATE + 0)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_ROTATE + 1)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_ROTATE + 2)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_ROTATE + 3)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_ROTATE + 4)
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+#define SETTINGS_IDX_INVERT   (_SETTINGS_NEXT_AFTER_ROTATE + 0)
+#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 1)
+#else
+#define SETTINGS_IDX_INVERT   (-1)
+#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 0)
+#endif
+#define SETTINGS_IDX_APPEND_ONLY (_SETTINGS_NEXT_AFTER_INVERT + 0)
+#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 1)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 2)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 4)
 
 static void refresh_settings_items(void)
 {
@@ -3117,6 +3158,13 @@ static void refresh_settings_items(void)
     /* Runtime 180-degree display flip */
     snprintf(buf, sizeof(buf), "Rotate 180: %s",
              s_rotate180 ? "on" : "off");
+    lv_list_add_btn(s_settings_list, NULL, buf);
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    /* Inverted screen */
+    snprintf(buf, sizeof(buf), "Inverted screen: %s",
+             s_invert ? "on" : "off");
     lv_list_add_btn(s_settings_list, NULL, buf);
 #endif
 
@@ -3307,6 +3355,18 @@ static void settings_activate_item(int idx)
         s_rotate180 = !s_rotate180;
         save_rotate180_to_nvs();
         draftling_lvgl_port_set_flip180(s_rotate180);
+        refresh_settings_items();
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    } else if (idx == SETTINGS_IDX_INVERT) {
+        /* Toggle the inverted-screen option. Applied immediately so
+         * the user sees the new polarity without leaving the menu;
+         * persisted in NVS and re-applied at boot. display_set_invert()
+         * only changes what display_flush() sends to the panel, so no
+         * repaint of the LVGL widget tree is needed. */
+        s_invert = !s_invert;
+        save_invert_to_nvs();
+        display_set_invert(s_invert);
         refresh_settings_items();
 #endif
     } else if (idx == SETTINGS_IDX_APPEND_ONLY) {
@@ -6528,6 +6588,16 @@ extern "C" void editor_ui_init(void)
     load_rotate180_from_nvs();
     if (s_rotate180) {
         draftling_lvgl_port_set_flip180(true);
+    }
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    /* Restore the persisted inverted-screen option and apply it now
+     * that the panel has been initialized (display_set_invert() sends
+     * a flush of the current framebuffer under the restored polarity). */
+    load_invert_from_nvs();
+    if (s_invert) {
+        display_set_invert(true);
     }
 #endif
 

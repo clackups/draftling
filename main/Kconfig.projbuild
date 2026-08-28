@@ -285,6 +285,20 @@ config DRAFTLING_DISPLAY_CAN_ROTATE
     default y if DRAFTLING_DISPLAY_RGB
     default n
 
+# DRAFTLING_DISPLAY_CAN_INVERT enables a runtime "Inverted screen" entry
+# in the F1 -> Settings menu (persisted in NVS), offered on boards whose
+# display backend implements a software pixel-polarity flip in its
+# display_flush() path. When enabled, pixels that would normally show
+# as "active" (drawn / ink) show the background instead, and vice
+# versa -- a full visual invert, akin to a dark-mode toggle on a panel
+# that has no native inversion command wired up to the editor. Currently
+# only the Waveshare ESP32-S3-RLCD-4.2 (display_rlcd.cpp complements the
+# framebuffer bytes at flush time when the option is on).
+config DRAFTLING_DISPLAY_CAN_INVERT
+    bool
+    default y if DRAFTLING_DISPLAY_RLCD
+    default n
+
 # DRAFTLING_DISPLAY_EPD is set automatically when the selected
 # board has an electronic-paper panel. Code that has to be aware
 # of e-paper specifics (slow refresh, no blinking cursor, white-on-
