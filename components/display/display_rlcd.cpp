@@ -28,6 +28,18 @@ static int s_rst_pin = -1;
 static uint16_t *s_pixel_index_lut = NULL;  /* width * height entries */
 static uint8_t  *s_pixel_bit_lut   = NULL;  /* width * height entries */
 
+/* Runtime "Inverted screen" toggle (Settings menu, persisted in NVS by
+ * the editor). When set, display_flush() sends the bitwise complement
+ * of the framebuffer instead of the framebuffer itself, so pixels that
+ * are normally "active" (ink, bit=0 -- see display_set_pixel) show the
+ * background and vice versa. s_disp_buf itself always keeps holding
+ * the un-inverted logical pixel state so toggling this does not
+ * require re-rendering anything -- just a fresh flush. s_invert_buf is
+ * a same-size PSRAM scratch buffer that holds the complemented bytes
+ * for the duration of the SPI send. */
+static bool     s_invert     = false;
+static uint8_t *s_invert_buf = NULL;
+
 static void init_landscape_lut(int width, int height)
 {
     int h4 = height / 4;
@@ -114,6 +126,10 @@ extern "C" void display_init(int mosi, int sck, int dc, int cs, int rst,
     s_disp_buf = (uint8_t *)heap_caps_malloc(s_disp_len, MALLOC_CAP_SPIRAM);
     assert(s_disp_buf);
 
+    /* Scratch buffer for the "Inverted screen" option; see s_invert. */
+    s_invert_buf = (uint8_t *)heap_caps_malloc(s_disp_len, MALLOC_CAP_SPIRAM);
+    assert(s_invert_buf);
+
     /* Allocate and initialise LUTs in PSRAM */
     int total_pixels = width * height;
     s_pixel_index_lut = (uint16_t *)heap_caps_malloc(total_pixels * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
@@ -183,7 +199,20 @@ extern "C" void display_flush(void)
     send_command(0x2A); send_data(0x12); send_data(0x2A);
     send_command(0x2B); send_data(0x00); send_data(0xC7);
     send_command(0x2C);
-    send_buffer(s_disp_buf, s_disp_len);
+    if (s_invert) {
+        for (int i = 0; i < s_disp_len; i++)
+            s_invert_buf[i] = (uint8_t)~s_disp_buf[i];
+        send_buffer(s_invert_buf, s_disp_len);
+    } else {
+        send_buffer(s_disp_buf, s_disp_len);
+    }
+}
+
+extern "C" void display_set_invert(bool on)
+{
+    if (s_invert == on) return;
+    s_invert = on;
+    display_flush();
 }
 
 extern "C" void display_full_refresh(void)
