@@ -18,7 +18,7 @@ the back of the device, spaced by 4 stand-offs.
 
 Part list:
 
-* M2.5*8mm screws: 4 pc (back panel to the device)
+* M2.5*10mm screws: 4 pc (back panel to the device)
 * M2.5*6mm screws: 4 pc (front panel to stand-offs)
 * M2.5*15mm Male-Female stand-offs: 4pc
 * M2.5 nuts: 4pc (back panel to stand-offs)
