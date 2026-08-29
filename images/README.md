@@ -4,21 +4,21 @@
 
 [Enclosure 3D model](../3D_Prints/Waveshare_ESP32-S3-RLCD-4.2) is available for printing.
 
-11px text:
+inverted screen, 16px text:
 
-![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, showing text in 11px font](Waveshare_RLCD_01.jpg)
+![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, showing text in 16px font on inverted screen](Waveshare_RLCD_01.jpg)
 
 16px text:
 
 ![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, showing text in 16px font](Waveshare_RLCD_02.jpg)
 
-back panel:
+back panel and control buttons:
 
 ![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, back panel](Waveshare_RLCD_03.jpg)
 
-control buttons:
+access to the SD card and USB port: 
 
-![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, control buttons](Waveshare_RLCD_04.jpg)
+![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, SD card slot and USB port](Waveshare_RLCD_04.jpg)
 
 ## LilyGO T5 E-Paper S3 Pro
 
