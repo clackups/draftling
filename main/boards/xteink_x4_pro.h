@@ -20,11 +20,15 @@
 
 #define BOARD_NAME      "Xteink X4 Pro"
 
-/* Master peripheral-rail latch. Must be driven HIGH before any
- * SPI/display/SD bring-up -- without it, the panel rail and the SD
- * slot both stay unpowered. Driven directly in main.cpp (no I2C
+/* Master peripheral-rail latch, driven HIGH once at boot (no I2C
  * expander involved, unlike the components/power TCA9554 latch used
- * by the Waveshare Touch-LCD-3.49). */
+ * by the Waveshare Touch-LCD-3.49). On-hardware bring-up (FreeInk SDK)
+ * found it does not gate the display or SD rails -- both work with it
+ * left unset -- but it IS required, together with TOUCH_POWER_EN_PIN
+ * driven LOW, for the GT911 touch controller to power up at all. It
+ * is not a battery/MCU power switch: there is no hardware latch that
+ * can fully power this board off from software (see the Power-button
+ * short-press handling in main.cpp, which uses deep sleep instead). */
 #define XTEINK_POWER_LATCH_PIN 1
 
 /* E-paper panel SPI bus (SCLK=12, MOSI=11, CS=13, DC=18, RST=14,

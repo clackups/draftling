@@ -75,15 +75,18 @@ static const char *TAG = "EditorUI";
 
 /* Layout constants -- account for display rotation. The editor and
  * LVGL canvas render 1:1 at the panel resolution (no framebuffer
- * upscaling; high-density boards use a larger font instead).
+ * upscaling; high-density boards use a larger font instead), minus
+ * any DRAFTLING_DISPLAY_MARGIN_* (panel pixels hidden under the
+ * enclosure -- zero on every board except the Xteink X4 Pro; see
+ * app_config.h's DISPLAY_LOGICAL_WIDTH/HEIGHT).
  *
  * At 90 or 270 degrees, the width and height are swapped. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP - CONFIG_DRAFTLING_DISPLAY_MARGIN_BOTTOM)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT - CONFIG_DRAFTLING_DISPLAY_MARGIN_RIGHT)
 #else
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT - CONFIG_DRAFTLING_DISPLAY_MARGIN_RIGHT)
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP - CONFIG_DRAFTLING_DISPLAY_MARGIN_BOTTOM)
 #endif
 /* Header / status bar heights. These bars always use FONT_11, so on
  * high-density boards (which render 1:1 with the taller Hack font

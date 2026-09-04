@@ -1122,6 +1122,22 @@ static void wakeup_btn_poll_cb(void *arg)
     stable = 0;
     down = raw_down;
     if (!down) {
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+        /* Unlike the shared BOOT-as-wake convention on every other
+         * board, this board has a button silkscreened "Power" -- and
+         * there is no hardware latch to physically cut (see
+         * XTEINK_POWER_LATCH_PIN in app_config.h; it only gates the
+         * display/SD/touch peripheral rail, not the ESP32 itself), so
+         * deep sleep IS this board's power-off. A short press (release
+         * before the 2 s hold below) triggers it directly instead of
+         * waiting for the inactivity timeout, matching what a button
+         * labeled Power should do. The 2 s hold still forgets BLE
+         * keyboards; long_press_fired keeps the two mutually exclusive. */
+        if (!long_press_fired) {
+            ESP_LOGI(TAG, "Power button released -- entering deep sleep");
+            standby_enter_sleep();
+        }
+#endif
         hold_ticks       = 0;
         long_press_fired = false;
     }
@@ -2223,29 +2239,6 @@ extern "C" void app_main(void)
     }
 #endif
 
-#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
-    /* Side key (GPIO48) = Menu (F1) on short press,
-     * forget all keyboards on 2 s long press. */
-    h752_user_key_init();
-#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
-    /* Menu button (GPIO2) = F1 on short press, forget all keyboards
-     * on 2 s long press (same convention as the H752 side key
-     * above). Back button + dial switch (Esc/Up/Down/Enter) handle
-     * the rest of menu navigation once it is open. */
-    crowpanel_menu_key_init();
-    crowpanel_nav_init();
-#else
-    /* Generic wakeup-button long-press monitor: hold 2 s to forget
-     * all stored BLE keyboard pairings and start a fresh scan. */
-    wakeup_btn_init();
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
-    /* Left/Right buttons scroll the editor (Page Up / Page Down),
-     * alongside (not instead of) the generic Power/wakeup handler
-     * above. */
-    xteink_x4_pro_btn_init();
-#endif
-#endif
-
     /* WiFi is lazy-initialized on first wifi_manager_connect() call.
      * On boards with a tight internal heap (e.g. M5Stack PaperS3,
      * ~138 KB free) eagerly calling esp_wifi_init() here fails with
@@ -2272,6 +2265,37 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_579_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
+#endif
+
+    /* Wire up the physical buttons that can trigger standby_enter_sleep()
+     * (the Xteink X4 Pro's Power short-press below) only now that
+     * standby_init() and the board's pre_sleep_cb above are both in
+     * place -- earlier, a press landing in that window would have
+     * called standby_enter_sleep() with no pre_sleep_cb registered,
+     * silently skipping the autosave/EPD-wipe/peripheral teardown. */
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+    /* Side key (GPIO48) = Menu (F1) on short press,
+     * forget all keyboards on 2 s long press. */
+    h752_user_key_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+    /* Menu button (GPIO2) = F1 on short press, forget all keyboards
+     * on 2 s long press (same convention as the H752 side key
+     * above). Back button + dial switch (Esc/Up/Down/Enter) handle
+     * the rest of menu navigation once it is open. */
+    crowpanel_menu_key_init();
+    crowpanel_nav_init();
+#else
+    /* Generic wakeup-button long-press monitor: hold 2 s to forget
+     * all stored BLE keyboard pairings and start a fresh scan (and,
+     * on the Xteink X4 Pro, a short press to power off -- see
+     * wakeup_btn_poll_cb()). */
+    wakeup_btn_init();
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* Left/Right buttons scroll the editor (Page Up / Page Down),
+     * alongside (not instead of) the generic Power/wakeup handler
+     * above. */
+    xteink_x4_pro_btn_init();
+#endif
 #endif
 
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)

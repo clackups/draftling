@@ -238,22 +238,38 @@ capacitive touch and a CW2017 I2C fuel gauge share one I2C bus.
 Dual-channel (cool/warm) PWM front-light, both channels driven
 identically since Draftling has no warm/cool color-temperature UI.
 Three buttons: Left and Right scroll the editor a screen at a time
-(Page Up / Page Down), Power is the deep-sleep wake / BLE-forget
-button, matching the BOOT button convention on every other board.
-On-board MicroSD on SDMMC 1-bit.
+(Page Up / Page Down); Power is the deep-sleep wake source, and a
+short press also puts the device to sleep on demand (there is no
+hardware latch on this board that can cut power to the ESP32 itself,
+so deep sleep is the closest equivalent to "off" -- see
+`wakeup_btn_poll_cb()` in `main/main.cpp`), while a 2 s hold forgets
+BLE keyboards, matching the convention on every other board. On-board
+MicroSD on SDMMC 1-bit.
 
-**This board has been added without on-hardware testing** (same
-caveat as the M5Stack Tab5 above): the register sequences, timing and
-the controller-detection probe are ported from the [FreeInk
+The enclosure's cover overlaps the panel unevenly -- 12 px on the
+left edge, 8 px on top, 0 on the right and bottom -- hiding that band
+from view; `DRAFTLING_DISPLAY_MARGIN_LEFT/RIGHT/TOP/BOTTOM` (Kconfig,
+zero on every other board) shrink the editor/LVGL canvas by that much
+and the display backend offsets every write into the physical
+framebuffer to compensate, so on-screen content is never drawn where
+the cover would hide it.
+
+**This board has been tested on physical hardware after an initial
+blind port.** The register sequences, timing and the
+controller-detection probe are ported from the [FreeInk
 SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed), which
 reverse-engineered the Xteink X4 Pro OEM firmware down to exact
 register values and validated the non-grayscale paths used here on
 real units. Grayscale / anti-aliasing rendering is not implemented,
-matching every other e-paper board. The GT911 touch orientation
+matching every other e-paper board. On-hardware testing found the
+initial 20 MHz SPI clock -- the FreeInk SDK's own speed-optimized
+default, flagged there as "drop back to 5 MHz if artifacts appear" --
+produced a partial, fading differential update over roughly the lower
+60% of the panel; `display_xteink_epd.cpp` now runs the panel at the
+OEM's own 5 MHz, matching that guidance. The GT911 touch orientation
 (`TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in
-`main/boards/xteink_x4_pro.h`) is a best-effort starting point and
-may need a dial-in pass with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG` on
-real hardware.
+`main/boards/xteink_x4_pro.h`) is still a best-effort starting point
+and may need a dial-in pass with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`.
 
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 

@@ -73,7 +73,25 @@ static const char *TAG = "DisplayXteink";
 #define FRONTLIGHT_WARM_PIN  9
 
 #define XTEINK_SPI_HOST      SPI2_HOST
-#define XTEINK_SPI_CLOCK_HZ  (20 * 1000 * 1000)
+/* The OEM firmware clocks this panel at 5 MHz. The SSD1677 is rated
+ * for faster serial writes and the FreeInk SDK's own X4 Pro profile
+ * runs it at 20 MHz for speed -- but flags that exact tradeoff as
+ * "drop back to 5 MHz if artifacts appear". On real hardware, 20 MHz
+ * produced a partial/faded differential update over roughly the
+ * lower 60% of the panel (rows written later in the bulk RAM-plane
+ * transfer, most likely corrupted by marginal SPI signal integrity
+ * at that rate), needing several refreshes to converge to full
+ * black. 5 MHz matches the OEM and clears it. */
+#define XTEINK_SPI_CLOCK_HZ  (5 * 1000 * 1000)
+
+/* The enclosure's cover overlaps the panel unevenly (left 12 px, top
+ * 8 px, right/bottom 0), hiding that band from view. Every incoming
+ * coordinate (from LVGL, already rendering at the margin-shrunk
+ * DISPLAY_LOGICAL_WIDTH/HEIGHT -- see app_config.h) is offset by the
+ * left/top margin before it is written into the physical panel
+ * framebuffer, so on-screen content never lands under the cover. */
+#define EPD_MARGIN_LEFT      CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT
+#define EPD_MARGIN_TOP       CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define XTEINK_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
@@ -842,21 +860,25 @@ extern "C" void display_clear(uint8_t color)
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
     if (!s_initialized || !s_fb) return;
-    fill_panel_rect((int)x, (int)y, 1, 1, color == 0);
-    mark_dirty_rect((int)x, (int)y, 1, 1);
+    int px = (int)x + EPD_MARGIN_LEFT;
+    int py = (int)y + EPD_MARGIN_TOP;
+    fill_panel_rect(px, py, 1, 1, color == 0);
+    mark_dirty_rect(px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
 {
     if (!s_initialized || !s_fb || !color_map || w <= 0 || h <= 0) return false;
+    int ox = x + EPD_MARGIN_LEFT;
+    int oy = y + EPD_MARGIN_TOP;
     const uint16_t *src = (const uint16_t *)color_map;
     for (int sy = 0; sy < h; ++sy) {
         for (int sx = 0; sx < w; ++sx) {
             bool black = rgb565_is_black(src[(size_t)sy * w + sx]);
-            set_panel_pixel(x + sx, y + sy, black);
+            set_panel_pixel(ox + sx, oy + sy, black);
         }
     }
-    mark_dirty_rect(x, y, w, h);
+    mark_dirty_rect(ox, oy, w, h);
     return true;
 }
 
@@ -866,10 +888,12 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
         s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
         return;
     }
-    s_clip_x0 = std::max(0, x);
-    s_clip_y0 = std::max(0, y);
-    s_clip_x1 = std::min(s_width  - 1, x + w - 1);
-    s_clip_y1 = std::min(s_height - 1, y + h - 1);
+    int ox = x + EPD_MARGIN_LEFT;
+    int oy = y + EPD_MARGIN_TOP;
+    s_clip_x0 = std::max(0, ox);
+    s_clip_y0 = std::max(0, oy);
+    s_clip_x1 = std::min(s_width  - 1, ox + w - 1);
+    s_clip_y1 = std::min(s_height - 1, oy + h - 1);
 }
 
 extern "C" void display_flush(void)

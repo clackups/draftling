@@ -1041,6 +1041,46 @@ config DRAFTLING_DISPLAY_HEIGHT
         Display height in pixels (derived). Driven by the hardware-model
         choice.
 
+# DRAFTLING_DISPLAY_MARGIN_* -- pixels of physical panel hidden under
+# the enclosure/bezel on each edge, subtracted from the logical
+# canvas (see DISPLAY_LOGICAL_WIDTH/HEIGHT in app_config.h) so the
+# editor and LVGL never place content where it cannot be seen. Zero
+# on every board except the Xteink X4 Pro, whose cover overlaps the
+# panel unevenly (left 12 px, top 8 px, right/bottom 0).
+config DRAFTLING_DISPLAY_MARGIN_LEFT
+    int
+    range 0 200
+    default 12 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 0
+    help
+        Physical panel pixels hidden under the enclosure on the left
+        edge (pre-rotation).
+
+config DRAFTLING_DISPLAY_MARGIN_RIGHT
+    int
+    range 0 200
+    default 0
+    help
+        Physical panel pixels hidden under the enclosure on the right
+        edge (pre-rotation).
+
+config DRAFTLING_DISPLAY_MARGIN_TOP
+    int
+    range 0 200
+    default 8 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 0
+    help
+        Physical panel pixels hidden under the enclosure on the top
+        edge (pre-rotation).
+
+config DRAFTLING_DISPLAY_MARGIN_BOTTOM
+    int
+    range 0 200
+    default 0
+    help
+        Physical panel pixels hidden under the enclosure on the
+        bottom edge (pre-rotation).
+
 choice DRAFTLING_DISPLAY_ROTATE
     prompt "Display rotation angle"
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_M5STACK_TAB5

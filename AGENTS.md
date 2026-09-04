@@ -961,8 +961,13 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   `components/display/display_xteink_epd.cpp`. GT911 touch and a
   CW2017 fuel gauge on a shared I2C bus, dual-channel PWM front-light,
   on-board MicroSD on SDMMC. Left/Right buttons inject Page Up / Page
-  Down; Power is the wake/BLE-forget button. Added without on-hardware
-  testing; see HARDWARE.md. *Requires ESP32-S3.*
+  Down; Power is the wake source, and also puts the device to sleep on
+  a short press (there is no hardware power-off latch on this board)
+  or forgets BLE keyboards on a 2 s hold. The enclosure's cover
+  overlaps the panel unevenly (left 12 px, top 8 px, right/bottom 0)
+  -- see `DRAFTLING_DISPLAY_MARGIN_LEFT/RIGHT/TOP/BOTTOM` below. Tested on
+  physical hardware after an initial blind port; see HARDWARE.md.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
@@ -982,6 +987,19 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
   (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro), 272 (Elecrow
   CrowPanel 5.79").
+
+Four more non-prompted `int` symbols, **DRAFTLING_DISPLAY_MARGIN_LEFT
+/ RIGHT / TOP / BOTTOM**, default to 0 on every board except the
+Xteink X4 Pro (left 12, top 8, right/bottom 0, matching its
+enclosure's uneven overlap with the panel). `main/app_config.h` subtracts them from
+`DISPLAY_WIDTH/HEIGHT` to get `DISPLAY_LOGICAL_WIDTH/HEIGHT` -- the
+area LVGL and the editor (`SCR_W`/`SCR_H` in `editor_ui.cpp`) actually
+render into -- and the display backend offsets every write into the
+physical framebuffer by the left/top margin so on-screen content
+never lands under the cover. A board with nonzero margins needs its
+display backend to apply this offset itself (see
+`display_xteink_epd.cpp`); backends for zero-margin boards need no
+changes.
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
