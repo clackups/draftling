@@ -1,0 +1,11 @@
+# Variant of partitions.csv sized for 8 MB flash instead of 16 MB --
+# used only by the Elecrow CrowPanel ESP32-S3 5.79in E-Paper HMI Display
+# (ESP32-S3-WROOM-1-N8R8: 8 MB flash, 8 MB PSRAM), the only board so
+# far whose module has less than 16 MB of flash. factory is sized to
+# 0x780000 (7.5 MB), well clear of the current ~2 MB firmware image
+# while leaving the 8 MB chip fully addressable.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        0x780000,
+nvs_keys, data, nvs_keys,,        0x1000,

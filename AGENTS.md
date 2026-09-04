@@ -51,6 +51,7 @@ card).
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
+| Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
@@ -260,6 +261,26 @@ Per-board display backends behind a single C API:
   row-by-row across multiple queued `tx_color()` calls previously
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
+- **display_ssd1683.cpp** -- from-scratch dual-controller SPI
+  e-paper backend for the Elecrow CrowPanel ESP32-S3 5.79" E-Paper
+  HMI Display, gated on `CONFIG_DRAFTLING_DISPLAY_SSD1683`. The
+  792x272 panel is built from two SSD1683 driver chips, one per half
+  (a "slave" driving columns 0-399 and a "master" driving columns
+  392-791, differentiated purely by command set on a shared SPI
+  bus, every slave command being the master's command `+0x80`); every
+  refresh rewrites each chip's *entire* RAM window (not just the
+  dirty rectangle -- narrower windowing was found unreliable on real
+  hardware) from a 1-bpp PSRAM framebuffer. The master/slave
+  RAM-window addressing math (including the master's inverted
+  X-address counting and the seam-alignment special case) originates
+  from the community ESPHome driver at
+  github.com/samperk1/esphome-crowpanel-579. A single Master
+  Activation trigger on this panel can leave an incomplete pixel
+  transition regardless of waveform or RAM content; `display_flush()`
+  runs both the full and partial refresh paths twice, back-to-back, to
+  reliably complete it (matching what pressing Ctrl+R always did) --
+  see HARDWARE.md's CrowPanel section and PR #47 for the full
+  investigation.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -900,14 +921,23 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 - **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
   ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
   controller. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
+  ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
+  panel built from two SSD1683 controllers over plain SPI, driven by
+  `components/display/display_ssd1683.cpp`. On-board MicroSD on its
+  own SPI bus. Menu button (GPIO2) is the deep-sleep wake source and
+  doubles as F1 / forget-keyboards; Back button + a 3-way dial
+  switch (Up/Down/OK) provide full menu navigation without a
+  keyboard. No on-board battery monitor. Added without on-hardware
+  testing; see HARDWARE.md. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S).
+  (FNK0104A/B), 480 (FNK0104S), 792 (Elecrow CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S).
+  (FNK0104A/B), 320 (FNK0104S), 272 (Elecrow CrowPanel 5.79").
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -930,9 +960,10 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
+| DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
@@ -1027,7 +1058,8 @@ supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
-`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`). Each
+`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
+`elecrow_crowpanel_579`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

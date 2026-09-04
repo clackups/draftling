@@ -47,6 +47,8 @@
 #include "boards/freenove_fnk0104b.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S)
 #include "boards/freenove_fnk0104s.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+#include "boards/elecrow_crowpanel_579.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

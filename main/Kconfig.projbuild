@@ -157,6 +157,24 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104S
         deep-sleep wakeup source.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
 
+config DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    bool "Elecrow CrowPanel ESP32-S3 5.79\" E-Paper HMI (SSD1683 x2, 792x272)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display: 792x272
+        black/white e-paper panel built from two SSD1683 controllers
+        (one per half), driven over plain SPI by
+        components/display/display_ssd1683.cpp. On-board MicroSD on
+        a dedicated SPI bus. A Menu button (GPIO2) is the deep-sleep
+        wake source and doubles as F1 (open/close the Settings menu)
+        on short press / "forget all BLE keyboards" on a 2 s hold. A
+        Back button plus a 3-way dial switch (Up/Down/OK) provide
+        full menu navigation (Esc / arrow keys / Enter) without a
+        keyboard. No on-board battery monitor.
+
+        This board has been added without on-hardware testing; see
+        HARDWARE.md.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -310,6 +328,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -335,6 +354,18 @@ config DRAFTLING_DISPLAY_EPDIY
 config DRAFTLING_DISPLAY_H752_EPD
     bool
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default n
+
+# DRAFTLING_DISPLAY_SSD1683 selects the from-scratch dual-controller
+# SPI e-paper backend for the Elecrow CrowPanel 5.79" E-Paper HMI
+# Display (components/display/display_ssd1683.cpp). The 792x272
+# panel is built from two SSD1683 driver chips (one per half); the
+# backend streams the framebuffer to each half through its own
+# windowed RAM-write command sequence, ported from the community
+# ESPHome driver at github.com/samperk1/esphome-crowpanel-579.
+config DRAFTLING_DISPLAY_SSD1683
+    bool
+    default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default n
 
 # DRAFTLING_EPDIY_BOARD_PAPERS3 selects the in-tree PaperS3 board
@@ -659,6 +690,9 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Elecrow CrowPanel 5.79" E-Paper HMI: Menu button on GPIO2
+    # (active-low, RTC-capable).
+    default 2  if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 0
 
 # ---- Touchscreen support ----
@@ -913,6 +947,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -933,6 +968,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.

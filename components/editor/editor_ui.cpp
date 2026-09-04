@@ -805,6 +805,19 @@ static lv_timer_t   *s_key_drain_timer = NULL;
  * intervals.  The repeat is cancelled on key-up. */
 #define KEY_REPEAT_DELAY_MS   500
 #define KEY_REPEAT_RATE_MS    50
+/* Safety net for a key-up that never arrives -- e.g. BLE boot-protocol
+ * report diffing (see process_key_array() in ble_keyboard.cpp) cannot
+ * always tell "still held" apart from "released and something else
+ * changed", so a lost key-up is a real, observed failure mode, not
+ * theoretical. Without this, a stuck-held key repeats forever: every
+ * KEY_REPEAT_RATE_MS re-injection on an e-paper board also triggers a
+ * display refresh, so a stuck key can permanently saturate the system
+ * and silently starve all later real keystrokes from ever being
+ * processed -- confirmed on real hardware as the editor's content
+ * freezing indefinitely (repeated identical redraws in the log, but
+ * the text the user kept typing afterward never appears at all). No
+ * human intentionally holds a key this long while typing. */
+#define KEY_REPEAT_MAX_MS     5000
 static kb_event_t s_repeat_ev    = {};      /* last key-down event */
 static bool       s_repeat_held  = false;   /* is a key currently held? */
 static uint32_t   s_repeat_start = 0;       /* tick when key was pressed */
@@ -2738,6 +2751,22 @@ extern "C" void editor_ui_show_file_browser(void)
     }
 
     sync_battery_labels();
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* This is the actual boot-time first screen on e-paper (the boot
+     * flow shows the file browser before the editor -- see
+     * editor_ui_init()). epd_full_screen_repaint() doesn't apply here:
+     * it only invalidates s_scr (the editor screen), not s_scr_browser,
+     * so it wouldn't force this screen's own widgets to redraw. Same
+     * underlying issue as the two lv_scr_load() call sites already
+     * fixed for the editor screen (apply_pending_connect_state()'s
+     * restore branch, editor_ui_show_editor()): a bare lv_scr_load()
+     * does not reliably force every child widget to redraw from a
+     * blank/stale framebuffer on this backend. Wipe the framebuffer
+     * and invalidate this screen explicitly instead of relying on
+     * lv_scr_load() alone. */
+    display_clear(0xFF);
+    lv_obj_invalidate(s_scr_browser);
+#endif
     lv_scr_load(s_scr_browser);
 }
 
@@ -2747,6 +2776,20 @@ extern "C" void editor_ui_show_editor(void)
     editor_set_mode(EDITOR_MODE_EDITING);
     sync_battery_labels();
     lv_scr_load(s_scr);
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* This is the actual boot-time path into the editor on e-paper --
+     * the boot flow shows the file browser first (see editor_ui_init()),
+     * so this runs on the very first file/new-file pick of a session,
+     * not apply_pending_connect_state()'s "restore" branch (which only
+     * applies to a *second* connect after the editor was already
+     * showing). Same missing-repaint bug: refresh_active_pane()'s
+     * per-line cache and update_title_bar()'s s_prev_title are not
+     * reset by a bare lv_scr_load()+editor_ui_refresh(), so a screen
+     * that starts blank (as s_scr does before its first real paint)
+     * stays blank until something else forces a full redraw. Matches
+     * the fix already applied to apply_pending_connect_state(). */
+    epd_full_screen_repaint();
+#endif
     editor_ui_refresh();
 }
 
@@ -3042,6 +3085,16 @@ static void show_menu(void)
     s_menu_sel = 0;
     refresh_menu_items();
     sync_battery_labels();
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* Same missing-repaint bug already fixed for the editor, file
+     * browser, and BLE-prompt-restore screen transitions: a bare
+     * lv_scr_load() does not reliably force this screen's widgets to
+     * redraw from a stale framebuffer on this backend.
+     * epd_full_screen_repaint() doesn't apply here -- it only
+     * invalidates s_scr (the editor screen), not s_scr_menu. */
+    display_clear(0xFF);
+    lv_obj_invalidate(s_scr_menu);
+#endif
     lv_scr_load(s_scr_menu);
 }
 
@@ -3256,6 +3309,11 @@ static void show_settings(void)
 #endif
     refresh_settings_items();
     sync_battery_labels();
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* Same missing-repaint bug as show_menu() -- see its comment. */
+    display_clear(0xFF);
+    lv_obj_invalidate(s_scr_settings);
+#endif
     lv_scr_load(s_scr_settings);
 }
 
@@ -5354,6 +5412,15 @@ static void key_repeat_cb(lv_timer_t *timer)
     uint32_t now = xTaskGetTickCount();
     uint32_t elapsed = (now - s_repeat_start) * portTICK_PERIOD_MS;
 
+    /* See KEY_REPEAT_MAX_MS's comment: treat an implausibly long hold
+     * as a missed key-up rather than genuine input, and stop
+     * repeating instead of re-injecting this key forever. */
+    if (elapsed >= KEY_REPEAT_MAX_MS) {
+        s_repeat_held   = false;
+        s_repeat_firing = false;
+        return;
+    }
+
     if (!s_repeat_firing) {
         if (elapsed >= KEY_REPEAT_DELAY_MS) {
             s_repeat_firing = true;
@@ -5454,6 +5521,24 @@ static void apply_pending_connect_state(void)
                 /* Restore the editor -- file contents are still in
                  * the gap buffer; no need to close/reopen. */
                 lv_scr_load(s_scr);
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+                /* On e-paper, refresh_active_pane()'s per-line cache
+                 * (s_prev_line_text[] etc) still holds whatever text
+                 * was last rendered before the BLE prompt screen took
+                 * over -- since the document did not change while
+                 * disconnected, that cache still matches, so
+                 * editor_ui_refresh() alone would skip re-calling
+                 * lv_label_set_text() for every line ("can_skip"),
+                 * leaving the panel blank until something else forces
+                 * a real redraw. Matches the same class of bug
+                 * epd_full_screen_repaint() already exists to fix for
+                 * the split-pane and font-change transitions -- use
+                 * it here too rather than the bare
+                 * display_request_full_refresh() above, which only
+                 * flags the next flush as full and does not touch
+                 * this cache. */
+                epd_full_screen_repaint();
+#endif
                 editor_ui_refresh();
             } else {
                 editor_ui_show_file_browser();
@@ -5513,6 +5598,12 @@ static void apply_pending_connect_state(void)
          * wait_until_release set, which silently absorbs taps
          * on the BLE prompt's "Off" button. */
         lv_indev_reset(NULL, NULL);
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+        /* Same missing-repaint bug as show_menu()/show_settings() --
+         * see show_menu()'s comment. */
+        display_clear(0xFF);
+        lv_obj_invalidate(s_scr_ble_prompt);
+#endif
         lv_scr_load(s_scr_ble_prompt);
     }
 }
