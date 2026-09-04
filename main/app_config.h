@@ -57,6 +57,8 @@
 #include "boards/xteink_x4_pro.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 #include "boards/elecrow_crowpanel_579.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
+#include "boards/waveshare_epaper_397.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

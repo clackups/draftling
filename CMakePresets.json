@@ -135,6 +135,15 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.elecrow_crowpanel_579",
                 "SDKCONFIG": "build/elecrow_crowpanel_579/sdkconfig"
             }
+        },
+        {
+            "name": "waveshare_epaper_397",
+            "displayName": "Waveshare ESP32-S3-ePaper-3.97 (SSD1677-compatible, 800x480 e-paper)",
+            "binaryDir": "build/waveshare_epaper_397",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_epaper_397",
+                "SDKCONFIG": "build/waveshare_epaper_397/sdkconfig"
+            }
         }
     ]
 }

@@ -14,7 +14,8 @@
 #include <driver/uart.h>
 #include <esp_sleep.h>
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G)
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -731,6 +732,21 @@ static void pre_sleep_crowpanel_579_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
+static void pre_sleep_ws_epaper397_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Waveshare ESP32-S3-ePaper-3.97 peripheral teardown");
+
+    pre_sleep_autosave();
+    /* No touchscreen on this board -- unlike
+     * pre_sleep_xteink_x4_pro_deinit(), there is no touchscreen_sleep()
+     * call here. */
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
+
 /* Poll period and long-press threshold shared by the H752 side-key
  * handler and the generic wakeup-GPIO handler below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -1074,6 +1090,75 @@ static void crowpanel_nav_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
+/* ---- Waveshare ESP32-S3-ePaper-3.97 Up/Function/Down buttons ----
+ *
+ * This board has no touchscreen, so these three buttons (plus BOOT,
+ * handled by the generic wakeup_btn_init() below) are the only way to
+ * drive the editor without a keyboard connected: Up/Down inject the
+ * arrow keys and Function injects Enter, mirroring the Elecrow
+ * CrowPanel 5.79"'s Back/dial-switch convention above. All three are
+ * polled at BTN_POLL_PERIOD_MS and injected on release. */
+
+static void ws_epaper397_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void ws_epaper397_nav_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_UP_PIN,       KB_KEY_UP },
+        { BTN_DOWN_PIN,     KB_KEY_DOWN },
+        { BTN_FUNCTION_PIN, KB_KEY_ENTER },
+    };
+    static bool down[3]   = { false, false, false };
+    static int  stable[3] = { 0, 0, 0 };
+
+    for (int i = 0; i < 3; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            continue;
+        }
+        if (++stable[i] < 2) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i]) {
+            ws_epaper397_inject_key(kButtons[i].keycode);
+        }
+    }
+}
+
+static void ws_epaper397_nav_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << BTN_UP_PIN) | (1ULL << BTN_DOWN_PIN) |
+                      (1ULL << BTN_FUNCTION_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = ws_epaper397_nav_poll_cb;
+    targs.name     = "ws397_nav";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Waveshare ePaper-3.97 Up/Function/Down poller started "
+                  "(Up=GPIO%d, Function=GPIO%d, Down=GPIO%d)",
+             BTN_UP_PIN, BTN_FUNCTION_PIN, BTN_DOWN_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
+
 /* ---- Generic wakeup-GPIO long-press handler ----
  *
  * On boards other than the H752 (which has its own key handler above)
@@ -1333,7 +1418,8 @@ extern "C" void app_main(void)
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G)
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
@@ -1345,8 +1431,11 @@ extern "C" void app_main(void)
      * therefore create the bus here, ahead of any consumer, and hand
      * the handle to each: display_set_shared_i2c_bus() before
      * display_init() (epdiy routes through epd_init_with_config() +
-     * EpdInitConfig.i2c.bus_handle), battery_init_bq27220() right
-     * after, ch422g_init() immediately below (CH422G boards), and
+     * EpdInitConfig.i2c.bus_handle; the Waveshare ESP32-S3-ePaper-3.97
+     * backend uses the same hook to enable its AXP2101 PMIC's ALDO3
+     * rail, which powers the e-paper panel itself, before any SPI
+     * traffic reaches it -- see display_ws_epd397.cpp), battery_init_bq27220()
+     * right after, ch422g_init() immediately below (CH422G boards), and
      * touchscreen_config_t.i2c_bus before touchscreen_init() further
      * below. This is the resolution for the legacy/driver-NG conflict
      * that previously forced touch off on the epdiy boards; see
@@ -1581,6 +1670,13 @@ extern "C" void app_main(void)
      * inside display_ssd1683.cpp since this backend is used by
      * exactly one board. Pin parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397)
+    /* Waveshare ESP32-S3-ePaper-3.97 SPI e-paper backend. Owns all
+     * panel GPIOs internally (see display_ws_epd397.cpp); a single
+     * SSD1677-family controller, no manufacturing-run detection
+     * needed. Pin parameters are ignored. The AXP2101 ALDO3 panel
+     * rail was already enabled above via display_set_shared_i2c_bus(). */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend
@@ -1676,6 +1772,16 @@ extern "C" void app_main(void)
      * "unknown" for this backend. */
     if (battery_init_cw2017(shared_i2c_bus) != 0) {
         ESP_LOGW(TAG, "CW2017 fuel gauge init failed; battery indicator disabled");
+    }
+#elif defined(CONFIG_DRAFTLING_BATTERY_AXP2101)
+    /* Waveshare ESP32-S3-ePaper-3.97: AXP2101 PMIC on the shared I2C
+     * bus created above. This is the same chip whose ALDO3 rail was
+     * already enabled (via battery_axp2101_enable_display_rail(),
+     * called from display_set_shared_i2c_bus()) before display_init()
+     * -- this call reuses that same cached I2C device handle and sets
+     * up battery-voltage/percent/charging reporting on top of it. */
+    if (battery_init_axp2101(shared_i2c_bus) != 0) {
+        ESP_LOGW(TAG, "AXP2101 init failed; battery indicator disabled");
     }
 #else
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
@@ -2272,6 +2378,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_xteink_x4_pro_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_579_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
+    standby_set_pre_sleep_cb(pre_sleep_ws_epaper397_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif
@@ -2304,6 +2412,11 @@ extern "C" void app_main(void)
      * alongside (not instead of) the generic Power/wakeup handler
      * above. */
     xteink_x4_pro_btn_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
+    /* Up/Function/Down buttons drive editor navigation (arrow keys /
+     * Enter), alongside (not instead of) the generic BOOT/wakeup
+     * handler above. */
+    ws_epaper397_nav_init();
 #endif
 #endif
 
