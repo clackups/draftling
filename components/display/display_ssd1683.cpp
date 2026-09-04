@@ -103,8 +103,8 @@ static const char *TAG = "DisplaySSD1683";
  * the surrounding command sequence proceeds as if nothing went wrong.
  * This backend never needed to care while every send_buffer() call
  * was a small, narrow-window write; now that every refresh sends the
- * full HALF_BUF_LEN (13600 bytes, ~54 ms of clocking at this panel's
- * 2 MHz), the same failure mode applies here too. */
+ * full HALF_BUF_LEN (13600 bytes) to each chip, the same failure mode
+ * applies here too. */
 #define DMA_ALIGN_BYTES 64
 #define HALF_BUF_ALLOC_LEN (((size_t)HALF_BUF_LEN + DMA_ALIGN_BYTES - 1) & \
                             ~(size_t)(DMA_ALIGN_BYTES - 1))
@@ -619,7 +619,15 @@ extern "C" void display_init(int /*mosi*/, int /*sck*/, int /*dc*/,
     esp_lcd_panel_io_spi_config_t io_cfg = {};
     io_cfg.dc_gpio_num       = (gpio_num_t)EPD_DC_PIN;
     io_cfg.cs_gpio_num       = (gpio_num_t)EPD_CS_PIN;
-    io_cfg.pclk_hz           = 2 * 1000 * 1000;
+    /* SSD1683 datasheet Rev 1.0: "maximum SPI write speed 20MHz"
+     * (section 6.2) and fSCL write-mode max 20MHz (section 8, AC
+     * characteristics). Every refresh now clocks a full HALF_BUF_LEN
+     * (13600 bytes) to each chip twice per keystroke (see
+     * display_flush()), so this dominates per-keystroke latency --
+     * was 2MHz (no documented reason found for that choice), 10x
+     * below the chip's rated maximum. If this causes visible glitches
+     * (more likely with longer/marginal wiring), drop back down. */
+    io_cfg.pclk_hz           = 20 * 1000 * 1000;
     io_cfg.lcd_cmd_bits      = 8;
     io_cfg.lcd_param_bits    = 8;
     io_cfg.spi_mode          = 0;
