@@ -117,6 +117,15 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104s",
                 "SDKCONFIG": "build/freenove_fnk0104s/sdkconfig"
             }
+        },
+        {
+            "name": "elecrow_crowpanel_579",
+            "displayName": "Elecrow CrowPanel ESP32-S3 5.79in E-Paper HMI (SSD1683 x2)",
+            "binaryDir": "build/elecrow_crowpanel_579",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.elecrow_crowpanel_579",
+                "SDKCONFIG": "build/elecrow_crowpanel_579/sdkconfig"
+            }
         }
     ]
 }

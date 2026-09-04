@@ -225,7 +225,74 @@ FT6336U capacitive touch controller, so touch works alongside the BLE
 keyboard.
 
 
+## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
+[Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI
+Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html)
+-- ESP32-S3-WROOM-1-N8R8 driving a 792x272 black/white e-paper panel
+built from two SSD1683 controllers (one per half), over plain SPI.
+No touchscreen. On-board MicroSD on its own SPI bus. Five buttons:
+Menu, Back, a 3-way dial switch (Up/Down/OK), plus RESET and BOOT.
+
+The Menu button (GPIO2) is the deep-sleep wake source and, during
+normal operation, doubles as an F1 key (open/close the Settings
+menu) on a short press / "forget all BLE keyboards" on a 2 s hold --
+the same convention as the LilyGO T5 E-Paper S3 Pro H752's side key.
+The Back button and the dial switch round out full menu navigation
+without a keyboard: Back injects Esc, the dial's Up/Down positions
+inject the arrow keys, and pressing the dial (OK) injects Enter. No
+on-board battery ADC or fuel gauge was found in the vendor's Eagle
+schematic or Arduino examples (the "BAT" net is a bare JST connector
+with no divider wired to any GPIO), so the battery indicator is not
+available on this board.
+
+Pin assignments come from the vendor's [Arduino
+examples](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792)
+and Eagle schematic, cross-checked against the community ESPHome
+driver at
+[github.com/samperk1/esphome-crowpanel-579](https://github.com/samperk1/esphome-crowpanel-579),
+which reverse-engineered and photograph-verified the dual-SSD1683
+command sequences this backend ports
+(`components/display/display_ssd1683.cpp`).
+
+### E-paper refresh reliability
+
+The board has been extensively tested on real hardware (see [PR
+#47](https://github.com/clackups/draftling/pull/47)). Boot, buttons,
+dial, SD card, BLE keyboard input, deep sleep, and both partial and
+full e-paper refresh all work correctly.
+
+**Root cause.** A single Master Activation (`0x20`) trigger on this
+panel can leave an incomplete pixel transition -- confirmed, by
+systematically ruling out every other explanation on real hardware, to
+be independent of which waveform is used, of RAM content, and of
+typing speed. Immediately repeating the *exact same* update (a full
+RAM rewrite followed by another trigger, not just a bare re-trigger on
+unchanged RAM -- that was separately confirmed to actively erase the
+just-drawn content instead of fixing it) reliably completes the
+transition, matching what manually pressing Ctrl+R always did.
+`display_flush()` in `display_ssd1683.cpp` runs both the full and
+partial refresh paths twice, back-to-back, for this reason.
+
+Every refresh (partial or full) also rewrites the panel's *entire* New
+and Old RAM on both chips, not just the dirty rectangle -- an earlier,
+narrower-windowed implementation left the untouched rest of the panel
+implicitly relying on stale earlier writes, which testing found
+unreliable independent of the double-trigger issue above.
+
+**What was ruled out**, each independently confirmed on hardware,
+before the actual cause was found: a union dirty-bbox spanning most of
+the panel height; missing dual-chip cascade configuration (SSD1683
+datasheet section 6.12, register 0x21 "Display Update Control 1");
+Old RAM not resynced after a partial refresh; insufficient
+post-refresh settle time (tested from 100ms up to 2500ms); the
+waveform/LUT itself (tested the factory fast waveform, a from-scratch
+custom LUT built from the datasheet's own waveform-setting tables, and
+a hardware-verified custom LUT for a different SSD1683 panel -- all
+three showed the identical symptom, ruling out the waveform entirely);
+and a bare second trigger without rewriting RAM (actively harmful --
+erases just-drawn content rather than fixing it, which is what pointed
+toward "repeat the *whole* update" instead).
 
 
 

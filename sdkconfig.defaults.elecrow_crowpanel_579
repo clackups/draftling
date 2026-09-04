@@ -1,0 +1,30 @@
+# CMakePresets.json board defaults: Elecrow CrowPanel ESP32-S3 5.79in E-Paper HMI
+# Sets the hardware model and IDF target used by the "elecrow_crowpanel_579" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579=y
+
+# This board's module is an ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB
+# PSRAM) -- unlike every other supported board, which has 16 MB of
+# flash. Override both the flash size (sdkconfig.defaults /
+# sdkconfig.defaults.esp32s3 default to 16 MB) and the custom
+# partition table (the shared partitions.csv sizes its factory app
+# partition at 14 MB, which does not fit in 8 MB flash at all) to a
+# smaller variant. Without this the app image header claims 16 MB and
+# the bootloader aborts at boot with "Detected size(8192k) smaller
+# than the size in the binary image header(16384k). Probe failed."
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_8mb.csv"
+
+# This board previously overrode the shared EPD default (every 30
+# partials) down to every 5, because partial refresh itself was
+# unreliable and degraded visible content within single-digit
+# keystrokes (see PR #47's history). Root cause since found and fixed:
+# a single Master Activation trigger could leave an incomplete pixel
+# transition, independent of RAM content or waveform; display_ssd1683.cpp
+# now runs every refresh (partial and full) twice back-to-back, which
+# reliably completes it. With that fixed, and every refresh already
+# rewriting the panel's entire RAM (not just the touched region) on
+# every call, the original justification for a shorter interval no
+# longer applies -- back to the shared default (see HARDWARE.md's
+# CrowPanel section for the full history).
