@@ -1298,9 +1298,26 @@ static void batt_timer_cb(lv_timer_t *timer)
     (void)timer;
     char batt[20];
     format_batt_str(batt, sizeof(batt));
-    if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, batt);
-    if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, batt);
-    if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, batt);
+    /* lv_label_set_text() dirties a label even when the new text is
+     * identical to the current one (see update_title_bar()'s
+     * s_prev_title comment above) -- on e-paper backends that means
+     * this 5 s poll would otherwise trigger a screen refresh every
+     * cycle regardless of whether the percentage actually changed.
+     * On the Xteink X4 Pro's UC8179 controller a "fast" partial
+     * refresh re-triggers a whole-panel activation (no windowed
+     * partial on that silicon), so an unnoticed no-op battery-label
+     * redraw every 5 s was quietly re-activating the entire panel in
+     * the background -- visible as the screen continuing to change
+     * for tens of seconds after the user stopped interacting with it.
+     * Skip the call entirely when the string has not changed. */
+    static char s_prev_batt[20] = { 0 };
+    if (strcmp(s_prev_batt, batt) != 0) {
+        if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, batt);
+        if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, batt);
+        if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, batt);
+        strncpy(s_prev_batt, batt, sizeof(s_prev_batt) - 1);
+        s_prev_batt[sizeof(s_prev_batt) - 1] = '\0';
+    }
 }
 /* No-op on the timer-driven boards: the call sites below are shared,
  * but only the H752 pull model needs an explicit sync. */
