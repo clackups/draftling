@@ -261,15 +261,24 @@ SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed), which
 reverse-engineered the Xteink X4 Pro OEM firmware down to exact
 register values and validated the non-grayscale paths used here on
 real units. Grayscale / anti-aliasing rendering is not implemented,
-matching every other e-paper board. On-hardware testing found the
-initial 20 MHz SPI clock -- the FreeInk SDK's own speed-optimized
-default, flagged there as "drop back to 5 MHz if artifacts appear" --
-produced a partial, fading differential update over roughly the lower
-60% of the panel; `display_xteink_epd.cpp` now runs the panel at the
-OEM's own 5 MHz, matching that guidance. The GT911 touch orientation
-(`TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in
-`main/boards/xteink_x4_pro.h`) is still a best-effort starting point
-and may need a dial-in pass with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`.
+matching every other e-paper board. `display_xteink_epd.cpp` now runs
+the panel's SPI bus at the OEM's own 5 MHz rather than the FreeInk
+SDK reference's speed-optimized 20 MHz default.
+
+On-hardware testing (UC8179 controller variant) found a full refresh
+reproducibly painted only the top third or so of the panel, leaving
+the rest blank -- traced to a genuine race condition in
+`uc8179_display_full()` / `uc8279_display_full()`: the OLD-plane
+write reused the same scratch buffer the NEW-plane write had just
+handed to `esp_lcd_panel_io_tx_color()`, whose SPI/DMA transfer is
+queued asynchronously and can still be in flight when the very next
+line `memset()`s that same buffer, corrupting the in-flight transfer.
+Both functions now stream the OLD-plane's constant white fill from a
+separate, never-mutated buffer instead of reusing the NEW-plane's
+scratch buffer. The GT911 touch orientation (`TOUCH_SWAP_XY` /
+`TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `main/boards/xteink_x4_pro.h`)
+is still a best-effort starting point and may need a dial-in pass
+with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`.
 
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 

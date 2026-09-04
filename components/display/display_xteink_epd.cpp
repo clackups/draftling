@@ -118,6 +118,7 @@ enum xteink_ctrl_t {
 static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
 static uint8_t  *s_scratch = NULL;   /* UC8179/UC8279 padded/reversed staging buffer */
+static uint8_t  *s_white_scratch = NULL; /* constant all-white OLD-plane buffer, see uc8179/uc8279_display_full() */
 static bool      s_initialized = false;
 static bool      s_bl_inited = false;
 static bool      s_needs_initial_full = true;
@@ -524,8 +525,19 @@ static void uc8179_display_full(const uint8_t *fb)
 {
     uc8179_stream_plane(0x13, fb); /* NEW = fb */
 
-    memset(s_scratch, 0xFF, UC81XX_SCRATCH_BYTES); /* OLD = white (absolute GC waveform) */
-    epd_cmd(0x10); epd_data(s_scratch, UC81XX_SCRATCH_BYTES);
+    /* OLD = white (absolute GC waveform). Streamed from a SEPARATE
+     * constant buffer, not by memset()-ing and reusing s_scratch: the
+     * epd_data() call in uc8179_stream_plane() above queues its SPI/
+     * DMA transfer asynchronously (esp_lcd_panel_io_tx_color(), with
+     * trans_queue_depth > 1) and can return before the hardware has
+     * actually finished reading s_scratch. Overwriting that same
+     * buffer here, with no synchronization in between, raced the DMA
+     * read of the just-queued NEW-plane transfer and corrupted it on
+     * real hardware -- reproduced as roughly the lower 2/3 of the
+     * panel (the majority of the 60000-byte transfer, streamed after
+     * a fast CPU-side memset had already overwritten it to white)
+     * never showing the actual document content. */
+    epd_cmd(0x10); epd_data(s_white_scratch, UC81XX_SCRATCH_BYTES);
 
     epd_cmd(0x50); epd_data1(0x29); epd_data1(0x07); /* VCOM_DATA_INTERVAL, active */
     epd_cmd(0xE0); epd_data1(0x02);                  /* CCSET */
@@ -622,8 +634,9 @@ static void uc8279_display_full(const uint8_t *fb)
 {
     uc8279_stream_plane(0x13, fb); /* NEW = fb */
 
-    memset(s_scratch, 0xFF, UC81XX_SCRATCH_BYTES);
-    epd_cmd(0x10); epd_data(s_scratch, UC81XX_SCRATCH_BYTES); /* OLD = white */
+    /* OLD = white, from the separate constant buffer -- see the race
+     * comment in uc8179_display_full(); the same hazard applies here. */
+    epd_cmd(0x10); epd_data(s_white_scratch, UC81XX_SCRATCH_BYTES);
 
     epd_cmd(0x50); epd_data1(0x97);                  /* VCOM_DATA_INTERVAL, full (1 byte only) */
     epd_cmd(0xE0); epd_data1(0x02);                  /* CCSET */
@@ -782,11 +795,17 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     if (!s_fb) s_fb = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_8BIT);
     s_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_scratch) s_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_8BIT);
-    if (!s_fb || !s_scratch) {
+    /* Separate, constant all-white buffer for the OLD-plane write in
+     * uc8179/uc8279_display_full() -- see the race-condition comment
+     * there. Never mutated after this point. */
+    s_white_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_white_scratch) s_white_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_8BIT);
+    if (!s_fb || !s_scratch || !s_white_scratch) {
         ESP_LOGE(TAG, "Framebuffer/scratch allocation failed");
         return;
     }
     memset(s_fb, 0xFF, FRAMEBUFFER_BYTES);
+    memset(s_white_scratch, 0xFF, UC81XX_SCRATCH_BYTES);
 
     s_width = PANEL_WIDTH;
     s_height = PANEL_HEIGHT;
