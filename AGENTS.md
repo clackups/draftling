@@ -38,7 +38,9 @@ interface.
 The user connects a Bluetooth keyboard and edits Markdown files stored on
 a MicroSD card. The reflective LCD needs no backlight and works well in
 daylight. On request the device connects to WiFi and synchronizes files
-with a remote Git repository via the GitHub REST API.
+with a remote Git repository using a built-in Git client that speaks the
+standard smart HTTP protocol (a local commit history is kept on the SD
+card).
 
 ### Supported Hardware
 
@@ -50,6 +52,7 @@ with a remote Git repository via the GitHub REST API.
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
+| Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
@@ -97,7 +100,7 @@ components/                 Reusable IDF components
   display/                  RLCD SPI display driver and LVGL port
   editor/                   Gap-buffer text editor, Markdown parser, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
-  git_sync/                 GitHub REST API file synchronization
+  git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/                Keyboard layout translation (US/UA/DE/FR)
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -292,6 +295,26 @@ Per-board display backends behind a single C API:
   FreeInk SDK (github.com/Free-Ink/freeink-sdk, MIT licensed), which
   reverse-engineered the OEM firmware. Drives a dual-channel (cool/
   warm) front-light LEDC PWM, both channels always driven identically.
+- **display_ssd1683.cpp** -- from-scratch dual-controller SPI
+  e-paper backend for the Elecrow CrowPanel ESP32-S3 5.79" E-Paper
+  HMI Display, gated on `CONFIG_DRAFTLING_DISPLAY_SSD1683`. The
+  792x272 panel is built from two SSD1683 driver chips, one per half
+  (a "slave" driving columns 0-399 and a "master" driving columns
+  392-791, differentiated purely by command set on a shared SPI
+  bus, every slave command being the master's command `+0x80`); every
+  refresh rewrites each chip's *entire* RAM window (not just the
+  dirty rectangle -- narrower windowing was found unreliable on real
+  hardware) from a 1-bpp PSRAM framebuffer. The master/slave
+  RAM-window addressing math (including the master's inverted
+  X-address counting and the seam-alignment special case) originates
+  from the community ESPHome driver at
+  github.com/samperk1/esphome-crowpanel-579. A single Master
+  Activation trigger on this panel can leave an incomplete pixel
+  transition regardless of waveform or RAM content; `display_flush()`
+  runs both the full and partial refresh paths twice, back-to-back, to
+  reliably complete it (matching what pressing Ctrl+R always did) --
+  see HARDWARE.md's CrowPanel section and PR #47 for the full
+  investigation.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -441,29 +464,57 @@ process.
 
 ### components/git_sync/
 
-Synchronizes Markdown files between the SD card and a remote GitHub
-repository using the GitHub REST API over HTTPS. Reads configuration
-(repo URL, branch, token, path prefix) from `/sdcard/git.cfg`. Supports
-pull, push, or bidirectional sync with state callbacks and error tracking.
+A minimal but real **native Git client**. It keeps a genuine commit
+history under `<sdcard>/.git` and exchanges objects with the remote over
+the standard smart HTTP protocol (`gitprotocol-http`): `info/refs`,
+`git-upload-pack` (fetch) and `git-receive-pack` (push), pkt-line
+framing, packfile v2 transfer. No host-specific REST API is used, so any
+standard Git HTTP host works. Configuration (`repo_url`, `branch`,
+`token`, `username`, `path`, `author_name`, `author_email`) is read from
+`/sdcard/git.cfg`. User-facing docs: `docs/git-sync.md`.
 
-The last-synced per-file blob SHAs are persisted in a hidden
-`.git_state` file under the SD mount point. Every sync does a 3-way
-comparison (saved vs local vs remote) so that:
+Source layout (all in-tree, no managed components):
 
-- a file modified only on one side is propagated to the other;
-- a file deleted on the remote is also deleted locally (provided the
-  local copy still matches the last-synced SHA); otherwise the local
-  edits "win" and the file is recreated on the remote next push;
-- a file deleted locally is also deleted on the remote (via the GitHub
-  Contents DELETE API, conditional on the saved SHA still being current);
-  otherwise the remote-modified copy "wins" and is re-downloaded next
-  pull;
-- a file renamed on either side is handled correctly because Git models
-  renames as a delete + add of two distinct paths, which the rules
-  above cover automatically (no duplicate copies left behind).
+- `git_sync.cpp` -- config parsing, the sync task, and the orchestration
+  (advertise -> clone -> local commit -> fetch -> fast-forward/rebase ->
+  three-way merge -> checkout -> push). Keeps the historical public API.
+- `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA), and
+  zlib inflate/deflate via the ROM miniz (`tinfl_*` / `tdefl_*` from
+  `esp_rom/include/miniz.h`).
+- `git_odb.c` -- repo layout, loose object store, refs, tree/commit
+  parse+build, subtree splicing, merge-base and reachability walks.
+- `git_pack.c` -- packfile v2 reader (incl. OFS_DELTA / REF_DELTA and
+  delta application) and a non-delta packfile writer.
+- `git_net.c` -- pkt-line framing and the `esp_http_client`-based
+  transport (`info/refs`, `git-upload-pack`, `git-receive-pack`), HTTP
+  Basic auth.
+- `git_merge.c` -- flat three-way tree merge with an LCS-based diff3 line
+  merge; overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
+  markers and **committed as-is** (never discarded).
 
-Public API: `git_sync_init()`, `git_sync_start()`,
-`git_sync_get_state()`, `git_sync_is_configured()`.
+Behaviour:
+
+- The working tree is the flat set of `*.md` files in the sync dir. An
+  optional `path=` maps that set onto a sub-tree of the repository (the
+  rest of the repo tree is preserved across commits).
+- First sync clones full history; later syncs send `have` lines so the
+  server returns a minimal pack.
+- Divergent histories are rebased commit-by-commit onto the remote tip.
+  Conflicts are committed with markers; the commit message gets a
+  `[draftling] N conflict(s)` note. The editor UI reloads the open
+  buffer on `GIT_SYNC_SUCCESS`.
+- Push is a fast-forward ref update; a race (remote moved mid-sync) is
+  reported and the user re-syncs.
+- Wall-clock for commit timestamps comes from a best-effort SNTP query
+  (`esp_netif_sntp`) on the first sync, floored at 2025-01-01 otherwise.
+
+Scope limits: one branch, no tags/submodules/signing, no shallow clone,
+flat `*.md` working tree only, HTTP Basic auth only (no SSH). LCS merge
+falls back to a whole-file conflict above ~1400 lines per side.
+
+Public API (unchanged): `git_sync_init()`, `git_sync_start()`,
+`git_sync_get_state()`, `git_sync_is_configured()`,
+`git_sync_get_last_error()`, `git_sync_max_file_size()`.
 
 ### components/io_expander/
 
@@ -912,14 +963,25 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   on-board MicroSD on SDMMC. Left/Right buttons inject Page Up / Page
   Down; Power is the wake/BLE-forget button. Added without on-hardware
   testing; see HARDWARE.md. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
+  ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
+  panel built from two SSD1683 controllers over plain SPI, driven by
+  `components/display/display_ssd1683.cpp`. On-board MicroSD on its
+  own SPI bus. Menu button (GPIO2) is the deep-sleep wake source and
+  doubles as F1 / forget-keyboards; Back button + a 3-way dial
+  switch (Up/Down/OK) provide full menu navigation without a
+  keyboard. No on-board battery monitor. Added without on-hardware
+  testing; see HARDWARE.md. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro).
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro), 792 (Elecrow
+  CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro).
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro), 272 (Elecrow
+  CrowPanel 5.79").
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -942,10 +1004,11 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro, Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro |
+| DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
@@ -1027,7 +1090,8 @@ PSRAM is required on every supported board. The editor gap buffer
 `editor_init()` runs -- typically a few hundred KB up to a few MB
 depending on the board), the display
 framebuffers, the LVGL widget heap (`CONFIG_LV_USE_CUSTOM_MALLOC` routes
-through PSRAM), the Git-sync HTTPS response buffers + task stack, and
+through PSRAM), the Git client's object buffers, ~24 KB task stack and
+diff3 LCS matrix, and
 the Bluedroid host environment (`CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY` plus
 `CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST`) all assume `MALLOC_CAP_SPIRAM`
 is available. The top-level `CMakeLists.txt` aborts the configure step
@@ -1041,7 +1105,7 @@ supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
-`xteink_x4_pro`). Each
+`xteink_x4_pro`, `elecrow_crowpanel_579`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

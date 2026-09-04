@@ -109,7 +109,8 @@ components/
                      LVGL v9 port
   editor/            Gap-buffer editor, Markdown parser, LVGL UI, menu
   fonts/             Custom LVGL fonts (Latin, Latin-1 Supplement, Cyrillic)
-  git_sync/          GitHub REST API file synchronization
+  git_sync/          Native Git client (smart HTTP) with local
+                     commit history on the SD card
   io_expander/       CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
   kb_layout/         Keyboard layout translation (US/UA/DE/FR)
   sd_card/           SD card (SDMMC or SPI) file operations

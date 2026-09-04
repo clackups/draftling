@@ -709,6 +709,28 @@ static void pre_sleep_xteink_x4_pro_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
 
+#if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+static void pre_sleep_crowpanel_579_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Elecrow CrowPanel 5.79in peripheral teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+
+    /* Cut the SD card's 3.3 V rail (IO42_TF_3.3_CTL) and latch it
+     * through deep sleep. Unlike the EPD panel rail (see
+     * display_deep_sleep_prepare() in display_ssd1683.cpp, which is
+     * deliberately left alone), there is no bistable image to
+     * preserve here -- the card was already cleanly unmounted above,
+     * so cutting its rail is safe and saves power. */
+    gpio_set_level((gpio_num_t)SD_POWER_EN_PIN, 0);
+    gpio_hold_en((gpio_num_t)SD_POWER_EN_PIN);
+    gpio_deep_sleep_hold_en();
+
+    display_deep_sleep_prepare();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
+
 /* Poll period and long-press threshold shared by the H752 side-key
  * handler and the generic wakeup-GPIO handler below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -890,6 +912,168 @@ static void xteink_x4_pro_btn_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
 
+#if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+/* ---- CrowPanel 5.79in Menu button + Back button/dial switch ----
+ *
+ * This board has no touchscreen, so the four buttons below are the
+ * only way to drive the editor without a keyboard connected.
+ *
+ * The Menu button (GPIO2, also the deep-sleep wake source) doubles
+ * as an F1 key during normal operation, mirroring the LilyGO T5 Pro
+ * H752 side-key convention above: a short press injects F1 (open/
+ * close the Settings menu), a 2 s hold clears every stored BLE
+ * keyboard bond and starts a fresh scan. The synthetic event is
+ * injected as press+release in one go so the key-repeat tracker
+ * never fires a second toggle while the button is held.
+ *
+ * The Back button and the 3-way dial switch (Up/Down/OK -- a
+ * rocker-style navigation switch on this board, not a rotary
+ * encoder) round out full menu navigation once it is open: Back
+ * injects Esc (closes the menu / settings / prompts, and in the
+ * editor returns to the file browser), the dial's Up/Down positions
+ * inject the arrow keys, and pressing the dial (OK) injects Enter.
+ * All four are polled at 30 ms and injected on release.
+ *
+ * Debounce: field testing showed the H752-style two-sample (60 ms)
+ * debounce used elsewhere in this file is too short here -- a
+ * partial EPD refresh's current draw (the panel's high-voltage boost
+ * converter switching) can dip the logic rail enough to read as a
+ * brief button press on these lines, which only have the ESP32-S3's
+ * weak internal pull-up (~45 kohm) holding them idle. Because a
+ * refresh follows every keystroke, this shows up as spurious cursor
+ * movement or, worse, an accidental trip into the Settings menu's
+ * Keyboard Layout entry while typing. CROWPANEL_DEBOUNCE_SAMPLES
+ * requires 5 consecutive 30 ms samples (150 ms) of the new level
+ * before accepting it -- comfortably longer than the vendor's own
+ * factory-firmware debounce (100 ms, see the 5.79_key Arduino
+ * example) and any single boost-converter transient, while still
+ * well under normal human button-press duration. */
+#define CROWPANEL_DEBOUNCE_SAMPLES 5
+
+static void crowpanel_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+/* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
+#define CROWPANEL_MENU_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
+
+static void crowpanel_menu_key_poll_cb(void *arg)
+{
+    (void)arg;
+    static bool down             = false;
+    static int  stable           = 0;
+    static int  hold_ticks       = 0;
+    static bool long_press_fired = false;
+
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+
+    if (raw_down == down) {
+        if (down) {
+            hold_ticks++;
+            if (!long_press_fired && hold_ticks >= CROWPANEL_MENU_LONG_PRESS_TICKS) {
+                long_press_fired = true;
+                ESP_LOGI(TAG, "CrowPanel Menu button: 2 s long press -- "
+                              "forgetting all keyboards (GPIO%d)",
+                         WAKEUP_GPIO_NUM);
+                ble_keyboard_forget_all();
+            }
+        }
+        stable = 0;
+        return;
+    }
+
+    if (++stable < CROWPANEL_DEBOUNCE_SAMPLES) return;
+
+    stable = 0;
+    down = raw_down;
+
+    if (down) {
+        hold_ticks       = 0;
+        long_press_fired = false;
+    } else {
+        if (!long_press_fired) {
+            crowpanel_inject_key(KB_KEY_F1);
+        }
+        hold_ticks       = 0;
+        long_press_fired = false;
+    }
+}
+
+static void crowpanel_menu_key_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = 1ULL << WAKEUP_GPIO_NUM;
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = crowpanel_menu_key_poll_cb;
+    targs.name     = "crowpanel_menu";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "CrowPanel Menu button poller started (GPIO%d)", WAKEUP_GPIO_NUM);
+}
+
+static void crowpanel_nav_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_BACK_PIN,      KB_KEY_ESCAPE },
+        { BTN_DIAL_UP_PIN,   KB_KEY_UP },
+        { BTN_DIAL_DOWN_PIN, KB_KEY_DOWN },
+        { BTN_DIAL_OK_PIN,   KB_KEY_ENTER },
+    };
+    static bool down[4]   = { false, false, false, false };
+    static int  stable[4] = { 0, 0, 0, 0 };
+
+    for (int i = 0; i < 4; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            continue;
+        }
+        if (++stable[i] < CROWPANEL_DEBOUNCE_SAMPLES) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i]) {
+            crowpanel_inject_key(kButtons[i].keycode);
+        }
+    }
+}
+
+static void crowpanel_nav_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << BTN_BACK_PIN) | (1ULL << BTN_DIAL_UP_PIN) |
+                      (1ULL << BTN_DIAL_DOWN_PIN) | (1ULL << BTN_DIAL_OK_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = crowpanel_nav_poll_cb;
+    targs.name     = "crowpanel_nav";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "CrowPanel Back/dial-switch poller started "
+                  "(Back=GPIO%d, Up=GPIO%d, Down=GPIO%d, OK=GPIO%d)",
+             BTN_BACK_PIN, BTN_DIAL_UP_PIN, BTN_DIAL_DOWN_PIN, BTN_DIAL_OK_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
+
 /* ---- Generic wakeup-GPIO long-press handler ----
  *
  * On boards other than the H752 (which has its own key handler above)
@@ -901,7 +1085,8 @@ static void xteink_x4_pro_btn_init(void)
  * The button is assumed to be active-low with the internal pull-up
  * enabled (the same electrical assumption the standby component makes
  * when it arms the EXT0 deep-sleep wake source on GPIO 0 / 18). */
-#if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
+#if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752) && \
+    !defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
 #define WAKEUP_BTN_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
@@ -967,7 +1152,8 @@ static void wakeup_btn_init(void)
              WAKEUP_GPIO_NUM,
              gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
-#endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
+#endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 &&
+        * !CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
 /* M5Stack Tab5 (ESP32-P4): pre-sleep peripheral teardown.
@@ -1364,6 +1550,12 @@ extern "C" void app_main(void)
      * inside display_ili9341.cpp since every FNK0104 SPI-TFT SKU
      * shares the same pinout. Pin parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1683)
+    /* Elecrow CrowPanel 5.79in E-Paper HMI. Dual-SSD1683 SPI panel;
+     * all panel GPIOs and the panel power-enable pin are hard-coded
+     * inside display_ssd1683.cpp since this backend is used by
+     * exactly one board. Pin parameters are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend
@@ -1585,6 +1777,25 @@ extern "C" void app_main(void)
      * sd_card_init_spi() returns gracefully if no card is present. */
 #if defined(CONFIG_DRAFTLING_HAS_CH422G) && defined(CH422G_SD_CS_PIN)
     ch422g_set_pin(CH422G_SD_CS_PIN, false);
+#endif
+#if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+    /* SD slot power-enable, active HIGH (IO42_TF_3.3_CTL on the
+     * vendor schematic). Drive it before mounting -- see the vendor's
+     * 5.79_TF Arduino example (digitalWrite(42, HIGH)). Release any
+     * hold left by pre_sleep_crowpanel_579_deinit() first -- on
+     * ESP32-S3 a gpio_deep_sleep_hold_en() latch survives the wake
+     * reset and keeps the pad clamped low until software releases it
+     * (same pattern as the EPD panel power pin in
+     * display_ssd1683.cpp's display_init()). */
+    {
+        gpio_hold_dis((gpio_num_t)SD_POWER_EN_PIN);
+        gpio_config_t sd_pwr = {};
+        sd_pwr.intr_type    = GPIO_INTR_DISABLE;
+        sd_pwr.mode         = GPIO_MODE_OUTPUT;
+        sd_pwr.pin_bit_mask = (1ULL << SD_POWER_EN_PIN);
+        gpio_config(&sd_pwr);
+        gpio_set_level((gpio_num_t)SD_POWER_EN_PIN, 1);
+    }
 #endif
     sd_ret = sd_card_init_spi(SD_SPI_HOST_NUM,
                               SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN, SD_SPI_SCK_PIN,
@@ -2016,6 +2227,13 @@ extern "C" void app_main(void)
     /* Side key (GPIO48) = Menu (F1) on short press,
      * forget all keyboards on 2 s long press. */
     h752_user_key_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+    /* Menu button (GPIO2) = F1 on short press, forget all keyboards
+     * on 2 s long press (same convention as the H752 side key
+     * above). Back button + dial switch (Esc/Up/Down/Enter) handle
+     * the rest of menu navigation once it is open. */
+    crowpanel_menu_key_init();
+    crowpanel_nav_init();
 #else
     /* Generic wakeup-button long-press monitor: hold 2 s to forget
      * all stored BLE keyboard pairings and start a fresh scan. */
@@ -2050,6 +2268,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_tab5_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
     standby_set_pre_sleep_cb(pre_sleep_xteink_x4_pro_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+    standby_set_pre_sleep_cb(pre_sleep_crowpanel_579_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

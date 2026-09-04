@@ -275,6 +275,23 @@ typedef struct {
  */
 void display_set_backlight(int percent);
 
+/*
+ * Toggle a full visual inversion of the panel: pixels that would
+ * normally render "active" (drawn / ink) show the background instead,
+ * and vice versa. The underlying framebuffer content (as written by
+ * display_set_pixel / display_clear) is unchanged -- only what gets
+ * sent to the panel is affected, so toggling this does not require
+ * re-rendering the LVGL widget tree. The call applies immediately
+ * (it triggers its own display_flush()), so the caller does not need
+ * to flush separately.
+ *
+ * Implemented by display_rlcd.cpp (Waveshare ESP32-S3-RLCD-4.2); gated
+ * behind CONFIG_DRAFTLING_DISPLAY_CAN_INVERT in the editor's F1 ->
+ * Settings menu. Not implemented (and never called) on other
+ * backends.
+ */
+void display_set_invert(bool on);
+
 void display_axs15231b_init(const display_axs15231b_config_t *cfg);
 
 /*
