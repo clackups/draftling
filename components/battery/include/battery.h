@@ -102,6 +102,31 @@ int battery_init_bq27220(void *i2c_master_bus);
 int battery_init_ina226(void *i2c_master_bus, int i2c_addr, int cells);
 
 /*
+ * Initialize a CellWise CW2017 fuel-gauge backend on an existing I2C
+ * master bus, at the fixed 7-bit address 0x63. Used on the Xteink X4
+ * Pro. The bus must already have been created by the caller and
+ * remains owned by the caller.
+ *
+ *   i2c_master_bus -- opaque pointer to an i2c_master_bus_handle_t.
+ *
+ * Unlike BQ27220, the CW2017 reports State-of-Charge (register 0x04)
+ * as a direct integer percentage -- no voltage-to-percent LUT needed
+ * -- but only once a matching 80-byte "BATINFO" battery profile is
+ * resident; it reports 0 % otherwise. This routine verifies (or, on
+ * a first boot / after a full-flash, uploads) that profile before
+ * returning. Register map, reset sequence and the profile bytes were
+ * recovered from the Xteink X4 Pro OEM firmware by the FreeInk SDK
+ * (github.com/Free-Ink/freeink-sdk, MIT licensed).
+ *
+ * There is no charger IC on the X4 Pro's I2C bus and the CW2017 has
+ * no current register, so battery_read_charging() always returns -1
+ * (unknown) for this backend.
+ *
+ * Returns 0 on success, non-zero on failure.
+ */
+int battery_init_cw2017(void *i2c_master_bus);
+
+/*
  * Initialize the TI BQ25896 single-cell Li-ion charger on an existing
  * I2C master bus (driver/i2c_master.h). This is a charger, not a
  * monitor: it does not change what battery_read_mv() /

@@ -51,13 +51,16 @@ card).
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
+| Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
 the controller proved too slow for an interactive Markdown editor
 even with fast partial updates and accumulated ghosting too quickly
-to be usable.
+to be usable. The Xteink X4 Pro's UC8179 / UC8279 panel variants (see
+below) use a different, faster waveform than those panels and are
+supported.
 
 The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was previously
 supported but has been removed: despite an exhaustive series of fixes
@@ -163,6 +166,19 @@ Two backends:
   current is flowing into the pack (the Tab5 wires the shunt so
   the IP2326 charger pushes positive current into the cell). See
   `docs/tab5-esp-hosted.md` for the CHG_EN enable path.
+* **CellWise CW2017 fuel gauge** over I2C
+  (`battery_init_cw2017(bus)`): used on the Xteink X4 Pro, at 0x63 on
+  the I2C bus shared with GT911 touch. Unlike BQ27220, the CW2017's
+  SOC register (0x04) reports a direct integer percentage -- no
+  voltage-to-percent LUT needed -- but only once a matching 80-byte
+  "BATINFO" battery profile is resident; `battery_init_cw2017()`
+  verifies (or uploads, on first boot) that profile before returning.
+  Register map, reset sequence and the profile bytes were recovered
+  from the X4 Pro OEM firmware by the FreeInk SDK
+  (github.com/Free-Ink/freeink-sdk). There is no charger IC on this
+  board's I2C bus and the CW2017 has no current register, so
+  `battery_read_charging()` always returns -1 (unknown) for this
+  backend.
 
 When no backend has been initialized, `battery_read_percent()`
 returns -1 and the editor UI hides the battery indicator.
@@ -175,7 +191,7 @@ cannot detect charge state (the GPIO-ADC backend), so the UI auto-
 hides the `+` charging glyph on those boards.
 
 Public API: `battery_init()`, `battery_init_bq27220()`,
-`battery_init_ina226()`, `battery_read_mv()`,
+`battery_init_ina226()`, `battery_init_cw2017()`, `battery_read_mv()`,
 `battery_read_percent()`, `battery_read_charging()`.
 
 ### components/ble_keyboard/
@@ -261,6 +277,24 @@ Per-board display backends behind a single C API:
   row-by-row across multiple queued `tx_color()` calls previously
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
+- **display_xteink_epd.cpp** -- from-scratch SPI e-paper backend for
+  the Xteink X4 Pro, gated on `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`.
+  Unlike the other e-paper backends this board carries one of three
+  possible panel controllers depending on manufacturing run (SSD1677,
+  or one of two UltraChip parts, UC8179 / UC8279); `display_init()`
+  bit-bangs a small VER/FLG identification probe over the panel pins
+  before the SPI peripheral claims them, then drives whichever
+  controller is present through its own register sequence (SSD1677:
+  dual-RAM 0x24/0x26 differential refresh; UC8179 / UC8279: KW-mode
+  DTM1/DTM2 differential refresh via PARTIAL_IN/PARTIAL_OUT). A 1bpp
+  PSRAM framebuffer + dirty-rect tracking and the full-vs-partial
+  promotion policy (`CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL`)
+  mirror `display_h752.cpp`. Only the black/white differential path
+  is implemented; grayscale / anti-aliasing is out of scope. Register
+  sequences, timing and the controller probe are ported from the
+  FreeInk SDK (github.com/Free-Ink/freeink-sdk, MIT licensed), which
+  reverse-engineered the OEM firmware. Drives a dual-channel (cool/
+  warm) front-light LEDC PWM, both channels always driven identically.
 - **display_ssd1683.cpp** -- from-scratch dual-controller SPI
   e-paper backend for the Elecrow CrowPanel ESP32-S3 5.79" E-Paper
   HMI Display, gated on `CONFIG_DRAFTLING_DISPLAY_SSD1683`. The
@@ -317,13 +351,19 @@ The largest component. Contains:
   horizontal rules, and inline bold/italic/code/strikethrough spans.
 - **draftling_logo.c** -- embedded LVGL image for the splash screen.
 
-The F1 menu opens an in-line **Settings** list with: standby
-timeout, base font size, **Backlight** (NN%, only on boards with
+**Settings** is the first item in the F1 menu (moved to the top so it
+is a single Enter away without navigating past the connectivity
+items). It opens an in-line list with: standby timeout, base font
+size, **Backlight** (NN%, only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` -- the value is persisted
 in NVS under the `editor` namespace and applied at boot via
 `display_set_backlight()`; default 50%), color theme (only on
-`CONFIG_DRAFTLING_DISPLAY_COLOR`), sleep-now, factory reset and
-back. Picking a new color theme does NOT reboot the device:
+`CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, four screen
+margins (Left/Right/Top/Bottom, 0-40 px in 2 px steps, zero by
+default -- see the "Screen margins" section above; each change is
+persisted immediately but only takes effect after a restart, hence
+the "(restart to apply)" suffix on their labels), sleep-now, factory
+reset and back. Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
 calls `build_screens()` again and restores the screen the user was
@@ -921,6 +961,18 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 - **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
   ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
   controller. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
+  e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
+  UC8279) auto-detected at boot by
+  `components/display/display_xteink_epd.cpp`. GT911 touch and a
+  CW2017 fuel gauge on a shared I2C bus, dual-channel PWM front-light,
+  on-board MicroSD on SDMMC. Left/Right buttons inject Page Up / Page
+  Down; Power is the wake source, and also puts the device to sleep on
+  a short press (there is no hardware power-off latch on this board)
+  or forgets BLE keyboards on a 2 s hold. The enclosure's cover
+  overlaps the panel; the user-adjustable screen margins (see below)
+  compensate. Tested on physical hardware after an initial blind
+  port; see HARDWARE.md. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
@@ -935,9 +987,47 @@ The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 792 (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro), 792 (Elecrow
+  CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S), 272 (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro), 272 (Elecrow
+  CrowPanel 5.79").
+
+### Screen margins (user-adjustable, not a Kconfig setting)
+
+Pixels of physical panel hidden under an opaque bezel/enclosure cover
+on each edge -- e.g. a recessed cutout whose cover overlaps the
+glass -- are a **runtime, NVS-persisted** setting, not a per-board
+Kconfig default: `components/display/display_margins.h` /
+`display_margins.cpp` expose `display_margin_left/right/top/bottom()`
+(a frozen, session-lifetime value loaded by `display_margins_init()`,
+which `main.cpp` calls immediately after `nvs_flash_init()` -- before
+`display_init()` / `draftling_lvgl_port_init()` -- so every consumer
+sees it from the first frame) and `display_margins_set()` /
+`display_margins_get_pending()` (write/read the raw NVS value for the
+*next* boot; the editor's F1 -> Settings menu uses these to let the
+user cycle each margin 0-40 px in 2 px steps). Zero on every board on
+a fresh install.
+
+`main/app_config.h` subtracts the frozen margins from
+`DISPLAY_WIDTH/HEIGHT` to get `DISPLAY_LOGICAL_WIDTH/HEIGHT` -- the
+area LVGL and the editor (`SCR_W`/`SCR_H` in `editor_ui.cpp`) actually
+render into -- and a display backend that needs to compensate (only
+`display_xteink_epd.cpp` does today) offsets every write into its
+physical framebuffer by the left/top margin so on-screen content
+never lands under the cover.
+
+Changing a margin only takes effect after a restart: `display_margin_
+*()`'s frozen value (not whatever was most recently saved) is what
+every consumer reads for the life of the session, because the LVGL
+display resolution is fixed once `draftling_lvgl_port_init()` runs --
+re-deriving it live would mean tearing down and rebuilding the entire
+LVGL display and widget tree. If `display_margin_*()` returned the
+live NVS value instead, `SCR_W`/`SCR_H` would start disagreeing with
+LVGL's actual (unchanged) canvas size the moment a setting was saved,
+well before the restart meant to apply it -- this is why
+`display_margins_set()` deliberately does not touch the in-memory
+values `display_margin_*()` return.
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block
@@ -960,9 +1050,10 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Elecrow CrowPanel 5.79" |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro, Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
+| DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
@@ -973,11 +1064,12 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
 
@@ -1059,7 +1151,7 @@ supported board (`waveshare_rlcd42`, `m5stack_papers3`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
-`elecrow_crowpanel_579`). Each
+`xteink_x4_pro`, `elecrow_crowpanel_579`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file in the repository root (which sets
 `CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),

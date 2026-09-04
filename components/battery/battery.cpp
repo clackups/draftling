@@ -52,6 +52,7 @@ enum batt_backend {
     BATT_BACKEND_ADC,
     BATT_BACKEND_BQ27220,
     BATT_BACKEND_INA226,
+    BATT_BACKEND_CW2017,
 };
 static enum batt_backend s_backend = BATT_BACKEND_NONE;
 
@@ -71,6 +72,36 @@ static int                       s_divider = 3;
                                          * + = into cell, - = out of cell */
 #define BQ27220_REG_SOC         0x2C    /* u16 LE, 0-100 % */
 static i2c_master_dev_handle_t   s_bq_dev = NULL;
+
+/* ---- CW2017 backend state ----
+ * CellWise CW2017 fuel gauge, used on the Xteink X4 Pro (I2C address
+ * 0x63, no charger IC on the same bus). Register map, reset sequence
+ * and the 80-byte BATINFO battery profile were recovered by the
+ * FreeInk SDK (github.com/Free-Ink/freeink-sdk, MIT licensed) from
+ * the OEM firmware's Cw2017PowerHal class. Unlike BQ27220, the CW2017
+ * reports SOC (register 0x04) as a direct integer percentage once a
+ * matching battery profile is resident -- it reports 0 % until then,
+ * so battery_init_cw2017() must verify/upload the profile before any
+ * reading is meaningful. */
+#define CW2017_REG_VERSION   0x00  /* running state in (ver & 0xFD) == 0x0D */
+#define CW2017_REG_VCELL_H   0x02  /* 14-bit VCELL, big-endian over 0x02/0x03 */
+#define CW2017_REG_SOC       0x04  /* integer percent, 0..100 */
+#define CW2017_REG_MODE      0x08  /* soft-reset / sleep control */
+#define CW2017_REG_CONFIG    0x0B  /* bit7 = profile-loaded / update-enable */
+#define CW2017_REG_BATINFO   0x10  /* 80-byte profile spans 0x10..0x5F */
+#define CW2017_BATINFO_LEN   80
+
+/* The exact BATINFO profile the OEM uploads for the X4 Pro's cell.
+ * Battery-model-specific; do not reuse for a different pack. */
+static const uint8_t CW2017_BATINFO[CW2017_BATINFO_LEN] = {
+    0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0xbf, 0xb5, 0xb4, 0xa4, 0x9c, 0xeb, 0xe2,
+    0xdf, 0xe5, 0xca, 0xa0, 0x8a, 0x62, 0x53, 0x48, 0x40, 0x3a, 0x32, 0xb1, 0xae, 0xda, 0xb5, 0xff,
+    0xff, 0xff, 0xe8, 0xdb, 0xd9, 0xd6, 0xd4, 0xd2, 0xd0, 0xcb, 0xc3, 0xbc, 0x9e, 0x87, 0x7b, 0x71,
+    0x72, 0x7c, 0x8c, 0xa3, 0xb7, 0xc8, 0xa5, 0x4f, 0x00, 0x00, 0xab, 0x02, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x23,
+};
+#define CW2017_I2C_ADDR_DEFAULT 0x63
+static i2c_master_dev_handle_t   s_cw2017_dev = NULL;
 
 /* ---- INA226 backend state ----
  * Only the bus-voltage and shunt-voltage registers are used.
@@ -388,6 +419,115 @@ extern "C" int battery_init_bq27220(void *i2c_master_bus)
     ESP_LOGI(TAG, "BQ27220 fuel gauge initialized at 0x%02X "
              "(initial %u mV, %u%%)", BQ27220_I2C_ADDR,
              (unsigned)mv, (unsigned)soc);
+    return 0;
+}
+
+/* ---- CW2017 backend ---- */
+
+static int cw2017_read_u8(uint8_t reg, uint8_t *out)
+{
+    if (!s_cw2017_dev) return -1;
+    uint8_t wr[1] = { reg };
+    uint8_t rd[1] = { 0 };
+    esp_err_t err = i2c_master_transmit_receive(s_cw2017_dev, wr, 1, rd, 1,
+                                                100 /* ms */);
+    if (err != ESP_OK) return -1;
+    *out = rd[0];
+    return 0;
+}
+
+static int cw2017_write_u8(uint8_t reg, uint8_t val)
+{
+    if (!s_cw2017_dev) return -1;
+    uint8_t wr[2] = { reg, val };
+    return (i2c_master_transmit(s_cw2017_dev, wr, 2, 100 /* ms */) == ESP_OK) ? 0 : -1;
+}
+
+/* Soft-reset sequence: MODE 0xF0 -> 0x30 -> 0x00, 20 ms apart (ported
+ * from the OEM firmware's FUN_4215042c via the FreeInk SDK). */
+static void cw2017_reset(void)
+{
+    cw2017_write_u8(CW2017_REG_MODE, 0xF0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    cw2017_write_u8(CW2017_REG_MODE, 0x30);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    cw2017_write_u8(CW2017_REG_MODE, 0x00);
+    vTaskDelay(pdMS_TO_TICKS(20));
+}
+
+/* One-shot: make sure a valid BATINFO profile is resident. Wakes /
+ * resets the gauge if it is not running, then uploads and enables
+ * the profile only when the resident bytes do not already match (the
+ * gauge normally keeps it resident across warm boots, so this is
+ * usually a verify-only readback). Bounded polling so a cold gauge
+ * cannot stall boot. */
+static void cw2017_ensure_profile(void)
+{
+    uint8_t ver = 0;
+    if (cw2017_read_u8(CW2017_REG_VERSION, &ver) != 0) return; /* gauge absent */
+    if ((ver & 0xFD) != 0x0D) cw2017_reset();
+
+    uint8_t cfg = 0;
+    if (cw2017_read_u8(CW2017_REG_CONFIG, &cfg) == 0 && (cfg & 0x80)) {
+        bool match = true;
+        for (uint8_t i = 0; i < CW2017_BATINFO_LEN; i++) {
+            uint8_t b = 0;
+            if (cw2017_read_u8((uint8_t)(CW2017_REG_BATINFO + i), &b) != 0 ||
+                b != CW2017_BATINFO[i]) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return; /* correct profile already loaded */
+    }
+
+    for (uint8_t i = 0; i < CW2017_BATINFO_LEN; i++) {
+        cw2017_write_u8((uint8_t)(CW2017_REG_BATINFO + i), CW2017_BATINFO[i]);
+    }
+    cw2017_write_u8(CW2017_REG_CONFIG, 0x80); /* update-enable (bit7) */
+    vTaskDelay(pdMS_TO_TICKS(20));
+    cw2017_reset();
+    for (int i = 0; i < 50; i++) { /* ~1 s cap for SOC to become valid */
+        uint8_t soc = 0;
+        if (cw2017_read_u8(CW2017_REG_SOC, &soc) == 0 && soc <= 100) break;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+
+extern "C" int battery_init_cw2017(void *i2c_master_bus)
+{
+    if (s_backend != BATT_BACKEND_NONE) return 0;
+
+    if (i2c_master_bus == NULL) {
+        ESP_LOGW(TAG, "CW2017 init: NULL I2C bus handle");
+        return -1;
+    }
+
+    i2c_master_bus_handle_t bus = (i2c_master_bus_handle_t)i2c_master_bus;
+
+    if (i2c_master_probe(bus, CW2017_I2C_ADDR_DEFAULT, 100 /* ms */) != ESP_OK) {
+        ESP_LOGW(TAG, "CW2017 not responding at 0x%02X", CW2017_I2C_ADDR_DEFAULT);
+        return -1;
+    }
+
+    i2c_device_config_t dev_cfg = {};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address  = CW2017_I2C_ADDR_DEFAULT;
+    dev_cfg.scl_speed_hz    = 400000;
+    esp_err_t err = i2c_master_bus_add_device(bus, &dev_cfg, &s_cw2017_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CW2017 bus_add_device failed: %s", esp_err_to_name(err));
+        s_cw2017_dev = NULL;
+        return -1;
+    }
+
+    cw2017_ensure_profile();
+    s_backend = BATT_BACKEND_CW2017;
+
+    uint8_t soc = 0;
+    cw2017_read_u8(CW2017_REG_SOC, &soc);
+    ESP_LOGI(TAG, "CW2017 fuel gauge initialized at 0x%02X (initial %u%%)",
+             CW2017_I2C_ADDR_DEFAULT, (unsigned)soc);
     return 0;
 }
 
@@ -770,6 +910,15 @@ extern "C" int battery_read_mv(void)
         if (ina226_battery_absent(cell_mv)) return 0;
         return cell_mv;
     }
+    if (s_backend == BATT_BACKEND_CW2017) {
+        /* 14-bit VCELL, big-endian over two registers. OEM formula:
+         * mV = raw14 * 5 / 16, rounded (~0.3125 mV/LSB). */
+        uint8_t hi = 0, lo = 0;
+        if (cw2017_read_u8(CW2017_REG_VCELL_H, &hi) != 0) return 0;
+        if (cw2017_read_u8((uint8_t)(CW2017_REG_VCELL_H + 1), &lo) != 0) return 0;
+        uint16_t raw14 = (uint16_t)((hi & 0x3F) << 8) | lo;
+        return (int)((raw14 * 5 + 8) >> 4);
+    }
     if (s_backend != BATT_BACKEND_ADC) return 0;
 
     bool en = enable_divider();
@@ -881,6 +1030,14 @@ extern "C" int battery_read_percent(void)
         if (ina226_battery_absent(cell_mv)) return -1;
         return mv_to_percent(cell_mv);
     }
+    if (s_backend == BATT_BACKEND_CW2017) {
+        /* The CW2017 reports SOC as a direct integer percentage once
+         * its BATINFO profile is resident -- no discharge LUT needed,
+         * unlike BQ27220. */
+        uint8_t soc = 0;
+        if (cw2017_read_u8(CW2017_REG_SOC, &soc) != 0) return -1;
+        return (soc > 100) ? 100 : (int)soc;
+    }
     if (s_backend != BATT_BACKEND_ADC) return -1;
 
     int mv = battery_read_mv();
@@ -933,7 +1090,8 @@ extern "C" int battery_read_charging(void)
         if (raw <= -INA226_SHUNT_CHARGE_THRESHOLD) return 1;
         return 0;
     }
-    /* ADC backend and "no backend" cannot tell. */
+    /* ADC backend, CW2017 (no charger IC on its bus, no current
+     * register) and "no backend" cannot tell. */
     return -1;
 }
 

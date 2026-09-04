@@ -119,6 +119,15 @@
             }
         },
         {
+            "name": "xteink_x4_pro",
+            "displayName": "Xteink X4 Pro (SSD1677/UC8179/UC8279, 800x480 e-paper)",
+            "binaryDir": "build/xteink_x4_pro",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.xteink_x4_pro",
+                "SDKCONFIG": "build/xteink_x4_pro/sdkconfig"
+            }
+        },
+        {
             "name": "elecrow_crowpanel_579",
             "displayName": "Elecrow CrowPanel ESP32-S3 5.79in E-Paper HMI (SSD1683 x2)",
             "binaryDir": "build/elecrow_crowpanel_579",

@@ -1,20 +1,26 @@
 #pragma once
 
 #include "sdkconfig.h"
+#include "display_margins.h"
 
 /* Display dimensions (derived from Kconfig hardware model selection) */
 #define DISPLAY_WIDTH   CONFIG_DRAFTLING_DISPLAY_WIDTH
 #define DISPLAY_HEIGHT  CONFIG_DRAFTLING_DISPLAY_HEIGHT
 #define DISPLAY_ROTATE  CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE
 
-/* The editor and LVGL canvas render 1:1 at the panel resolution.
- * DISPLAY_LOGICAL_WIDTH / DISPLAY_LOGICAL_HEIGHT are kept as aliases
- * of the physical panel dimensions so callers that historically used
- * the "logical" names keep working. (High-density boards no longer
- * upscale the framebuffer; they select a larger font instead -- see
+/* The editor and LVGL canvas render 1:1 at the panel resolution,
+ * minus the user-adjustable margins (display_margins.h) -- pixels of
+ * physical panel hidden under an opaque bezel/enclosure cover on
+ * each edge. Zero by default on every board; adjustable via the
+ * editor's F1 -> Settings menu (Settings -> Screen margins) and
+ * takes effect on the next restart, since display_margins_init()
+ * must run before this is evaluated (see its caller in main.cpp).
+ * DISPLAY_LOGICAL_WIDTH / HEIGHT is the area actually visible through
+ * the enclosure. (High-density boards no longer upscale the
+ * framebuffer; they select a larger font instead -- see
  * CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
-#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH)
-#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT)
+#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
+#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())
 
 /* SD Card mount point (shared across all hardware models) */
 #define SD_MOUNT_POINT  "/sdcard"
@@ -47,6 +53,8 @@
 #include "boards/freenove_fnk0104b.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S)
 #include "boards/freenove_fnk0104s.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+#include "boards/xteink_x4_pro.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 #include "boards/elecrow_crowpanel_579.h"
 #else

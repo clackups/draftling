@@ -225,6 +225,64 @@ FT6336U capacitive touch controller, so touch works alongside the BLE
 keyboard.
 
 
+## Xteink X4 Pro
+
+Xteink X4 Pro -- ESP32-S3 e-reader with a 4.26" 800x480 e-paper panel
+driven over plain SPI. Different manufacturing runs ship one of three
+panel controllers -- SSD1677, or one of two UltraChip parts (UC8179 /
+UC8279) -- which cannot be told apart from the outside; the display
+backend (`components/display/display_xteink_epd.cpp`) probes the
+controller over the bus at boot and drives whichever one is actually
+present, so a single firmware image works on any run. GT911
+capacitive touch and a CW2017 I2C fuel gauge share one I2C bus.
+Dual-channel (cool/warm) PWM front-light, both channels driven
+identically since Draftling has no warm/cool color-temperature UI.
+Three buttons: Left and Right scroll the editor a screen at a time
+(Page Up / Page Down); Power is the deep-sleep wake source, and a
+short press also puts the device to sleep on demand (there is no
+hardware latch on this board that can cut power to the ESP32 itself,
+so deep sleep is the closest equivalent to "off" -- see
+`wakeup_btn_poll_cb()` in `main/main.cpp`), while a 2 s hold forgets
+BLE keyboards, matching the convention on every other board. On-board
+MicroSD on SDMMC 1-bit.
+
+The enclosure's cover overlaps the panel unevenly -- on the unit this
+was tuned on, about 12 px on the left edge and 8 px on top, 0 on the
+right and bottom -- hiding that band from view. Screen margins are a
+user-adjustable setting (F1 -> Settings -> Margin Left/Right/Top/
+Bottom, 0-40 px in 2 px steps, zero by default; see AGENTS.md's
+"Screen margins" section), not a per-board compile-time default, so
+dial them in to match your own unit and restart to apply. They shrink
+the editor/LVGL canvas by that much and the display backend offsets
+every write into the physical framebuffer to compensate, so on-screen
+content is never drawn where the cover would hide it.
+
+**This board has been tested on physical hardware after an initial
+blind port.** The register sequences, timing and the
+controller-detection probe are ported from the [FreeInk
+SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed), which
+reverse-engineered the Xteink X4 Pro OEM firmware down to exact
+register values and validated the non-grayscale paths used here on
+real units. Grayscale / anti-aliasing rendering is not implemented,
+matching every other e-paper board. `display_xteink_epd.cpp` now runs
+the panel's SPI bus at the OEM's own 5 MHz rather than the FreeInk
+SDK reference's speed-optimized 20 MHz default.
+
+On-hardware testing (UC8179 controller variant) found a full refresh
+reproducibly painted only the top third or so of the panel, leaving
+the rest blank -- traced to a genuine race condition in
+`uc8179_display_full()` / `uc8279_display_full()`: the OLD-plane
+write reused the same scratch buffer the NEW-plane write had just
+handed to `esp_lcd_panel_io_tx_color()`, whose SPI/DMA transfer is
+queued asynchronously and can still be in flight when the very next
+line `memset()`s that same buffer, corrupting the in-flight transfer.
+Both functions now stream the OLD-plane's constant white fill from a
+separate, never-mutated buffer instead of reusing the NEW-plane's
+scratch buffer. The GT911 touch orientation (`TOUCH_SWAP_XY` /
+`TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `main/boards/xteink_x4_pro.h`)
+is still a best-effort starting point and may need a dial-in pass
+with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`.
+
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
 [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI
@@ -312,4 +370,8 @@ reTerminal E1001 and the Waveshare E-Paper Driver HAT) were previously
 supported, but proved too slow for an interactive Markdown editor:
 even with fast partial updates, the panel cannot keep up with typing
 and quickly accumulates ghosting artefacts. Support for UC8179 has
-therefore been removed from the codebase.
+therefore been removed from the codebase, except for the specific
+waveform/timing combination used by the Xteink X4 Pro's UC8179 /
+UC8279 panel controller variants (see above), which use a different,
+faster partial-refresh waveform than the panels that prompted the
+earlier removal.
