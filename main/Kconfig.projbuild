@@ -199,6 +199,32 @@ config DRAFTLING_MODEL_ELECROW_CROWPANEL_579
         This board has been added without on-hardware testing; see
         HARDWARE.md.
 
+config DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    bool "Waveshare ESP32-S3-ePaper-3.97 (SSD1677-compatible, 800x480 e-paper)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Waveshare ESP32-S3-ePaper-3.97: 3.97" 800x480 black/white
+        e-paper panel driven over plain SPI by
+        components/display/display_ws_epd397.cpp, using the same
+        SSD1677-family differential-refresh protocol as the Xteink X4
+        Pro's SSD1677 path (no manufacturing-run variance to detect
+        here -- this board carries a single panel controller). No
+        touch controller; four discrete active-low buttons
+        (Up/Function/Down plus BOOT) stand in for it, with
+        Up/Function/Down wired to arrow keys / Enter. Battery and the
+        e-paper panel's own supply rail are both managed by an
+        on-board AXP2101 PMIC on I2C (see components/battery/battery.cpp
+        and the display backend's file header comment for the power-
+        sequencing dependency between them). On-board MicroSD on
+        SDMMC 1-bit.
+
+        This board has been added without on-hardware testing. Pin
+        numbers and the AXP2101 register map come from Waveshare's
+        official ESP-IDF example (github.com/waveshareteam/ESP32-S3-
+        ePaper-3.97); that repository carries no license, so no code
+        was copied from it, only these factual pin/register
+        assignments -- see main/boards/waveshare_epaper_397.h.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -354,6 +380,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -402,6 +429,17 @@ config DRAFTLING_DISPLAY_XTEINK_EPD
 config DRAFTLING_DISPLAY_SSD1683
     bool
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    default n
+
+# DRAFTLING_DISPLAY_WS_EPD397 selects the from-scratch SPI e-paper
+# backend for the Waveshare ESP32-S3-ePaper-3.97
+# (components/display/display_ws_epd397.cpp). Unlike the Xteink X4
+# Pro's DRAFTLING_DISPLAY_XTEINK_EPD, this board carries a single
+# panel controller (SSD1677-family protocol), so no boot-time
+# controller-detection probe is needed.
+config DRAFTLING_DISPLAY_WS_EPD397
+    bool
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 
 # DRAFTLING_EPDIY_BOARD_PAPERS3 selects the in-tree PaperS3 board
@@ -540,6 +578,12 @@ config DRAFTLING_HAS_BATTERY
     # the shared I2C bus (driver in components/battery, gated on
     # DRAFTLING_BATTERY_CW2017 below).
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Waveshare ESP32-S3-ePaper-3.97: battery is monitored via an
+    # AXP2101 PMIC on the shared I2C bus (driver in components/battery,
+    # gated on DRAFTLING_BATTERY_AXP2101 below). The same chip also
+    # switches the e-paper panel's own supply rail; see the display
+    # backend's file header comment.
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 
 # Selects the CW2017 fuel-gauge backend in components/battery/
@@ -551,6 +595,21 @@ config DRAFTLING_HAS_BATTERY
 config DRAFTLING_BATTERY_CW2017
     bool
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default n
+
+# Selects the AXP2101 PMIC backend in components/battery/ instead of
+# the GPIO ADC backend. main.cpp calls battery_init_axp2101(shared_i2c_bus)
+# when this symbol is set. Unlike the CW2017, the AXP2101 has a real
+# integrated charger, so battery_read_charging() reports real charge
+# state instead of always returning -1. This same chip's ALDO3 output
+# also powers the e-paper panel itself: the display backend
+# (components/display/display_ws_epd397.cpp) calls
+# battery_axp2101_enable_display_rail() from its
+# display_set_shared_i2c_bus() hook, before display_init() and before
+# battery_init_axp2101() run.
+config DRAFTLING_BATTERY_AXP2101
+    bool
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 
 # Selects the BQ27220 fuel-gauge backend in components/battery/
@@ -712,6 +771,10 @@ config DRAFTLING_SD_SDMMC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     # Xteink X4 Pro: on-board MicroSD wired to SDMMC 1-bit.
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Waveshare ESP32-S3-ePaper-3.97: on-board MicroSD wired to SDMMC.
+    # The vendor wires a full 4-bit bus, but Draftling only uses 1-bit
+    # mode (CLK/CMD/D0); the D1-D3 lines are left unconfigured.
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 
 # DRAFTLING_WAKEUP_GPIO is the per-board RTC-capable GPIO used as
@@ -753,6 +816,8 @@ config DRAFTLING_WAKEUP_GPIO
     # Elecrow CrowPanel 5.79" E-Paper HMI: Menu button on GPIO2
     # (active-low, RTC-capable).
     default 2  if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    # Waveshare ESP32-S3-ePaper-3.97: BOOT button on GPIO0.
+    default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 0
 
 # ---- Touchscreen support ----
@@ -1015,6 +1080,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 800 if DRAFTLING_MODEL_XTEINK_X4_PRO
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -1037,6 +1103,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 480 if DRAFTLING_MODEL_XTEINK_X4_PRO
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
+    default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -1091,6 +1158,10 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    # Waveshare ESP32-S3-ePaper-3.97: 800x480 on a 3.97" panel is
+    # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"
+    # (~219 DPI) above -- use the same Hack-font HIDPI path.
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"

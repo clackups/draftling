@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "display_rlcd.cpp" "display_epdiy.cpp" "display_h752.cpp" "epd_board_papers3.c" "display_axs15231b.cpp" "display_mipi_dsi.cpp" "display_rgb.cpp" "display_ili9341.cpp" "display_xteink_epd.cpp" "display_ssd1683.cpp" "display_margins.cpp" "lvgl_port.cpp"
+    SRCS "display_rlcd.cpp" "display_epdiy.cpp" "display_h752.cpp" "epd_board_papers3.c" "display_axs15231b.cpp" "display_mipi_dsi.cpp" "display_rgb.cpp" "display_ili9341.cpp" "display_xteink_epd.cpp" "display_ssd1683.cpp" "display_ws_epd397.cpp" "display_margins.cpp" "lvgl_port.cpp"
     INCLUDE_DIRS "include"
     ## ESP-IDF 6.0 removed the legacy `driver` component's public
     ## dependencies on the split `esp_driver_*` components (see the
@@ -8,7 +8,11 @@ idf_component_register(
     ## `driver/i2c_master.h`, and `driver/ledc.h`, so the matching
     ## `esp_driver_*` components must be listed explicitly. They
     ## also exist on IDF 5.3+, so the same list works on older IDFs.
-    PRIV_REQUIRES driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_ledc esp_lcd esp_timer lvgl__lvgl fastepd io_expander nvs_flash
+    ## `battery` is required by display_ws_epd397.cpp, which calls
+    ## battery_axp2101_enable_display_rail() to power the e-paper
+    ## panel's rail before touching it over SPI (see that file's
+    ## header comment).
+    PRIV_REQUIRES driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_ledc esp_lcd esp_timer lvgl__lvgl fastepd io_expander nvs_flash battery
 )
 
 # Inject the LVGL custom-allocator hooks (lv_mem_init / lv_malloc_core /

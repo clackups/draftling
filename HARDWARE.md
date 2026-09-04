@@ -352,6 +352,65 @@ and a bare second trigger without rewriting RAM (actively harmful --
 erases just-drawn content rather than fixing it, which is what pointed
 toward "repeat the *whole* update" instead).
 
+## Waveshare ESP32-S3-ePaper-3.97
+
+[Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97)
+-- ESP32-S3R8 (embedded octal 8 MB PSRAM, 16 MB flash) driving a
+3.97" 800x480 black/white e-paper panel over plain SPI, through a
+single panel controller (`components/display/display_ws_epd397.cpp`;
+unlike the Xteink X4 Pro, this board has no manufacturing-run
+variance to detect at boot). No touchscreen. Four discrete active-low
+buttons (Up, Function, Down, BOOT), read as plain GPIO inputs -- not
+a quadrature rotary encoder, despite Waveshare's marketing copy
+calling one of them a "rotary button" (confirmed from the vendor's
+own SDK, which polls them through a generic multi-button library).
+Up/Down inject the arrow keys and Function injects Enter
+(`ws_epaper397_nav_init()` in `main/main.cpp`), mirroring the Elecrow
+CrowPanel 5.79"'s Back/dial-switch convention; BOOT is the standard
+deep-sleep wake / BLE-forget button every other board already gets.
+On-board MicroSD wired to a full 4-bit SDMMC bus, of which Draftling
+only uses 1-bit mode (CLK/CMD/D0), matching every other SDMMC board
+in this repo.
+
+Battery is monitored through an on-board X-Powers AXP2101 PMIC on
+I2C (`battery_init_axp2101()` in `components/battery/battery.cpp`) --
+unlike the Xteink X4 Pro's CW2017, the AXP2101 has a real integrated
+charger, so charge state is reported directly instead of always
+"unknown". **This same PMIC also switches the e-paper panel's own
+analog supply rail** through its ALDO3 LDO output (confirmed from the
+vendor SDK's `EPD_Power_ON()` / `EPD_Power_OFF()`, which gate the
+panel via the PMIC before/after every display bring-up): ALDO3 must
+be enabled over I2C before any SPI command reaches the panel, or it
+never responds. `display_ws_epd397.cpp` handles this through its
+`display_set_shared_i2c_bus()` implementation, which
+`main/main.cpp` calls before `display_init()` specifically for this
+purpose (the same hook other boards use to hand a shared I2C bus to
+an epdiy/CH422G display backend) -- it calls
+`battery_axp2101_enable_display_rail()` immediately, ahead of the
+normal `battery_init_axp2101()` call later in boot. Both entry points
+share one cached I2C device handle so the AXP2101 is only ever added
+to the bus once.
+
+This board has been added without on-hardware testing. Pin numbers
+and the AXP2101 register map used here were read out of Waveshare's
+official ESP-IDF example
+([github.com/waveshareteam/ESP32-S3-ePaper-3.97](https://github.com/waveshareteam/ESP32-S3-ePaper-3.97)).
+That repository carries no LICENSE file / license grant, so no source
+from it was copied anywhere in this port -- only these factual
+pin/register assignments were used, the same way the Elecrow
+CrowPanel 5.79" board treats its vendor's Eagle schematic as
+facts-only. The e-paper register sequence itself
+(`display_ws_epd397.cpp`) is fresh code implementing the standard
+SSD1677-family differential-refresh protocol already used by this
+repo's own `components/display/display_xteink_epd.cpp` (`ssd1677_*`
+functions), not a port of the vendor's driver. This board also has no
+front-light / backlight.
+
+The vendor board additionally carries a PCF85063 RTC, an SHTC3
+temperature/humidity sensor, a QMI8658 IMU, and an ES8311 audio codec
++ microphone on the same I2C bus as the AXP2101 -- none of these are
+used by Draftling.
+
 
 
 ## Other hardware

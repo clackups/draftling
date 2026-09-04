@@ -53,6 +53,7 @@ card).
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
+| Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
 E-Paper Driver HAT) were previously supported but have been removed:
@@ -179,6 +180,26 @@ Two backends:
   board's I2C bus and the CW2017 has no current register, so
   `battery_read_charging()` always returns -1 (unknown) for this
   backend.
+* **X-Powers AXP2101 PMIC** over I2C (`battery_init_axp2101(bus)`):
+  used on the Waveshare ESP32-S3-ePaper-3.97, at 0x34. Unlike the
+  CW2017, this chip has a real integrated charger, so
+  `battery_read_charging()` reads STATUS2 (register 0x01, bits
+  [7:5]: 0=standby, 1=charging, 2=discharging) instead of always
+  returning -1. Voltage comes from the ADC result at registers
+  0x34/0x35 (13-bit, 1 mV/LSB, direct millivolts); percentage comes
+  from register 0xA4 as a direct integer 0-100, like the CW2017's SOC
+  register but without needing a profile upload -- just three enable
+  bits set once at init (battery detection 0x68 bit 0, battery-
+  voltage ADC 0x30 bit 0, fuel gauge 0xA2 bit 0). This same chip also
+  switches the e-paper panel's own analog supply rail through its
+  ALDO3 LDO output; a separate entry point,
+  `battery_axp2101_enable_display_rail(bus)`, brings up just that
+  rail (3300 mV) and is called by the display backend
+  (`display_ws_epd397.cpp`) via `display_set_shared_i2c_bus()` --
+  before `display_init()` sends anything over SPI and before
+  `battery_init_axp2101()` runs later in the normal boot sequence.
+  Both entry points share one cached I2C device handle so the chip is
+  only ever added to the bus once, regardless of call order.
 
 When no backend has been initialized, `battery_read_percent()`
 returns -1 and the editor UI hides the battery indicator.
@@ -191,8 +212,9 @@ cannot detect charge state (the GPIO-ADC backend), so the UI auto-
 hides the `+` charging glyph on those boards.
 
 Public API: `battery_init()`, `battery_init_bq27220()`,
-`battery_init_ina226()`, `battery_init_cw2017()`, `battery_read_mv()`,
-`battery_read_percent()`, `battery_read_charging()`.
+`battery_init_ina226()`, `battery_init_cw2017()`,
+`battery_init_axp2101()`, `battery_axp2101_enable_display_rail()`,
+`battery_read_mv()`, `battery_read_percent()`, `battery_read_charging()`.
 
 ### components/ble_keyboard/
 
@@ -315,6 +337,21 @@ Per-board display backends behind a single C API:
   reliably complete it (matching what pressing Ctrl+R always did) --
   see HARDWARE.md's CrowPanel section and PR #47 for the full
   investigation.
+- **display_ws_epd397.cpp** -- from-scratch SPI e-paper backend for
+  the Waveshare ESP32-S3-ePaper-3.97, gated on
+  `CONFIG_DRAFTLING_DISPLAY_WS_EPD397`. Unlike the Xteink X4 Pro, this
+  board carries a single panel controller, so there is no boot-time
+  controller-detection probe -- the register sequence is the same
+  SSD1677-family dual-RAM 0x24/0x26 differential refresh already
+  implemented by `display_xteink_epd.cpp`'s `ssd1677_*` functions,
+  reimplemented here for this board's own pins (not shared code, but
+  the same protocol). No front-light. Its
+  `display_set_shared_i2c_bus()` is NOT a no-op (unlike the Xteink
+  backend's): this board's e-paper panel is powered through an
+  on-board AXP2101 PMIC's ALDO3 LDO output, so `display_init()` cannot
+  talk to the panel over SPI until ALDO3 is enabled over I2C first --
+  see `components/battery/battery.cpp`'s
+  `battery_axp2101_enable_display_rail()`, called from this hook.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -1050,11 +1087,12 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro, Elecrow CrowPanel 5.79" |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
+| DRAFTLING_DISPLAY_WS_EPD397       | Selects `display_ws_epd397.cpp` (plain SPI, single SSD1677-family controller, no boot-time detection) | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
@@ -1064,12 +1102,13 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro, Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro, Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro |
+| DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro, Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
 

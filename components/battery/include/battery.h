@@ -127,6 +127,49 @@ int battery_init_ina226(void *i2c_master_bus, int i2c_addr, int cells);
 int battery_init_cw2017(void *i2c_master_bus);
 
 /*
+ * Bring up just the AXP2101 ALDO3 rail (3300 mV) that powers the
+ * e-paper panel on the Waveshare ESP32-S3-ePaper-3.97 -- WITHOUT
+ * selecting the AXP2101 as the active battery-monitor backend.
+ *
+ * On that board the panel's analog supply is switched by the AXP2101
+ * PMIC's ALDO3 LDO output rather than a plain GPIO, so it must be
+ * enabled before the display backend's display_init() sends any SPI
+ * command to the panel -- otherwise the panel silently never
+ * responds. The display backend calls this from its
+ * display_set_shared_i2c_bus() (which main.cpp invokes before
+ * display_init()), i.e. before battery_init_axp2101() has run.
+ *
+ *   i2c_master_bus -- opaque pointer to an i2c_master_bus_handle_t.
+ *
+ * Idempotent and safe to call standalone: it lazily adds the AXP2101
+ * I2C device (shared with battery_init_axp2101() below via a cached
+ * handle, so the device is never added twice) and writes only the
+ * ALDO3 voltage/enable registers. Returns 0 on success, non-zero on
+ * failure.
+ */
+int battery_axp2101_enable_display_rail(void *i2c_master_bus);
+
+/*
+ * Initialize an X-Powers AXP2101 PMIC backend on an existing I2C
+ * master bus, at the fixed 7-bit address 0x34. Used by the Waveshare
+ * ESP32-S3-ePaper-3.97, which also relies on this same chip's ALDO3
+ * output to power the e-paper panel -- see
+ * battery_axp2101_enable_display_rail() above, which the display
+ * backend calls earlier in boot. Calling this function afterwards
+ * reuses the same cached I2C device handle rather than re-adding it.
+ *
+ * Unlike the CW2017, there IS a real charger inside the AXP2101, so
+ * battery_read_charging() reports real charge state instead of
+ * always returning -1. Percentage comes from the chip's internal
+ * fuel gauge (register 0xA4, direct integer 0-100 once enabled) --
+ * no discharge LUT needed, and no battery-profile upload is required
+ * (unlike the CW2017).
+ *
+ * Returns 0 on success, non-zero on failure.
+ */
+int battery_init_axp2101(void *i2c_master_bus);
+
+/*
  * Initialize the TI BQ25896 single-cell Li-ion charger on an existing
  * I2C master bus (driver/i2c_master.h). This is a charger, not a
  * monitor: it does not change what battery_read_mv() /
