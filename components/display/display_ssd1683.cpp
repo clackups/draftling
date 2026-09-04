@@ -92,19 +92,16 @@ static const char *TAG = "DisplaySSD1683";
 #define HALF_BUF_LEN        (BYTES_PER_HALF_ROW * PANEL_H)  /* 13600 */
 #define FULL_BUF_LEN         (BYTES_PER_ROW * PANEL_H)        /* 26928 */
 
-/* esp_lcd_panel_io_tx_color() bounces a PSRAM source buffer through a
- * freshly malloc'd internal-DRAM copy unless io_cfg.flags.
- * psram_dma_direct is set *and* the buffer is DMA-alignment-friendly
- * -- see display_ili9341.cpp's DMA_ALIGN_BYTES comment for the full
- * story (a documented, previously-fixed bug in this exact codebase):
- * without it, that bounce allocation can silently fail under internal
- * SRAM pressure, and esp_lcd_panel_io_tx_color()'s return value going
- * unchecked means the rest of the buffer just never gets sent while
- * the surrounding command sequence proceeds as if nothing went wrong.
- * This backend never needed to care while every send_buffer() call
- * was a small, narrow-window write; now that every refresh sends the
- * full HALF_BUF_LEN (13600 bytes) to each chip, the same failure mode
- * applies here too. */
+/* Alignment for s_pack_a/s_pack_b (see display_init()), the only
+ * buffers ever handed to esp_lcd_panel_io_tx_color() (via
+ * send_buffer()). They live in internal, natively DMA-capable RAM
+ * (MALLOC_CAP_DMA), which does not need this backend to worry about
+ * the PSRAM-source bounce-buffer/cache-sync path that
+ * display_ili9341.cpp's own DMA_ALIGN_BYTES comment documents (a
+ * previously-fixed bug in this exact codebase, where a PSRAM source
+ * buffer silently bounced through a fallible internal-DRAM copy under
+ * memory pressure) -- kept here mainly as defensive, cheap alignment
+ * for the DMA engine in general. */
 #define DMA_ALIGN_BYTES 64
 #define HALF_BUF_ALLOC_LEN (((size_t)HALF_BUF_LEN + DMA_ALIGN_BYTES - 1) & \
                             ~(size_t)(DMA_ALIGN_BYTES - 1))
@@ -117,8 +114,8 @@ static const char *TAG = "DisplaySSD1683";
 
 static esp_lcd_panel_io_handle_t s_io_handle = NULL;
 static uint8_t *s_disp_buf   = NULL;  /* FULL_BUF_LEN, PSRAM */
-static uint8_t *s_pack_a     = NULL;  /* HALF_BUF_LEN scratch, PSRAM */
-static uint8_t *s_pack_b     = NULL;  /* HALF_BUF_LEN scratch, PSRAM */
+static uint8_t *s_pack_a     = NULL;  /* HALF_BUF_LEN scratch, internal DMA-capable RAM */
+static uint8_t *s_pack_b     = NULL;  /* HALF_BUF_LEN scratch, internal DMA-capable RAM */
 static bool     s_initialized = false;
 
 /*
@@ -632,22 +629,39 @@ extern "C" void display_init(int /*mosi*/, int /*sck*/, int /*dc*/,
     io_cfg.lcd_param_bits    = 8;
     io_cfg.spi_mode          = 0;
     io_cfg.trans_queue_depth = 10;
-    /* See the DMA_ALIGN_BYTES comment above -- without this flag, a
-     * PSRAM source buffer gets bounced through a freshly malloc'd
-     * internal-DRAM copy that can silently fail (and drop the rest of
-     * the transfer) once internal SRAM is under pressure. */
+    /* Currently a no-op in practice -- see the DMA_ALIGN_BYTES comment
+     * above, s_pack_a/s_pack_b (the only buffers ever DMA'd here) are
+     * internal RAM, not PSRAM, so this flag's PSRAM-specific fast path
+     * never triggers. Left set defensively/cheaply in case that ever
+     * changes back. */
     io_cfg.flags.psram_dma_direct = 1;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)EPD_SPI_HOST,
                                              &io_cfg, &s_io_handle));
 
+    /* s_disp_buf is the authoritative framebuffer -- only ever read via
+     * memcpy() inside pack_window(), never itself handed to
+     * esp_lcd_panel_io_tx_color() -- so it has no DMA-capability
+     * requirement and stays in PSRAM (abundant, and at FULL_BUF_LEN
+     * the largest of these three buffers).
+     *
+     * s_pack_a/s_pack_b ARE the buffers handed to tx_color() for every
+     * refresh's actual SPI transfer, twice per keystroke (see
+     * display_flush()) -- putting these in internal, natively
+     * DMA-capable RAM instead skips the whole PSRAM-DMA path entirely
+     * (the psram_dma_direct flag and cache-sync/bounce-buffer concerns
+     * in the comments above only apply to external-RAM source
+     * buffers; MALLOC_CAP_DMA|MALLOC_CAP_INTERNAL memory was never
+     * that fragile fallback path to begin with). This costs ~27KB of
+     * this chip's much scarcer internal SRAM (vs. abundant 8MB PSRAM)
+     * -- if that turns out to starve the BLE/Wi-Fi stack under real
+     * use, move these back to MALLOC_CAP_SPIRAM (the assert() below
+     * will fail loudly at boot on outright allocation failure, not
+     * silently corrupt anything). */
     s_disp_buf = (uint8_t *)heap_caps_malloc(FULL_BUF_LEN, MALLOC_CAP_SPIRAM);
-    /* Aligned (and sized so the whole buffer stays aligned) so the
-     * psram_dma_direct fast path above is always taken instead of
-     * falling back to the internal-DRAM bounce copy. */
     s_pack_a = (uint8_t *)heap_caps_aligned_alloc(DMA_ALIGN_BYTES, HALF_BUF_ALLOC_LEN,
-                                                  MALLOC_CAP_SPIRAM);
+                                                  MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     s_pack_b = (uint8_t *)heap_caps_aligned_alloc(DMA_ALIGN_BYTES, HALF_BUF_ALLOC_LEN,
-                                                  MALLOC_CAP_SPIRAM);
+                                                  MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     assert(s_disp_buf && s_pack_a && s_pack_b);
     memset(s_disp_buf, 0xFF, FULL_BUF_LEN);  /* 0xFF = white paper */
 
