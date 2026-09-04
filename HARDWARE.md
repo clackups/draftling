@@ -246,13 +246,16 @@ so deep sleep is the closest equivalent to "off" -- see
 BLE keyboards, matching the convention on every other board. On-board
 MicroSD on SDMMC 1-bit.
 
-The enclosure's cover overlaps the panel unevenly -- 12 px on the
-left edge, 8 px on top, 0 on the right and bottom -- hiding that band
-from view; `DRAFTLING_DISPLAY_MARGIN_LEFT/RIGHT/TOP/BOTTOM` (Kconfig,
-zero on every other board) shrink the editor/LVGL canvas by that much
-and the display backend offsets every write into the physical
-framebuffer to compensate, so on-screen content is never drawn where
-the cover would hide it.
+The enclosure's cover overlaps the panel unevenly -- on the unit this
+was tuned on, about 12 px on the left edge and 8 px on top, 0 on the
+right and bottom -- hiding that band from view. Screen margins are a
+user-adjustable setting (F1 -> Settings -> Margin Left/Right/Top/
+Bottom, 0-40 px in 2 px steps, zero by default; see AGENTS.md's
+"Screen margins" section), not a per-board compile-time default, so
+dial them in to match your own unit and restart to apply. They shrink
+the editor/LVGL canvas by that much and the display backend offsets
+every write into the physical framebuffer to compensate, so on-screen
+content is never drawn where the cover would hide it.
 
 **This board has been tested on physical hardware after an initial
 blind port.** The register sequences, timing and the

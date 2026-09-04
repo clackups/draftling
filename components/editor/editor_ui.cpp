@@ -26,6 +26,7 @@
 #include "sd_card.h"
 #include "lvgl_port.h"
 #include "display.h"
+#include "display_margins.h"
 #include "standby.h"
 #include "greybeard.h"
 #include "battery.h"
@@ -76,17 +77,17 @@ static const char *TAG = "EditorUI";
 /* Layout constants -- account for display rotation. The editor and
  * LVGL canvas render 1:1 at the panel resolution (no framebuffer
  * upscaling; high-density boards use a larger font instead), minus
- * any DRAFTLING_DISPLAY_MARGIN_* (panel pixels hidden under the
- * enclosure -- zero on every board except the Xteink X4 Pro; see
+ * the user-adjustable screen margins (display_margin_*(), zero by
+ * default on every board -- see Settings -> Screen margins and
  * app_config.h's DISPLAY_LOGICAL_WIDTH/HEIGHT).
  *
  * At 90 or 270 degrees, the width and height are swapped. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP - CONFIG_DRAFTLING_DISPLAY_MARGIN_BOTTOM)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT - CONFIG_DRAFTLING_DISPLAY_MARGIN_RIGHT)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top() - display_margin_bottom())
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
 #else
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT - CONFIG_DRAFTLING_DISPLAY_MARGIN_RIGHT)
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP - CONFIG_DRAFTLING_DISPLAY_MARGIN_BOTTOM)
+#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
+#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top() - display_margin_bottom())
 #endif
 /* Header / status bar heights. These bars always use FONT_11, so on
  * high-density boards (which render 1:1 with the taller Hack font
@@ -552,6 +553,42 @@ static void save_append_only_to_nvs(void)
         nvs_commit(h);
         nvs_close(h);
     }
+}
+
+/* ---- Screen margins ----
+ * Pixels of physical panel hidden under an opaque bezel/enclosure
+ * cover on each edge (main/app_config.h's DISPLAY_LOGICAL_WIDTH/
+ * HEIGHT and this file's SCR_W/SCR_H both subtract these). Zero by
+ * default on every board; adjustable here. The LVGL display
+ * resolution is fixed for the life of the session, so a change only
+ * takes effect on the next restart -- these four locals track the
+ * *pending* (NVS-persisted) value for display/cycling, distinct from
+ * display_margin_*()'s frozen, currently-active value (see
+ * display_margins.h). */
+static int s_margin_left = 0, s_margin_right = 0, s_margin_top = 0, s_margin_bottom = 0;
+
+static void load_margins_from_nvs(void)
+{
+    display_margins_get_pending(&s_margin_left, &s_margin_right,
+                                &s_margin_top, &s_margin_bottom);
+}
+
+/* Cycle steps for each margin: 0-40 px in 2 px increments. Covers the
+ * range seen on real enclosures (the Xteink X4 Pro needed 12/8) with
+ * enough headroom for a wider bezel, without an unwieldy number of
+ * Enter presses per step. */
+#define MARGIN_OPTION_COUNT 21
+static const int MARGIN_OPTIONS[MARGIN_OPTION_COUNT] = {
+    0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20,
+    22, 24, 26, 28, 30, 32, 34, 36, 38, 40
+};
+
+static int find_margin_option(int px)
+{
+    for (int i = 0; i < MARGIN_OPTION_COUNT; i++) {
+        if (MARGIN_OPTIONS[i] == px) return i;
+    }
+    return 0;
 }
 
 /* True when the cursor sits at the very end of the active document's
@@ -3037,17 +3074,20 @@ static void refresh_menu_items(void)
 
     char buf[80];
 
-    /* 0: BLE status */
+    /* 0: Settings */
+    lv_list_add_btn(s_menu_list, NULL, "Settings...");
+
+    /* 1: BLE status */
     snprintf(buf, sizeof(buf), "BLE: %s",
              ble_keyboard_is_connected()
                  ? ble_keyboard_get_device_name()
                  : "not connected");
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 1: BLE scan */
+    /* 2: BLE scan */
     lv_list_add_btn(s_menu_list, NULL, "BLE: Start scan");
 
-    /* 2: WiFi status / connect */
+    /* 3: WiFi status / connect */
     if (wifi_manager_is_connected()) {
         snprintf(buf, sizeof(buf), "WiFi: %s (%s)",
                  wifi_manager_get_ssid(), wifi_manager_get_ip());
@@ -3056,21 +3096,18 @@ static void refresh_menu_items(void)
     }
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 3: WiFi disconnect */
+    /* 4: WiFi disconnect */
     lv_list_add_btn(s_menu_list, NULL, "WiFi: Disconnect");
 
-    /* 4: Git sync */
+    /* 5: Git sync */
     snprintf(buf, sizeof(buf), "Git Sync%s",
              git_sync_is_configured() ? "" : " (not configured)");
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 5: Keyboard layout */
+    /* 6: Keyboard layout */
     snprintf(buf, sizeof(buf), "Keyboard: %s  (Enter to cycle)",
              kb_layout_name(kb_layout_get()));
     lv_list_add_btn(s_menu_list, NULL, buf);
-
-    /* 6: Settings */
-    lv_list_add_btn(s_menu_list, NULL, "Settings...");
 
     /* 7: Close menu */
     lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
@@ -3177,11 +3214,15 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_INVERT   (-1)
 #define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 0)
 #endif
-#define SETTINGS_IDX_APPEND_ONLY (_SETTINGS_NEXT_AFTER_INVERT + 0)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 1)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 2)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 3)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 4)
+#define SETTINGS_IDX_APPEND_ONLY   (_SETTINGS_NEXT_AFTER_INVERT + 0)
+#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 1)
+#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 2)
+#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 4)
+#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 5)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 6)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 7)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 8)
 
 static void refresh_settings_items(void)
 {
@@ -3244,6 +3285,19 @@ static void refresh_settings_items(void)
     /* Append-only editing */
     snprintf(buf, sizeof(buf), "Append-only editing: %s",
              s_append_only ? "on" : "off");
+    lv_list_add_btn(s_settings_list, NULL, buf);
+
+    /* Screen margins -- pixels of panel hidden under the enclosure on
+     * each edge. Zero by default; a change only takes effect after a
+     * restart (the LVGL display resolution is fixed for the session),
+     * hence the reminder suffix. */
+    snprintf(buf, sizeof(buf), "Margin left: %dpx (restart to apply)", s_margin_left);
+    lv_list_add_btn(s_settings_list, NULL, buf);
+    snprintf(buf, sizeof(buf), "Margin right: %dpx (restart to apply)", s_margin_right);
+    lv_list_add_btn(s_settings_list, NULL, buf);
+    snprintf(buf, sizeof(buf), "Margin top: %dpx (restart to apply)", s_margin_top);
+    lv_list_add_btn(s_settings_list, NULL, buf);
+    snprintf(buf, sizeof(buf), "Margin bottom: %dpx (restart to apply)", s_margin_bottom);
     lv_list_add_btn(s_settings_list, NULL, buf);
 
     /* Sleep now */
@@ -3453,6 +3507,26 @@ static void settings_activate_item(int idx)
         s_append_only = !s_append_only;
         save_append_only_to_nvs();
         refresh_settings_items();
+    } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
+        int oi = find_margin_option(s_margin_left);
+        s_margin_left = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        refresh_settings_items();
+    } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
+        int oi = find_margin_option(s_margin_right);
+        s_margin_right = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        refresh_settings_items();
+    } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
+        int oi = find_margin_option(s_margin_top);
+        s_margin_top = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        refresh_settings_items();
+    } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
+        int oi = find_margin_option(s_margin_bottom);
+        s_margin_bottom = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        refresh_settings_items();
     } else if (idx == SETTINGS_IDX_SLEEP) {
         /* Sleep now -- standby_enter_sleep() runs the registered
          * pre-sleep callback (autosave + per-board peripheral
@@ -3568,9 +3642,12 @@ static void wifi_connect_async(void);
 static void menu_activate_item(int idx)
 {
     switch (idx) {
-    case 0: /* BLE status -- no action */
+    case 0: /* Settings */
+        show_settings();
         break;
-    case 1: /* BLE scan */
+    case 1: /* BLE status -- no action */
+        break;
+    case 2: /* BLE scan */
         /* BLE may be idle (disabled) when another keyboard owns input
          * -- e.g. a USB or Tab5 keyboard was present at boot. Re-enable
          * it first so an on-demand scan can actually start. No-op when
@@ -3580,19 +3657,19 @@ static void menu_activate_item(int idx)
         editor_ui_set_status("BLE: scanning...");
         close_menu();
         break;
-    case 2: /* WiFi connect */
+    case 3: /* WiFi connect */
         if (!wifi_manager_is_connected()) {
             editor_ui_set_status("WiFi: connecting...");
             close_menu();
             wifi_connect_async();
         }
         break;
-    case 3: /* WiFi disconnect */
+    case 4: /* WiFi disconnect */
         wifi_manager_disconnect();
         editor_ui_set_status("WiFi: disconnected");
         close_menu();
         break;
-    case 4: /* Git sync */
+    case 5: /* Git sync */
         /* Auto-save unsaved edits so the sync task pushes the latest content. */
         if (editor_is_modified() && editor_get_file_path()) {
             editor_save_file();
@@ -3614,12 +3691,9 @@ static void menu_activate_item(int idx)
             editor_ui_set_status("Git: not configured");
         }
         break;
-    case 5: /* Keyboard layout cycle */
+    case 6: /* Keyboard layout cycle */
         kb_layout_next();
         refresh_menu_items();
-        break;
-    case 6: /* Settings */
-        show_settings();
         break;
     case 7: /* Close menu */
         close_menu();
@@ -6669,6 +6743,7 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+    load_margins_from_nvs();
     init_styles();
 
     /* Create key-event queue (must exist before BLE callback is set) */

@@ -1276,6 +1276,15 @@ extern "C" void app_main(void)
     }
     ESP_ERROR_CHECK(ret);
 
+    /* Load the user-adjustable panel margins (Settings -> Screen
+     * margins; zero on a fresh install) before anything below derives
+     * DISPLAY_LOGICAL_WIDTH/HEIGHT from them -- the LVGL display
+     * resolution, the touchscreen's logical_width/height, and (on
+     * backends that need it) the display backend's own framebuffer
+     * write offset all read display_margin_*() exactly once, here at
+     * boot. */
+    display_margins_init();
+
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
     /* Close the hardware power latch first thing after NVS so the
      * battery rail stays alive when the user releases the boot-time

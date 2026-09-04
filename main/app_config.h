@@ -1,27 +1,26 @@
 #pragma once
 
 #include "sdkconfig.h"
+#include "display_margins.h"
 
 /* Display dimensions (derived from Kconfig hardware model selection) */
 #define DISPLAY_WIDTH   CONFIG_DRAFTLING_DISPLAY_WIDTH
 #define DISPLAY_HEIGHT  CONFIG_DRAFTLING_DISPLAY_HEIGHT
 #define DISPLAY_ROTATE  CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE
 
-/* Physical panel pixels hidden under the enclosure/bezel on each
- * edge (pre-rotation); see DRAFTLING_DISPLAY_MARGIN_* in
- * Kconfig.projbuild. Zero on every board except the Xteink X4 Pro. */
-#define DISPLAY_MARGIN_LEFT    CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT
-#define DISPLAY_MARGIN_RIGHT   CONFIG_DRAFTLING_DISPLAY_MARGIN_RIGHT
-#define DISPLAY_MARGIN_TOP     CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP
-#define DISPLAY_MARGIN_BOTTOM  CONFIG_DRAFTLING_DISPLAY_MARGIN_BOTTOM
-
 /* The editor and LVGL canvas render 1:1 at the panel resolution,
- * minus the margins above -- DISPLAY_LOGICAL_WIDTH / HEIGHT is the
- * area actually visible through the enclosure. (High-density boards
- * no longer upscale the framebuffer; they select a larger font
- * instead -- see CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
-#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH  - DISPLAY_MARGIN_LEFT - DISPLAY_MARGIN_RIGHT)
-#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT - DISPLAY_MARGIN_TOP  - DISPLAY_MARGIN_BOTTOM)
+ * minus the user-adjustable margins (display_margins.h) -- pixels of
+ * physical panel hidden under an opaque bezel/enclosure cover on
+ * each edge. Zero by default on every board; adjustable via the
+ * editor's F1 -> Settings menu (Settings -> Screen margins) and
+ * takes effect on the next restart, since display_margins_init()
+ * must run before this is evaluated (see its caller in main.cpp).
+ * DISPLAY_LOGICAL_WIDTH / HEIGHT is the area actually visible through
+ * the enclosure. (High-density boards no longer upscale the
+ * framebuffer; they select a larger font instead -- see
+ * CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
+#define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
+#define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())
 
 /* SD Card mount point (shared across all hardware models) */
 #define SD_MOUNT_POINT  "/sdcard"

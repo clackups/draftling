@@ -351,13 +351,19 @@ The largest component. Contains:
   horizontal rules, and inline bold/italic/code/strikethrough spans.
 - **draftling_logo.c** -- embedded LVGL image for the splash screen.
 
-The F1 menu opens an in-line **Settings** list with: standby
-timeout, base font size, **Backlight** (NN%, only on boards with
+**Settings** is the first item in the F1 menu (moved to the top so it
+is a single Enter away without navigating past the connectivity
+items). It opens an in-line list with: standby timeout, base font
+size, **Backlight** (NN%, only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` -- the value is persisted
 in NVS under the `editor` namespace and applied at boot via
 `display_set_backlight()`; default 50%), color theme (only on
-`CONFIG_DRAFTLING_DISPLAY_COLOR`), sleep-now, factory reset and
-back. Picking a new color theme does NOT reboot the device:
+`CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, four screen
+margins (Left/Right/Top/Bottom, 0-40 px in 2 px steps, zero by
+default -- see the "Screen margins" section above; each change is
+persisted immediately but only takes effect after a restart, hence
+the "(restart to apply)" suffix on their labels), sleep-now, factory
+reset and back. Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
 calls `build_screens()` again and restores the screen the user was
@@ -964,10 +970,9 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   Down; Power is the wake source, and also puts the device to sleep on
   a short press (there is no hardware power-off latch on this board)
   or forgets BLE keyboards on a 2 s hold. The enclosure's cover
-  overlaps the panel unevenly (left 12 px, top 8 px, right/bottom 0)
-  -- see `DRAFTLING_DISPLAY_MARGIN_LEFT/RIGHT/TOP/BOTTOM` below. Tested on
-  physical hardware after an initial blind port; see HARDWARE.md.
-  *Requires ESP32-S3.*
+  overlaps the panel; the user-adjustable screen margins (see below)
+  compensate. Tested on physical hardware after an initial blind
+  port; see HARDWARE.md. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
@@ -988,18 +993,41 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
   (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro), 272 (Elecrow
   CrowPanel 5.79").
 
-Four more non-prompted `int` symbols, **DRAFTLING_DISPLAY_MARGIN_LEFT
-/ RIGHT / TOP / BOTTOM**, default to 0 on every board except the
-Xteink X4 Pro (left 12, top 8, right/bottom 0, matching its
-enclosure's uneven overlap with the panel). `main/app_config.h` subtracts them from
+### Screen margins (user-adjustable, not a Kconfig setting)
+
+Pixels of physical panel hidden under an opaque bezel/enclosure cover
+on each edge -- e.g. a recessed cutout whose cover overlaps the
+glass -- are a **runtime, NVS-persisted** setting, not a per-board
+Kconfig default: `components/display/display_margins.h` /
+`display_margins.cpp` expose `display_margin_left/right/top/bottom()`
+(a frozen, session-lifetime value loaded by `display_margins_init()`,
+which `main.cpp` calls immediately after `nvs_flash_init()` -- before
+`display_init()` / `draftling_lvgl_port_init()` -- so every consumer
+sees it from the first frame) and `display_margins_set()` /
+`display_margins_get_pending()` (write/read the raw NVS value for the
+*next* boot; the editor's F1 -> Settings menu uses these to let the
+user cycle each margin 0-40 px in 2 px steps). Zero on every board on
+a fresh install.
+
+`main/app_config.h` subtracts the frozen margins from
 `DISPLAY_WIDTH/HEIGHT` to get `DISPLAY_LOGICAL_WIDTH/HEIGHT` -- the
 area LVGL and the editor (`SCR_W`/`SCR_H` in `editor_ui.cpp`) actually
-render into -- and the display backend offsets every write into the
+render into -- and a display backend that needs to compensate (only
+`display_xteink_epd.cpp` does today) offsets every write into its
 physical framebuffer by the left/top margin so on-screen content
-never lands under the cover. A board with nonzero margins needs its
-display backend to apply this offset itself (see
-`display_xteink_epd.cpp`); backends for zero-margin boards need no
-changes.
+never lands under the cover.
+
+Changing a margin only takes effect after a restart: `display_margin_
+*()`'s frozen value (not whatever was most recently saved) is what
+every consumer reads for the life of the session, because the LVGL
+display resolution is fixed once `draftling_lvgl_port_init()` runs --
+re-deriving it live would mean tearing down and rebuilding the entire
+LVGL display and widget tree. If `display_margin_*()` returned the
+live NVS value instead, `SCR_W`/`SCR_H` would start disagreeing with
+LVGL's actual (unchanged) canvas size the moment a setting was saved,
+well before the restart meant to apply it -- this is why
+`display_margins_set()` deliberately does not touch the in-memory
+values `display_margin_*()` return.
 
 Both symbols are non-prompted (no menuconfig entry); to support a
 new board with a different resolution, add a model `config` block

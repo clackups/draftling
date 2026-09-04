@@ -43,6 +43,7 @@
 #include <freertos/task.h>
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "DisplayXteink";
 
@@ -84,14 +85,15 @@ static const char *TAG = "DisplayXteink";
  * black. 5 MHz matches the OEM and clears it. */
 #define XTEINK_SPI_CLOCK_HZ  (5 * 1000 * 1000)
 
-/* The enclosure's cover overlaps the panel unevenly (left 12 px, top
- * 8 px, right/bottom 0), hiding that band from view. Every incoming
- * coordinate (from LVGL, already rendering at the margin-shrunk
- * DISPLAY_LOGICAL_WIDTH/HEIGHT -- see app_config.h) is offset by the
- * left/top margin before it is written into the physical panel
- * framebuffer, so on-screen content never lands under the cover. */
-#define EPD_MARGIN_LEFT      CONFIG_DRAFTLING_DISPLAY_MARGIN_LEFT
-#define EPD_MARGIN_TOP       CONFIG_DRAFTLING_DISPLAY_MARGIN_TOP
+/* On enclosures whose cover overlaps the panel (user-adjustable via
+ * Settings -> Screen margins, zero by default -- see
+ * display_margins.h), every incoming coordinate (from LVGL, already
+ * rendering at the margin-shrunk DISPLAY_LOGICAL_WIDTH/HEIGHT -- see
+ * app_config.h) is offset by the left/top margin before it is
+ * written into the physical panel framebuffer, so on-screen content
+ * never lands under the cover. */
+#define EPD_MARGIN_LEFT      display_margin_left()
+#define EPD_MARGIN_TOP       display_margin_top()
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define XTEINK_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
