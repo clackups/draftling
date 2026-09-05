@@ -12,15 +12,17 @@ can be independently enabled or disabled. By default **US-English** and
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
 v6.0.2 or later.
 
-The repository root ships a [`CMakePresets.json`](CMakePresets.json)
-with one configuration preset per supported board. Each preset sets the
-correct IDF target and hardware model via its own
-`sdkconfig.defaults.<board>` file, and places its build output under
-`build/<board>` with the generated `sdkconfig` inside that same
-directory, so multiple boards can be configured side by side without
-clobbering each other's build state.
+All firmware sources and build files live under [`firmware/`](firmware),
+which ships a [`CMakePresets.json`](firmware/CMakePresets.json) with one
+configuration preset per supported board. Each preset sets the correct
+IDF target and hardware model via its own `sdkconfig.defaults.<board>`
+file, and places its build output under `build/<board>` with the
+generated `sdkconfig` inside that same directory, so multiple boards
+can be configured side by side without clobbering each other's build
+state. Run every `idf.py` command from inside `firmware/`:
 
 ```bash
+cd firmware
 idf.py --preset waveshare_rlcd42 build
 idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash
 ```
@@ -45,7 +47,8 @@ per-board `sdkconfig.defaults.<board>` files, delete the preset's
 generated `sdkconfig` so the defaults are re-applied:
 
 ```bash
-rm -f build/waveshare_rlcd42/sdkconfig
+rm -f firmware/build/waveshare_rlcd42/sdkconfig
+cd firmware
 idf.py --preset waveshare_rlcd42 build
 ```
 
@@ -93,6 +96,8 @@ automatically every `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` partials
 
 
 ## Project Structure
+
+All paths below are relative to `firmware/`:
 
 ```
 main/               Application entry point, pin definitions, Kconfig

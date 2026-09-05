@@ -1,5 +1,13 @@
 # Copilot Instructions
 
+All firmware sources and build files live under `firmware/` (see
+"Repository Layout" below for the full tree). Every path in this
+document -- `main/...`, `components/...`, `CMakeLists.txt`,
+`CMakePresets.json`, `sdkconfig.defaults*`, `partitions*.csv`,
+`build/<board>` -- is relative to `firmware/` unless stated otherwise.
+The repository root also has `docs/`, `images/`, `3D_Prints/`, and the
+top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
+
 ## Code Style
 
 - Do not use non-ASCII characters anywhere in the repository -- in code,
@@ -77,6 +85,9 @@ logic analyzer on the QSPI lines) that is outside the scope of this
 project, so this board is not supported.
 
 ## Repository Layout
+
+Paths below are relative to `firmware/` (see the note at the top of
+this document).
 
 ```
 CMakeLists.txt              Top-level CMake project file
@@ -1145,20 +1156,20 @@ with a `FATAL_ERROR` if `CONFIG_SPIRAM` is not set. Targets without
 on-chip PSRAM support (e.g. ESP32-S2, bare ESP32-C3 modules without
 PSRAM) are not supported.
 
-The repository root ships a `CMakePresets.json` with one preset per
-supported board (`waveshare_rlcd42`, `m5stack_papers3`,
-`lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
-`waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
-`sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
-`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
-`xteink_x4_pro`, `elecrow_crowpanel_579`). Each
+`firmware/` ships a `CMakePresets.json` with one preset per supported
+board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
+`lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
+`jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
+`waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`freenove_fnk0104s`, `xteink_x4_pro`, `elecrow_crowpanel_579`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
-`sdkconfig.defaults.<board>` file in the repository root (which sets
-`CONFIG_IDF_TARGET` and the board's `CONFIG_DRAFTLING_MODEL_*` option),
-and places `binaryDir` / `SDKCONFIG` under `build/<board>` so every
-board's build output stays isolated:
+`sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
+the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
+`SDKCONFIG` under `build/<board>` so every board's build output stays
+isolated. Run these from inside `firmware/`:
 
 ```bash
+cd firmware
 idf.py --preset waveshare_rlcd42 build
 idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
 ```
@@ -1168,7 +1179,7 @@ If you pull new changes that touch `sdkconfig.defaults` or a board's
 `sdkconfig` so the defaults are re-applied:
 
 ```bash
-rm -f build/waveshare_rlcd42/sdkconfig
+rm -f build/waveshare_rlcd42/sdkconfig    # from inside firmware/
 idf.py --preset waveshare_rlcd42 build
 ```
 
@@ -1191,11 +1202,17 @@ cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
 keep pointing at an older tag until it is next rebuilt.
 
-1. Bump `PROJECT_VER` in `CMakeLists.txt`, commit, and push `main`
-   (along with whatever else is going into the release).
+Note: step 5 below refers to `firmware/` on the *`_flasher`* branch --
+its own binary-staging directory, named the same as (but unrelated to)
+the `firmware/` subdirectory on `main` that holds the actual build
+tree referenced in steps 1-4.
+
+1. Bump `PROJECT_VER` in `firmware/CMakeLists.txt`, commit, and push
+   `main` (along with whatever else is going into the release).
 2. For each board with prebuilt binaries, build at the commit that
    will be tagged and sanity-check the output:
    ```bash
+   cd firmware
    idf.py --preset m5stack_papers3 build
    idf.py --preset xteink_x4_pro build
    # ...and so on for every board in the release
@@ -1207,9 +1224,9 @@ keep pointing at an older tag until it is next rebuilt.
    ```
 4. Create the GitHub release and upload each board's three images,
    named `draftling-<board>[-bootloader|-partition-table].bin` (from
-   `build/<board>/bootloader/bootloader.bin`,
-   `build/<board>/partition_table/partition-table.bin`, and
-   `build/<board>/draftling.bin`):
+   `firmware/build/<board>/bootloader/bootloader.bin`,
+   `firmware/build/<board>/partition_table/partition-table.bin`, and
+   `firmware/build/<board>/draftling.bin`):
    ```bash
    gh release create vX.Y.Z --title "Release X.Y.Z" --notes "..."
    gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
@@ -1220,9 +1237,9 @@ keep pointing at an older tag until it is next rebuilt.
    branch with no shared history with `main`, published via GitHub
    Pages, so check it out in a separate `git worktree` rather than
    switching your main checkout to it):
-   - Add `firmware/vX.Y.Z/` with the same binaries uploaded to the
-     release, named identically, for each board included in this
-     release.
+   - Add `firmware/vX.Y.Z/` (on `_flasher`) with the same binaries
+     uploaded to the release, named identically, for each board
+     included in this release.
    - In `manifest.json`, each board has its own `releases` array
      (newest first). For each board this release covers, prepend a new
      entry with its `tag`, flash mode/freq/size, and `parts[].path`
@@ -1231,9 +1248,9 @@ keep pointing at an older tag until it is next rebuilt.
      under.
    - Commit and push to `_flasher` -- GitHub Pages redeploys
      automatically; no separate deploy step.
-   - A `firmware/<tag>/` directory can be deleted once no board's
-     `releases` references it any more (check every board, not just
-     the ones just updated).
+   - A `firmware/<tag>/` directory (on `_flasher`) can be deleted once
+     no board's `releases` references it any more (check every board,
+     not just the ones just updated).
 
 Note: the `gh` CLI here is authenticated with a fine-grained PAT that
 can create tags, releases, and release assets, but is *not* authorized

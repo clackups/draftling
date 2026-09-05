@@ -58,7 +58,7 @@ default on both SKUs (the on-board I2C bus is shared between epdiy and
 the touchscreen component via the pinned post-2.0.0 epdiy commit's
 `epd_init_with_config()` entry point). Battery state of charge comes
 from the on-board BQ27220 fuel gauge over I2C (the
-`components/battery/` `battery_init_bq27220()` backend, gated on
+`firmware/components/battery/` `battery_init_bq27220()` backend, gated on
 `CONFIG_DRAFTLING_BATTERY_BQ27220`); the editor status bar shows the
 percentage. The on-board MicroSD slot shares its SPI bus with the LoRa
 radio on the Pro; Draftling drives the LoRa chip-select HIGH at boot
@@ -77,7 +77,7 @@ original pre-"H752-01" revision (v1.0-240810) of the LilyGO T5 E-Paper
 S3 Pro. Same 4.7" ED047TC1 panel (960x540) and GT911 touch as the
 current Pro / Pro Lite, but without the PCA9535 IO expander and
 TPS65185 PMIC, so the panel is driven by the vendored FastEPD library
-(`components/fastepd`) instead of `vroland/epdiy`. The side key on
+(`firmware/components/fastepd`) instead of `vroland/epdiy`. The side key on
 GPIO48 acts as a Menu key (injects F1); GPIO48 is not an RTC IO, so
 standby uses light sleep + `gpio_wakeup` + `esp_restart` rather than
 EXT0 deep sleep. The capacitive touch key below the panel acts as Back
@@ -89,7 +89,7 @@ EXT0 deep sleep. The capacitive touch key below the panel acts as Back
 [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) is a 4.7"
 e-paper ED047TC1 (540x960) driven over a parallel I80 bus by the
 `vroland/epdiy` managed component with a PaperS3-specific board
-definition (`components/display/epd_board_papers3.c`).  GT911 touch on
+definition (`firmware/components/display/epd_board_papers3.c`).  GT911 touch on
 I2C. Battery on GPIO3 ADC (1:2).  BOOT (GPIO0) wakes from deep sleep
 (optionally any touch with
 `CONFIG_DRAFTLING_STANDBY_WAKE_ON_TOUCH`). On-board MicroSD on
@@ -231,7 +231,7 @@ Xteink X4 Pro -- ESP32-S3 e-reader with a 4.26" 800x480 e-paper panel
 driven over plain SPI. Different manufacturing runs ship one of three
 panel controllers -- SSD1677, or one of two UltraChip parts (UC8179 /
 UC8279) -- which cannot be told apart from the outside; the display
-backend (`components/display/display_xteink_epd.cpp`) probes the
+backend (`firmware/components/display/display_xteink_epd.cpp`) probes the
 controller over the bus at boot and drives whichever one is actually
 present, so a single firmware image works on any run. GT911
 capacitive touch and a CW2017 I2C fuel gauge share one I2C bus.
@@ -242,7 +242,7 @@ Three buttons: Left and Right scroll the editor a screen at a time
 short press also puts the device to sleep on demand (there is no
 hardware latch on this board that can cut power to the ESP32 itself,
 so deep sleep is the closest equivalent to "off" -- see
-`wakeup_btn_poll_cb()` in `main/main.cpp`), while a 2 s hold forgets
+`wakeup_btn_poll_cb()` in `firmware/main/main.cpp`), while a 2 s hold forgets
 BLE keyboards, matching the convention on every other board. On-board
 MicroSD on SDMMC 1-bit.
 
@@ -279,7 +279,7 @@ line `memset()`s that same buffer, corrupting the in-flight transfer.
 Both functions now stream the OLD-plane's constant white fill from a
 separate, never-mutated buffer instead of reusing the NEW-plane's
 scratch buffer. The GT911 touch orientation (`TOUCH_SWAP_XY` /
-`TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `main/boards/xteink_x4_pro.h`)
+`TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `firmware/main/boards/xteink_x4_pro.h`)
 has since been dialed in against a physical unit with
 `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`: the FreeInk SDK's starting values
 (`swapXY=true, flipY=true`) had touches landing 180 degrees opposite
@@ -314,7 +314,7 @@ driver at
 [github.com/samperk1/esphome-crowpanel-579](https://github.com/samperk1/esphome-crowpanel-579),
 which reverse-engineered and photograph-verified the dual-SSD1683
 command sequences this backend ports
-(`components/display/display_ssd1683.cpp`).
+(`firmware/components/display/display_ssd1683.cpp`).
 
 ### E-paper refresh reliability
 
