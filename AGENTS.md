@@ -1182,9 +1182,14 @@ shows it in the F1 menu's bottom status row. Bump this string as the
 first step of every release.
 
 A release also publishes prebuilt binaries for the boards covered by
-the web flasher (see below) -- currently `m5stack_papers3` and
-`xteink_x4_pro`. Extend the list there as more boards get a web-flasher
-entry.
+the web flasher (see below) -- currently `m5stack_papers3`,
+`xteink_x4_pro`, `waveshare_rlcd42`, `waveshare_touch_lcd_349`,
+`lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`freenove_fnk0104s`, and `elecrow_crowpanel_579`. Extend the list there
+as more boards get a web-flasher entry. A release does not need to
+cover every board with prebuilt binaries -- the flasher's manifest
+tracks a `releases` list per board (see below), so a board can simply
+keep pointing at an older tag until it is next rebuilt.
 
 1. Bump `PROJECT_VER` in `CMakeLists.txt`, commit, and push `main`
    (along with whatever else is going into the release).
@@ -1193,6 +1198,7 @@ entry.
    ```bash
    idf.py --preset m5stack_papers3 build
    idf.py --preset xteink_x4_pro build
+   # ...and so on for every board in the release
    ```
 3. Tag and push:
    ```bash
@@ -1214,15 +1220,20 @@ entry.
    branch with no shared history with `main`, published via GitHub
    Pages, so check it out in a separate `git worktree` rather than
    switching your main checkout to it):
-   - Add `firmware/vX.Y.Z/` with the same six binaries uploaded to the
-     release, named identically.
-   - Update `manifest.json`'s top-level `release` field and every
-     board's `parts[].path` to point at `firmware/vX.Y.Z/...`.
-   - Update the release link in `index.html` and `README.md`.
-   - Remove the previous tag's `firmware/<old-tag>/` directory once
-     nothing references it.
+   - Add `firmware/vX.Y.Z/` with the same binaries uploaded to the
+     release, named identically, for each board included in this
+     release.
+   - In `manifest.json`, each board has its own `releases` array
+     (newest first). For each board this release covers, prepend a new
+     entry with its `tag`, flash mode/freq/size, and `parts[].path`
+     pointing at `firmware/vX.Y.Z/...`. Leave other boards' `releases`
+     untouched -- they keep pointing at whatever tag they last shipped
+     under.
    - Commit and push to `_flasher` -- GitHub Pages redeploys
      automatically; no separate deploy step.
+   - A `firmware/<tag>/` directory can be deleted once no board's
+     `releases` references it any more (check every board, not just
+     the ones just updated).
 
 Note: the `gh` CLI here is authenticated with a fine-grained PAT that
 can create tags, releases, and release assets, but is *not* authorized
