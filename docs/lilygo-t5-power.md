@@ -1,5 +1,7 @@
 # LilyGO T5 E-Paper S3 Pro / Pro Lite -- deep-sleep power budget
 
+_Paths below (`main/...`, `components/...`) are relative to `firmware/`._
+
 The LilyGO T5 board carries an ESP32-S3, a 1500 mAh NP-F-class
 Li-ion pack, an EPDIY-driven e-paper panel (TPS65185 + PCA9535
 expander), a GT911 capacitive touch controller, a BQ27220 fuel

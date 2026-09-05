@@ -1,5 +1,8 @@
 # Wi-Fi + Bluetooth on the M5Stack Tab5 (ESP-Hosted-MCU)
 
+_Paths below (`main/...`, `components/...`, `sdkconfig.defaults*`) are
+relative to `firmware/`._
+
 The ESP32-P4 has no on-chip 2.4 GHz radio. On the M5Stack Tab5 the
 P4 is paired with an on-board ESP32-C6 module that provides Wi-Fi
 and BLE; the two chips are wired together over SDIO. Draftling

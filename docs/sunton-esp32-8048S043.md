@@ -1,5 +1,8 @@
 # Sunton ESP32-8048S043C -- board port notes
 
+_Paths below (`main/...`, `components/...`, `sdkconfig.defaults*`,
+`CMakePresets.json`) are relative to `firmware/`._
+
 The Sunton ESP32-8048S043C is a 4.3" HMI dev board: an ESP32-S3 (16 MB
 flash, 8 MB octal PSRAM) driving an 800x480 IPS color panel (ST7262)
 over a 16-bit parallel RGB565 interface, with a GT911 capacitive touch
@@ -151,8 +154,8 @@ which matches this board).
 ## Building
 
 The model and its board-specific overrides live in
-`sdkconfig.defaults.sunton_8048s043` in the repository root, wired up
-as the `sunton_8048s043` preset in `CMakePresets.json`:
+`sdkconfig.defaults.sunton_8048s043`, wired up as the
+`sunton_8048s043` preset in `CMakePresets.json`:
 
 ```
 idf.py --preset sunton_8048s043 build

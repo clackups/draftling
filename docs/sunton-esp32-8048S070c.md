@@ -1,5 +1,8 @@
 # Sunton ESP32-8048S070C -- board port notes
 
+_Paths below (`main/...`, `components/...`, `sdkconfig.defaults*`,
+`CMakePresets.json`) are relative to `firmware/`._
+
 ![Sunton ESP32-8048S070C board with Draftling software](../images/sunton-ESP32-8048S070C.jpg)
 
 The Sunton ESP32-8048S070C is a 7" HMI dev board: an ESP32-S3 (16 MB
@@ -142,8 +145,8 @@ which matches this board).
 ## Building
 
 The model and its board-specific overrides (DIO flash mode) live in
-`sdkconfig.defaults.sunton_8048s070` in the repository root, wired up
-as the `sunton_8048s070` preset in `CMakePresets.json`:
+`sdkconfig.defaults.sunton_8048s070`, wired up as the
+`sunton_8048s070` preset in `CMakePresets.json`:
 
 ```
 idf.py --preset sunton_8048s070 build

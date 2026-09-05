@@ -1,5 +1,8 @@
 # Waveshare ESP32-S3-Touch-LCD-7 -- board port notes
 
+_Paths below (`main/...`, `components/...`, `sdkconfig.defaults*`,
+`CMakePresets.json`, `build/...`) are relative to `firmware/`._
+
 The Waveshare ESP32-S3-Touch-LCD-7 is a 7" HMI dev board: an
 ESP32-S3N16R8 module (16 MB flash, 8 MB octal PSRAM) driving an
 800x480 ST7262 IPS panel over a 16-bit parallel RGB565 interface, with
