@@ -6,7 +6,7 @@ files in a distraction-free manner.
 
 A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
-are available on my YouTube channel.
+and [images](images/) demonstrate the firmware use.
 
 Xteink X4 Pro running Draftling firmware:
 ![Xteink X4 Pro with a JOMAA Bluetooth keybboard](images/Xteink_X4_Pro_01.jpg)
