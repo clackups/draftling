@@ -398,6 +398,16 @@ static bool poll_gt911(int *out_x, int *out_y)
             if (out_x) *out_x = lx;
             if (out_y) *out_y = ly;
             pressed = true;
+#if defined(CONFIG_DRAFTLING_TOUCH_DEBUG_LOG)
+            /* Diagnostic log: raw native coordinates read from the
+             * GT911 and the logical coordinates handed to LVGL after
+             * native_to_logical(). Used to dial in TOUCH_SWAP_XY /
+             * TOUCH_MIRROR_* on new boards. Gated behind
+             * DRAFTLING_TOUCH_DEBUG_LOG (off by default) so the logs
+             * do not spam the console during normal use. */
+            ESP_LOGI(TAG, "gt911 raw=(%d,%d) status=0x%02X -> logical=(%d,%d)",
+                     nx, ny, status, lx, ly);
+#endif
         } else {
             ESP_LOGD(TAG, "gt911 point read failed");
         }
@@ -694,12 +704,25 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
         uint8_t primary = s_cfg.i2c_addr;
         uint8_t alt     = (primary == 0x5D) ? 0x14 :
                           (primary == 0x14) ? 0x5D : primary;
-        if (i2c_master_probe(s_bus, primary, 100) != ESP_OK &&
-            alt != primary &&
+        bool primary_ok = i2c_master_probe(s_bus, primary, 100) == ESP_OK;
+        if (!primary_ok && alt != primary &&
             i2c_master_probe(s_bus, alt, 100) == ESP_OK) {
             ESP_LOGI(TAG, "GT911 responded at 0x%02X (configured 0x%02X)",
                      alt, primary);
             s_cfg.i2c_addr = alt;
+        } else if (!primary_ok && alt == s_cfg.i2c_addr) {
+            /* Neither the configured address nor the alternate ACK'd.
+             * We still proceed to add the I2C device below (driver-NG
+             * add_device does not itself talk to the bus), and the
+             * "touchscreen initialized" log further down will print
+             * regardless -- without this warning that log would look
+             * like a clean bring-up even though the controller never
+             * answered, which is exactly the failure mode this line
+             * is here to surface. */
+            ESP_LOGW(TAG, "GT911 did not respond at 0x%02X or 0x%02X -- "
+                          "check TOUCH_POWER_EN_PIN / I2C wiring / power "
+                          "sequencing; touch will not work",
+                     primary, alt);
         }
     }
 #endif

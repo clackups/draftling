@@ -11,8 +11,8 @@
  * Pin assignments, register sequences and waveform timing come from
  * the FreeInk SDK (https://github.com/Free-Ink/freeink-sdk, MIT
  * licensed), which reverse-engineered the OEM firmware's exact
- * register values. This board has NOT been tested on physical
- * hardware (same caveat as the M5Stack Tab5 entry in HARDWARE.md).
+ * register values. This board has been tested on physical hardware
+ * (see HARDWARE.md for the on-hardware bring-up notes).
  *
  * Included by main/app_config.h when
  * CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO is selected.
@@ -47,11 +47,16 @@
  * touchscreen_config_t field for this, so main.cpp drives it directly
  * as a one-off GPIO poke (same style as the LilyGO LoRa-CS drive).
  *
- * Native orientation (swap_xy=1, mirror_y=1) is carried over from the
- * FreeInk SDK's GT911 config for this board (swapXY=true, flipY=true)
- * as a best-effort starting point -- like every other new touch
- * board, it may need a dial-in pass with
- * CONFIG_DRAFTLING_TOUCH_DEBUG_LOG on real hardware. */
+ * The FreeInk SDK's GT911 config (swapXY=true, flipY=true) was used
+ * as a best-effort starting point but was 180 degrees off on real
+ * hardware -- CONFIG_DRAFTLING_TOUCH_DEBUG_LOG raw/logical coordinate
+ * logging on a physical unit showed every corner tap landing at its
+ * diagonal opposite (e.g. a physical top-left tap reporting as
+ * logical bottom-right). swap_xy=1 was correct (native X tracks the
+ * panel's top/bottom, native Y tracks left/right, confirming the
+ * native panel is mounted portrait under a landscape UI); mirroring
+ * the other axis of the pair (X instead of Y) is what corrects the
+ * 180-degree flip. */
 #define TOUCH_I2C_ADDR      0x5D
 #define TOUCH_INT_PIN       CONFIG_DRAFTLING_TOUCH_INT_GPIO
 #define TOUCH_RST_PIN       CONFIG_DRAFTLING_TOUCH_RST_GPIO
@@ -59,8 +64,8 @@
 #define TOUCH_NATIVE_W      480
 #define TOUCH_NATIVE_H      800
 #define TOUCH_SWAP_XY       1
-#define TOUCH_MIRROR_X      0
-#define TOUCH_MIRROR_Y      1
+#define TOUCH_MIRROR_X      1
+#define TOUCH_MIRROR_Y      0
 
 /* CW2017 fuel gauge, on the shared I2C bus above. No charger IC on
  * this bus, so charging state is reported as unknown. */

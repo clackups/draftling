@@ -280,8 +280,11 @@ Both functions now stream the OLD-plane's constant white fill from a
 separate, never-mutated buffer instead of reusing the NEW-plane's
 scratch buffer. The GT911 touch orientation (`TOUCH_SWAP_XY` /
 `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `main/boards/xteink_x4_pro.h`)
-is still a best-effort starting point and may need a dial-in pass
-with `CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`.
+has since been dialed in against a physical unit with
+`CONFIG_DRAFTLING_TOUCH_DEBUG_LOG`: the FreeInk SDK's starting values
+(`swapXY=true, flipY=true`) had touches landing 180 degrees opposite
+of where the finger was; `TOUCH_MIRROR_X`/`TOUCH_MIRROR_Y` are now 1/0
+(swapped from the initial 0/1) to correct it.
 
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
