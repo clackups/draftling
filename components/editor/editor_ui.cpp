@@ -6517,7 +6517,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(set_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(set_hdr, theme_fg(), 0);
     lv_label_set_text(set_hdr,
-                      "Settings - Up/Down, Enter to change, Esc to go back");
+                      "Settings - Up/Down, Arrows to change, Esc to go back");
 
     s_settings_list = lv_list_create(s_scr_settings);
     lv_obj_set_pos(s_settings_list, 0, 18);
