@@ -20,19 +20,19 @@ The [web flasher](https://clackups.github.io/draftling/) allows you to
 load the firmware quickly without having to compile it.
 
 * Ready-made consumer grade hardware
- * Xteink X4 Pro, so far the best value for money amongst e-paper devices.
- * LilyGO T5 E-Paper S3 Pro / Pro Lite
- * M5Stack PaperS3 (discontinued)
- * Waveshare ESP32-S3-Touch-LCD-3.49
- * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
+  * Xteink X4 Pro, so far the best value for money amongst e-paper devices.
+  * LilyGO T5 E-Paper S3 Pro / Pro Lite
+  * M5Stack PaperS3 (discontinued)
+  * Waveshare ESP32-S3-Touch-LCD-3.49
+  * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 * DIY boards
- * Waveshare ESP32-S3-RLCD-4.2 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
- * Guition JC3248W535
- * 7" and 4.3" Sunton boards
- * 2.8" and 4" Freenove boards
- * Waveshare ESP32-S3-Touch-LCD-7
- * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
+  * Waveshare ESP32-S3-RLCD-4.2 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
+  * Guition JC3248W535
+  * 7" and 4.3" Sunton boards
+  * 2.8" and 4" Freenove boards
+  * Waveshare ESP32-S3-Touch-LCD-7
+  * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
 
 
