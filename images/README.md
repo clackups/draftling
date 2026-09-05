@@ -1,5 +1,9 @@
 # Draftling photos
 
+## Xteink X4 Pro
+
+![Xteink X4 Pro with a JOMAA Bluetooth keybboard](Xteink_X4_Pro_01.jpg)
+
 ## Waveshare ESP32-S3-RLCD-4.2
 
 [Enclosure 3D model](../3D_Prints/Waveshare_ESP32-S3-RLCD-4.2) is available for printing.

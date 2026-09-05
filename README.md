@@ -8,8 +8,9 @@ A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
 are available on my YouTube channel.
 
-An M5Stack Tab5 with AJAZZ NKL61 keyboard and my messy working desk:
-![M5Stack Tab5 with AJAZZ NKL61 keyboard](images/M5Stack_Tab5_06.jpg)
+Xteink X4 Pro running Draftling firmware:
+![Xteink X4 Pro with a JOMAA Bluetooth keybboard](images/Xteink_X4_Pro_01.jpg)
+
 
 ## Supported hardware
 
