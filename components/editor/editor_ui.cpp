@@ -3458,25 +3458,26 @@ static void close_settings(void)
     show_menu();
 }
 
-static void settings_activate_item(int idx)
+/* Cycles a settings row's discrete value forward (dir=+1) or backward
+ * (dir=-1). Enter has always meant "next value"; the Left/Right arrow
+ * keys reuse this exact logic (dir=-1 for Left, dir=+1 for Right) so
+ * a row can be adjusted either direction without repeatedly wrapping
+ * all the way around via Enter. Returns false for rows that are not a
+ * simple in-place value cycle (Theme opens a sub-picker instead;
+ * Max file size, Sleep now, Factory reset and Back are actions, not
+ * values), so callers can no-op the arrow keys on those rows. */
+static bool settings_cycle_item(int idx, int dir)
 {
-    /* Moving away from the factory-reset item cancels confirmation */
-    if (idx != SETTINGS_IDX_RESET && s_factory_reset_confirm) {
-        s_factory_reset_confirm = false;
-        refresh_settings_items();
-    }
-
     if (idx == SETTINGS_IDX_TIMEOUT) {
-        /* Cycle to next timeout option */
         uint32_t cur = standby_get_timeout();
         int opt = find_timeout_option(cur);
-        opt = (opt + 1) % TIMEOUT_OPTION_COUNT;
+        opt = (opt + dir + TIMEOUT_OPTION_COUNT) % TIMEOUT_OPTION_COUNT;
         standby_set_timeout(TIMEOUT_OPTIONS[opt]);
         refresh_settings_items();
+        return true;
     } else if (idx == SETTINGS_IDX_FONTSZ) {
-        /* Cycle to next font size option */
         int fi = find_font_size_option(s_font_size);
-        fi = (fi + 1) % FONT_SIZE_COUNT;
+        fi = (fi + dir + FONT_SIZE_COUNT) % FONT_SIZE_COUNT;
         s_font_size = FONT_SIZE_OPTIONS[fi];
         save_font_size_to_nvs();
         init_styles();
@@ -3510,20 +3511,102 @@ static void settings_activate_item(int idx)
         draftling_lvgl_port_clear_buffers();
         invalidate_all_render_caches();
         lv_obj_invalidate(lv_scr_act());
-    } else if (idx == SETTINGS_IDX_MAXFILE) {
-        /* Read-only display of the dynamically-sized editor buffer.
-         * Enter is a no-op; the value is fixed at editor_init() time. */
+        return true;
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
     } else if (idx == SETTINGS_IDX_BACKLIGHT) {
-        /* Cycle to next backlight brightness step. Apply immediately
-         * so the user sees the change without leaving the menu. */
         int bi = find_backlight_option(s_backlight_pct);
-        bi = (bi + 1) % BACKLIGHT_OPTION_COUNT;
+        bi = (bi + dir + BACKLIGHT_OPTION_COUNT) % BACKLIGHT_OPTION_COUNT;
         s_backlight_pct = BACKLIGHT_OPTIONS[bi];
         save_backlight_to_nvs();
         display_set_backlight(s_backlight_pct);
         refresh_settings_items();
+        return true;
 #endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    } else if (idx == SETTINGS_IDX_ROTATE) {
+        /* Only two states, so either direction just toggles it.
+         * Applied immediately so the user sees the new orientation
+         * without leaving the menu; persisted in NVS and re-applied
+         * at boot. A 180 flip does not change the reported
+         * resolution, so the widget tree stays valid -- the LVGL port
+         * just repaints the whole panel in the new orientation. */
+        s_rotate180 = !s_rotate180;
+        save_rotate180_to_nvs();
+        draftling_lvgl_port_set_flip180(s_rotate180);
+        refresh_settings_items();
+        return true;
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    } else if (idx == SETTINGS_IDX_INVERT) {
+        /* Only two states, so either direction just toggles it.
+         * Applied immediately so the user sees the new polarity
+         * without leaving the menu; persisted in NVS and re-applied
+         * at boot. display_set_invert() only changes what
+         * display_flush() sends to the panel, so no repaint of the
+         * LVGL widget tree is needed. */
+        s_invert = !s_invert;
+        save_invert_to_nvs();
+        display_set_invert(s_invert);
+        refresh_settings_items();
+        return true;
+#endif
+    } else if (idx == SETTINGS_IDX_APPEND_ONLY) {
+        /* Only two states, so either direction just toggles it. No
+         * hardware side effects, so just flip the flag, persist it,
+         * and refresh the label. */
+        s_append_only = !s_append_only;
+        save_append_only_to_nvs();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
+        int oi = find_margin_option(s_margin_left);
+        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+        s_margin_left = MARGIN_OPTIONS[oi];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
+        refresh_settings_items();
+        return true;
+    } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
+        int oi = find_margin_option(s_margin_right);
+        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+        s_margin_right = MARGIN_OPTIONS[oi];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
+        refresh_settings_items();
+        return true;
+    } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
+        int oi = find_margin_option(s_margin_top);
+        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+        s_margin_top = MARGIN_OPTIONS[oi];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
+        refresh_settings_items();
+        return true;
+    } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
+        int oi = find_margin_option(s_margin_bottom);
+        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+        s_margin_bottom = MARGIN_OPTIONS[oi];
+        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
+        refresh_settings_items();
+        return true;
+    }
+    return false;
+}
+
+static void settings_activate_item(int idx)
+{
+    /* Moving away from the factory-reset item cancels confirmation */
+    if (idx != SETTINGS_IDX_RESET && s_factory_reset_confirm) {
+        s_factory_reset_confirm = false;
+        refresh_settings_items();
+    }
+
+    if (settings_cycle_item(idx, 1)) {
+        /* Handled -- Enter always means "next value", same as before. */
+    } else if (idx == SETTINGS_IDX_MAXFILE) {
+        /* Read-only display of the dynamically-sized editor buffer.
+         * Enter is a no-op; the value is fixed at editor_init() time. */
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     } else if (idx == SETTINGS_IDX_THEME) {
         /* Open the theme picker sub-list. The user navigates with
@@ -3534,61 +3617,6 @@ static void settings_activate_item(int idx)
         s_theme_picker_sel = s_theme_idx;
         refresh_theme_picker_items();
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    } else if (idx == SETTINGS_IDX_ROTATE) {
-        /* Toggle the runtime 180-degree display flip. Applied
-         * immediately so the user sees the new orientation without
-         * leaving the menu; persisted in NVS and re-applied at boot.
-         * A 180 flip does not change the reported resolution, so the
-         * widget tree stays valid -- the LVGL port just repaints the
-         * whole panel in the new orientation. */
-        s_rotate180 = !s_rotate180;
-        save_rotate180_to_nvs();
-        draftling_lvgl_port_set_flip180(s_rotate180);
-        refresh_settings_items();
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    } else if (idx == SETTINGS_IDX_INVERT) {
-        /* Toggle the inverted-screen option. Applied immediately so
-         * the user sees the new polarity without leaving the menu;
-         * persisted in NVS and re-applied at boot. display_set_invert()
-         * only changes what display_flush() sends to the panel, so no
-         * repaint of the LVGL widget tree is needed. */
-        s_invert = !s_invert;
-        save_invert_to_nvs();
-        display_set_invert(s_invert);
-        refresh_settings_items();
-#endif
-    } else if (idx == SETTINGS_IDX_APPEND_ONLY) {
-        /* Toggle append-only editing. No hardware side effects, so
-         * just flip the flag, persist it, and refresh the label. */
-        s_append_only = !s_append_only;
-        save_append_only_to_nvs();
-        refresh_settings_items();
-    } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
-        int oi = find_margin_option(s_margin_left);
-        s_margin_left = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
-        refresh_settings_items();
-    } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
-        int oi = find_margin_option(s_margin_right);
-        s_margin_right = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
-        refresh_settings_items();
-    } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
-        int oi = find_margin_option(s_margin_top);
-        s_margin_top = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
-        refresh_settings_items();
-    } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
-        int oi = find_margin_option(s_margin_bottom);
-        s_margin_bottom = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
-        refresh_settings_items();
     } else if (idx == SETTINGS_IDX_SLEEP) {
         /* Sleep now -- standby_enter_sleep() runs the registered
          * pre-sleep callback (autosave + per-board peripheral
@@ -3719,6 +3747,15 @@ static void handle_settings_key(const kb_event_t *ev)
         break;
     case KB_KEY_ENTER:
         settings_activate_item(s_settings_sel);
+        break;
+    case KB_KEY_LEFT:
+        /* Previous value on the highlighted row, without moving the
+         * highlight -- a no-op on rows settings_cycle_item() does not
+         * own (Theme, Max file, Sleep now, Factory reset, Back). */
+        settings_cycle_item(s_settings_sel, -1);
+        break;
+    case KB_KEY_RIGHT:
+        settings_cycle_item(s_settings_sel, 1);
         break;
     case KB_KEY_ESCAPE:
         request_close_settings();
