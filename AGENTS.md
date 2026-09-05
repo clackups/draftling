@@ -1171,3 +1171,62 @@ If you pull new changes that touch `sdkconfig.defaults` or a board's
 rm -f build/waveshare_rlcd42/sdkconfig
 idf.py --preset waveshare_rlcd42 build
 ```
+
+## Publishing a Release
+
+The project version lives in one place: `set(PROJECT_VER "X.Y.Z")` in
+the top-level `CMakeLists.txt`, set before `project(draftling)`. ESP-IDF
+embeds it in the app image's `esp_app_desc_t`; `components/editor/editor_ui.cpp`
+reads it back at runtime via `esp_app_get_description()->version` and
+shows it in the F1 menu's bottom status row. Bump this string as the
+first step of every release.
+
+A release also publishes prebuilt binaries for the boards covered by
+the web flasher (see below) -- currently `m5stack_papers3` and
+`xteink_x4_pro`. Extend the list there as more boards get a web-flasher
+entry.
+
+1. Bump `PROJECT_VER` in `CMakeLists.txt`, commit, and push `main`
+   (along with whatever else is going into the release).
+2. For each board with prebuilt binaries, build at the commit that
+   will be tagged and sanity-check the output:
+   ```bash
+   idf.py --preset m5stack_papers3 build
+   idf.py --preset xteink_x4_pro build
+   ```
+3. Tag and push:
+   ```bash
+   git tag -a vX.Y.Z -m "Release X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+4. Create the GitHub release and upload each board's three images,
+   named `draftling-<board>[-bootloader|-partition-table].bin` (from
+   `build/<board>/bootloader/bootloader.bin`,
+   `build/<board>/partition_table/partition-table.bin`, and
+   `build/<board>/draftling.bin`):
+   ```bash
+   gh release create vX.Y.Z --title "Release X.Y.Z" --notes "..."
+   gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
+       draftling-<board>-partition-table.bin draftling-<board>.bin
+   ```
+5. Update the web flasher on the `_flasher` branch (see its own
+   `README.md` for the full layout and rationale -- it is an orphan
+   branch with no shared history with `main`, published via GitHub
+   Pages, so check it out in a separate `git worktree` rather than
+   switching your main checkout to it):
+   - Add `firmware/vX.Y.Z/` with the same six binaries uploaded to the
+     release, named identically.
+   - Update `manifest.json`'s top-level `release` field and every
+     board's `parts[].path` to point at `firmware/vX.Y.Z/...`.
+   - Update the release link in `index.html` and `README.md`.
+   - Remove the previous tag's `firmware/<old-tag>/` directory once
+     nothing references it.
+   - Commit and push to `_flasher` -- GitHub Pages redeploys
+     automatically; no separate deploy step.
+
+Note: the `gh` CLI here is authenticated with a fine-grained PAT that
+can create tags, releases, and release assets, but is *not* authorized
+to manage repository settings (e.g. `gh api repos/.../pages` returns
+403). GitHub Pages for `_flasher` only needed enabling once, in
+Settings -> Pages; it does not need to be touched again for routine
+releases.
