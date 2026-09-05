@@ -1,8 +1,8 @@
 # Draftling
 
-This is a project aiming to build a writerdeck that can use [a variety
-of pre-made or DIY hardware](HARDWARE.md). The minimalist GUI lets you
-edit Markdown files in a distraction-free manner.
+This is a project aiming to build a writerdeck that can use a variety
+of pre-made or DIY hardware. The minimalist GUI lets you edit Markdown
+files in a distraction-free manner.
 
 A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
@@ -10,6 +10,31 @@ are available on my YouTube channel.
 
 An M5Stack Tab5 with AJAZZ NKL61 keyboard and my messy working desk:
 ![M5Stack Tab5 with AJAZZ NKL61 keyboard](images/M5Stack_Tab5_06.jpg)
+
+## Supported hardware
+
+[HARDWARE.md](HARDWARE.md) provides a detailed list of all supported
+hardware types.
+
+The [web flasher](https://clackups.github.io/draftling/) allows you to
+load the firmware quickly without having to compile it.
+
+* Ready-made consumer grade hardware
+ * Xteink X4 Pro, so far the best value for money amongst e-paper devices.
+ * LilyGO T5 E-Paper S3 Pro / Pro Lite
+ * M5Stack PaperS3 (discontinued)
+ * Waveshare ESP32-S3-Touch-LCD-3.49
+ * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
+
+* DIY boards
+ * Waveshare ESP32-S3-RLCD-4.2 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
+ * Guition JC3248W535
+ * 7" and 4.3" Sunton boards
+ * 2.8" and 4" Freenove boards
+ * Waveshare ESP32-S3-Touch-LCD-7
+ * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
+
+
 
 ## Features
 
