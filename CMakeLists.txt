@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/version.cmake)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# Draftling release version, shown in the F1 menu and embedded in the
+# app image's esp_app_desc_t (readable at runtime via
+# esp_app_get_description()->version). Bump this alongside every
+# tagged release.
+set(PROJECT_VER "1.0.1")
+
 project(draftling)
 
 # Draftling requires PSRAM on every supported board. The editor gap

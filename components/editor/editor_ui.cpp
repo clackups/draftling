@@ -3,6 +3,7 @@
 #include <string>
 #include <esp_log.h>
 #include <esp_system.h>
+#include <esp_app_desc.h>
 #include <nvs_flash.h>
 #include <nvs.h>
 #include "sdkconfig.h"
@@ -6498,7 +6499,7 @@ static void build_screens(void)
 
     s_menu_list = lv_list_create(s_scr_menu);
     lv_obj_set_pos(s_menu_list, 0, 18);
-    lv_obj_set_size(s_menu_list, SCR_W, LIST_PANEL_H);
+    lv_obj_set_size(s_menu_list, SCR_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_menu_list, 0, 0);
     lv_obj_set_style_radius(s_menu_list, 0, 0);
     lv_obj_set_style_pad_all(s_menu_list, 0, 0);
@@ -6507,6 +6508,22 @@ static void build_screens(void)
      * list background so the menu blends with the screen in
      * CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND mode. */
     lv_obj_set_style_bg_color(s_menu_list, theme_bg(), 0);
+
+    /* Bottom row: firmware version, mirroring the file browser's
+     * bottom status label above. esp_app_get_description()->version
+     * is embedded in the app image from CMakeLists.txt's PROJECT_VER
+     * at build time. */
+    lv_obj_t *menu_version_lbl = lv_label_create(s_scr_menu);
+    lv_obj_set_pos(menu_version_lbl, 2, SCR_H - STATUS_H + 2);
+    lv_obj_set_width(menu_version_lbl, SCR_W - 4);
+    lv_obj_set_style_text_font(menu_version_lbl, FONT_11, 0);
+    lv_obj_set_style_text_color(menu_version_lbl, theme_fg(), 0);
+    {
+        char ver_buf[48];
+        snprintf(ver_buf, sizeof(ver_buf), "Draftling v%s",
+                 esp_app_get_description()->version);
+        lv_label_set_text(menu_version_lbl, ver_buf);
+    }
 
     /* ---- Settings screen ---- */
     s_scr_settings = lv_obj_create(NULL);
