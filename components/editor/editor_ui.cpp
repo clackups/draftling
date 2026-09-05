@@ -567,6 +567,21 @@ static void save_append_only_to_nvs(void)
  * display_margins.h). */
 static int s_margin_left = 0, s_margin_right = 0, s_margin_top = 0, s_margin_bottom = 0;
 
+/* Set whenever a margin value is cycled during the current Settings
+ * visit; drives the "restart now?" prompt shown on the way out (see
+ * request_close_settings() / s_margin_confirm_open below), since that
+ * is the earliest point a restart can be applied without yanking the
+ * user out of the middle of adjusting margins. */
+static bool s_margins_changed = false;
+
+/* Full-takeover confirmation shown by request_close_settings() when
+ * leaving the Settings screen with a pending margin change -- same
+ * one-widget-list-reused pattern as the color-theme picker below.
+ * sel 0 = restart now, 1 = keep editing and apply later. */
+static bool s_margin_confirm_open     = false;
+static int  s_margin_confirm_sel      = 0;
+static int  s_margin_confirm_sel_prev = -1;
+
 static void load_margins_from_nvs(void)
 {
     display_margins_get_pending(&s_margin_left, &s_margin_right,
@@ -3288,9 +3303,10 @@ static void refresh_settings_items(void)
     lv_list_add_btn(s_settings_list, NULL, buf);
 
     /* Screen margins -- pixels of panel hidden under the enclosure on
-     * each edge. Zero by default; a change only takes effect after a
-     * restart (the LVGL display resolution is fixed for the session),
-     * hence the reminder suffix. */
+     * each edge. Zero by default; the LVGL display resolution is fixed
+     * for the session, so a change is not visible until a restart --
+     * request_close_settings() offers one as soon as the user leaves
+     * this screen with a pending change, hence the reminder suffix. */
     snprintf(buf, sizeof(buf), "Margin left: %dpx (restart to apply)", s_margin_left);
     lv_list_add_btn(s_settings_list, NULL, buf);
     snprintf(buf, sizeof(buf), "Margin right: %dpx (restart to apply)", s_margin_right);
@@ -3372,12 +3388,54 @@ static void close_theme_picker(void)
 }
 #endif
 
+/* ---- Margin-change restart prompt ----
+ * Renders into the same s_settings_list widget while
+ * s_margin_confirm_open is true -- same reused-list pattern as the
+ * color-theme picker above. Shown by request_close_settings() when
+ * the user leaves the Settings screen having cycled at least one
+ * margin this visit. */
+static void refresh_margin_confirm_items(void)
+{
+    lv_obj_clean(s_settings_list);
+    lv_list_add_btn(s_settings_list, NULL, "Restart now to apply margins");
+    lv_list_add_btn(s_settings_list, NULL, "Keep editing (apply later)");
+    apply_list_selection_styles(s_settings_list, s_margin_confirm_sel);
+    s_margin_confirm_sel_prev = s_margin_confirm_sel;
+}
+
+static void update_margin_confirm_highlight(void)
+{
+    update_list_highlight(s_settings_list, s_margin_confirm_sel,
+                          s_margin_confirm_sel_prev);
+    s_margin_confirm_sel_prev = s_margin_confirm_sel;
+}
+
+static void close_settings(void);
+
+/* Leaves the Settings screen, but if a margin was cycled this visit,
+ * offers to restart immediately instead of closing straight away --
+ * the LVGL display resolution is fixed for the session (see
+ * display_margins.h), so a restart is the only way to make the new
+ * margin visible without waiting for the next natural reboot/wake. */
+static void request_close_settings(void)
+{
+    if (s_margins_changed) {
+        s_margin_confirm_open = true;
+        s_margin_confirm_sel = 0;
+        refresh_margin_confirm_items();
+        return;
+    }
+    close_settings();
+}
+
 static void show_settings(void)
 {
     s_settings_open = true;
     s_menu_open = false;
     s_settings_sel = 0;
     s_factory_reset_confirm = false;
+    s_margins_changed = false;
+    s_margin_confirm_open = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open = false;
 #endif
@@ -3511,21 +3569,25 @@ static void settings_activate_item(int idx)
         int oi = find_margin_option(s_margin_left);
         s_margin_left = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
         refresh_settings_items();
     } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
         int oi = find_margin_option(s_margin_right);
         s_margin_right = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
         refresh_settings_items();
     } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
         int oi = find_margin_option(s_margin_top);
         s_margin_top = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
         refresh_settings_items();
     } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
         int oi = find_margin_option(s_margin_bottom);
         s_margin_bottom = MARGIN_OPTIONS[(oi + 1) % MARGIN_OPTION_COUNT];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+        s_margins_changed = true;
         refresh_settings_items();
     } else if (idx == SETTINGS_IDX_SLEEP) {
         /* Sleep now -- standby_enter_sleep() runs the registered
@@ -3546,12 +3608,43 @@ static void settings_activate_item(int idx)
             refresh_settings_items();
         }
     } else if (idx == SETTINGS_IDX_BACK) {
-        close_settings();
+        request_close_settings();
     }
 }
 
 static void handle_settings_key(const kb_event_t *ev)
 {
+    if (s_margin_confirm_open) {
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+        case KB_KEY_DOWN:
+            s_margin_confirm_sel = s_margin_confirm_sel == 0 ? 1 : 0;
+            update_margin_confirm_highlight();
+            break;
+        case KB_KEY_ENTER:
+            if (s_margin_confirm_sel == 0) {
+                ESP_LOGI(TAG, "Restarting to apply new screen margins");
+                esp_restart();
+                /* does not return */
+            }
+            s_margin_confirm_open = false;
+            close_settings();
+            break;
+        case KB_KEY_ESCAPE:
+            /* Same as "keep editing" -- Escape leaving the user stuck
+             * re-answering the same prompt would be worse than just
+             * deferring the restart, since the margin is already
+             * saved to NVS and will apply on the next natural
+             * restart/sleep-wake regardless. */
+            s_margin_confirm_open = false;
+            close_settings();
+            break;
+        default:
+            break;
+        }
+        return;
+    }
+
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     if (s_theme_picker_open) {
         /* Total picker rows: COLOR_THEME_COUNT themes + 1 "Cancel" row. */
@@ -3628,7 +3721,7 @@ static void handle_settings_key(const kb_event_t *ev)
         settings_activate_item(s_settings_sel);
         break;
     case KB_KEY_ESCAPE:
-        close_settings();
+        request_close_settings();
         break;
     default:
         break;
@@ -5667,6 +5760,7 @@ static void apply_pending_connect_state(void)
          * editor_close_file() -- preserve the user's work. */
         s_menu_open = false;
         s_settings_open = false;
+        s_margin_confirm_open = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
         s_theme_picker_open = false;
 #endif
@@ -6668,6 +6762,8 @@ static void teardown_screens(void)
     s_theme_picker_open       = false;
 #endif
     s_factory_reset_confirm   = false;
+    s_margins_changed         = false;
+    s_margin_confirm_open     = false;
     s_save_open               = false;
     s_exit_open               = false;
     s_search_open             = false;
