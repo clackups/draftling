@@ -556,6 +556,38 @@ static void save_append_only_to_nvs(void)
     }
 }
 
+/* ---- Active language layouts ----
+ * Toggled from the F1 -> Settings menu and persisted in NVS. Selects
+ * which of the compiled-in keyboard layouts (see kb_layout.h) Ctrl+L /
+ * Win+Space rotate through -- a build with several layouts enabled in
+ * Kconfig does not force every user to page through all of them just
+ * to get back to the one or two they actually use. Defaults to US and
+ * UA (see kb_layout.cpp's default_active_mask()). The mask itself is
+ * owned by kb_layout.cpp; this is just the NVS load/save wrapper. */
+#define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
+
+static void load_active_layouts_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint32_t v = 0;
+        if (nvs_get_u32(h, NVS_KEY_ACTIVE_LAYOUTS, &v) == ESP_OK) {
+            kb_layout_set_active_mask(v);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_active_layouts_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u32(h, NVS_KEY_ACTIVE_LAYOUTS, kb_layout_get_active_mask());
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 /* ---- Screen margins ----
  * Pixels of physical panel hidden under an opaque bezel/enclosure
  * cover on each edge (main/app_config.h's DISPLAY_LOGICAL_WIDTH/
@@ -742,6 +774,16 @@ static bool s_theme_picker_open      = false;
 static int  s_theme_picker_sel       = 0;
 static int  s_theme_picker_sel_prev  = -1;
 #endif
+
+/* Active-language-layouts picker overlay (shares s_scr_settings /
+ * s_settings_list, shown in place of the regular settings list while
+ * open). One checklist row per compiled-in layout plus a "Done" row;
+ * Enter toggles the highlighted layout in/out of the active set
+ * immediately (no separate confirm step, mirroring Append-only /
+ * Rotate / Invert). */
+static bool s_layouts_picker_open      = false;
+static int  s_layouts_picker_sel       = 0;
+static int  s_layouts_picker_sel_prev  = -1;
 
 /* Passkey overlay objects */
 static lv_obj_t *s_passkey_panel = NULL;
@@ -1409,21 +1451,29 @@ static void update_title_bar(void)
     int line, col;
     editor_get_cursor_pos(&line, &col);
     int total_lines = editor_get_line_count();
+    /* Only worth telling the user which layout is active when there is
+     * more than one in the active set to rotate through (see the
+     * "Active language layouts" setting) -- with a single active
+     * layout Ctrl+L has nothing to switch to, so the tag would just be
+     * noise in the title bar. */
+    char layout_tag[16] = "";
+    if (kb_layout_active_count() > 1) {
+        snprintf(layout_tag, sizeof(layout_tag), "  [%s]",
+                 kb_layout_name(kb_layout_get()));
+    }
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     /* On e-paper boards the cursor moves on every keystroke, so the
      * column counter is omitted to avoid dirtying the title bar on
      * every edit. The line counter ("L %d/%d") only changes when the
      * cursor moves to a different line, so the s_prev_title cache
      * below collapses no-op redraws back to a single update. */
-    snprintf(buf, sizeof(buf), "%s%s  L %d/%d  [%s]",
+    snprintf(buf, sizeof(buf), "%s%s  L %d/%d%s",
              name, editor_is_modified() ? " *" : "",
-             line + 1, total_lines,
-             kb_layout_name(kb_layout_get()));
+             line + 1, total_lines, layout_tag);
 #else
-    snprintf(buf, sizeof(buf), "%s%s  L %d/%d C:%d  [%s]",
+    snprintf(buf, sizeof(buf), "%s%s  L %d/%d C:%d%s",
              name, editor_is_modified() ? " *" : "",
-             line + 1, total_lines, col + 1,
-             kb_layout_name(kb_layout_get()));
+             line + 1, total_lines, col + 1, layout_tag);
 #endif
 
     /* lv_label_set_text() in LVGL v9 unconditionally invalidates the
@@ -3231,14 +3281,15 @@ static int find_timeout_option(uint32_t sec)
 #define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 0)
 #endif
 #define SETTINGS_IDX_APPEND_ONLY   (_SETTINGS_NEXT_AFTER_INVERT + 0)
-#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 1)
-#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 2)
-#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 3)
-#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 4)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 5)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 6)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 7)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 8)
+#define SETTINGS_IDX_LAYOUTS       (_SETTINGS_NEXT_AFTER_INVERT + 1)
+#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 2)
+#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 4)
+#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 5)
+#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 6)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 7)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 8)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 9)
 
 static void refresh_settings_items(void)
 {
@@ -3302,6 +3353,20 @@ static void refresh_settings_items(void)
     snprintf(buf, sizeof(buf), "Append-only editing: %s",
              s_append_only ? "on" : "off");
     lv_list_add_btn(s_settings_list, NULL, buf);
+
+    /* Active language layouts -- comma-separated summary of the
+     * layouts Ctrl+L / Win+Space currently rotate through. */
+    {
+        char names[64] = "";
+        for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+            kb_layout_id_t id = (kb_layout_id_t)i;
+            if (!kb_layout_is_active(id)) continue;
+            if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+            strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
+        }
+        snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
+        lv_list_add_btn(s_settings_list, NULL, buf);
+    }
 
     /* Screen margins -- pixels of panel hidden under the enclosure on
      * each edge. Zero by default; the LVGL display resolution is fixed
@@ -3389,6 +3454,45 @@ static void close_theme_picker(void)
 }
 #endif
 
+/* ---- Active-language-layouts picker ----
+ * Renders one checklist row per compiled-in layout into the same
+ * s_settings_list widget while s_layouts_picker_open is true, plus a
+ * trailing "Done" row. Unlike the theme picker, Enter toggles the
+ * highlighted row's membership in the active set immediately (applied
+ * and persisted on the spot) rather than picking one value and
+ * confirming -- there is no "cancel", since each toggle already is
+ * the final state. */
+static void refresh_layouts_picker_items(void)
+{
+    lv_obj_clean(s_settings_list);
+    char buf[80];
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        kb_layout_id_t id = (kb_layout_id_t)i;
+        snprintf(buf, sizeof(buf), "[%s] %s",
+                 kb_layout_is_active(id) ? "x" : " ",
+                 kb_layout_name(id));
+        lv_list_add_btn(s_settings_list, NULL, buf);
+    }
+    lv_list_add_btn(s_settings_list, NULL, "  Done (Esc)");
+    apply_list_selection_styles(s_settings_list, s_layouts_picker_sel);
+    s_layouts_picker_sel_prev = s_layouts_picker_sel;
+
+    sync_battery_labels();
+}
+
+static void update_layouts_picker_highlight(void)
+{
+    update_list_highlight(s_settings_list, s_layouts_picker_sel,
+                          s_layouts_picker_sel_prev);
+    s_layouts_picker_sel_prev = s_layouts_picker_sel;
+}
+
+static void close_layouts_picker(void)
+{
+    s_layouts_picker_open = false;
+    refresh_settings_items();
+}
+
 /* ---- Margin-change restart prompt ----
  * Renders into the same s_settings_list widget while
  * s_margin_confirm_open is true -- same reused-list pattern as the
@@ -3440,6 +3544,7 @@ static void show_settings(void)
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open = false;
 #endif
+    s_layouts_picker_open = false;
     refresh_settings_items();
     sync_battery_labels();
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
@@ -3456,6 +3561,7 @@ static void close_settings(void)
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open = false;
 #endif
+    s_layouts_picker_open = false;
     show_menu();
 }
 
@@ -3608,6 +3714,13 @@ static void settings_activate_item(int idx)
     } else if (idx == SETTINGS_IDX_MAXFILE) {
         /* Read-only display of the dynamically-sized editor buffer.
          * Enter is a no-op; the value is fixed at editor_init() time. */
+    } else if (idx == SETTINGS_IDX_LAYOUTS) {
+        /* Open the active-layouts checklist sub-list. Each row toggles
+         * immediately on Enter (applied + persisted on the spot); Esc
+         * returns to the settings list. */
+        s_layouts_picker_sel = 0;
+        s_layouts_picker_open = true;
+        refresh_layouts_picker_items();
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     } else if (idx == SETTINGS_IDX_THEME) {
         /* Open the theme picker sub-list. The user navigates with
@@ -3724,6 +3837,47 @@ static void handle_settings_key(const kb_event_t *ev)
         return;
     }
 #endif
+
+    if (s_layouts_picker_open) {
+        /* Total picker rows: KB_LAYOUT_COUNT checklist rows + 1 "Done" row. */
+        const int picker_count = KB_LAYOUT_COUNT + 1;
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+            if (s_layouts_picker_sel > 0) s_layouts_picker_sel--;
+            update_layouts_picker_highlight();
+            break;
+        case KB_KEY_DOWN:
+            if (s_layouts_picker_sel < picker_count - 1) s_layouts_picker_sel++;
+            update_layouts_picker_highlight();
+            break;
+        case KB_KEY_ENTER:
+        case KB_KEY_SPACE:
+            /* Space is equivalent to Enter here so a row can be
+             * toggled without leaving the home row -- there is no
+             * text field on this screen for Space to type into. */
+            if (s_layouts_picker_sel >= 0 &&
+                s_layouts_picker_sel < KB_LAYOUT_COUNT) {
+                kb_layout_id_t id = (kb_layout_id_t)s_layouts_picker_sel;
+                /* kb_layout_set_active() silently refuses to remove the
+                 * last active layout, so the checklist can never be
+                 * emptied out from under the user. */
+                if (kb_layout_set_active(id, !kb_layout_is_active(id))) {
+                    save_active_layouts_to_nvs();
+                    refresh_layouts_picker_items();
+                }
+            } else {
+                /* Done row */
+                close_layouts_picker();
+            }
+            break;
+        case KB_KEY_ESCAPE:
+            close_layouts_picker();
+            break;
+        default:
+            break;
+        }
+        return;
+    }
 
     switch (ev->keycode) {
     case KB_KEY_UP:
@@ -4787,14 +4941,13 @@ static void handle_editor_key(const kb_event_t *ev)
 
     /* Ctrl shortcuts */
     if (ctrl) {
-        /* Interpret Ctrl shortcuts by physical key position (HID keycode),
-         * NOT by the current layout translation.  This ensures that
-         * Ctrl+S, Ctrl+L, etc. work regardless of the active layout.
-         * HID keycodes 0x04..0x1D map to a..z. */
-        char ch = 0;
-        if (ev->keycode >= 0x04 && ev->keycode <= 0x1D) {
-            ch = 'a' + (ev->keycode - 0x04);
-        }
+        /* kb_layout_shortcut_char() resolves the shortcut letter by the
+         * national layout for Latin layouts (so e.g. Ctrl+Z lands on
+         * the key printed Z on a German keyboard) and by the US
+         * physical key position for non-Latin layouts (Ukrainian,
+         * Hebrew, ...), which have no national Latin letter to remap
+         * to -- see kb_layout.h. */
+        char ch = kb_layout_shortcut_char(ev->keycode);
 
         /* Ctrl+1 / Ctrl+2 / Ctrl+3 control the split layout. HID
          * keycodes: 1 = 0x1E, 2 = 0x1F, 3 = 0x20. Handled by keycode
@@ -5348,12 +5501,11 @@ static void handle_browser_key(const kb_event_t *ev)
         return;
     }
 
-    /* Ctrl+G / Ctrl+W work from the file browser as well */
+    /* Ctrl+G / Ctrl+W work from the file browser as well. See the
+     * editor's Ctrl-shortcut block for why kb_layout_shortcut_char()
+     * is used instead of a raw layout translation. */
     if (ctrl) {
-        char ck = 0;
-        if (ev->keycode >= 0x04 && ev->keycode <= 0x1D) {
-            ck = 'a' + (ev->keycode - 0x04);
-        }
+        char ck = kb_layout_shortcut_char(ev->keycode);
         if (ck == 'g') {
             if (git_sync_is_configured() && wifi_manager_is_connected()) {
                 if (git_sync_start(GIT_SYNC_BOTH) == ESP_OK) {
@@ -5421,15 +5573,16 @@ static void handle_browser_key(const kb_event_t *ev)
 #endif
     }
 
-    /* Translate keycode to character for letter-key checks.
-     * ev->character is always 0 because ble_keyboard does not fill
-     * it -- all translation goes through kb_layout. */
-    const char *br_t = kb_layout_translate(ev->keycode, ev->modifier);
-    char ch = (br_t && br_t[0] && !br_t[1]) ? br_t[0] : 0;
+    /* Resolve the "N: New file" accelerator the same way Ctrl
+     * shortcuts are resolved (see kb_layout_shortcut_char()), not via
+     * a raw layout translation -- otherwise the N key would produce a
+     * non-Latin character under Ukrainian/Hebrew and this shortcut
+     * would silently stop working. */
+    char ch = kb_layout_shortcut_char(ev->keycode);
 
     uint32_t child_count = lv_obj_get_child_count(s_browser_list);
     if (child_count == 0) {
-        if (ch == 'n' || ch == 'N') {
+        if (ch == 'n') {
             editor_new_file();
             editor_ui_show_editor();
         }
@@ -5455,7 +5608,7 @@ static void handle_browser_key(const kb_event_t *ev)
         return;
     }
     default:
-        if (ch == 'n' || ch == 'N') {
+        if (ch == 'n') {
             editor_new_file();
             editor_ui_show_editor();
             return;
@@ -5504,9 +5657,8 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
     }
 
     if (!ctrl) {
-        const char *t = kb_layout_translate(ev->keycode, ev->modifier);
-        char ch = (t && t[0] && !t[1]) ? t[0] : 0;
-        if (ch == 'n' || ch == 'N') {
+        char ch = kb_layout_shortcut_char(ev->keycode);
+        if (ch == 'n') {
             /* New untitled document in the focused pane (not a global
              * replace -- that is the single-pane behavior). */
             if (!open_into_pane(s_focus, NULL)) {
@@ -5802,6 +5954,7 @@ static void apply_pending_connect_state(void)
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
         s_theme_picker_open = false;
 #endif
+        s_layouts_picker_open = false;
         s_save_open = false;
         if (s_save_panel) lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
         s_exit_open = false;
@@ -6815,6 +6968,7 @@ static void teardown_screens(void)
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open       = false;
 #endif
+    s_layouts_picker_open     = false;
     s_factory_reset_confirm   = false;
     s_margins_changed         = false;
     s_margin_confirm_open     = false;
@@ -6893,6 +7047,7 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+    load_active_layouts_from_nvs();
     load_margins_from_nvs();
     init_styles();
 

@@ -570,14 +570,38 @@ Public API: `ch422g_init()`, `ch422g_set_pin()`.
 
 Translates HID keycodes and modifier flags into UTF-8 character strings
 for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
-(Cyrillic), German (QWERTZ), and French (AZERTY). Each layout can be
-independently enabled or disabled at build time via Kconfig (see
-`components/kb_layout/Kconfig.projbuild`). The active layout is cycled
-at runtime with `kb_layout_next()` (bound to `Ctrl+L` and `Win+Space`
-in the editor).
+(Cyrillic), German (QWERTZ), French (AZERTY), and Hebrew (SI 1452, RTL
+via LVGL's bidi engine). Each layout can be independently enabled or
+disabled at build time via Kconfig (see
+`components/kb_layout/Kconfig.projbuild`); all five default to enabled.
 
-Public API: `kb_layout_translate()`, `kb_layout_set()`, `kb_layout_get()`,
-`kb_layout_name()`, `kb_layout_next()`.
+Which of the compiled-in layouts `kb_layout_next()` (bound to `Ctrl+L`
+and `Win+Space` in the editor) actually cycles through is a separate,
+user-configurable "active set" -- see `kb_layout_set_active()` /
+`kb_layout_is_active()` / `kb_layout_get_active_mask()` /
+`kb_layout_set_active_mask()`. `components/editor/editor_ui.cpp` owns
+persisting this set to NVS and exposes it as the "Active layouts" row
+in the F1 -> Settings menu; it defaults to US + UA. The title bar only
+shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
+
+Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
+in `editor_ui.cpp`) and the file browser's unmodified `N` (new file)
+accelerator resolve their letter via `kb_layout_shortcut_char()`, not
+a raw `kb_layout_translate()` call: under a Latin layout (US/DE/FR) it
+follows the national layout, and is not limited to the classic 26-key
+US letter block -- so Ctrl+Z lands on the key printed "Z" on a German
+keyboard, and Ctrl+M on a French (AZERTY) keyboard is the semicolon
+key, since AZERTY moves "m" there. Under a non-Latin layout
+(Ukrainian/Hebrew) it falls back to the US physical key position
+within that classic block, since there is no national Latin letter to
+remap to. Plain document text entry still goes through
+`kb_layout_translate()` directly.
+
+Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
+`kb_layout_set()`, `kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
+`kb_layout_set_active()`, `kb_layout_active_count()`,
+`kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`.
 
 ### components/sd_card/
 
@@ -1130,13 +1154,21 @@ is an independent `bool` option that can be enabled or disabled:
 |--------|--------|---------|
 | KB_LAYOUT_ENABLE_US | US-English (QWERTY) | y (enabled) |
 | KB_LAYOUT_ENABLE_UA | Ukrainian (Cyrillic) | y (enabled) |
-| KB_LAYOUT_ENABLE_DE | German (QWERTZ) | n (disabled) |
-| KB_LAYOUT_ENABLE_FR | French (AZERTY) | n (disabled) |
+| KB_LAYOUT_ENABLE_DE | German (QWERTZ) | y (enabled) |
+| KB_LAYOUT_ENABLE_FR | French (AZERTY) | y (enabled) |
+| KB_LAYOUT_ENABLE_HE | Hebrew (SI 1452) | y (enabled) |
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
 component reads these symbols at compile time to conditionally compile
-only the enabled layout tables.
+only the enabled layout tables. A board-specific `sdkconfig.defaults.*`
+can override individual symbols (see `sdkconfig.defaults.sunton_8048s043`,
+which keeps only US + DE for that author's German keyboard).
+
+Which of the *compiled-in* layouts actually get cycled through at
+runtime is a separate, user-facing "Active layouts" setting (F1 ->
+Settings), independent of this Kconfig menu -- see the `kb_layout`
+component writeup above.
 
 ## Building
 

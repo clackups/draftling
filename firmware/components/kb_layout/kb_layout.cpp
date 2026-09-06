@@ -19,6 +19,23 @@
 
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
+/* Default "Active language layouts" set: US and UA when compiled in,
+ * else the first compiled-in layout so the set is never empty. */
+static uint32_t default_active_mask(void)
+{
+    uint32_t mask = 0;
+#ifdef CONFIG_KB_LAYOUT_ENABLE_US
+    mask |= (1u << KB_LAYOUT_US);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_UA
+    mask |= (1u << KB_LAYOUT_UA);
+#endif
+    if (mask == 0) mask = 1u;
+    return mask;
+}
+
+static uint32_t s_active_mask = default_active_mask();
+
 /* HID keycodes for letter/number/symbol keys: 0x04..0x38 (53 keys) */
 #define KC_A     0x04
 #define KC_Z     0x1D
@@ -527,6 +544,29 @@ static const char *s_layout_names[KB_LAYOUT_COUNT] = {
 #endif
 };
 
+/* True for layouts whose normal (unshifted) layer produces plain Latin
+ * letters -- used by kb_layout_shortcut_char() below to decide whether
+ * Ctrl-shortcut letters should follow the national layout (Latin) or
+ * fall back to the US physical key position (non-Latin scripts, which
+ * have no national Latin letter to remap a shortcut to). */
+static const bool s_layout_is_latin[KB_LAYOUT_COUNT] = {
+#ifdef CONFIG_KB_LAYOUT_ENABLE_US
+    [KB_LAYOUT_US] = true,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_UA
+    [KB_LAYOUT_UA] = false,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DE
+    [KB_LAYOUT_DE] = true,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR
+    [KB_LAYOUT_FR] = true,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HE
+    [KB_LAYOUT_HE] = false,
+#endif
+};
+
 /* ------------------------------------------------------------------ */
 /* Public API                                                         */
 /* ------------------------------------------------------------------ */
@@ -550,8 +590,74 @@ extern "C" const char *kb_layout_name(kb_layout_id_t layout)
 
 extern "C" kb_layout_id_t kb_layout_next(void)
 {
-    s_layout = (kb_layout_id_t)((s_layout + 1) % KB_LAYOUT_COUNT);
+    kb_layout_id_t next = s_layout;
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        next = (kb_layout_id_t)((next + 1) % KB_LAYOUT_COUNT);
+        if (s_active_mask & (1u << next)) {
+            s_layout = next;
+            break;
+        }
+    }
     return s_layout;
+}
+
+extern "C" bool kb_layout_is_active(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return false;
+    return (s_active_mask & (1u << layout)) != 0;
+}
+
+extern "C" int kb_layout_active_count(void)
+{
+    int count = 0;
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        if (s_active_mask & (1u << i)) count++;
+    }
+    return count;
+}
+
+extern "C" bool kb_layout_set_active(kb_layout_id_t layout, bool active)
+{
+    if (layout >= KB_LAYOUT_COUNT) return false;
+    uint32_t bit = 1u << layout;
+
+    if (active) {
+        s_active_mask |= bit;
+        return true;
+    }
+
+    /* Refuse to drop the last active layout -- the set must never be
+     * empty, or Ctrl+L / Win+Space would have nothing to cycle to. */
+    if ((s_active_mask & ~bit) == 0) return false;
+
+    s_active_mask &= ~bit;
+    if (s_layout == layout) {
+        /* The currently selected layout just left the active set --
+         * switch to the next one immediately. */
+        kb_layout_next();
+    }
+    return true;
+}
+
+extern "C" uint32_t kb_layout_get_active_mask(void)
+{
+    return s_active_mask;
+}
+
+extern "C" void kb_layout_set_active_mask(uint32_t mask)
+{
+    mask &= (1u << KB_LAYOUT_COUNT) - 1;
+    if (mask == 0) mask = default_active_mask();
+    s_active_mask = mask;
+
+    if (!(s_active_mask & (1u << s_layout))) {
+        for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+            if (s_active_mask & (1u << i)) {
+                s_layout = (kb_layout_id_t)i;
+                break;
+            }
+        }
+    }
 }
 
 extern "C" bool kb_layout_is_rtl(void)
@@ -584,4 +690,35 @@ extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
     }
 
     return result;
+}
+
+extern "C" char kb_layout_shortcut_char(uint8_t keycode)
+{
+    if (keycode < 0x04) return 0;
+
+    if (s_layout_is_latin[s_layout]) {
+        /* Latin layout: resolve to whichever letter this physical key
+         * actually produces on the national layout's normal
+         * (unshifted, no AltGr) layer. Deliberately NOT restricted to
+         * the classic 26-key US letter block (0x04..0x1D) -- a layout
+         * can move a Latin letter onto a key that is a symbol on US.
+         * French AZERTY, for example, puts "m" on the semicolon key
+         * (0x33) and a comma where US has "m", so Ctrl+M on a French
+         * keyboard is that semicolon-position key, not the US M
+         * position. A key producing a non-letter here (a genuine
+         * symbol under this layout) has no Ctrl-shortcut letter. */
+        const char *t = kb_layout_translate(keycode, 0);
+        if (t && !t[1]) {
+            if (t[0] >= 'a' && t[0] <= 'z') return t[0];
+            if (t[0] >= 'A' && t[0] <= 'Z') return (char)(t[0] - 'A' + 'a');
+        }
+        return 0;
+    }
+
+    /* Non-Latin layout (Ukrainian, Hebrew, ...): fall back to the
+     * classic 26-key US physical letter block, since there is no
+     * national Latin letter to remap a shortcut to (e.g. Ctrl+N keeps
+     * working exactly as if the US layout were active). */
+    if (keycode > 0x1D) return 0;
+    return (char)('a' + (keycode - 0x04));
 }
