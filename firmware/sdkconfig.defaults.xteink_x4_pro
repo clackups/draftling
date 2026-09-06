@@ -3,3 +3,12 @@
 
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO=y
+
+# Use a dual-OTA partition table (with an "otadata" partition) instead
+# of the shared single-"factory" partitions.csv. The stock Xteink
+# firmware and the third-party Crosspoint firmware are installed by OTA
+# updaters that refuse to run without an "otadata" partition ("Partition
+# table has no otadata partition"); keeping an OTA layout lets the
+# device be returned to stock or moved to Crosspoint without first
+# re-flashing a partition table over USB. See partitions_xteink_x4_pro.csv.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_xteink_x4_pro.csv"

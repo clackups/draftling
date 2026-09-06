@@ -286,6 +286,31 @@ has since been dialed in against a physical unit with
 of where the finger was; `TOUCH_MIRROR_X`/`TOUCH_MIRROR_Y` are now 1/0
 (swapped from the initial 0/1) to correct it.
 
+### Partition table
+
+Unlike every other board (which uses the shared single-`factory`
+`firmware/partitions.csv`), the X4 Pro is flashed with a dedicated
+`firmware/partitions_xteink_x4_pro.csv` -- a standard ESP-IDF dual-OTA
+layout: `nvs` (16 KB), `otadata`, `phy_init`, and two 8.1 MB app slots
+`ota_0` / `ota_1`. Draftling runs from `ota_0` (still at flash offset
+`0x10000`, so the web-flasher offsets are unchanged); `ota_1` is left
+empty.
+
+The reason is recovery: the stock Xteink firmware and the third-party
+**Crosspoint** firmware are both installed by OTA-style updaters that
+refuse to run against a partition table with no `otadata` partition
+("Partition table has no otadata partition"). The old single-`factory`
+table left an X4 Pro that had been flashed with Draftling unable to
+accept either without first re-flashing a partition table over USB.
+Keeping an OTA layout means the stock / Crosspoint updater finds
+`otadata` plus a free 8.1 MB slot and can write itself in.
+
+There is no `nvs_keys` partition (only used with NVS encryption, which
+Draftling does not enable). `nvs` shrinks from 24 KB to 16 KB (the
+ESP-IDF two-OTA default) to make room for `otadata` + `phy_init` below
+the 64 KB-aligned `ota_0` offset; re-flashing Draftling onto an X4 Pro
+that already runs it therefore clears the stored BLE pairings once.
+
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
 [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI
