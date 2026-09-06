@@ -97,6 +97,15 @@ void editor_doc_save_meta(editor_doc_t *doc);
  * open document. */
 void editor_doc_foreach(void (*cb)(editor_doc_t *doc, void *ctx), void *ctx);
 
+/* Drop unsaved changes in every open document: reload each modified
+ * titled document from its file on the SD card and clear each modified
+ * untitled document. Used by the user-initiated "sleep without saving"
+ * path so the pre-sleep auto-save has nothing left to persist. If a
+ * reload fails (e.g. an SD error) that document keeps its edits and its
+ * modified flag, so a following auto-save still saves it -- edits are
+ * never silently dropped on an error. */
+void editor_discard_all_changes(void);
+
 void editor_init(void);
 esp_err_t editor_open_file(const char *path);
 esp_err_t editor_save_file(void);

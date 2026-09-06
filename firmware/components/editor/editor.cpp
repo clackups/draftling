@@ -685,6 +685,33 @@ extern "C" void editor_doc_foreach(void (*cb)(editor_doc_t *doc, void *ctx),
     }
 }
 
+extern "C" void editor_discard_all_changes(void)
+{
+    editor_doc_t *prev = s_active;
+    for (int i = 0; i < EDITOR_MAX_DOCS; i++) {
+        editor_doc_t *d = &s_docs[i];
+        if (!d->in_use || !d->modified) continue;
+        s_active = d;
+        if (d->path[0]) {
+            /* editor_open_file() reads d->path (aliased as s_path) and
+             * rewrites the buffer from disk, clearing d->modified. Copy
+             * the path first: on success the string is unchanged, but
+             * keeping a local copy is clearer than relying on that. */
+            char path[sizeof(d->path)];
+            strncpy(path, d->path, sizeof(path));
+            path[sizeof(path) - 1] = '\0';
+            if (editor_open_file(path) != ESP_OK) {
+                ESP_LOGW(TAG, "Discard: could not reload %s -- keeping edits",
+                         path);
+            }
+        } else {
+            editor_new_file();
+        }
+    }
+    s_active = (prev && prev->in_use) ? prev : pick_any_active();
+    invalidate_flat();
+}
+
 extern "C" const char *editor_get_text(size_t *out_len)
 {
     if (s_flat_dirty) {
