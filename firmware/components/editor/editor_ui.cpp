@@ -5684,26 +5684,28 @@ static void handle_browser_key(const kb_event_t *ev)
     if (ctrl) {
         char ck = kb_layout_shortcut_char(ev->keycode);
 
-        /* Ctrl+1 / Ctrl+2 / Ctrl+3 set up the split layout (HID
-         * keycodes 1 = 0x1E, 2 = 0x1F, 3 = 0x20). The panes live on
-         * the editor screen, so from the browser this only updates the
-         * layout + NVS; it becomes visible the next time a file is
-         * opened. */
+        /* Ctrl+1 / Ctrl+2 / Ctrl+3 control the split layout (HID
+         * keycodes 1 = 0x1E, 2 = 0x1F, 3 = 0x20). The panes are on the
+         * editor screen, so enabling a split here switches straight to
+         * the editor so the change is visible immediately (Ctrl+O in a
+         * pane then picks its file). Ctrl+1 with nothing to collapse
+         * just stays on the browser. */
         if (ev->keycode == 0x1E) {            /* Ctrl+1: single pane */
+            /* The full-screen browser only shows in single-pane mode
+             * (a split editor shows the in-pane selector on Esc), so
+             * this just confirms the mode + persists it. */
             editor_ui_apply_split_mode(SPLIT_NONE);
             editor_ui_set_status("Split: single pane");
             return;
         }
         if (ev->keycode == 0x1F) {            /* Ctrl+2: equal split */
             editor_ui_apply_split_mode(SPLIT_HALF);
-            if (s_pane_count > 1)
-                editor_ui_set_status("Split: two panes (shown on next open)");
+            if (s_pane_count > 1) editor_ui_show_editor();
             return;
         }
         if (ev->keycode == 0x20) {            /* Ctrl+3: 2/3 <-> 1/3 */
             editor_ui_cycle_wide_split();
-            if (s_pane_count > 1)
-                editor_ui_set_status("Split: 2/3 + 1/3 (shown on next open)");
+            if (s_pane_count > 1) editor_ui_show_editor();
             return;
         }
 
@@ -5863,12 +5865,19 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         return;
     }
 
-    /* Ctrl+1 / Ctrl+2 / Ctrl+3 change the split layout, which would
-     * pull the rug out from under this overlay (it lives on the split
-     * editor screen). Ignore them here -- the user can adjust the split
-     * from the editor or the full-screen browser. */
+    /* Ctrl+1 / Ctrl+2 / Ctrl+3 change the split layout. This overlay
+     * lives on the split editor screen, so close it and re-apply the
+     * layout (editor_ui_apply_split_mode() repaints and returns key
+     * routing to handle_editor_key). Ctrl+1 in particular is how the
+     * user collapses a split they entered by mistake, and it must work
+     * from here -- a split editor shows this overlay, not the
+     * full-screen browser, on Esc. */
     if (ctrl && (ev->keycode == 0x1E || ev->keycode == 0x1F ||
                  ev->keycode == 0x20)) {
+        close_inpane_browser();
+        if      (ev->keycode == 0x1E) editor_ui_apply_split_mode(SPLIT_NONE);
+        else if (ev->keycode == 0x1F) editor_ui_apply_split_mode(SPLIT_HALF);
+        else                          editor_ui_cycle_wide_split();
         return;
     }
 

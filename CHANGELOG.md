@@ -23,7 +23,9 @@ in the git log.
   without saving** (the edits are dropped), or **Cancel**. With no
   unsaved changes it sleeps immediately. `Ctrl+P` and the split
   shortcuts `Ctrl+1` / `Ctrl+2` / `Ctrl+3` now also work from the file
-  browser (a split set there shows on the next file open).
+  browser: enabling a split switches to the editor so it is visible
+  right away, and `Ctrl+1` collapses a split from anywhere (including
+  the file selector a split editor shows on Esc).
 - **Portrait display orientation** (F1 -> Settings -> "Display
   orientation": Landscape / Portrait). Portrait turns the whole UI a
   quarter turn; split-screen editing then divides the screen top/bottom
@@ -50,6 +52,11 @@ in the git log.
 
 ### Fixed
 
+- **Touch input was a quarter turn off** on any board rendering at a 90
+  or 270 degree rotation -- the natively-portrait Freenove FNK0104B /
+  FNK0104S, and any board in the new portrait orientation. The LVGL
+  display rotation fed to the touch-point transform did not match the
+  sense of the framebuffer rotation; taps now land under the finger.
 - **Xteink X4 Pro**: the flashed partition table now keeps an `otadata`
   partition and a dual-OTA app layout (`ota_0` / `ota_1`), instead of a
   single `factory` partition. The stock Xteink firmware and the

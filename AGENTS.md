@@ -273,7 +273,14 @@ Per-board display backends behind a single C API:
   RGB565 output to the backend's 1-bpp pixel format via
   `display_set_pixel()`, and runs the LVGL tick/task timer. Thread
   safety is provided by a mutex exposed as `lvgl_port_lock()` /
-  `lvgl_port_unlock()`.
+  `lvgl_port_unlock()`. `flush_cb` software-rotates each tile
+  (`rotate_tile_rgb565()` + `map_area_to_physical()`) for a 90/180/270
+  rotation -- the backends only ever see physical panel coordinates.
+  Its rotation sense is the mirror of LVGL's own
+  `lv_display_rotate_area/point()`, so `lv_display_set_rotation()` is
+  fed the mirrored quarter turn via `lvgl_rotation_for_port_deg()` --
+  see the "Display orientation" section for why that keeps touch input
+  aligned.
 - **display_rgb.cpp** -- parallel RGB565 backend for the ESP32-S3 LCD
   RGB peripheral (`esp_lcd_new_rgb_panel`), selected by
   `CONFIG_DRAFTLING_DISPLAY_RGB`. Shared by the Sunton ESP32-8048S070C
@@ -471,12 +478,16 @@ the 1 px rule between them. Shortcuts: `Ctrl+1` single pane
 first-pane-2/3 then toggling to 1/3 (`editor_ui_cycle_wide_split()`),
 `Ctrl+Tab` move focus between panes (`editor_ui_focus_other_pane()`). Digit HID keycodes (1 = 0x1E,
 2 = 0x1F, 3 = 0x20) and `KB_KEY_TAB` are matched before the a..z Ctrl
-switch in `handle_editor_key()`. `Ctrl+1/2/3` also work from the
-full-screen file browser (`handle_browser_key()`): the panes live on
-the editor screen, so there it only updates `s_split_mode` + NVS and
-the new layout shows on the next file open. The in-pane (split-mode)
-selector swallows `Ctrl+1/2/3` -- changing the split would pull the rug
-out from under the overlay. While split, the file browser
+switch in `handle_editor_key()`. `Ctrl+1/2/3` also work from both file
+browsers: `handle_browser_key()` (full-screen) applies the mode and, if
+that enables a split, switches straight to the editor so the layout is
+visible immediately (`Ctrl+O` in a pane then picks its file);
+`handle_inpane_browser_key()` (the split-mode overlay) closes the
+overlay and re-applies the mode via `editor_ui_apply_split_mode()`,
+which repaints and hands key routing back to `handle_editor_key()` --
+`Ctrl+1` from there is how the user collapses a split entered by
+mistake (a split editor shows this overlay, not the full-screen
+browser, on Esc). While split, the file browser
 (`Ctrl+O`) targets the focused pane via `open_into_pane()`, so each
 panel opens a file for itself (focus a pane, then `Ctrl+O`); opening
 the same path in both panes shares one refcounted buffer (two views of
@@ -1134,10 +1145,23 @@ and that is what `main.cpp` passes to `draftling_lvgl_port_init()`.
 sets it to **270** because that board's enclosure reads better with
 portrait turned the opposite way. LVGL then swaps its own reported
 resolution, and `flush_cb` software-rotates each tile back to physical
-panel coordinates -- the display backends stay rotation-agnostic. `DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen
-`logical_width/height` stay in the pre-rotation (panel-native) frame,
-exactly as for the `DISPLAY_ROTATE=90/270` boards; LVGL applies the
-rotation to indev points itself (`user_rotate_deg` stays 0).
+panel coordinates -- the display backends stay rotation-agnostic.
+`DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen `logical_width/height`
+stay in the pre-rotation (panel-native) frame; the touchscreen
+component's `user_rotate_deg` stays 0 and LVGL rotates each incoming
+indev point itself (`lv_display_rotate_point()` in
+`indev_pointer_proc()`).
+
+The subtlety: `flush_cb` in `lvgl_port.cpp` software-rotates pixels
+with a rotation sense OPPOSITE to LVGL's own
+`lv_display_rotate_area()` / `lv_display_rotate_point()`. So
+`lv_display_set_rotation()` is fed the **mirrored** quarter turn --
+`lvgl_rotation_for_port_deg()` maps 90<->270 (0 and 180 unchanged).
+That keeps the reported-resolution swap the same (90 and 270 both swap)
+while making `lv_display_rotate_point()`'s physical->logical map the
+exact inverse of `flush_cb`'s logical->physical pixel map, so a tap
+lands under the finger in every orientation. (Before this, a 90/270
+base-rotation or portrait mode put touch input a quarter turn off.)
 
 In `editor_ui.cpp`, `scr_axes_swapped()` folds the build base and the
 portrait flag into one XOR that decides whether `SCR_W`/`SCR_H` use the
