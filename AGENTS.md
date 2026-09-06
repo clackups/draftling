@@ -1061,8 +1061,15 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   a short press (there is no hardware power-off latch on this board)
   or forgets BLE keyboards on a 2 s hold. The enclosure's cover
   overlaps the panel; the user-adjustable screen margins (see below)
-  compensate. Tested on physical hardware after an initial blind
-  port; see HARDWARE.md. *Requires ESP32-S3.*
+  compensate. `app_main()` power-cycles the GT911 (via its active-low
+  `TOUCH_POWER_EN_PIN`) very early, *before* the shared I2C bus is
+  created, and calls `gpio_deep_sleep_hold_dis()` first: a warm reboot
+  (`esp_restart()` from the Settings "restart to apply" prompt, a panic,
+  a watchdog) does not reset the I2C peripheral or the GT911, so
+  without the power-cycle the controller comes up wedged on the bus and
+  touch is dead until the next deep-sleep cycle. Tested on physical
+  hardware after an initial blind port; see HARDWARE.md.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by

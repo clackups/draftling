@@ -1333,6 +1333,16 @@ extern "C" void app_main(void)
     t5_release_held_gpios_after_wake();
 #endif
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* pre_sleep_xteink_x4_pro_deinit() calls gpio_deep_sleep_hold_en()
+     * before deep sleep, which on the ESP32-S3 keeps the digital GPIO
+     * output levels latched into the next startup -- and stays latched
+     * until gpio_deep_sleep_hold_dis() is called. Release it here, on
+     * every boot, so the display / touch / SD bring-up below can drive
+     * the peripheral-rail and power-enable pads freely (in particular
+     * the GT911 power-cycle further down). A no-op if nothing was
+     * held. */
+    gpio_deep_sleep_hold_dis();
+
     /* Master peripheral-rail latch. Must be driven HIGH before any
      * SPI/display/SD bring-up -- without it, the e-paper panel rail
      * and the SD slot both stay unpowered. No I2C expander involved
@@ -1344,6 +1354,33 @@ extern "C" void app_main(void)
         g.pin_bit_mask = (1ULL << XTEINK_POWER_LATCH_PIN);
         gpio_config(&g);
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
+    }
+
+    /* Power-CYCLE the GT911 touch controller (active-low enable on
+     * TOUCH_POWER_EN_PIN) -- do it HERE, before the shared I2C bus is
+     * created below, not just before touchscreen_init().
+     *
+     * On a cold boot the GT911 starts unpowered and on a deep-sleep
+     * wake it was gracefully put to sleep first, so both come up clean.
+     * But on a warm reboot -- esp_restart() from the Settings "restart
+     * to apply" prompt (display orientation / margins), a panic or a
+     * watchdog -- esp_restart() does NOT reset the I2C peripheral or
+     * the GT911, which is typically mid-transaction when the SoC
+     * resets. The GT911 is then left holding SDA, every probe on the
+     * shared bus fails, and touch never comes up (the RST pulse in
+     * touchscreen_init() alone does not clear it). Dropping VDD for
+     * 20 ms forces a real power-on reset and releases the bus. GT911
+     * datasheet: >=10 ms unpowered, then ~50 ms to boot before I2C. */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 1);   /* VDD off */
+        vTaskDelay(pdMS_TO_TICKS(20));
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);   /* VDD on  */
+        vTaskDelay(pdMS_TO_TICKS(60));
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
@@ -2204,19 +2241,10 @@ extern "C" void app_main(void)
      * tcfg.i2c_bus; on every other board tcfg.i2c_bus stays NULL
      * and the component creates its own bus from sda/scl as before. */
     ESP_LOGI(TAG, "Initializing touchscreen...");
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
-    /* GT911 power-enable, active-low. Drive it before touch bring-up;
-     * there is no touchscreen_config_t field for this, so it is a
-     * one-off poke here (same style as the SD power-enable above). */
-    {
-        gpio_config_t touch_pwr = {};
-        touch_pwr.intr_type    = GPIO_INTR_DISABLE;
-        touch_pwr.mode         = GPIO_MODE_OUTPUT;
-        touch_pwr.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
-        gpio_config(&touch_pwr);
-        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);
-    }
-#endif
+    /* Note: on the Xteink X4 Pro the GT911 power-enable (active-low)
+     * was already configured and power-cycled far above, before the
+     * shared I2C bus was created -- see the comment there. It stays
+     * driven LOW (VDD on) from that point, so nothing to do here. */
     {
         touchscreen_config_t tcfg = {};
         tcfg.sda      = I2C_SDA_PIN;
