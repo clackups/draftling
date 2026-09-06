@@ -59,9 +59,11 @@ in the git log.
   sense of the framebuffer rotation; taps now land under the finger.
 - **Xteink X4 Pro**: the touchscreen no longer comes up dead after a
   restart from the Settings "restart to apply" prompt (or a panic /
-  watchdog). A warm reboot does not reset the GT911 or the I2C bus, so
-  the controller was left wedged; the GT911 is now power-cycled early
-  in boot, before the I2C bus is created.
+  watchdog). A warm reboot does not reset the GT911, which then came
+  back stuck at its fallback I2C address and never scanning; the
+  controller is now fully power-cycled and hardware-reset with the
+  datasheet address-select timing early in boot, before the shared I2C
+  bus is created.
 - **Xteink X4 Pro**: the flashed partition table now keeps an `otadata`
   partition and a dual-OTA app layout (`ota_0` / `ota_1`), instead of a
   single `factory` partition. The stock Xteink firmware and the

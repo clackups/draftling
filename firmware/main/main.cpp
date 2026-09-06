@@ -1356,31 +1356,63 @@ extern "C" void app_main(void)
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
     }
 
-    /* Power-CYCLE the GT911 touch controller (active-low enable on
-     * TOUCH_POWER_EN_PIN) -- do it HERE, before the shared I2C bus is
-     * created below, not just before touchscreen_init().
+    /* Full GT911 power-cycle + hardware reset with the datasheet
+     * address-select timing. Done HERE, before the shared I2C bus is
+     * created below, and `tcfg.rst` is passed as -1 so touchscreen_init()
+     * does not re-pulse RST and undo the address select.
      *
-     * On a cold boot the GT911 starts unpowered and on a deep-sleep
-     * wake it was gracefully put to sleep first, so both come up clean.
-     * But on a warm reboot -- esp_restart() from the Settings "restart
-     * to apply" prompt (display orientation / margins), a panic or a
-     * watchdog -- esp_restart() does NOT reset the I2C peripheral or
-     * the GT911, which is typically mid-transaction when the SoC
-     * resets. The GT911 is then left holding SDA, every probe on the
-     * shared bus fails, and touch never comes up (the RST pulse in
-     * touchscreen_init() alone does not clear it). Dropping VDD for
-     * 20 ms forces a real power-on reset and releases the bus. GT911
-     * datasheet: >=10 ms unpowered, then ~50 ms to boot before I2C. */
+     * Why the full sequence and not just "enable the rail": on a cold
+     * boot the GT911 has never run, so even a sloppy reset works. But
+     * after a warm reboot -- esp_restart() from the Settings "restart to
+     * apply" prompt (display orientation / margins), a panic, a
+     * watchdog -- esp_restart() does not reset the GT911, and it comes
+     * back either wedged or (observed) answering at its fallback address
+     * 0x14 without ever scanning. The chip only latches a valid config
+     * and starts scanning if INT is held at the address-select level
+     * across the RST rising edge and for T3/T4 afterwards (GT911
+     * datasheet section 5). VDD is dropped first so the reset starts
+     * from a true power-off state regardless of what the chip was doing.
+     *
+     * TOUCH_POWER_EN_PIN is active-low (LOW = VDD on). INT held HIGH
+     * across RST-high selects the primary I2C address 0x5D. */
     {
         gpio_config_t g = {};
         g.intr_type    = GPIO_INTR_DISABLE;
         g.mode         = GPIO_MODE_OUTPUT;
-        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
+        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN) |
+                         (1ULL << TOUCH_RST_PIN) |
+                         (1ULL << TOUCH_INT_PIN);
         gpio_config(&g);
+
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 0);        /* assert reset */
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
         gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 1);   /* VDD off */
-        vTaskDelay(pdMS_TO_TICKS(20));
-        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);   /* VDD on  */
-        vTaskDelay(pdMS_TO_TICKS(60));
+        vTaskDelay(pdMS_TO_TICKS(100));                      /* drain rail fully */
+
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);   /* VDD on */
+        vTaskDelay(pdMS_TO_TICKS(12));                       /* T1: >=10 ms held in reset */
+
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 1);        /* address select -> 0x5D */
+        vTaskDelay(pdMS_TO_TICKS(1));                        /* T2: >100 us */
+
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 1);        /* release reset */
+        vTaskDelay(pdMS_TO_TICKS(8));                        /* T3: hold INT >=5 ms */
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(55));                       /* T4: >=50 ms before INT is an input */
+
+        /* INT -> input + pull-up (its normal "data ready" role).
+         * touchscreen_init() also does this; doing it now keeps the
+         * line from floating during the shared-bus + display bring-up
+         * that runs before touchscreen_init(). */
+        gpio_config_t gi = {};
+        gi.intr_type    = GPIO_INTR_DISABLE;
+        gi.mode         = GPIO_MODE_INPUT;
+        gi.pin_bit_mask = (1ULL << TOUCH_INT_PIN);
+        gi.pull_up_en   = GPIO_PULLUP_ENABLE;
+        gpio_config(&gi);
+
+        ESP_LOGI(TAG, "GT911 power-cycled + reset (RST=%d INT=%d, selecting 0x5D)",
+                 TOUCH_RST_PIN, TOUCH_INT_PIN);
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
@@ -2241,15 +2273,21 @@ extern "C" void app_main(void)
      * tcfg.i2c_bus; on every other board tcfg.i2c_bus stays NULL
      * and the component creates its own bus from sda/scl as before. */
     ESP_LOGI(TAG, "Initializing touchscreen...");
-    /* Note: on the Xteink X4 Pro the GT911 power-enable (active-low)
-     * was already configured and power-cycled far above, before the
-     * shared I2C bus was created -- see the comment there. It stays
-     * driven LOW (VDD on) from that point, so nothing to do here. */
+    /* Note: on the Xteink X4 Pro the GT911 was fully power-cycled and
+     * hardware-reset (with the datasheet address-select timing) far
+     * above, before the shared I2C bus was created -- see the comment
+     * there. TOUCH_POWER_EN_PIN stays LOW (VDD on) from that point;
+     * tcfg.rst is passed as -1 below so touchscreen_init() does not
+     * re-pulse RST and undo the address select. */
     {
         touchscreen_config_t tcfg = {};
         tcfg.sda      = I2C_SDA_PIN;
         tcfg.scl      = I2C_SCL_PIN;
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+        tcfg.rst      = -1;               /* reset already done in the block above */
+#else
         tcfg.rst      = TOUCH_RST_PIN;
+#endif
         tcfg.intr     = TOUCH_INT_PIN;
         tcfg.i2c_addr = TOUCH_I2C_ADDR;
         tcfg.i2c_port = 0;
