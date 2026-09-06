@@ -22,6 +22,12 @@ in the git log.
   unsaved changes the editor first asks: **Save and sleep**, **Sleep
   without saving** (the edits are dropped), or **Cancel**. With no
   unsaved changes it sleeps immediately.
+- **Portrait display orientation** (F1 -> Settings -> "Display
+  orientation": Landscape / Portrait). Portrait turns the whole UI
+  another 90 degrees; split-screen editing then divides the screen
+  top/bottom instead of left/right, since the split always follows the
+  display's long side. Takes effect after a restart (the editor offers
+  one on the way out of Settings), the same as the screen margins.
 
 ### Changed
 
@@ -31,9 +37,6 @@ in the git log.
   without saving" genuinely discards the unsaved edits. An *automatic*
   sleep on the inactivity timeout still saves everything first, as
   before.
-
-### Changed
-
 - **Crash-safe file writes.** Saving a document (and its cursor/scroll
   sidecar, and files written by Git sync) now writes to a temporary
   file that is flushed to the MicroSD card and then renamed over the

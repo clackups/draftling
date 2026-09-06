@@ -28,6 +28,7 @@
 #include "lvgl_port.h"
 #include "display.h"
 #include "display_margins.h"
+#include "display_orientation.h"
 #include "standby.h"
 #include "greybeard.h"
 #include "battery.h"
@@ -82,14 +83,26 @@ static const char *TAG = "EditorUI";
  * default on every board -- see Settings -> Screen margins and
  * app_config.h's DISPLAY_LOGICAL_WIDTH/HEIGHT).
  *
- * At 90 or 270 degrees, the width and height are swapped. */
+ * The LVGL logical canvas has the panel's width and height swapped
+ * whenever the *effective* rotation is 90 or 270 degrees. That happens
+ * when the board's build-time base rotation
+ * (CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE) is 90/270, OR when the user
+ * picked portrait orientation (Settings -> Display orientation, which
+ * adds another 90 degrees), but not both -- an XOR.
+ * display_orientation_is_portrait() is frozen for the session (see
+ * display_orientation.h), so SCR_W / SCR_H stay constant until the
+ * next restart, exactly like the margins. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top() - display_margin_bottom())
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
+static inline bool scr_axes_swapped(void) { return !display_orientation_is_portrait(); }
 #else
-#define SCR_W        (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
-#define SCR_H        (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top() - display_margin_bottom())
+static inline bool scr_axes_swapped(void) { return display_orientation_is_portrait(); }
 #endif
+#define SCR_W        (scr_axes_swapped() \
+    ? (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom()) \
+    : (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()))
+#define SCR_H        (scr_axes_swapped() \
+    ? (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()) \
+    : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom()))
 /* Header / status bar heights. These bars always use FONT_11, so on
  * high-density boards (which render 1:1 with the taller Hack font
  * instead of the old 2x upscale) they must be twice as tall to fit the
@@ -600,20 +613,27 @@ static void save_active_layouts_to_nvs(void)
  * display_margins.h). */
 static int s_margin_left = 0, s_margin_right = 0, s_margin_top = 0, s_margin_bottom = 0;
 
-/* Set whenever a margin value is cycled during the current Settings
- * visit; drives the "restart now?" prompt shown on the way out (see
- * request_close_settings() / s_margin_confirm_open below), since that
+/* Pending display orientation (Settings -> Display orientation). Like
+ * the margins, this is frozen for the session (see
+ * display_orientation.h); this local tracks the NVS-persisted value
+ * that will apply on the next restart. */
+static bool s_pending_portrait = false;
+
+/* Set whenever a restart-only display setting -- a margin, or the
+ * display orientation -- is changed during the current Settings visit;
+ * drives the "restart now?" prompt shown on the way out (see
+ * request_close_settings() / s_restart_confirm_open below), since that
  * is the earliest point a restart can be applied without yanking the
- * user out of the middle of adjusting margins. */
-static bool s_margins_changed = false;
+ * user out of the middle of adjusting settings. */
+static bool s_restart_needed = false;
 
 /* Full-takeover confirmation shown by request_close_settings() when
- * leaving the Settings screen with a pending margin change -- same
- * one-widget-list-reused pattern as the color-theme picker below.
+ * leaving the Settings screen with a pending restart-only change --
+ * same one-widget-list-reused pattern as the color-theme picker below.
  * sel 0 = restart now, 1 = keep editing and apply later. */
-static bool s_margin_confirm_open     = false;
-static int  s_margin_confirm_sel      = 0;
-static int  s_margin_confirm_sel_prev = -1;
+static bool s_restart_confirm_open     = false;
+static int  s_restart_confirm_sel      = 0;
+static int  s_restart_confirm_sel_prev = -1;
 
 static void load_margins_from_nvs(void)
 {
@@ -945,8 +965,15 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
                                             "15 min", "30 min", "60 min" };
 #define TIMEOUT_OPTION_COUNT  6
 
-/* Line label pool */
-#define MAX_LINE_LABELS 24
+/* Line label pool. Sized to fill the editor body on the smaller
+ * panels in portrait orientation (Settings -> Display orientation),
+ * where the tall side becomes the editor height -- e.g. the Xteink X4
+ * Pro is ~19 body rows tall in landscape but ~33 in portrait. The
+ * largest panels (Tab5, 7" Sunton) still cap the visible-line count in
+ * portrait, the same way they already do in landscape. Each extra slot
+ * costs one lazily-created LVGL label per pane plus a small struct
+ * entry -- see pane_t. */
+#define MAX_LINE_LABELS 40
 
 /* A "line" here is one source paragraph (run between '\n's) which can
  * be arbitrarily long, so the rendered text for a slot must NOT be
@@ -1019,14 +1046,20 @@ static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
 static int     s_pane_count  = 1;            /* 1 = single, 2 = split */
 static int     s_focus       = 0;            /* focused pane index (0..count-1) */
 
-/* Split layout: single pane, or a vertical (left / right) split with
- * the left pane occupying 1/2, 2/3 or 1/3 of the usable width. Driven
- * by the Ctrl+1 / Ctrl+2 / Ctrl+3 shortcuts. */
+/* Split layout: single pane, or a two-pane split along the display's
+ * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
+ * Driven by the Ctrl+1 / Ctrl+2 / Ctrl+3 shortcuts.
+ *
+ * "First" is the left pane in landscape and the top pane in portrait
+ * (Settings -> Display orientation) -- the split always divides the
+ * long side, so a portrait screen splits into top/bottom rather than
+ * left/right. The SPLIT_LEFT_* names are historical; read them as
+ * "first pane = 2/3" etc. */
 typedef enum {
-    SPLIT_NONE = 0,   /* single pane (full width) */
-    SPLIT_HALF,       /* two panes, left = 1/2 */
-    SPLIT_LEFT_2_3,   /* two panes, left = 2/3 */
-    SPLIT_LEFT_1_3,   /* two panes, left = 1/3 */
+    SPLIT_NONE = 0,   /* single pane (full size) */
+    SPLIT_HALF,       /* two panes, first = 1/2 */
+    SPLIT_LEFT_2_3,   /* two panes, first = 2/3 */
+    SPLIT_LEFT_1_3,   /* two panes, first = 1/3 */
 } split_mode_t;
 static split_mode_t s_split_mode = SPLIT_NONE;
 
@@ -1205,13 +1238,31 @@ static void epd_full_screen_repaint(void)
 }
 #endif
 
+/* First pane's share (numerator/3, or /2 for HALF) of the usable long
+ * axis for the current split mode. */
+static void split_first_fraction(int total, int *first)
+{
+    switch (s_split_mode) {
+    case SPLIT_LEFT_2_3: *first = (total * 2) / 3; break;
+    case SPLIT_LEFT_1_3: *first = total / 3;       break;
+    case SPLIT_HALF:
+    default:             *first = total / 2;       break;
+    }
+    if (*first < 1) *first = 1;
+    if (*first > total - 1) *first = total - 1;
+}
+
 /* Recompute each pane's content-area rectangle from the current split
  * state. The editor body occupies [EDITOR_Y, EDITOR_Y + EDITOR_H). A
- * single pane fills it entirely; a vertical split places two panes
- * side by side (left / right) with a 1 px vertical divider between
- * them. Both panes keep the full editor height; only their width and
- * x-offset differ, so each pane wraps text to its own narrower width.
- * The left pane's share of the usable width is set by s_split_mode. */
+ * single pane fills it entirely; a two-pane split divides the display's
+ * long axis with a 1 px divider between the panes:
+ *
+ *   - landscape: left / right panes (vary x + width, full height), so
+ *     each pane wraps text to its own narrower width;
+ *   - portrait (Settings -> Display orientation): top / bottom panes
+ *     (vary y + height, full width), so each pane shows fewer rows.
+ *
+ * The first pane's share of the long axis is set by s_split_mode. */
 static void recalc_pane_geometry(void)
 {
     if (s_pane_count <= 1) {
@@ -1225,16 +1276,28 @@ static void recalc_pane_geometry(void)
         s_panes[1].h = EDITOR_H;
         return;
     }
-    int total = SCR_W - 1;             /* 1 px reserved for the divider */
-    int left_w;
-    switch (s_split_mode) {
-    case SPLIT_LEFT_2_3: left_w = (total * 2) / 3; break;
-    case SPLIT_LEFT_1_3: left_w = total / 3;       break;
-    case SPLIT_HALF:
-    default:             left_w = total / 2;       break;
+
+    if (display_orientation_is_portrait()) {
+        /* Top / bottom split: vary y + height, full width. */
+        int total = EDITOR_H - 1;     /* 1 px reserved for the divider */
+        int top_h;
+        split_first_fraction(total, &top_h);
+        int bot_h = total - top_h;
+        s_panes[0].x = 0;
+        s_panes[0].w = SCR_W;
+        s_panes[0].y = EDITOR_Y;
+        s_panes[0].h = top_h;
+        s_panes[1].x = 0;
+        s_panes[1].w = SCR_W;
+        s_panes[1].y = EDITOR_Y + top_h + 1;
+        s_panes[1].h = bot_h;
+        return;
     }
-    if (left_w < 1) left_w = 1;
-    if (left_w > total - 1) left_w = total - 1;
+
+    /* Left / right split: vary x + width, full height. */
+    int total = SCR_W - 1;            /* 1 px reserved for the divider */
+    int left_w;
+    split_first_fraction(total, &left_w);
     int right_w = total - left_w;
     s_panes[0].x = 0;
     s_panes[0].w = left_w;
@@ -1266,8 +1329,15 @@ static void layout_panes(void)
     }
     if (s_pane_divider) {
         if (s_pane_count > 1) {
-            lv_obj_set_pos(s_pane_divider, s_panes[0].x + s_panes[0].w, EDITOR_Y);
-            lv_obj_set_size(s_pane_divider, 1, EDITOR_H);
+            if (display_orientation_is_portrait()) {
+                /* Horizontal rule between the top and bottom panes. */
+                lv_obj_set_pos(s_pane_divider, 0, s_panes[0].y + s_panes[0].h);
+                lv_obj_set_size(s_pane_divider, SCR_W, 1);
+            } else {
+                /* Vertical rule between the left and right panes. */
+                lv_obj_set_pos(s_pane_divider, s_panes[0].x + s_panes[0].w, EDITOR_Y);
+                lv_obj_set_size(s_pane_divider, 1, EDITOR_H);
+            }
             lv_obj_remove_flag(s_pane_divider, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(s_pane_divider, LV_OBJ_FLAG_HIDDEN);
@@ -3306,14 +3376,15 @@ static int find_timeout_option(uint32_t sec)
 #endif
 #define SETTINGS_IDX_APPEND_ONLY   (_SETTINGS_NEXT_AFTER_INVERT + 0)
 #define SETTINGS_IDX_LAYOUTS       (_SETTINGS_NEXT_AFTER_INVERT + 1)
-#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 2)
-#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 3)
-#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 4)
-#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 5)
+#define SETTINGS_IDX_ORIENTATION   (_SETTINGS_NEXT_AFTER_INVERT + 2)
+#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 4)
+#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 5)
+#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 6)
 /* "Sleep now" used to live here; it now lives in the F1 menu. */
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 6)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 7)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 8)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 7)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 8)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 9)
 
 static void refresh_settings_items(void)
 {
@@ -3391,6 +3462,13 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
         lv_list_add_btn(s_settings_list, NULL, buf);
     }
+
+    /* Display orientation -- landscape (default) or portrait (the whole
+     * UI turned another 90 degrees). Frozen for the session like the
+     * margins below, so it only takes effect on a restart. */
+    snprintf(buf, sizeof(buf), "Display orientation: %s (restart to apply)",
+             s_pending_portrait ? "Portrait" : "Landscape");
+    lv_list_add_btn(s_settings_list, NULL, buf);
 
     /* Screen margins -- pixels of panel hidden under the enclosure on
      * each edge. Zero by default; the LVGL display resolution is fixed
@@ -3514,41 +3592,43 @@ static void close_layouts_picker(void)
     refresh_settings_items();
 }
 
-/* ---- Margin-change restart prompt ----
+/* ---- Restart-to-apply prompt ----
  * Renders into the same s_settings_list widget while
- * s_margin_confirm_open is true -- same reused-list pattern as the
- * color-theme picker above. Shown by request_close_settings() when
- * the user leaves the Settings screen having cycled at least one
- * margin this visit. */
-static void refresh_margin_confirm_items(void)
+ * s_restart_confirm_open is true -- same reused-list pattern as the
+ * color-theme picker above. Shown by request_close_settings() when the
+ * user leaves the Settings screen having changed a restart-only
+ * display setting this visit (a margin, or the display orientation). */
+static void refresh_restart_confirm_items(void)
 {
     lv_obj_clean(s_settings_list);
-    lv_list_add_btn(s_settings_list, NULL, "Restart now to apply margins");
+    lv_list_add_btn(s_settings_list, NULL, "Restart now to apply changes");
     lv_list_add_btn(s_settings_list, NULL, "Keep editing (apply later)");
-    apply_list_selection_styles(s_settings_list, s_margin_confirm_sel);
-    s_margin_confirm_sel_prev = s_margin_confirm_sel;
+    apply_list_selection_styles(s_settings_list, s_restart_confirm_sel);
+    s_restart_confirm_sel_prev = s_restart_confirm_sel;
 }
 
-static void update_margin_confirm_highlight(void)
+static void update_restart_confirm_highlight(void)
 {
-    update_list_highlight(s_settings_list, s_margin_confirm_sel,
-                          s_margin_confirm_sel_prev);
-    s_margin_confirm_sel_prev = s_margin_confirm_sel;
+    update_list_highlight(s_settings_list, s_restart_confirm_sel,
+                          s_restart_confirm_sel_prev);
+    s_restart_confirm_sel_prev = s_restart_confirm_sel;
 }
 
 static void close_settings(void);
 
-/* Leaves the Settings screen, but if a margin was cycled this visit,
- * offers to restart immediately instead of closing straight away --
- * the LVGL display resolution is fixed for the session (see
- * display_margins.h), so a restart is the only way to make the new
- * margin visible without waiting for the next natural reboot/wake. */
+/* Leaves the Settings screen, but if a restart-only display setting (a
+ * margin or the display orientation) was changed this visit, offers to
+ * restart immediately instead of closing straight away -- the LVGL
+ * display resolution and rotation are fixed for the session (see
+ * display_margins.h / display_orientation.h), so a restart is the only
+ * way to apply the change without waiting for the next natural
+ * reboot/wake. */
 static void request_close_settings(void)
 {
-    if (s_margins_changed) {
-        s_margin_confirm_open = true;
-        s_margin_confirm_sel = 0;
-        refresh_margin_confirm_items();
+    if (s_restart_needed) {
+        s_restart_confirm_open = true;
+        s_restart_confirm_sel = 0;
+        refresh_restart_confirm_items();
         return;
     }
     close_settings();
@@ -3560,8 +3640,8 @@ static void show_settings(void)
     s_menu_open = false;
     s_settings_sel = 0;
     s_factory_reset_confirm = false;
-    s_margins_changed = false;
-    s_margin_confirm_open = false;
+    s_restart_needed = false;
+    s_restart_confirm_open = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open = false;
 #endif
@@ -3686,12 +3766,23 @@ static bool settings_cycle_item(int idx, int dir)
         save_append_only_to_nvs();
         refresh_settings_items();
         return true;
+    } else if (idx == SETTINGS_IDX_ORIENTATION) {
+        /* Landscape <-> portrait. Only two states, so either direction
+         * toggles. Persisted to NVS for the next boot; the LVGL
+         * rotation and the whole widget tree are fixed for the session
+         * (see display_orientation.h), so request_close_settings()
+         * offers a restart on the way out. */
+        s_pending_portrait = !s_pending_portrait;
+        display_orientation_set_portrait(s_pending_portrait);
+        s_restart_needed = true;
+        refresh_settings_items();
+        return true;
     } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
         int oi = find_margin_option(s_margin_left);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_left = MARGIN_OPTIONS[oi];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
+        s_restart_needed = true;
         refresh_settings_items();
         return true;
     } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
@@ -3699,7 +3790,7 @@ static bool settings_cycle_item(int idx, int dir)
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_right = MARGIN_OPTIONS[oi];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
+        s_restart_needed = true;
         refresh_settings_items();
         return true;
     } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
@@ -3707,7 +3798,7 @@ static bool settings_cycle_item(int idx, int dir)
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_top = MARGIN_OPTIONS[oi];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
+        s_restart_needed = true;
         refresh_settings_items();
         return true;
     } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
@@ -3715,7 +3806,7 @@ static bool settings_cycle_item(int idx, int dir)
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_bottom = MARGIN_OPTIONS[oi];
         display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_margins_changed = true;
+        s_restart_needed = true;
         refresh_settings_items();
         return true;
     }
@@ -3770,29 +3861,29 @@ static void settings_activate_item(int idx)
 
 static void handle_settings_key(const kb_event_t *ev)
 {
-    if (s_margin_confirm_open) {
+    if (s_restart_confirm_open) {
         switch (ev->keycode) {
         case KB_KEY_UP:
         case KB_KEY_DOWN:
-            s_margin_confirm_sel = s_margin_confirm_sel == 0 ? 1 : 0;
-            update_margin_confirm_highlight();
+            s_restart_confirm_sel = s_restart_confirm_sel == 0 ? 1 : 0;
+            update_restart_confirm_highlight();
             break;
         case KB_KEY_ENTER:
-            if (s_margin_confirm_sel == 0) {
-                ESP_LOGI(TAG, "Restarting to apply new screen margins");
+            if (s_restart_confirm_sel == 0) {
+                ESP_LOGI(TAG, "Restarting to apply new display settings");
                 esp_restart();
                 /* does not return */
             }
-            s_margin_confirm_open = false;
+            s_restart_confirm_open = false;
             close_settings();
             break;
         case KB_KEY_ESCAPE:
             /* Same as "keep editing" -- Escape leaving the user stuck
              * re-answering the same prompt would be worse than just
-             * deferring the restart, since the margin is already
+             * deferring the restart, since the new value is already
              * saved to NVS and will apply on the next natural
              * restart/sleep-wake regardless. */
-            s_margin_confirm_open = false;
+            s_restart_confirm_open = false;
             close_settings();
             break;
         default:
@@ -4794,12 +4885,15 @@ static bool cursor_line_is_rtl(void)
 
 /* ---- Split-screen control ----
  *
- * The editor shows one pane by default. The split is driven entirely
+ * The editor shows one pane by default. The split always divides the
+ * display's long axis -- left/right in landscape, top/bottom in
+ * portrait (Settings -> Display orientation) -- and is driven entirely
  * by three shortcuts:
- *   Ctrl+1  single pane (full width)
- *   Ctrl+2  two equal-width panes (left = 1/2)
- *   Ctrl+3  two panes with the left = 2/3; pressing Ctrl+3 again
- *           flips the left pane to 1/3 (and back).
+ *   Ctrl+1  single pane
+ *   Ctrl+2  two equal panes (first = 1/2)
+ *   Ctrl+3  two panes with the first = 2/3; pressing Ctrl+3 again
+ *           flips the first pane to 1/3 (and back).
+ * "First" is the left pane in landscape, the top pane in portrait.
  * Enabling a split for the first time acquires a fresh, empty untitled
  * document into pane 1; collapsing back to a single pane keeps pane 1's
  * document open in the background so re-splitting restores it. Each
@@ -4869,8 +4963,9 @@ static void editor_ui_apply_split_mode(split_mode_t mode)
 }
 
 /* Ctrl+3: enter / cycle the asymmetric split. First press (from single
- * or equal split) makes the left pane 2/3; a subsequent Ctrl+3 toggles
- * the left pane between 2/3 and 1/3. */
+ * or equal split) makes the first pane 2/3; a subsequent Ctrl+3 toggles
+ * the first pane between 2/3 and 1/3. (First pane = left in landscape,
+ * top in portrait.) */
 static void editor_ui_cycle_wide_split(void)
 {
     split_mode_t next = (s_split_mode == SPLIT_LEFT_2_3)
@@ -6029,7 +6124,7 @@ static void apply_pending_connect_state(void)
          * editor_close_file() -- preserve the user's work. */
         s_menu_open = false;
         s_settings_open = false;
-        s_margin_confirm_open = false;
+        s_restart_confirm_open = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
         s_theme_picker_open = false;
 #endif
@@ -6359,7 +6454,10 @@ static void build_screens(void)
     }
     pane_bind_focus();
 
-    /* Vertical divider drawn between the two panes when split. */
+    /* Divider drawn between the two panes when split -- vertical in
+     * landscape, horizontal in portrait. layout_panes() sizes and
+     * positions it for the current orientation; these are just
+     * placeholder values. */
     s_pane_divider = lv_obj_create(s_scr);
     lv_obj_set_size(s_pane_divider, 1, EDITOR_H);
     lv_obj_set_pos(s_pane_divider, SCR_W / 2, EDITOR_Y);
@@ -7049,8 +7147,8 @@ static void teardown_screens(void)
 #endif
     s_layouts_picker_open     = false;
     s_factory_reset_confirm   = false;
-    s_margins_changed         = false;
-    s_margin_confirm_open     = false;
+    s_restart_needed         = false;
+    s_restart_confirm_open     = false;
     s_save_open               = false;
     s_exit_open               = false;
     s_search_open             = false;
@@ -7128,6 +7226,7 @@ extern "C" void editor_ui_init(void)
     load_append_only_from_nvs();
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
+    s_pending_portrait = display_orientation_get_pending_portrait();
     init_styles();
 
     /* Create key-event queue (must exist before BLE callback is set) */

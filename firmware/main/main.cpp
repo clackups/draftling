@@ -1285,6 +1285,14 @@ extern "C" void app_main(void)
      * boot. */
     display_margins_init();
 
+    /* Load the user-selected display orientation (Settings -> Display
+     * orientation; landscape on a fresh install) before anything below
+     * derives DISPLAY_ROTATE_EFFECTIVE from it. Portrait adds another
+     * 90 degrees on top of the board's build-time base rotation, so
+     * the LVGL rotation angle, the editor's SCR_W / SCR_H, and the
+     * split-screen axis all have to see the same value for the session. */
+    display_orientation_init();
+
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
     /* Close the hardware power latch first thing after NVS so the
      * battery rail stays alive when the user releases the boot-time
@@ -1638,11 +1646,17 @@ extern "C" void app_main(void)
     /* Initialize LVGL.
      *
      * LVGL renders 1:1 at the panel resolution; DISPLAY_LOGICAL_WIDTH /
-     * DISPLAY_LOGICAL_HEIGHT are aliases of the physical panel size.
-     * (High-density boards no longer upscale the framebuffer; they use
-     * a larger font instead -- see CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
+     * DISPLAY_LOGICAL_HEIGHT are aliases of the physical panel size
+     * (before rotation -- LVGL swaps them internally for a 90/270
+     * angle). (High-density boards no longer upscale the framebuffer;
+     * they use a larger font instead -- see
+     * CONFIG_DRAFTLING_DISPLAY_HIDPI.)
+     *
+     * DISPLAY_ROTATE_EFFECTIVE folds in the "Display orientation"
+     * setting: portrait = the board's base rotation + 90. */
     ESP_LOGI(TAG, "Initializing LVGL...");
-    draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT, DISPLAY_ROTATE);
+    draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT,
+                             DISPLAY_ROTATE_EFFECTIVE);
 
     /* Initialize battery voltage monitor before the UI so the editor
      * status bar can show the battery level immediately. battery_init
