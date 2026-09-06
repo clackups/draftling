@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-06
+
 ### Added
 
 - **Active language layouts** setting (F1 -> Settings -> "Active
