@@ -19,6 +19,15 @@ in the git log.
   default in `idf.py menuconfig` (`DRAFTLING Keyboard Layouts`);
   previously only US and UA were on by default.
 
+### Changed
+
+- **Crash-safe file writes.** Saving a document (and its cursor/scroll
+  sidecar, and files written by Git sync) now writes to a temporary
+  file that is flushed to the MicroSD card and then renamed over the
+  target. A power loss or a card pulled out mid-save can no longer
+  truncate or corrupt the file being written -- the previous contents
+  stay intact until the complete new version is in place.
+
 ### Fixed
 
 - Ctrl-letter shortcuts (and the file browser's unmodified "N: New
