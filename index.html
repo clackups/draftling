@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Draftling Web Flasher</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>Draftling Web Flasher</h1>
+    <p class="tagline">
+      Install <a href="https://github.com/clackups/draftling" target="_blank" rel="noopener">Draftling</a>
+      firmware straight from your browser over USB &mdash; no software to install.
+    </p>
+  </header>
+
+  <main>
+    <div id="unsupported" class="notice notice-error" hidden>
+      <strong>Web Serial isn't available in this browser.</strong>
+      Use a desktop version of Chrome, Edge, or Opera, connected to your device over USB.
+      (Firefox and Safari don't support Web Serial yet.)
+    </div>
+
+    <section id="step-board" class="step">
+      <h2><span class="step-num">1</span> Choose your board</h2>
+      <select id="board-select" class="board-select" aria-label="Board"></select>
+      <p id="board-desc" class="hint"></p>
+
+      <label class="field-label" for="version-select">Firmware version</label>
+      <select id="version-select" class="board-select" aria-label="Firmware version"></select>
+    </section>
+
+    <section id="step-connect" class="step">
+      <h2><span class="step-num">2</span> Connect</h2>
+      <p class="hint">
+        Plug your device in via USB, then click Connect and pick its serial port
+        from the browser dialog.
+      </p>
+      <div class="actions">
+        <button id="connect-btn" disabled>Connect device</button>
+        <button id="disconnect-btn" class="secondary" hidden>Disconnect</button>
+      </div>
+      <p id="chip-info" class="chip-info" hidden></p>
+    </section>
+
+    <section id="step-flash" class="step" hidden>
+      <h2><span class="step-num">3</span> Flash</h2>
+      <label class="checkbox-row">
+        <input type="checkbox" id="erase-all" />
+        Erase entire flash first (recommended if the device previously ran different firmware)
+      </label>
+      <div class="actions">
+        <button id="flash-btn">Flash firmware</button>
+      </div>
+      <div id="progress-list" class="progress-list"></div>
+    </section>
+
+    <section id="step-done" class="step" hidden>
+      <h2><span class="checkmark">&#10003;</span> Done</h2>
+      <p>
+        Firmware flashed successfully. The device is rebooting into Draftling.
+        Files on the SD card are untouched.
+      </p>
+      <div class="actions">
+        <button id="monitor-btn" class="secondary">Open serial monitor</button>
+        <button id="restart-btn" class="secondary">Flash another device</button>
+      </div>
+    </section>
+
+    <section id="step-log" class="step">
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <footer class="page-footer">
+    <p>
+      <a href="https://github.com/clackups/draftling/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      &middot; Built with <a href="https://github.com/espressif/esptool-js" target="_blank" rel="noopener">esptool-js</a>
+      &middot; <a href="https://github.com/clackups/draftling" target="_blank" rel="noopener">Source &amp; docs</a>
+    </p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+{
+  "consoleBaudrate": 115200,
+  "boards": [
+    {
+      "id": "m5stack_papers3",
+      "name": "M5Stack PaperS3",
+      "description": "ESP32-S3, 4.7\" e-paper (epdiy)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-m5stack_papers3-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-m5stack_papers3-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-m5stack_papers3.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "xteink_x4_pro",
+      "name": "Xteink X4 Pro",
+      "description": "ESP32-S3, 800x480 e-paper (SSD1677/UC8179/UC8279)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-xteink_x4_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-xteink_x4_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-xteink_x4_pro-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.2/draftling-xteink_x4_pro.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "waveshare_rlcd42",
+      "name": "Waveshare ESP32-S3-RLCD-4.2",
+      "description": "ESP32-S3, 4.2\" reflective color LCD",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-waveshare_rlcd42-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-waveshare_rlcd42-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-waveshare_rlcd42.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "waveshare_touch_lcd_349",
+      "name": "Waveshare ESP32-S3-Touch-LCD-3.49",
+      "description": "ESP32-S3, 3.49\" touch color LCD",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-waveshare_touch_lcd_349-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-waveshare_touch_lcd_349-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-waveshare_touch_lcd_349.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lilygo_t5_epd_s3_pro",
+      "name": "LilyGO T5 E-Paper S3 Pro / Pro Lite",
+      "description": "ESP32-S3, e-paper (epdiy)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-lilygo_t5_epd_s3_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-lilygo_t5_epd_s3_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-lilygo_t5_epd_s3_pro.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "freenove_fnk0104a",
+      "name": "Freenove FNK0104A",
+      "description": "ESP32-S3, color LCD (ILI9341/ST7796 SPI)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104a-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104a-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104a.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "freenove_fnk0104b",
+      "name": "Freenove FNK0104B",
+      "description": "ESP32-S3, color LCD (ILI9341/ST7796 SPI)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104b-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104b-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104b.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "freenove_fnk0104s",
+      "name": "Freenove FNK0104S",
+      "description": "ESP32-S3, color LCD (ILI9341/ST7796 SPI)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104s-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104s-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-freenove_fnk0104s.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "elecrow_crowpanel_579",
+      "name": "Elecrow CrowPanel 5.79\" HMI",
+      "description": "ESP32-S3, 5.79\" e-paper (SSD1683)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.2",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "8MB",
+          "parts": [
+            { "path": "firmware/v1.0.2/draftling-elecrow_crowpanel_579-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.2/draftling-elecrow_crowpanel_579-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.2/draftling-elecrow_crowpanel_579.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    }
+  ]
+}

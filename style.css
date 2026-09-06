@@ -1,0 +1,236 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --text: #1c1b19;
+  --text-muted: #6b6660;
+  --border: #ddd8d0;
+  --accent: #a15c2f;
+  --accent-text: #ffffff;
+  --error-bg: #fbe9e7;
+  --error-text: #8c2f21;
+  --error-border: #e3a99b;
+  --ok: #3d7a4d;
+  --log-bg: #1c1b19;
+  --log-text: #e7e3da;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16140f;
+    --surface: #221f19;
+    --text: #f0ece3;
+    --text-muted: #a89f92;
+    --border: #3a352c;
+    --accent: #d38a52;
+    --accent-text: #1c1b19;
+    --error-bg: #3a1f1a;
+    --error-text: #f2b6a8;
+    --error-border: #6b3428;
+    --ok: #7fbf8f;
+    --log-bg: #0d0c0a;
+    --log-text: #d9d4c8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1.25rem 3rem;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--accent);
+}
+
+.page-header {
+  padding: 2rem 0 1rem;
+}
+
+.page-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+}
+
+.tagline {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.notice {
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin: 1rem 0;
+  border: 1px solid;
+}
+
+.notice-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+  border-color: var(--error-border);
+}
+
+.step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem 1.5rem;
+  margin: 1rem 0;
+}
+
+.step h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.05rem;
+  margin: 0 0 0.9rem;
+}
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.checkmark {
+  color: var(--ok);
+}
+
+.hint {
+  color: var(--text-muted);
+  margin-top: 0;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 1rem 0 0.35rem;
+}
+
+.board-select {
+  display: block;
+  width: 100%;
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 2.2rem 0.6rem 0.8rem;
+  cursor: pointer;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 1.1rem) center, calc(100% - 0.75rem) center;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+
+.board-select:hover,
+.board-select:focus {
+  border-color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+button {
+  font: inherit;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.1rem;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.chip-info {
+  margin-top: 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  color: var(--ok);
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.progress-row .progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.progress-row progress {
+  width: 100%;
+  height: 0.6rem;
+}
+
+#log {
+  background: var(--log-bg);
+  color: var(--log-text);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.log-error { color: #f28b7d; }
+.log-warn { color: #e8c168; }
+.log-info { color: #8fd19e; }
+
+.page-footer {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  margin-top: 2rem;
+}
