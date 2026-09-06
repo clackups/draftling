@@ -31,6 +31,9 @@ const char *sd_card_get_mount_point(void);
 
 /* Read entire file; caller must free(*out_buf) */
 esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t *out_len);
+/* Overwrite a file atomically: the bytes are written to a temporary
+ * file and flushed to the card, then renamed over `path`. A crash or
+ * power loss mid-write leaves the previous contents of `path` intact. */
 esp_err_t sd_card_write_file(const char *path, const char *data, size_t len);
 esp_err_t sd_card_append_file(const char *path, const char *data, size_t len);
 bool sd_card_file_exists(const char *path);

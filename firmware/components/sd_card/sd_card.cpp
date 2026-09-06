@@ -406,12 +406,57 @@ extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t 
 extern "C" esp_err_t sd_card_write_file(const char *path, const char *data, size_t len)
 {
     if (!s_card) return ESP_ERR_INVALID_STATE;
-    FILE *f = fopen(path, "wb");
-    if (!f) { ESP_LOGE(TAG, "Open for write failed: %s", path); return ESP_FAIL; }
+
+    /* Atomic write: stream the new contents into a temporary file next
+     * to the target, flush it all the way down to the card, then rename
+     * it over the target. A power loss or card yank while the bytes are
+     * being written therefore never truncates or half-overwrites
+     * `path` -- the incomplete data only ever lands in the temporary
+     * file, which is removed on the next write. FAT's rename() cannot
+     * replace an existing file, so the old file is unlinked immediately
+     * before the rename; the only unguarded window is that single
+     * directory-entry swap, and the fully written replacement still
+     * exists as the temporary file if power is lost inside it.
+     *
+     * The temporary lives in the same directory as `path` (rename must
+     * stay within one filesystem) and is named ".<basename>.dtmp" so a
+     * leftover after a crash is hidden from the file browser, which
+     * skips dot-prefixed entries. */
+    char tmp[512];
+    const char *slash = strrchr(path, '/');
+    int n;
+    if (slash) {
+        n = snprintf(tmp, sizeof(tmp), "%.*s/.%s.dtmp",
+                     (int)(slash - path), path, slash + 1);
+    } else {
+        n = snprintf(tmp, sizeof(tmp), ".%s.dtmp", path);
+    }
+    if (n <= 0 || (size_t)n >= sizeof(tmp)) {
+        ESP_LOGE(TAG, "Path too long for atomic write: %s", path);
+        return ESP_FAIL;
+    }
+
+    FILE *f = fopen(tmp, "wb");
+    if (!f) { ESP_LOGE(TAG, "Open for write failed: %s", tmp); return ESP_FAIL; }
     size_t wr = fwrite(data, 1, len, f);
-    fsync(fileno(f));
-    fclose(f);
-    return (wr == len) ? ESP_OK : ESP_FAIL;
+    bool ok = (wr == len);
+    if (fflush(f) != 0) ok = false;
+    if (ok && fsync(fileno(f)) != 0) ok = false;
+    if (fclose(f) != 0) ok = false;
+    if (!ok) {
+        ESP_LOGE(TAG, "Write failed: %s (%zu/%zu bytes)", tmp, wr, len);
+        remove(tmp);
+        return ESP_FAIL;
+    }
+
+    remove(path);
+    if (rename(tmp, path) != 0) {
+        /* Leave the temporary file in place: it holds the only complete
+         * copy of the new contents now that the old file is gone. */
+        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", tmp, path, strerror(errno));
+        return ESP_FAIL;
+    }
+    return ESP_OK;
 }
 
 extern "C" esp_err_t sd_card_append_file(const char *path, const char *data, size_t len)
