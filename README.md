@@ -57,7 +57,11 @@ load the firmware quickly without having to compile it.
 - **Split screen editing**: You can split the screen in two equal
   halves, or 1/3 and 2/3 parts, and use a second file for side notes
   or comments. Draftling supports also editing thge same file in both
-  windows.
+  windows. The split follows the display's long side -- left/right in
+  landscape, top/bottom in portrait.
+
+- **Portrait or landscape**: F1 -> Settings -> "Display orientation"
+  turns the whole UI 90 degrees. Takes effect after a restart.
 
 - **Synchronizing your files with a Git repository** using a real,
   built-in Git client that speaks the standard smart-HTTP protocol
@@ -113,11 +117,14 @@ load the firmware quickly without having to compile it.
 | Ctrl+B | Cycle backlight / front-light brightness (boards with a controllable backlight) |
 | Ctrl+Home/End | Start / end of document |
 | Ctrl+Left/Right | Word movement |
-| Ctrl+1 | Single-pane mode (full-width editor) |
-| Ctrl+2 | Split screen into two equal-width panes |
-| Ctrl+3 | Split with the left pane at 2/3 width; press again to toggle the left pane to 1/3 |
+| Ctrl+1 | Single-pane mode (full editor) |
+| Ctrl+2 | Split into two equal panes (left/right in landscape, top/bottom in portrait) |
+| Ctrl+3 | Split with the first pane at 2/3; press again to toggle the first pane to 1/3 |
 | Ctrl+Tab | Move keyboard focus to the other pane (when split) |
 | Escape | Switch to file browser. With unsaved changes, a dialog offers Save and exit / Exit without saving / Cancel (Up/Down + Enter to choose) |
+
+`Ctrl+P` and `Ctrl+1` / `Ctrl+2` / `Ctrl+3` also work in the file
+browser (the split layout applies the next time you open a file).
 
 
 
@@ -160,10 +167,15 @@ immediately; connect your new keyboard and it will pair automatically.
 
 ## Split-screen Editing
 
-The editor can show two documents side by side. **Ctrl+2** divides the
-screen into two equal-width vertical panes; **Ctrl+3** makes the left
-pane wider (2/3 of the width) and a second **Ctrl+3** flips the left
-pane to 1/3. **Ctrl+1** returns to a single full-width pane.
+The editor can show two documents at once. **Ctrl+2** divides the
+screen into two equal panes; **Ctrl+3** makes the first pane bigger
+(2/3) and a second **Ctrl+3** flips it to 1/3. **Ctrl+1** returns to a
+single pane.
+
+The split always divides the display's **long side**: in landscape you
+get left / right panes, in portrait (F1 -> Settings -> "Display
+orientation") you get top / bottom panes. "First pane" is the left one
+in landscape, the top one in portrait.
 
 Each pane opens a file for itself: while split, **Ctrl+O** opens the
 file browser for the focused pane, so the picked file loads into that

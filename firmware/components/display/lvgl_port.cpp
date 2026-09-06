@@ -101,6 +101,31 @@ static void rotate_tile_rgb565(const uint16_t *src, uint16_t *dst,
     }
 }
 
+/* Translate the lvgl_port's rotation angle (s_rotate_deg, the sense
+ * used by rotate_tile_rgb565() / map_area_to_physical() above) into the
+ * lv_display_set_rotation() argument.
+ *
+ * flush_cb rotates each tile itself, with a rotation sense OPPOSITE to
+ * LVGL's own lv_display_rotate_area() / lv_display_rotate_point(). We
+ * still have to call lv_display_set_rotation() -- LVGL needs it to swap
+ * the reported resolution for the widget tree, and (the subtle part) it
+ * is also what LVGL uses to rotate incoming touch points in
+ * indev_pointer_proc() (lv_display_rotate_point(); the only consumer
+ * here, since we never enable matrix_rotation). So feed LVGL the
+ * MIRRORED quarter turn: 90 <-> 270, with 0 and 180 unchanged. Then
+ * lv_display_rotate_point()'s physical->logical map is the exact
+ * inverse of flush_cb's logical->physical pixel map, and a tap lands
+ * where the finger is in every orientation (portrait included). */
+static lv_display_rotation_t lvgl_rotation_for_port_deg(int port_deg)
+{
+    switch ((360 - ((port_deg % 360) + 360) % 360) % 360) {
+    case 90:  return LV_DISPLAY_ROTATION_90;
+    case 180: return LV_DISPLAY_ROTATION_180;
+    case 270: return LV_DISPLAY_ROTATION_270;
+    default:  return LV_DISPLAY_ROTATION_0;
+    }
+}
+
 /* Map the LVGL (logical, post-rotation) tile area to physical panel
  * coordinates and dimensions. */
 static void map_area_to_physical(const lv_area_t *area, int rotate_deg,
@@ -278,15 +303,9 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(disp, flush_cb);
 
-    /* Apply display rotation */
-    lv_display_rotation_t rot = LV_DISPLAY_ROTATION_0;
-    switch (s_rotate_deg) {
-    case 90:  rot = LV_DISPLAY_ROTATION_90;  break;
-    case 180: rot = LV_DISPLAY_ROTATION_180; break;
-    case 270: rot = LV_DISPLAY_ROTATION_270; break;
-    default:  rot = LV_DISPLAY_ROTATION_0;   break;
-    }
-    lv_display_set_rotation(disp, rot);
+    /* Apply display rotation (see lvgl_rotation_for_port_deg for why
+     * this is the mirrored quarter turn, not s_rotate_deg directly). */
+    lv_display_set_rotation(disp, lvgl_rotation_for_port_deg(s_rotate_deg));
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
@@ -352,14 +371,7 @@ extern "C" void draftling_lvgl_port_set_flip180(bool flip)
     s_flip180    = flip;
     s_rotate_deg = (s_base_rotate_deg + (flip ? 180 : 0)) % 360;
 
-    lv_display_rotation_t rot = LV_DISPLAY_ROTATION_0;
-    switch (s_rotate_deg) {
-    case 90:  rot = LV_DISPLAY_ROTATION_90;  break;
-    case 180: rot = LV_DISPLAY_ROTATION_180; break;
-    case 270: rot = LV_DISPLAY_ROTATION_270; break;
-    default:  rot = LV_DISPLAY_ROTATION_0;   break;
-    }
-    lv_display_set_rotation(s_disp, rot);
+    lv_display_set_rotation(s_disp, lvgl_rotation_for_port_deg(s_rotate_deg));
 
     /* Repaint everything in the new orientation. display_clear() also
      * flags the next flush as a full refresh on backends that track

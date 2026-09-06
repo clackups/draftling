@@ -21,7 +21,19 @@ in the git log.
 - **Ctrl+P puts the device into deep sleep.** If the open document has
   unsaved changes the editor first asks: **Save and sleep**, **Sleep
   without saving** (the edits are dropped), or **Cancel**. With no
-  unsaved changes it sleeps immediately.
+  unsaved changes it sleeps immediately. `Ctrl+P` and the split
+  shortcuts `Ctrl+1` / `Ctrl+2` / `Ctrl+3` now also work from the file
+  browser: enabling a split switches to the editor so it is visible
+  right away, and `Ctrl+1` collapses a split from anywhere (including
+  the file selector a split editor shows on Esc).
+- **Portrait display orientation** (F1 -> Settings -> "Display
+  orientation": Landscape / Portrait). Portrait turns the whole UI a
+  quarter turn; split-screen editing then divides the screen top/bottom
+  instead of left/right, since the split always follows the display's
+  long side. Takes effect after a restart (the editor offers one on the
+  way out of Settings), the same as the screen margins. On the Xteink
+  X4 Pro portrait turns the opposite way from the other boards, to suit
+  the enclosure.
 
 ### Changed
 
@@ -31,9 +43,6 @@ in the git log.
   without saving" genuinely discards the unsaved edits. An *automatic*
   sleep on the inactivity timeout still saves everything first, as
   before.
-
-### Changed
-
 - **Crash-safe file writes.** Saving a document (and its cursor/scroll
   sidecar, and files written by Git sync) now writes to a temporary
   file that is flushed to the MicroSD card and then renamed over the
@@ -43,6 +52,18 @@ in the git log.
 
 ### Fixed
 
+- **Touch input was a quarter turn off** on any board rendering at a 90
+  or 270 degree rotation -- the natively-portrait Freenove FNK0104B /
+  FNK0104S, and any board in the new portrait orientation. The LVGL
+  display rotation fed to the touch-point transform did not match the
+  sense of the framebuffer rotation; taps now land under the finger.
+- **Xteink X4 Pro**: the touchscreen no longer comes up dead after a
+  restart from the Settings "restart to apply" prompt (or a panic /
+  watchdog). A warm reboot does not reset the GT911, which then came
+  back stuck at its fallback I2C address and never scanning; the
+  controller is now fully power-cycled and hardware-reset with the
+  datasheet address-select timing early in boot, before the shared I2C
+  bus is created.
 - **Xteink X4 Pro**: the flashed partition table now keeps an `otadata`
   partition and a dual-OTA app layout (`ota_0` / `ota_1`), instead of a
   single `factory` partition. The stock Xteink firmware and the

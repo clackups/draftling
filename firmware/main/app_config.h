@@ -2,11 +2,29 @@
 
 #include "sdkconfig.h"
 #include "display_margins.h"
+#include "display_orientation.h"
 
 /* Display dimensions (derived from Kconfig hardware model selection) */
 #define DISPLAY_WIDTH   CONFIG_DRAFTLING_DISPLAY_WIDTH
 #define DISPLAY_HEIGHT  CONFIG_DRAFTLING_DISPLAY_HEIGHT
+
+/* Build-time base rotation for the board's panel (0 for most boards,
+ * 90 for the natively-portrait Freenove panels, 270 for the Tab5). */
 #define DISPLAY_ROTATE  CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE
+
+/* Effective rotation handed to the LVGL port. The user-selectable
+ * "Display orientation" setting (F1 -> Settings, restart to apply)
+ * adds DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE degrees (90 by default,
+ * 270 on the Xteink X4 Pro whose enclosure reads better the other way)
+ * on top of the base rotation for portrait, turning a landscape board
+ * a quarter turn. display_orientation_init() must have run (main.cpp
+ * calls it right after display_margins_init()) before this is
+ * evaluated. */
+#define DISPLAY_ROTATE_EFFECTIVE                                            \
+    (display_orientation_is_portrait()                                      \
+        ? ((DISPLAY_ROTATE + CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE) \
+           % 360)                                                          \
+        : DISPLAY_ROTATE)
 
 /* The editor and LVGL canvas render 1:1 at the panel resolution,
  * minus the user-adjustable margins (display_margins.h) -- pixels of

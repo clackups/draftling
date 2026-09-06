@@ -207,21 +207,27 @@ static void pre_sleep_autosave(void)
      *
      * Take the LVGL mutex first so this does not race with the LVGL
      * task's flush_cb. */
-    /* Take the LVGL mutex if we can so the wipe does not race with
-     * the LVGL task's flush_cb. The mutex is recursive
-     * (draftling_lvgl_port_init), so this also works when pre_sleep_autosave
-     * runs inside the LVGL task itself (the "Sleep now" menu path).
-     * If for any reason the lock cannot be obtained quickly, wipe
-     * anyway -- a clean white frame on the panel matters more than
-     * the slim chance of a flush_cb collision right before deep
-     * sleep. */
-    bool locked = draftling_lvgl_port_lock(200);
+    /* Take the LVGL mutex so the wipe does not race with the LVGL
+     * task's flush_cb -- the e-paper backends have no internal lock, so
+     * a concurrent display_full_refresh() here and a flush_cb push from
+     * the LVGL task corrupt the panel's SPI transaction / dirty-rect
+     * state (symptom: the device appears to hang instead of sleeping).
+     * The mutex is recursive (draftling_lvgl_port_init), so this also
+     * works when pre_sleep_autosave runs inside the LVGL task itself
+     * (the "Sleep now" menu path). Wait generously: a single flush is
+     * at most a full-screen e-paper refresh (~2 s), and this path is
+     * followed immediately by deep sleep, so a few extra seconds cost
+     * nothing. A longer wait matters most in the rotated (portrait)
+     * flush path, which is slower than the unrotated one. Only wipe
+     * without the lock if the LVGL task is genuinely wedged. */
+    bool locked = draftling_lvgl_port_lock(5000);
     display_clear(0xFF);
     display_full_refresh();
     if (locked) {
         draftling_lvgl_port_unlock();
     } else {
-        ESP_LOGW(TAG, "pre_sleep wipe: LVGL lock not acquired, proceeded anyway");
+        ESP_LOGW(TAG, "pre_sleep wipe: LVGL lock not acquired in 5 s, "
+                      "proceeded anyway");
     }
 #endif
 }
@@ -1285,6 +1291,14 @@ extern "C" void app_main(void)
      * boot. */
     display_margins_init();
 
+    /* Load the user-selected display orientation (Settings -> Display
+     * orientation; landscape on a fresh install) before anything below
+     * derives DISPLAY_ROTATE_EFFECTIVE from it. Portrait adds another
+     * 90 degrees on top of the board's build-time base rotation, so
+     * the LVGL rotation angle, the editor's SCR_W / SCR_H, and the
+     * split-screen axis all have to see the same value for the session. */
+    display_orientation_init();
+
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
     /* Close the hardware power latch first thing after NVS so the
      * battery rail stays alive when the user releases the boot-time
@@ -1319,6 +1333,16 @@ extern "C" void app_main(void)
     t5_release_held_gpios_after_wake();
 #endif
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+    /* pre_sleep_xteink_x4_pro_deinit() calls gpio_deep_sleep_hold_en()
+     * before deep sleep, which on the ESP32-S3 keeps the digital GPIO
+     * output levels latched into the next startup -- and stays latched
+     * until gpio_deep_sleep_hold_dis() is called. Release it here, on
+     * every boot, so the display / touch / SD bring-up below can drive
+     * the peripheral-rail and power-enable pads freely (in particular
+     * the GT911 power-cycle further down). A no-op if nothing was
+     * held. */
+    gpio_deep_sleep_hold_dis();
+
     /* Master peripheral-rail latch. Must be driven HIGH before any
      * SPI/display/SD bring-up -- without it, the e-paper panel rail
      * and the SD slot both stay unpowered. No I2C expander involved
@@ -1330,6 +1354,65 @@ extern "C" void app_main(void)
         g.pin_bit_mask = (1ULL << XTEINK_POWER_LATCH_PIN);
         gpio_config(&g);
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
+    }
+
+    /* Full GT911 power-cycle + hardware reset with the datasheet
+     * address-select timing. Done HERE, before the shared I2C bus is
+     * created below, and `tcfg.rst` is passed as -1 so touchscreen_init()
+     * does not re-pulse RST and undo the address select.
+     *
+     * Why the full sequence and not just "enable the rail": on a cold
+     * boot the GT911 has never run, so even a sloppy reset works. But
+     * after a warm reboot -- esp_restart() from the Settings "restart to
+     * apply" prompt (display orientation / margins), a panic, a
+     * watchdog -- esp_restart() does not reset the GT911, and it comes
+     * back either wedged or (observed) answering at its fallback address
+     * 0x14 without ever scanning. The chip only latches a valid config
+     * and starts scanning if INT is held at the address-select level
+     * across the RST rising edge and for T3/T4 afterwards (GT911
+     * datasheet section 5). VDD is dropped first so the reset starts
+     * from a true power-off state regardless of what the chip was doing.
+     *
+     * TOUCH_POWER_EN_PIN is active-low (LOW = VDD on). INT held HIGH
+     * across RST-high selects the primary I2C address 0x5D. */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN) |
+                         (1ULL << TOUCH_RST_PIN) |
+                         (1ULL << TOUCH_INT_PIN);
+        gpio_config(&g);
+
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 0);        /* assert reset */
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 1);   /* VDD off */
+        vTaskDelay(pdMS_TO_TICKS(100));                      /* drain rail fully */
+
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);   /* VDD on */
+        vTaskDelay(pdMS_TO_TICKS(12));                       /* T1: >=10 ms held in reset */
+
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 1);        /* address select -> 0x5D */
+        vTaskDelay(pdMS_TO_TICKS(1));                        /* T2: >100 us */
+
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 1);        /* release reset */
+        vTaskDelay(pdMS_TO_TICKS(8));                        /* T3: hold INT >=5 ms */
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(55));                       /* T4: >=50 ms before INT is an input */
+
+        /* INT -> input + pull-up (its normal "data ready" role).
+         * touchscreen_init() also does this; doing it now keeps the
+         * line from floating during the shared-bus + display bring-up
+         * that runs before touchscreen_init(). */
+        gpio_config_t gi = {};
+        gi.intr_type    = GPIO_INTR_DISABLE;
+        gi.mode         = GPIO_MODE_INPUT;
+        gi.pin_bit_mask = (1ULL << TOUCH_INT_PIN);
+        gi.pull_up_en   = GPIO_PULLUP_ENABLE;
+        gpio_config(&gi);
+
+        ESP_LOGI(TAG, "GT911 power-cycled + reset (RST=%d INT=%d, selecting 0x5D)",
+                 TOUCH_RST_PIN, TOUCH_INT_PIN);
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
@@ -1638,11 +1721,17 @@ extern "C" void app_main(void)
     /* Initialize LVGL.
      *
      * LVGL renders 1:1 at the panel resolution; DISPLAY_LOGICAL_WIDTH /
-     * DISPLAY_LOGICAL_HEIGHT are aliases of the physical panel size.
-     * (High-density boards no longer upscale the framebuffer; they use
-     * a larger font instead -- see CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
+     * DISPLAY_LOGICAL_HEIGHT are aliases of the physical panel size
+     * (before rotation -- LVGL swaps them internally for a 90/270
+     * angle). (High-density boards no longer upscale the framebuffer;
+     * they use a larger font instead -- see
+     * CONFIG_DRAFTLING_DISPLAY_HIDPI.)
+     *
+     * DISPLAY_ROTATE_EFFECTIVE folds in the "Display orientation"
+     * setting: portrait = the board's base rotation + 90. */
     ESP_LOGI(TAG, "Initializing LVGL...");
-    draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT, DISPLAY_ROTATE);
+    draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT,
+                             DISPLAY_ROTATE_EFFECTIVE);
 
     /* Initialize battery voltage monitor before the UI so the editor
      * status bar can show the battery level immediately. battery_init
@@ -2184,24 +2273,21 @@ extern "C" void app_main(void)
      * tcfg.i2c_bus; on every other board tcfg.i2c_bus stays NULL
      * and the component creates its own bus from sda/scl as before. */
     ESP_LOGI(TAG, "Initializing touchscreen...");
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
-    /* GT911 power-enable, active-low. Drive it before touch bring-up;
-     * there is no touchscreen_config_t field for this, so it is a
-     * one-off poke here (same style as the SD power-enable above). */
-    {
-        gpio_config_t touch_pwr = {};
-        touch_pwr.intr_type    = GPIO_INTR_DISABLE;
-        touch_pwr.mode         = GPIO_MODE_OUTPUT;
-        touch_pwr.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
-        gpio_config(&touch_pwr);
-        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 0);
-    }
-#endif
+    /* Note: on the Xteink X4 Pro the GT911 was fully power-cycled and
+     * hardware-reset (with the datasheet address-select timing) far
+     * above, before the shared I2C bus was created -- see the comment
+     * there. TOUCH_POWER_EN_PIN stays LOW (VDD on) from that point;
+     * tcfg.rst is passed as -1 below so touchscreen_init() does not
+     * re-pulse RST and undo the address select. */
     {
         touchscreen_config_t tcfg = {};
         tcfg.sda      = I2C_SDA_PIN;
         tcfg.scl      = I2C_SCL_PIN;
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+        tcfg.rst      = -1;               /* reset already done in the block above */
+#else
         tcfg.rst      = TOUCH_RST_PIN;
+#endif
         tcfg.intr     = TOUCH_INT_PIN;
         tcfg.i2c_addr = TOUCH_I2C_ADDR;
         tcfg.i2c_port = 0;

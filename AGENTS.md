@@ -273,7 +273,14 @@ Per-board display backends behind a single C API:
   RGB565 output to the backend's 1-bpp pixel format via
   `display_set_pixel()`, and runs the LVGL tick/task timer. Thread
   safety is provided by a mutex exposed as `lvgl_port_lock()` /
-  `lvgl_port_unlock()`.
+  `lvgl_port_unlock()`. `flush_cb` software-rotates each tile
+  (`rotate_tile_rgb565()` + `map_area_to_physical()`) for a 90/180/270
+  rotation -- the backends only ever see physical panel coordinates.
+  Its rotation sense is the mirror of LVGL's own
+  `lv_display_rotate_area/point()`, so `lv_display_set_rotation()` is
+  fed the mirrored quarter turn via `lvgl_rotation_for_port_deg()` --
+  see the "Display orientation" section for why that keeps touch input
+  aligned.
 - **display_rgb.cpp** -- parallel RGB565 backend for the ESP32-S3 LCD
   RGB peripheral (`esp_lcd_new_rgb_panel`), selected by
   `CONFIG_DRAFTLING_DISPLAY_RGB`. Shared by the Sunton ESP32-8048S070C
@@ -336,6 +343,10 @@ Per-board display backends behind a single C API:
   reliably complete it (matching what pressing Ctrl+R always did) --
   see HARDWARE.md's CrowPanel section and PR #47 for the full
   investigation.
+- **display_margins.cpp** / **display_orientation.cpp** -- the two
+  runtime, NVS-persisted, frozen-at-boot display settings that feed
+  `SCR_W`/`SCR_H` and the LVGL rotation angle. See the "Screen margins"
+  and "Display orientation" sections further down.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -379,12 +390,15 @@ size, **Backlight** (NN%, only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` -- the value is persisted
 in NVS under the `editor` namespace and applied at boot via
 `display_set_backlight()`; default 50%), color theme (only on
-`CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, four screen
-margins (Left/Right/Top/Bottom, 0-40 px in 2 px steps, zero by
-default -- see the "Screen margins" section above; each change is
-persisted immediately but only takes effect after a restart, hence
-the "(restart to apply)" suffix on their labels), factory reset and
-back. ("Sleep now" used to sit here; it is now a top-level F1 menu item
+`CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, **display
+orientation** (Landscape / Portrait -- see the "Display orientation"
+section below), four screen margins (Left/Right/Top/Bottom, 0-40 px in
+2 px steps, zero by default -- see the "Screen margins" section above),
+factory reset and back. The orientation and margin rows are persisted
+immediately but only take effect after a restart, hence the "(restart
+to apply)" suffix on their labels; leaving Settings with any of them
+changed this visit (`s_restart_needed`) raises the shared "Restart now
+to apply changes" prompt. ("Sleep now" used to sit here; it is now a top-level F1 menu item
 -- see below.) Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
@@ -436,9 +450,12 @@ and relabelled rows). "Sleep without saving" calls
 document from the SD card and clears every modified untitled one -- so
 the pre-sleep auto-save then has nothing to persist. From the F1 menu
 the item first `close_menu()`s so the overlay is drawn on the editor
-screen it belongs to.
+screen it belongs to. `Ctrl+P` also works from the full-screen file
+browser (`handle_browser_key()`); there it just calls
+`standby_enter_sleep()` (no editor screen to prompt on -- the pre-sleep
+auto-save covers any open document).
 
-The editor UI supports a vertical (left/right) **split screen** built
+The editor UI supports a two-pane **split screen** built
 on the multi-document engine. `editor_ui.cpp` wraps the per-pane UI
 state (container, cursor, logo, line-label / selection-rect arrays,
 render caches, bound `editor_doc_t`, and pane geometry x / w / y / h)
@@ -452,14 +469,25 @@ handling a key. `editor_ui_refresh()` loops the active panes
 (unfocused first, focused last) calling `refresh_active_pane()` for
 each, then updates the title / battery once. The split layout is
 driven by `split_mode_t` (SPLIT_NONE, SPLIT_HALF, SPLIT_LEFT_2_3,
-SPLIT_LEFT_1_3); `recalc_pane_geometry()` keeps both panes full-height
-and only varies x / width (1 px divider via `s_pane_divider`).
-Shortcuts: `Ctrl+1` single pane (`SPLIT_NONE`), `Ctrl+2` equal split
-(`SPLIT_HALF`), `Ctrl+3` left-2/3 then toggling to left-1/3
-(`editor_ui_cycle_wide_split()`), `Ctrl+Tab` move focus between panes
-(`editor_ui_focus_other_pane()`). Digit HID keycodes (1 = 0x1E,
+SPLIT_LEFT_1_3 -- read "LEFT" as "first pane"); `recalc_pane_geometry()`
+splits along the display's long axis: left/right (vary x / width, full
+height) in landscape, top/bottom (vary y / height, full width) in
+portrait (`display_orientation_is_portrait()`), with `s_pane_divider`
+the 1 px rule between them. Shortcuts: `Ctrl+1` single pane
+(`SPLIT_NONE`), `Ctrl+2` equal split (`SPLIT_HALF`), `Ctrl+3`
+first-pane-2/3 then toggling to 1/3 (`editor_ui_cycle_wide_split()`),
+`Ctrl+Tab` move focus between panes (`editor_ui_focus_other_pane()`). Digit HID keycodes (1 = 0x1E,
 2 = 0x1F, 3 = 0x20) and `KB_KEY_TAB` are matched before the a..z Ctrl
-switch in `handle_editor_key()`. While split, the file browser
+switch in `handle_editor_key()`. `Ctrl+1/2/3` also work from both file
+browsers: `handle_browser_key()` (full-screen) applies the mode and, if
+that enables a split, switches straight to the editor so the layout is
+visible immediately (`Ctrl+O` in a pane then picks its file);
+`handle_inpane_browser_key()` (the split-mode overlay) closes the
+overlay and re-applies the mode via `editor_ui_apply_split_mode()`,
+which repaints and hands key routing back to `handle_editor_key()` --
+`Ctrl+1` from there is how the user collapses a split entered by
+mistake (a split editor shows this overlay, not the full-screen
+browser, on Esc). While split, the file browser
 (`Ctrl+O`) targets the focused pane via `open_into_pane()`, so each
 panel opens a file for itself (focus a pane, then `Ctrl+O`); opening
 the same path in both panes shares one refcounted buffer (two views of
@@ -1033,8 +1061,15 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   a short press (there is no hardware power-off latch on this board)
   or forgets BLE keyboards on a 2 s hold. The enclosure's cover
   overlaps the panel; the user-adjustable screen margins (see below)
-  compensate. Tested on physical hardware after an initial blind
-  port; see HARDWARE.md. *Requires ESP32-S3.*
+  compensate. `app_main()` power-cycles the GT911 (via its active-low
+  `TOUCH_POWER_EN_PIN`) very early, *before* the shared I2C bus is
+  created, and calls `gpio_deep_sleep_hold_dis()` first: a warm reboot
+  (`esp_restart()` from the Settings "restart to apply" prompt, a panic,
+  a watchdog) does not reset the I2C peripheral or the GT911, so
+  without the power-cycle the controller comes up wedged on the bus and
+  touch is dead until the next deep-sleep cycle. Tested on physical
+  hardware after an initial blind port; see HARDWARE.md.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
@@ -1096,6 +1131,55 @@ new board with a different resolution, add a model `config` block
 inside the `DRAFTLING_HARDWARE_MODEL` choice and extend the
 per-model `default` lines on these symbols.
 
+### Display orientation (user-adjustable, not a Kconfig setting)
+
+Landscape (default) or portrait, a **runtime, NVS-persisted** setting
+modelled exactly on the screen margins above:
+`components/display/display_orientation.{h,cpp}` expose
+`display_orientation_is_portrait()` (frozen, session-lifetime, loaded
+by `display_orientation_init()` which `main.cpp` calls right after
+`display_margins_init()`), plus `display_orientation_set_portrait()` /
+`display_orientation_get_pending_portrait()` for the F1 -> Settings
+"Display orientation" row. NVS namespace `disporient`, key `portrait`
+(u8). Landscape on a fresh install.
+
+Portrait adds a quarter turn to the board's build-time base rotation:
+`app_config.h`'s `DISPLAY_ROTATE_EFFECTIVE` is `DISPLAY_ROTATE +
+CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` (mod 360) in portrait,
+and that is what `main.cpp` passes to `draftling_lvgl_port_init()`.
+`DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` is a non-prompted derived
+`int` (Kconfig.projbuild) defaulting to **90**; the **Xteink X4 Pro**
+sets it to **270** because that board's enclosure reads better with
+portrait turned the opposite way. LVGL then swaps its own reported
+resolution, and `flush_cb` software-rotates each tile back to physical
+panel coordinates -- the display backends stay rotation-agnostic.
+`DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen `logical_width/height`
+stay in the pre-rotation (panel-native) frame; the touchscreen
+component's `user_rotate_deg` stays 0 and LVGL rotates each incoming
+indev point itself (`lv_display_rotate_point()` in
+`indev_pointer_proc()`).
+
+The subtlety: `flush_cb` in `lvgl_port.cpp` software-rotates pixels
+with a rotation sense OPPOSITE to LVGL's own
+`lv_display_rotate_area()` / `lv_display_rotate_point()`. So
+`lv_display_set_rotation()` is fed the **mirrored** quarter turn --
+`lvgl_rotation_for_port_deg()` maps 90<->270 (0 and 180 unchanged).
+That keeps the reported-resolution swap the same (90 and 270 both swap)
+while making `lv_display_rotate_point()`'s physical->logical map the
+exact inverse of `flush_cb`'s logical->physical pixel map, so a tap
+lands under the finger in every orientation. (Before this, a 90/270
+base-rotation or portrait mode put touch input a quarter turn off.)
+
+In `editor_ui.cpp`, `scr_axes_swapped()` folds the build base and the
+portrait flag into one XOR that decides whether `SCR_W`/`SCR_H` use the
+panel width or height. `recalc_pane_geometry()` / `layout_panes()`
+split top/bottom instead of left/right when portrait (the split always
+follows the display's long axis). Frozen for the session for the same
+reason as the margins -- the LVGL canvas and widget tree are built once
+at boot -- so a change only applies after a restart, offered by
+`request_close_settings()` (shared with the margin-change prompt via
+`s_restart_needed` / the "Restart now to apply changes" list).
+
 #### E-paper full-refresh interval (DRAFTLING_EPD_FULL_REFRESH_INTERVAL)
 
 `int` used by e-paper backends only (gated on
@@ -1146,10 +1230,20 @@ init branch in `main/main.cpp`.
 
 #### Display Rotation (DRAFTLING_DISPLAY_ROTATE)
 
-A `choice` that sets the display rotation angle. Options are 0, 90, 180,
-and 270 degrees. The default is 0 (no rotation). The selected angle is
+A `choice` that sets the **build-time base** display rotation angle.
+Options are 0, 90, 180, and 270 degrees. The default is 0 (no
+rotation); the natively-portrait Freenove panels default to 90 and the
+Tab5 to 270 so the editor renders landscape. The selected angle is
 exposed as the hidden `int` symbol **DRAFTLING_DISPLAY_ROTATE_ANGLE**,
 consumed in `app_config.h` as `DISPLAY_ROTATE`.
+
+The runtime **"Display orientation"** setting (F1 -> Settings; see the
+"Display orientation" section below) adds
+`DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` degrees on top of this for
+portrait -- a second non-prompted derived `int` in this file, default
+90, set to 270 on the Xteink X4 Pro. `app_config.h`'s
+`DISPLAY_ROTATE_EFFECTIVE` is what `main.cpp` actually passes to
+`draftling_lvgl_port_init()`.
 
 #### High-density font selection (DRAFTLING_DISPLAY_HIDPI)
 
