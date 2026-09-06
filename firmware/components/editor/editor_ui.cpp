@@ -88,10 +88,12 @@ static const char *TAG = "EditorUI";
  * when the board's build-time base rotation
  * (CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE) is 90/270, OR when the user
  * picked portrait orientation (Settings -> Display orientation, which
- * adds another 90 degrees), but not both -- an XOR.
- * display_orientation_is_portrait() is frozen for the session (see
- * display_orientation.h), so SCR_W / SCR_H stay constant until the
- * next restart, exactly like the margins. */
+ * adds a quarter turn -- 90 or 270 degrees, per
+ * CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE), but not both -- an
+ * XOR (both 90 and 270 flip the swap either way, so the exact quarter
+ * turn does not matter here). display_orientation_is_portrait() is
+ * frozen for the session (see display_orientation.h), so SCR_W / SCR_H
+ * stay constant until the next restart, exactly like the margins. */
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
 static inline bool scr_axes_swapped(void) { return !display_orientation_is_portrait(); }
 #else
@@ -5675,11 +5677,42 @@ static void handle_browser_key(const kb_event_t *ev)
         return;
     }
 
-    /* Ctrl+G / Ctrl+W work from the file browser as well. See the
-     * editor's Ctrl-shortcut block for why kb_layout_shortcut_char()
-     * is used instead of a raw layout translation. */
+    /* Ctrl+G / Ctrl+W / Ctrl+M / Ctrl+P and the Ctrl+1/2/3 split
+     * shortcuts work from the file browser as well. See the editor's
+     * Ctrl-shortcut block for why kb_layout_shortcut_char() is used
+     * instead of a raw layout translation. */
     if (ctrl) {
         char ck = kb_layout_shortcut_char(ev->keycode);
+
+        /* Ctrl+1 / Ctrl+2 / Ctrl+3 set up the split layout (HID
+         * keycodes 1 = 0x1E, 2 = 0x1F, 3 = 0x20). The panes live on
+         * the editor screen, so from the browser this only updates the
+         * layout + NVS; it becomes visible the next time a file is
+         * opened. */
+        if (ev->keycode == 0x1E) {            /* Ctrl+1: single pane */
+            editor_ui_apply_split_mode(SPLIT_NONE);
+            editor_ui_set_status("Split: single pane");
+            return;
+        }
+        if (ev->keycode == 0x1F) {            /* Ctrl+2: equal split */
+            editor_ui_apply_split_mode(SPLIT_HALF);
+            if (s_pane_count > 1)
+                editor_ui_set_status("Split: two panes (shown on next open)");
+            return;
+        }
+        if (ev->keycode == 0x20) {            /* Ctrl+3: 2/3 <-> 1/3 */
+            editor_ui_cycle_wide_split();
+            if (s_pane_count > 1)
+                editor_ui_set_status("Split: 2/3 + 1/3 (shown on next open)");
+            return;
+        }
+
+        if (ck == 'p') {
+            /* Ctrl+P: deep sleep. No editor screen to prompt on here;
+             * the standby pre-sleep hook auto-saves any open document. */
+            standby_enter_sleep();
+            return;
+        }
         if (ck == 'g') {
             if (git_sync_is_configured() && wifi_manager_is_connected()) {
                 if (git_sync_start(GIT_SYNC_BOTH) == ESP_OK) {
@@ -5827,6 +5860,15 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         close_inpane_browser();
         editor_ui_focus_other_pane();
         editor_ui_show_editor();
+        return;
+    }
+
+    /* Ctrl+1 / Ctrl+2 / Ctrl+3 change the split layout, which would
+     * pull the rug out from under this overlay (it lives on the split
+     * editor screen). Ignore them here -- the user can adjust the split
+     * from the editor or the full-screen browser. */
+    if (ctrl && (ev->keycode == 0x1E || ev->keycode == 0x1F ||
+                 ev->keycode == 0x20)) {
         return;
     }
 

@@ -123,6 +123,9 @@ load the firmware quickly without having to compile it.
 | Ctrl+Tab | Move keyboard focus to the other pane (when split) |
 | Escape | Switch to file browser. With unsaved changes, a dialog offers Save and exit / Exit without saving / Cancel (Up/Down + Enter to choose) |
 
+`Ctrl+P` and `Ctrl+1` / `Ctrl+2` / `Ctrl+3` also work in the file
+browser (the split layout applies the next time you open a file).
+
 
 
 ## Sleep

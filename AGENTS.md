@@ -443,7 +443,10 @@ and relabelled rows). "Sleep without saving" calls
 document from the SD card and clears every modified untitled one -- so
 the pre-sleep auto-save then has nothing to persist. From the F1 menu
 the item first `close_menu()`s so the overlay is drawn on the editor
-screen it belongs to.
+screen it belongs to. `Ctrl+P` also works from the full-screen file
+browser (`handle_browser_key()`); there it just calls
+`standby_enter_sleep()` (no editor screen to prompt on -- the pre-sleep
+auto-save covers any open document).
 
 The editor UI supports a two-pane **split screen** built
 on the multi-document engine. `editor_ui.cpp` wraps the per-pane UI
@@ -468,7 +471,12 @@ the 1 px rule between them. Shortcuts: `Ctrl+1` single pane
 first-pane-2/3 then toggling to 1/3 (`editor_ui_cycle_wide_split()`),
 `Ctrl+Tab` move focus between panes (`editor_ui_focus_other_pane()`). Digit HID keycodes (1 = 0x1E,
 2 = 0x1F, 3 = 0x20) and `KB_KEY_TAB` are matched before the a..z Ctrl
-switch in `handle_editor_key()`. While split, the file browser
+switch in `handle_editor_key()`. `Ctrl+1/2/3` also work from the
+full-screen file browser (`handle_browser_key()`): the panes live on
+the editor screen, so there it only updates `s_split_mode` + NVS and
+the new layout shows on the next file open. The in-pane (split-mode)
+selector swallows `Ctrl+1/2/3` -- changing the split would pull the rug
+out from under the overlay. While split, the file browser
 (`Ctrl+O`) targets the focused pane via `open_into_pane()`, so each
 panel opens a file for itself (focus a pane, then `Ctrl+O`); opening
 the same path in both panes shares one refcounted buffer (two views of
@@ -1117,13 +1125,16 @@ by `display_orientation_init()` which `main.cpp` calls right after
 "Display orientation" row. NVS namespace `disporient`, key `portrait`
 (u8). Landscape on a fresh install.
 
-Portrait adds another 90 degrees to the board's build-time base
-rotation: `app_config.h`'s `DISPLAY_ROTATE_EFFECTIVE` is
-`DISPLAY_ROTATE + 90` (mod 360) in portrait, and that is what
-`main.cpp` passes to `draftling_lvgl_port_init()`. LVGL then swaps its
-own reported resolution, and `flush_cb` software-rotates each tile back
-to physical panel coordinates -- the display backends stay
-rotation-agnostic. `DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen
+Portrait adds a quarter turn to the board's build-time base rotation:
+`app_config.h`'s `DISPLAY_ROTATE_EFFECTIVE` is `DISPLAY_ROTATE +
+CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` (mod 360) in portrait,
+and that is what `main.cpp` passes to `draftling_lvgl_port_init()`.
+`DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` is a non-prompted derived
+`int` (Kconfig.projbuild) defaulting to **90**; the **Xteink X4 Pro**
+sets it to **270** because that board's enclosure reads better with
+portrait turned the opposite way. LVGL then swaps its own reported
+resolution, and `flush_cb` software-rotates each tile back to physical
+panel coordinates -- the display backends stay rotation-agnostic. `DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen
 `logical_width/height` stay in the pre-rotation (panel-native) frame,
 exactly as for the `DISPLAY_ROTATE=90/270` boards; LVGL applies the
 rotation to indev points itself (`user_rotate_deg` stays 0).
@@ -1196,9 +1207,12 @@ exposed as the hidden `int` symbol **DRAFTLING_DISPLAY_ROTATE_ANGLE**,
 consumed in `app_config.h` as `DISPLAY_ROTATE`.
 
 The runtime **"Display orientation"** setting (F1 -> Settings; see the
-"Display orientation" section below) adds another 90 degrees on top of
-this for portrait -- `app_config.h`'s `DISPLAY_ROTATE_EFFECTIVE` is
-what `main.cpp` actually passes to `draftling_lvgl_port_init()`.
+"Display orientation" section below) adds
+`DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` degrees on top of this for
+portrait -- a second non-prompted derived `int` in this file, default
+90, set to 270 on the Xteink X4 Pro. `app_config.h`'s
+`DISPLAY_ROTATE_EFFECTIVE` is what `main.cpp` actually passes to
+`draftling_lvgl_port_init()`.
 
 #### High-density font selection (DRAFTLING_DISPLAY_HIDPI)
 

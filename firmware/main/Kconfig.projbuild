@@ -1069,6 +1069,18 @@ config DRAFTLING_DISPLAY_ROTATE_ANGLE
     default 180 if DRAFTLING_DISPLAY_ROTATE_180
     default 270 if DRAFTLING_DISPLAY_ROTATE_270
 
+# Degrees added on top of DRAFTLING_DISPLAY_ROTATE_ANGLE when the user
+# picks "Portrait" in F1 -> Settings -> Display orientation (see
+# app_config.h's DISPLAY_ROTATE_EFFECTIVE). 90 turns a landscape board
+# a quarter turn clockwise; 270 turns it the other way. Non-prompted
+# derived int so the per-board value tracks the hardware-model choice.
+# The Xteink X4 Pro's enclosure reads better with portrait rotated the
+# opposite way from the default.
+config DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE
+    int
+    default 270 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 90
+
 # DRAFTLING_DISPLAY_HIDPI -- high-density panel that renders the UI
 # 1:1 with the larger Hack font family instead of upscaling the
 # Greybeard framebuffer. Non-prompted derived bool so the per-board

@@ -21,13 +21,17 @@ in the git log.
 - **Ctrl+P puts the device into deep sleep.** If the open document has
   unsaved changes the editor first asks: **Save and sleep**, **Sleep
   without saving** (the edits are dropped), or **Cancel**. With no
-  unsaved changes it sleeps immediately.
+  unsaved changes it sleeps immediately. `Ctrl+P` and the split
+  shortcuts `Ctrl+1` / `Ctrl+2` / `Ctrl+3` now also work from the file
+  browser (a split set there shows on the next file open).
 - **Portrait display orientation** (F1 -> Settings -> "Display
-  orientation": Landscape / Portrait). Portrait turns the whole UI
-  another 90 degrees; split-screen editing then divides the screen
-  top/bottom instead of left/right, since the split always follows the
-  display's long side. Takes effect after a restart (the editor offers
-  one on the way out of Settings), the same as the screen margins.
+  orientation": Landscape / Portrait). Portrait turns the whole UI a
+  quarter turn; split-screen editing then divides the screen top/bottom
+  instead of left/right, since the split always follows the display's
+  long side. Takes effect after a restart (the editor offers one on the
+  way out of Settings), the same as the screen margins. On the Xteink
+  X4 Pro portrait turns the opposite way from the other boards, to suit
+  the enclosure.
 
 ### Changed
 
