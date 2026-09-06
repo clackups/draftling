@@ -1,0 +1,31 @@
+# Xteink X4 Pro -- partition table
+#
+# Every other board uses a single "factory" app partition
+# (partitions.csv / partitions_8mb.csv). The Xteink X4 Pro instead uses
+# the standard ESP-IDF dual-OTA layout: an "otadata" partition plus two
+# app slots (ota_0 / ota_1). Draftling runs from ota_0; ota_1 is left
+# empty.
+#
+# Why this board is different: the X4 Pro ships from the factory with an
+# OTA-capable partition table, and both the stock Xteink firmware and
+# the third-party "Crosspoint" firmware are installed by OTA updaters
+# that abort against a table with no "otadata" partition, with the error
+# "Partition table has no otadata partition". Keeping an OTA layout here
+# means the device can be returned to stock, or moved to Crosspoint,
+# without having to re-flash a partition table over USB first. It also
+# leaves room for a future Draftling build to ship its own OTA update.
+#
+# The app slots (0x7F0000 = ~8.1 MB each) are far larger than Draftling
+# needs (~2.3 MB), so a stock or Crosspoint image fits in either slot
+# too. "nvs" is 0x4000 (16 KB -- the ESP-IDF two-OTA default) so that
+# "otadata" and "phy_init" still fit below the 64 KB-aligned ota_0
+# offset; the BLE bonds and the handful of Draftling settings keys fit
+# comfortably in that. There is no "nvs_keys" partition (it is only used
+# with NVS encryption, which Draftling does not enable).
+#
+# Name,   Type, SubType,  Offset,    Size,      Flags
+nvs,      data, nvs,      0x9000,    0x4000,
+otadata,  data, ota,      0xd000,    0x2000,
+phy_init, data, phy,      0xf000,    0x1000,
+ota_0,    app,  ota_0,    0x10000,   0x7F0000,
+ota_1,    app,  ota_1,    0x800000,  0x7F0000,

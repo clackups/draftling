@@ -30,6 +30,15 @@ in the git log.
 
 ### Fixed
 
+- **Xteink X4 Pro**: the flashed partition table now keeps an `otadata`
+  partition and a dual-OTA app layout (`ota_0` / `ota_1`), instead of a
+  single `factory` partition. The stock Xteink firmware and the
+  third-party Crosspoint firmware are installed by OTA updaters that
+  abort with "Partition table has no otadata partition" against the old
+  layout; with this change the device can be returned to stock or moved
+  to Crosspoint without re-flashing a partition table over USB first.
+  (Re-flashing Draftling on an X4 Pro that already runs it clears the
+  BLE keyboard pairings once, because the NVS partition is resized.)
 - Ctrl-letter shortcuts (and the file browser's unmodified "N: New
   file" key) no longer silently stop working when a non-Latin layout
   (Ukrainian, Hebrew) is active -- they now resolve to the same US

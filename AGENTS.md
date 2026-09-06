@@ -92,7 +92,13 @@ this document).
 ```
 CMakeLists.txt              Top-level CMake project file
 CMakePresets.json           Per-board build presets (idf.py --preset <board>)
-partitions.csv              Custom partition table (16 MB flash)
+partitions.csv              Custom partition table (16 MB flash, single
+                            "factory" app) -- used by every board except
+                            the two below
+partitions_8mb.csv          8 MB-flash variant (Elecrow CrowPanel 5.79")
+partitions_xteink_x4_pro.csv Dual-OTA layout (otadata + ota_0/ota_1) so
+                            the Xteink X4 Pro can be re-flashed with the
+                            stock or Crosspoint firmware afterwards
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
@@ -1264,6 +1270,14 @@ tree referenced in steps 1-4.
    gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
        draftling-<board>-partition-table.bin draftling-<board>.bin
    ```
+   `xteink_x4_pro` also needs a fourth image,
+   `draftling-xteink_x4_pro-otadata.bin` (from
+   `firmware/build/xteink_x4_pro/ota_data_initial.bin`): its partition
+   table is dual-OTA (`partitions_xteink_x4_pro.csv`), so a clean flash
+   must also (re)initialise the `otadata` partition at `0xd000` -- an
+   8 KB all-`0xFF` blob that makes the bootloader pick `ota_0`.
+   Otherwise a stale `otadata` left by the stock firmware could point
+   the bootloader at the empty `ota_1`.
 5. Update the web flasher on the `_flasher` branch (see its own
    `README.md` for the full layout and rationale -- it is an orphan
    branch with no shared history with `main`, published via GitHub
@@ -1271,13 +1285,17 @@ tree referenced in steps 1-4.
    switching your main checkout to it):
    - Add `firmware/vX.Y.Z/` (on `_flasher`) with the same binaries
      uploaded to the release, named identically, for each board
-     included in this release.
+     included in this release (including
+     `draftling-xteink_x4_pro-otadata.bin` for the X4 Pro).
    - In `manifest.json`, each board has its own `releases` array
      (newest first). For each board this release covers, prepend a new
      entry with its `tag`, flash mode/freq/size, and `parts[].path`
      pointing at `firmware/vX.Y.Z/...`. Leave other boards' `releases`
      untouched -- they keep pointing at whatever tag they last shipped
-     under.
+     under. `xteink_x4_pro` has a fourth `parts` entry:
+     `{ "path": "firmware/vX.Y.Z/draftling-xteink_x4_pro-otadata.bin",
+     "offset": "0xd000" }` (its `draftling-xteink_x4_pro.bin` app part
+     still sits at `0x10000`).
    - Commit and push to `_flasher` -- GitHub Pages redeploys
      automatically; no separate deploy step.
    - A `firmware/<tag>/` directory (on `_flasher`) can be deleted once
