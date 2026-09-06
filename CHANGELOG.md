@@ -18,6 +18,19 @@ in the git log.
 - All five keyboard layouts (US, UA, DE, FR, HE) are now enabled by
   default in `idf.py menuconfig` (`DRAFTLING Keyboard Layouts`);
   previously only US and UA were on by default.
+- **Ctrl+P puts the device into deep sleep.** If the open document has
+  unsaved changes the editor first asks: **Save and sleep**, **Sleep
+  without saving** (the edits are dropped), or **Cancel**. With no
+  unsaved changes it sleeps immediately.
+
+### Changed
+
+- **"Sleep now" moved from F1 -> Settings to the top-level F1 menu**, and
+  now prompts about unsaved changes just like Ctrl+P.
+- A user-initiated sleep (Ctrl+P, "Sleep now") that chooses "Sleep
+  without saving" genuinely discards the unsaved edits. An *automatic*
+  sleep on the inactivity timeout still saves everything first, as
+  before.
 
 ### Changed
 

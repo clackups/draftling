@@ -135,8 +135,12 @@ components/                 Reusable IDF components
 The application entry point. `app_main()` in `main.cpp` initializes every
 subsystem in order: NVS flash, display hardware, LVGL, battery monitor,
 editor UI, SD card, BLE keyboard, WiFi manager, Git sync, and standby
-timer. It also registers an auto-save callback that persists the current
-document before entering deep sleep.
+timer. It also registers an auto-save callback (`pre_sleep_autosave()`,
+run from every board's pre-sleep hook) that persists every open document
+before entering deep sleep. A user-initiated sleep that chose "Sleep
+without saving" first calls `editor_discard_all_changes()`, so by the
+time this callback runs there is nothing left to save; an automatic
+(inactivity-timeout) sleep never discards.
 
 `app_config.h` defines display-dimension and scale macros from Kconfig
 symbols and then delegates all board-specific pin constants to a thin
@@ -379,8 +383,9 @@ in NVS under the `editor` namespace and applied at boot via
 margins (Left/Right/Top/Bottom, 0-40 px in 2 px steps, zero by
 default -- see the "Screen margins" section above; each change is
 persisted immediately but only takes effect after a restart, hence
-the "(restart to apply)" suffix on their labels), sleep-now, factory
-reset and back. Picking a new color theme does NOT reboot the device:
+the "(restart to apply)" suffix on their labels), factory reset and
+back. ("Sleep now" used to sit here; it is now a top-level F1 menu item
+-- see below.) Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
 calls `build_screens()` again and restores the screen the user was
@@ -421,6 +426,17 @@ the current match and advances to the next.
 The keyboard layout is cycled with `Ctrl+L` or, equivalently, with
 `Win+Space` (the GUI modifier plus HID keycode 0x2C); both call
 `kb_layout_next()` from `handle_editor_key()`.
+
+`Ctrl+P` (and the F1 menu's "Sleep now" item) enters deep sleep via
+`standby_enter_sleep()`. When the active document has unsaved changes it
+first raises the exit/sleep overlay (`show_sleep_prompt()`; the same
+LVGL objects as the Esc prompt, with `s_exit_purpose = EXIT_PURPOSE_SLEEP`
+and relabelled rows). "Sleep without saving" calls
+`editor_discard_all_changes()` -- which reloads every modified titled
+document from the SD card and clears every modified untitled one -- so
+the pre-sleep auto-save then has nothing to persist. From the F1 menu
+the item first `close_menu()`s so the overlay is drawn on the editor
+screen it belongs to.
 
 The editor UI supports a vertical (left/right) **split screen** built
 on the multi-document engine. `editor_ui.cpp` wraps the per-pane UI
@@ -624,8 +640,13 @@ and others.
 
 Monitors user inactivity and enters ESP32 deep sleep after a configurable
 timeout (default 600 seconds / 10 minutes). The timeout is persisted in
-NVS so it survives reboots. A pre-sleep callback allows the editor to
-auto-save before power-down. The wake source is an EXT0 trigger on
+NVS so it survives reboots. `standby_enter_sleep()` is also called
+directly for an on-demand sleep -- `Ctrl+P` or the F1 "Sleep now" item
+in `editor_ui.cpp`. A pre-sleep callback allows the editor to
+auto-save before power-down; a user-initiated "sleep without saving"
+discards the edits in `editor_ui.cpp` before calling
+`standby_enter_sleep()`, so the callback sees a clean document. The wake
+source is an EXT0 trigger on
 the per-board RTC-capable GPIO selected by `CONFIG_DRAFTLING_WAKEUP_GPIO`
 in `main/Kconfig.projbuild` (defaults: GPIO18 on Waveshare RLCD-4.2,
 GPIO0 / BOOT on every other board). The standby code itself is

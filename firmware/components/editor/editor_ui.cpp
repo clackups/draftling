@@ -739,7 +739,7 @@ static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
 /* Number of menu items */
-#define MENU_ITEM_COUNT 8
+#define MENU_ITEM_COUNT 9
 
 #if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
 static lv_timer_t *s_blink_timer = NULL;
@@ -824,15 +824,26 @@ static int       s_replace_pos     = 0;    /* byte cursor into s_replace_buf */
 static int       s_search_match_start = -1;
 static int       s_search_match_end   = -1;
 
-/* ---- Exit (Esc) prompt overlay ----
- * Shown when Esc is pressed in the editor with unsaved changes. Offers
- * three choices: save the file, exit without saving, or cancel and
- * keep editing. Navigated with Up/Down + Enter; Esc cancels. */
+/* ---- Exit / sleep prompt overlay ----
+ * Shown when the editor has unsaved changes and the user asks to leave
+ * it: Esc (-> file browser) or Ctrl+P / F1 "Sleep now" (-> deep sleep).
+ * Offers three choices: save, proceed without saving, or cancel and
+ * keep editing. Navigated with Up/Down + Enter; Esc cancels.
+ *
+ * The same LVGL objects serve both destinations; s_exit_purpose picks
+ * which one the Save / Discard rows lead to, and the row labels are set
+ * to match when the overlay is shown. */
+typedef enum {
+    EXIT_PURPOSE_BROWSER,   /* Esc: leave the editor for the file browser */
+    EXIT_PURPOSE_SLEEP,     /* Ctrl+P / "Sleep now": enter deep sleep */
+} exit_purpose_t;
+
 static lv_obj_t *s_exit_panel    = NULL;
 static lv_obj_t *s_exit_hdr_lbl  = NULL;
 static lv_obj_t *s_exit_opt_lbl[3] = { NULL, NULL, NULL };
 static bool      s_exit_open     = false;
-static int       s_exit_sel      = 0;      /* 0=Save 1=Exit-no-save 2=Cancel */
+static int       s_exit_sel      = 0;      /* 0=Save 1=proceed-no-save 2=Cancel */
+static exit_purpose_t s_exit_purpose = EXIT_PURPOSE_BROWSER;
 
 #define EXIT_OPT_SAVE   0
 #define EXIT_OPT_DISCARD 1
@@ -842,6 +853,12 @@ static int       s_exit_sel      = 0;      /* 0=Save 1=Exit-no-save 2=Cancel */
 static const char *const EXIT_OPT_LABELS[EXIT_OPT_COUNT] = {
     "Save and exit",
     "Exit without saving",
+    "Cancel (keep editing)",
+};
+
+static const char *const SLEEP_OPT_LABELS[EXIT_OPT_COUNT] = {
+    "Save and sleep",
+    "Sleep without saving",
     "Cancel (keep editing)",
 };
 
@@ -2355,6 +2372,10 @@ static void menu_activate_item(int idx);
 static void settings_activate_item(int idx);
 #endif
 
+/* Defined with the exit/sleep overlay code further down; the F1 menu's
+ * "Sleep now" item (menu_activate_item) needs it before that point. */
+static void show_sleep_prompt(void);
+
 /* ---- Touch input ----
  *
  * Touch is gated on CONFIG_DRAFTLING_TOUCHSCREEN. When enabled we
@@ -3175,7 +3196,10 @@ static void refresh_menu_items(void)
              kb_layout_name(kb_layout_get()));
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 7: Close menu */
+    /* 7: Sleep now */
+    lv_list_add_btn(s_menu_list, NULL, "Sleep now");
+
+    /* 8: Close menu */
     lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
 
     /* Highlight selection */
@@ -3286,10 +3310,10 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 3)
 #define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 4)
 #define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 5)
-#define SETTINGS_IDX_SLEEP    (_SETTINGS_NEXT_AFTER_INVERT + 6)
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 7)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 8)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 9)
+/* "Sleep now" used to live here; it now lives in the F1 menu. */
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 6)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 7)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 8)
 
 static void refresh_settings_items(void)
 {
@@ -3381,9 +3405,6 @@ static void refresh_settings_items(void)
     lv_list_add_btn(s_settings_list, NULL, buf);
     snprintf(buf, sizeof(buf), "Margin bottom: %dpx (restart to apply)", s_margin_bottom);
     lv_list_add_btn(s_settings_list, NULL, buf);
-
-    /* Sleep now */
-    lv_list_add_btn(s_settings_list, NULL, "Sleep now");
 
     /* Factory reset */
     if (s_factory_reset_confirm) {
@@ -3571,7 +3592,7 @@ static void close_settings(void)
  * a row can be adjusted either direction without repeatedly wrapping
  * all the way around via Enter. Returns false for rows that are not a
  * simple in-place value cycle (Theme opens a sub-picker instead;
- * Max file size, Sleep now, Factory reset and Back are actions, not
+ * Max file size, Factory reset and Back are actions, not
  * values), so callers can no-op the arrow keys on those rows. */
 static bool settings_cycle_item(int idx, int dir)
 {
@@ -3731,13 +3752,6 @@ static void settings_activate_item(int idx)
         s_theme_picker_sel = s_theme_idx;
         refresh_theme_picker_items();
 #endif
-    } else if (idx == SETTINGS_IDX_SLEEP) {
-        /* Sleep now -- standby_enter_sleep() runs the registered
-         * pre-sleep callback (autosave + per-board peripheral
-         * teardown) before esp_deep_sleep_start(), so the menu
-         * path takes exactly the same teardown sequence as the
-         * inactivity timeout and the no-keyboard timeout. */
-        standby_enter_sleep();
     } else if (idx == SETTINGS_IDX_RESET) {
         /* Factory reset -- requires double-press confirmation */
         if (s_factory_reset_confirm) {
@@ -3906,7 +3920,7 @@ static void handle_settings_key(const kb_event_t *ev)
     case KB_KEY_LEFT:
         /* Previous value on the highlighted row, without moving the
          * highlight -- a no-op on rows settings_cycle_item() does not
-         * own (Theme, Max file, Sleep now, Factory reset, Back). */
+         * own (Theme, Max file, Factory reset, Back). */
         settings_cycle_item(s_settings_sel, -1);
         break;
     case KB_KEY_RIGHT:
@@ -3980,7 +3994,19 @@ static void menu_activate_item(int idx)
         kb_layout_next();
         refresh_menu_items();
         break;
-    case 7: /* Close menu */
+    case 7: /* Sleep now */
+        /* Leave the menu first so, if we prompt about unsaved changes,
+         * the dialog is drawn on the editor screen it lives on. With no
+         * unsaved changes (or if the menu was opened from the file
+         * browser) go straight to deep sleep. */
+        close_menu();
+        if (s_editor_screen_active && editor_is_modified()) {
+            show_sleep_prompt();
+        } else {
+            standby_enter_sleep();
+        }
+        break;
+    case 8: /* Close menu */
         close_menu();
         break;
     default:
@@ -4184,9 +4210,10 @@ static void handle_save_prompt_key(const kb_event_t *ev)
     refresh_save_prompt();
 }
 
-/* ---- Exit (Esc) prompt overlay ----
- * Asks whether to save, exit without saving, or cancel when Esc is
- * pressed in the editor with unsaved changes. */
+/* ---- Exit / sleep prompt overlay ----
+ * Asks whether to save, proceed without saving, or cancel when the user
+ * tries to leave the editor (Esc -> browser, Ctrl+P -> sleep) with
+ * unsaved changes. */
 
 static void refresh_exit_prompt(void)
 {
@@ -4210,37 +4237,79 @@ static void close_exit_prompt(void)
     if (s_exit_panel) lv_obj_add_flag(s_exit_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void show_exit_prompt(void)
+/* Point the overlay's rows at `purpose`, relabel them, and show it. */
+static void show_leave_prompt(exit_purpose_t purpose)
 {
     if (!s_exit_panel) return;
+    s_exit_purpose = purpose;
+    const char *const *labels =
+        (purpose == EXIT_PURPOSE_SLEEP) ? SLEEP_OPT_LABELS : EXIT_OPT_LABELS;
+    for (int i = 0; i < EXIT_OPT_COUNT; i++) {
+        if (s_exit_opt_lbl[i]) lv_label_set_text(s_exit_opt_lbl[i], labels[i]);
+    }
+    if (s_exit_hdr_lbl) {
+        lv_label_set_text(s_exit_hdr_lbl,
+                          (purpose == EXIT_PURPOSE_SLEEP)
+                              ? "Unsaved changes -- sleep anyway?"
+                              : "Unsaved changes (Up/Down + Enter):");
+    }
     s_exit_open = true;
     s_exit_sel  = EXIT_OPT_SAVE;
     lv_obj_remove_flag(s_exit_panel, LV_OBJ_FLAG_HIDDEN);
     refresh_exit_prompt();
 }
 
+static void show_exit_prompt(void)  { show_leave_prompt(EXIT_PURPOSE_BROWSER); }
+static void show_sleep_prompt(void) { show_leave_prompt(EXIT_PURPOSE_SLEEP); }
+
+/* Finish a leave-prompt action once the document is no longer dirty
+ * (saved, or reloaded from disk by the discard path). */
+static void leave_prompt_proceed(exit_purpose_t purpose)
+{
+    if (purpose == EXIT_PURPOSE_SLEEP) {
+        standby_enter_sleep();
+        /* Only reached on CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF boards --
+         * a real deep sleep never returns. The discard path may have
+         * reloaded the document from disk while the display was off, so
+         * wipe every pane's render cache and repaint from scratch. */
+        invalidate_all_render_caches();
+        editor_ui_refresh();
+    } else {
+        editor_ui_show_file_browser();
+    }
+}
+
 static void exit_prompt_activate(void)
 {
+    exit_purpose_t purpose = s_exit_purpose;
+
     switch (s_exit_sel) {
     case EXIT_OPT_SAVE:
         close_exit_prompt();
         if (editor_get_file_path()) {
-            /* Known filename -- save in place and leave the editor. */
+            /* Known filename -- save in place, then leave. */
             if (editor_save_file() == ESP_OK) {
-                editor_ui_show_file_browser();
+                leave_prompt_proceed(purpose);
             } else {
                 editor_ui_set_status("Save failed!");
             }
         } else {
             /* Untitled document -- ask for a filename first. The user
-             * stays in the editor; once saved a later Esc exits
-             * cleanly because the document is no longer modified. */
+             * stays in the editor; once saved, repeating the action
+             * (Esc / Ctrl+P) goes straight through. */
             show_save_prompt();
         }
         return;
     case EXIT_OPT_DISCARD:
         close_exit_prompt();
-        editor_ui_show_file_browser();
+        if (purpose == EXIT_PURPOSE_SLEEP) {
+            /* Really drop the edits: reload every modified document from
+             * disk so the standby pre-sleep auto-save has nothing to
+             * write. (The Esc/browser path keeps the in-memory edits --
+             * the document is still open, just not visible.) */
+            editor_discard_all_changes();
+        }
+        leave_prompt_proceed(purpose);
         return;
     case EXIT_OPT_CANCEL:
     default:
@@ -5073,6 +5142,16 @@ static void handle_editor_key(const kb_event_t *ev)
         case 'm':
             /* Ctrl+M: menu, equivalent to F1 */
             show_menu();
+            return;
+        case 'p':
+            /* Ctrl+P: enter deep sleep. With unsaved changes in the
+             * active document, ask first (save / discard / cancel);
+             * otherwise sleep straight away. */
+            if (editor_is_modified()) {
+                show_sleep_prompt();
+            } else {
+                standby_enter_sleep();
+            }
             return;
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
         case 'b': {

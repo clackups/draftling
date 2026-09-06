@@ -102,6 +102,7 @@ load the firmware quickly without having to compile it.
 | Ctrl+L | Cycle keyboard layout |
 | Win+Space | Cycle keyboard layout (same as Ctrl+L) |
 | Ctrl+M | Menu (same as F1) |
+| Ctrl+P | Enter deep sleep. With unsaved changes, a dialog offers Save and sleep / Sleep without saving / Cancel |
 | Ctrl+G | Git sync (commit, fetch, rebase/merge, push) |
 | Ctrl+W | Toggle WiFi (connect / disconnect) |
 | Ctrl+F | Find |
@@ -118,6 +119,20 @@ load the firmware quickly without having to compile it.
 | Ctrl+Tab | Move keyboard focus to the other pane (when split) |
 | Escape | Switch to file browser. With unsaved changes, a dialog offers Save and exit / Exit without saving / Cancel (Up/Down + Enter to choose) |
 
+
+
+## Sleep
+
+The device enters deep sleep automatically after the inactivity timeout
+(F1 -> Settings -> "Standby timeout"), and you can put it to sleep on
+demand with **Ctrl+P** or the **F1 -> "Sleep now"** menu entry. Wake
+with the boot / power button, or a touchscreen tap on boards that
+support it.
+
+An automatic (timeout) sleep always saves any unsaved changes first. A
+sleep you trigger yourself asks what to do when the open document has
+unsaved changes -- **Save and sleep**, **Sleep without saving** (the
+edits are dropped), or **Cancel**.
 
 
 ## Pairing a New Keyboard
