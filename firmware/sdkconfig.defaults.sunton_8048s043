@@ -12,6 +12,10 @@ CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_DRAFTLING_TOUCHSCREEN=y
 
 # This author's keyboard is German; enable only US (QWERTY) and DE
-# (QWERTZ) layouts and drop the Ukrainian / French / Hebrew defaults.
+# (QWERTZ) layouts and drop the Ukrainian / French / Hebrew defaults
+# (all five are on by default in Kconfig, so UA/FR/HE need an
+# explicit override here to stay off for this board).
 CONFIG_KB_LAYOUT_ENABLE_UA=n
 CONFIG_KB_LAYOUT_ENABLE_DE=y
+CONFIG_KB_LAYOUT_ENABLE_FR=n
+CONFIG_KB_LAYOUT_ENABLE_HE=n

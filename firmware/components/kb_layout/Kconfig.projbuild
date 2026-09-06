@@ -14,19 +14,19 @@ config KB_LAYOUT_ENABLE_UA
 
 config KB_LAYOUT_ENABLE_DE
     bool "German (QWERTZ)"
-    default n
+    default y
     help
         Enable the German QWERTZ keyboard layout with umlauts.
 
 config KB_LAYOUT_ENABLE_FR
     bool "French (AZERTY)"
-    default n
+    default y
     help
         Enable the French AZERTY keyboard layout with accents.
 
 config KB_LAYOUT_ENABLE_HE
     bool "Hebrew (Israeli standard)"
-    default n
+    default y
     help
         Enable the Hebrew (Israeli standard SI 1452) keyboard layout.
         Enabling this option also pulls the Hebrew glyph range
