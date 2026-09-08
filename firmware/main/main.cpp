@@ -715,6 +715,20 @@ static void pre_sleep_xteink_x4_pro_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
 
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+static void pre_sleep_xteink_x4_classic_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Xteink X4 Classic peripheral teardown");
+
+    /* Same as the X4 Pro teardown minus touchscreen_sleep() -- this
+     * board has no touch controller. */
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC */
+
 #if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 static void pre_sleep_crowpanel_579_deinit(void)
 {
@@ -918,6 +932,143 @@ static void xteink_x4_pro_btn_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO */
 
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+/* ---- Xteink X4 Classic buttons ----
+ *
+ * The X4 Classic has no touchscreen, so its eight buttons are the
+ * only way to drive the editor until a BLE keyboard pairs -- the same
+ * situation as the Elecrow CrowPanel 5.79", and handled the same way.
+ *
+ * Power (WAKEUP_GPIO_NUM, also the deep-sleep wake source) doubles as
+ * F1 on a short press (open/close the Settings menu) and forgets every
+ * stored BLE keyboard bond on a 2 s hold. The remaining six keys are
+ * injected on release as Up / Down (side keys) and Left / Right /
+ * Enter / Esc (bottom keys), giving full menu + editor navigation.
+ *
+ * Debounce: 5 consecutive BTN_POLL_PERIOD_MS samples, matching the
+ * CrowPanel -- an e-paper partial refresh's boost-converter transient
+ * can dip a weakly-pulled button line enough to read as a brief press,
+ * and a refresh follows every keystroke. */
+#define XTEINK_X4C_DEBOUNCE_SAMPLES 5
+#define XTEINK_X4C_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
+
+static void xteink_x4_classic_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void xteink_x4_classic_power_key_poll_cb(void *arg)
+{
+    (void)arg;
+    static bool down             = false;
+    static int  stable           = 0;
+    static int  hold_ticks       = 0;
+    static bool long_press_fired = false;
+
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+
+    if (raw_down == down) {
+        if (down) {
+            hold_ticks++;
+            if (!long_press_fired && hold_ticks >= XTEINK_X4C_LONG_PRESS_TICKS) {
+                long_press_fired = true;
+                ESP_LOGI(TAG, "X4 Classic Power button: 2 s long press -- "
+                              "forgetting all keyboards (GPIO%d)",
+                         WAKEUP_GPIO_NUM);
+                ble_keyboard_forget_all();
+            }
+        }
+        stable = 0;
+        return;
+    }
+
+    if (++stable < XTEINK_X4C_DEBOUNCE_SAMPLES) return;
+
+    stable = 0;
+    down = raw_down;
+
+    if (down) {
+        hold_ticks       = 0;
+        long_press_fired = false;
+    } else {
+        if (!long_press_fired) {
+            xteink_x4_classic_inject_key(KB_KEY_F1);
+        }
+        hold_ticks       = 0;
+        long_press_fired = false;
+    }
+}
+
+static void xteink_x4_classic_nav_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_LEFT_PIN,         KB_KEY_UP },
+        { BTN_RIGHT_PIN,        KB_KEY_DOWN },
+        { BTN_BOTTOM_LEFT_PIN,  KB_KEY_LEFT },
+        { BTN_BOTTOM_RIGHT_PIN, KB_KEY_RIGHT },
+        { BTN_CONFIRM_PIN,      KB_KEY_ENTER },
+        { BTN_BACK_PIN,         KB_KEY_ESCAPE },
+    };
+    static bool down[6]   = { false, false, false, false, false, false };
+    static int  stable[6] = { 0, 0, 0, 0, 0, 0 };
+
+    for (int i = 0; i < 6; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            continue;
+        }
+        if (++stable[i] < XTEINK_X4C_DEBOUNCE_SAMPLES) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i]) {
+            xteink_x4_classic_inject_key(kButtons[i].keycode);
+        }
+    }
+}
+
+static void xteink_x4_classic_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << WAKEUP_GPIO_NUM) |
+                     (1ULL << BTN_LEFT_PIN) | (1ULL << BTN_RIGHT_PIN) |
+                     (1ULL << BTN_BOTTOM_LEFT_PIN) | (1ULL << BTN_BOTTOM_RIGHT_PIN) |
+                     (1ULL << BTN_CONFIRM_PIN) | (1ULL << BTN_BACK_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t pargs = {};
+    pargs.callback = xteink_x4_classic_power_key_poll_cb;
+    pargs.name     = "x4c_power";
+    esp_timer_handle_t pt = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&pargs, &pt));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(pt, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+
+    esp_timer_create_args_t nargs = {};
+    nargs.callback = xteink_x4_classic_nav_poll_cb;
+    nargs.name     = "x4c_nav";
+    esp_timer_handle_t nt = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&nargs, &nt));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(nt, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+
+    ESP_LOGI(TAG, "Xteink X4 Classic button pollers started "
+                  "(Power=GPIO%d; Up=GPIO%d Down=GPIO%d Left=GPIO%d "
+                  "Right=GPIO%d Enter=GPIO%d Esc=GPIO%d)",
+             WAKEUP_GPIO_NUM, BTN_LEFT_PIN, BTN_RIGHT_PIN,
+             BTN_BOTTOM_LEFT_PIN, BTN_BOTTOM_RIGHT_PIN,
+             BTN_CONFIRM_PIN, BTN_BACK_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC */
+
 #if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 /* ---- CrowPanel 5.79in Menu button + Back button/dial switch ----
  *
@@ -1092,7 +1243,8 @@ static void crowpanel_nav_init(void)
  * enabled (the same electrical assumption the standby component makes
  * when it arms the EXT0 deep-sleep wake source on GPIO 0 / 18). */
 #if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752) && \
-    !defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
+    !defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579) && \
+    !defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
 
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
 #define WAKEUP_BTN_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
@@ -1332,19 +1484,19 @@ extern "C" void app_main(void)
      * those bring-up paths see fresh, un-latched pads. */
     t5_release_held_gpios_after_wake();
 #endif
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
-    /* pre_sleep_xteink_x4_pro_deinit() calls gpio_deep_sleep_hold_en()
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4)
+    /* pre_sleep_xteink_x4_*_deinit() calls gpio_deep_sleep_hold_en()
      * before deep sleep, which on the ESP32-S3 keeps the digital GPIO
      * output levels latched into the next startup -- and stays latched
      * until gpio_deep_sleep_hold_dis() is called. Release it here, on
      * every boot, so the display / touch / SD bring-up below can drive
      * the peripheral-rail and power-enable pads freely (in particular
-     * the GT911 power-cycle further down). A no-op if nothing was
-     * held. */
+     * the X4 Pro's GT911 power-cycle further down). A no-op if nothing
+     * was held. */
     gpio_deep_sleep_hold_dis();
 
-    /* Master peripheral-rail latch. Must be driven HIGH before any
-     * SPI/display/SD bring-up -- without it, the e-paper panel rail
+    /* Master peripheral-rail latch (GPIO1). Must be driven HIGH before
+     * any SPI/display/SD bring-up -- without it, the e-paper panel rail
      * and the SD slot both stay unpowered. No I2C expander involved
      * (unlike the components/power TCA9554 latch on the Touch-LCD-3.49). */
     {
@@ -1355,7 +1507,8 @@ extern "C" void app_main(void)
         gpio_config(&g);
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
     }
-
+#endif
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
     /* Full GT911 power-cycle + hardware reset with the datasheet
      * address-select timing. Done HERE, before the shared I2C bus is
      * created below, and `tcfg.rst` is passed as -1 so touchscreen_init()
@@ -1633,10 +1786,12 @@ extern "C" void app_main(void)
      * ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
-    /* Xteink X4 Pro SPI e-paper backend. Owns all panel GPIOs
-     * internally (see main/boards/xteink_x4_pro.h) and auto-detects
-     * which of three possible controllers (SSD1677, UC8179, UC8279)
-     * the panel is wired to. Pin parameters are ignored. */
+    /* Xteink X4 Pro / X4 Classic SPI e-paper backend. Owns all panel
+     * GPIOs internally (the pin set is picked at build time on the
+     * model symbol -- see components/display/display_xteink_epd.cpp)
+     * and auto-detects which of three possible controllers (SSD1677,
+     * UC8179, UC8279) the panel is wired to. Pin parameters are
+     * ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
     /* M5Stack Tab5 MIPI-DSI panel. All panel GPIOs, the MIPI-DSI
@@ -1759,10 +1914,11 @@ extern "C" void app_main(void)
         ESP_LOGW(TAG, "INA226 init failed; battery indicator disabled");
     }
 #elif defined(CONFIG_DRAFTLING_BATTERY_CW2017)
-    /* Xteink X4 Pro: CW2017 fuel gauge on the shared I2C bus created
-     * above (also carrying the GT911 touch controller). No charger
-     * IC on this bus, so battery_read_charging() always reports
-     * "unknown" for this backend. */
+    /* Xteink X4 Pro / X4 Classic: CW2017 fuel gauge on the shared I2C
+     * bus created above (which also carries the GT911 touch controller
+     * on the X4 Pro). No charger IC on this bus, so
+     * battery_read_charging() always reports "unknown" for this
+     * backend. */
     if (battery_init_cw2017(shared_i2c_bus) != 0) {
         ESP_LOGW(TAG, "CW2017 fuel gauge init failed; battery indicator disabled");
     }
@@ -1840,14 +1996,22 @@ extern "C" void app_main(void)
      * is the actual fix.) */
     bool sd_lvgl_held = draftling_lvgl_port_lock(-1);
 #endif
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
-    /* SD slot power-enable, active-low. Drive it before mounting. */
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4)
+    /* SD slot power-enable, active-low. Drive it before mounting.
+     * X4 Pro: GPIO5, driven straight LOW. X4 Classic: GPIO6, which
+     * wants a power-cycle first (HIGH ~80 ms to drain the rail, then
+     * LOW and held LOW while the card is mounted -- FreeInk SDK
+     * SdmmcBlockDevice). */
     {
         gpio_config_t sd_pwr = {};
         sd_pwr.intr_type    = GPIO_INTR_DISABLE;
         sd_pwr.mode         = GPIO_MODE_OUTPUT;
         sd_pwr.pin_bit_mask = (1ULL << SD_POWER_EN_PIN);
         gpio_config(&sd_pwr);
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+        gpio_set_level((gpio_num_t)SD_POWER_EN_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(80));
+#endif
         gpio_set_level((gpio_num_t)SD_POWER_EN_PIN, 0);
     }
 #endif
@@ -2356,6 +2520,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_tab5_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
     standby_set_pre_sleep_cb(pre_sleep_xteink_x4_pro_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+    standby_set_pre_sleep_cb(pre_sleep_xteink_x4_classic_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_579_deinit);
 #else
@@ -2379,6 +2545,11 @@ extern "C" void app_main(void)
      * the rest of menu navigation once it is open. */
     crowpanel_menu_key_init();
     crowpanel_nav_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+    /* Power button (GPIO3) = F1 on short press, forget all keyboards
+     * on 2 s long press. Six nav keys (Up/Down/Left/Right/Enter/Esc)
+     * drive the rest -- same buttons-only model as the CrowPanel. */
+    xteink_x4_classic_btn_init();
 #else
     /* Generic wakeup-button long-press monitor: hold 2 s to forget
      * all stored BLE keyboard pairings and start a fresh scan (and,

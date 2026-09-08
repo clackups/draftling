@@ -60,6 +60,7 @@ card).
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
+| Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 
 UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
@@ -94,11 +95,13 @@ CMakeLists.txt              Top-level CMake project file
 CMakePresets.json           Per-board build presets (idf.py --preset <board>)
 partitions.csv              Custom partition table (16 MB flash, single
                             "factory" app) -- used by every board except
-                            the two below
+                            the three below
 partitions_8mb.csv          8 MB-flash variant (Elecrow CrowPanel 5.79")
 partitions_xteink_x4_pro.csv Dual-OTA layout (otadata + ota_0/ota_1) so
                             the Xteink X4 Pro can be re-flashed with the
                             stock or Crosspoint firmware afterwards
+partitions_xteink_x4_classic.csv  Same dual-OTA layout for the Xteink
+                            X4 Classic (X4 v2)
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
@@ -188,8 +191,9 @@ Two backends:
   the IP2326 charger pushes positive current into the cell). See
   `docs/tab5-esp-hosted.md` for the CHG_EN enable path.
 * **CellWise CW2017 fuel gauge** over I2C
-  (`battery_init_cw2017(bus)`): used on the Xteink X4 Pro, at 0x63 on
-  the I2C bus shared with GT911 touch. Unlike BQ27220, the CW2017's
+  (`battery_init_cw2017(bus)`): used on the Xteink X4 Pro and X4
+  Classic, at 0x63 on the I2C bus (shared with GT911 touch on the X4
+  Pro). Unlike BQ27220, the CW2017's
   SOC register (0x04) reports a direct integer percentage -- no
   voltage-to-percent LUT needed -- but only once a matching 80-byte
   "BATINFO" battery profile is resident; `battery_init_cw2017()`
@@ -306,7 +310,12 @@ Per-board display backends behind a single C API:
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
 - **display_xteink_epd.cpp** -- from-scratch SPI e-paper backend for
-  the Xteink X4 Pro, gated on `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`.
+  the Xteink X4 Pro and X4 Classic, gated on
+  `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`. The two boards share the
+  controller code and differ only in the DC/RST/BUSY pin set and
+  whether the front-light code compiles in -- both switched at build
+  time on `CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC` /
+  `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT`.
   Unlike the other e-paper backends this board carries one of three
   possible panel controllers depending on manufacturing run (SSD1677,
   or one of two UltraChip parts, UC8179 / UC8279); `display_init()`
@@ -1070,6 +1079,19 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   touch is dead until the next deep-sleep cycle. Tested on physical
   hardware after an initial blind port; see HARDWARE.md.
   *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_XTEINK_X4_CLASSIC** -- Xteink X4 Classic (a.k.a.
+  "X4 v2"): the buttons-only, no-front-light sibling of the X4 Pro.
+  Same ESP32-S3, same 800x480 panel and `display_xteink_epd.cpp`
+  controller stack (DC/RST/BUSY on 14/10/18 instead of 18/14/6), same
+  CW2017 gauge and SDMMC slot. `CONFIG_DRAFTLING_TOUCHSCREEN` and
+  `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` are both off. Eight buttons
+  (`xteink_x4_classic_btn_init()` in `main.cpp`) drive the editor with
+  no keyboard, the same buttons-only model as the CrowPanel: Power
+  (GPIO3) = F1 / forget-keyboards, side keys = Up/Down, bottom keys =
+  Left/Right/Enter/Esc. The derived symbol `DRAFTLING_MODEL_XTEINK_X4`
+  is set for both this and the X4 Pro and gates the code common to
+  the two. Added without on-hardware testing (pin map from the FreeInk
+  SDK); see HARDWARE.md. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
@@ -1084,11 +1106,11 @@ The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro), 792 (Elecrow
-  CrowPanel 5.79").
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic), 792
+  (Elecrow CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro), 272 (Elecrow
-  CrowPanel 5.79").
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic), 272
+  (Elecrow CrowPanel 5.79").
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -1149,8 +1171,9 @@ CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` (mod 360) in portrait,
 and that is what `main.cpp` passes to `draftling_lvgl_port_init()`.
 `DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` is a non-prompted derived
 `int` (Kconfig.projbuild) defaulting to **90**; the **Xteink X4 Pro**
-sets it to **270** because that board's enclosure reads better with
-portrait turned the opposite way. LVGL then swaps its own reported
+and **X4 Classic** set it to **270** because that board family's
+enclosure reads better with portrait turned the opposite way. LVGL
+then swaps its own reported
 resolution, and `flush_cb` software-rotates each tile back to physical
 panel coordinates -- the display backends stay rotation-agnostic.
 `DISPLAY_LOGICAL_WIDTH/HEIGHT` and the touchscreen `logical_width/height`
@@ -1196,10 +1219,11 @@ in C / C++ code:
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro, Elecrow CrowPanel 5.79" |
+| DRAFTLING_MODEL_XTEINK_X4         | Common to the Xteink X4 Pro and X4 Classic (shared `display_xteink_epd.cpp` backend, CW2017 gauge, SDMMC slot, OTA partition table, GPIO1 peripheral-rail latch, GPIO3 Power/wake) | Xteink X4 Pro, Xteink X4 Classic |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
-| DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro |
+| DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
@@ -1210,12 +1234,12 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
-| DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro |
+| DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
 
@@ -1241,7 +1265,7 @@ The runtime **"Display orientation"** setting (F1 -> Settings; see the
 "Display orientation" section below) adds
 `DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` degrees on top of this for
 portrait -- a second non-prompted derived `int` in this file, default
-90, set to 270 on the Xteink X4 Pro. `app_config.h`'s
+90, set to 270 on the Xteink X4 Pro / X4 Classic. `app_config.h`'s
 `DISPLAY_ROTATE_EFFECTIVE` is what `main.cpp` actually passes to
 `draftling_lvgl_port_init()`.
 
@@ -1314,7 +1338,8 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, `xteink_x4_pro`, `elecrow_crowpanel_579`). Each
+`freenove_fnk0104s`, `xteink_x4_pro`, `xteink_x4_classic`,
+`elecrow_crowpanel_579`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
@@ -1385,14 +1410,15 @@ tree referenced in steps 1-4.
    gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
        draftling-<board>-partition-table.bin draftling-<board>.bin
    ```
-   `xteink_x4_pro` also needs a fourth image,
+   `xteink_x4_pro` (and `xteink_x4_classic`) also needs a fourth image,
    `draftling-xteink_x4_pro-otadata.bin` (from
    `firmware/build/xteink_x4_pro/ota_data_initial.bin`): its partition
-   table is dual-OTA (`partitions_xteink_x4_pro.csv`), so a clean flash
-   must also (re)initialise the `otadata` partition at `0xd000` -- an
-   8 KB all-`0xFF` blob that makes the bootloader pick `ota_0`.
-   Otherwise a stale `otadata` left by the stock firmware could point
-   the bootloader at the empty `ota_1`.
+   table is dual-OTA (`partitions_xteink_x4_pro.csv` /
+   `partitions_xteink_x4_classic.csv`), so a clean flash must also
+   (re)initialise the `otadata` partition at `0xd000` -- an 8 KB
+   all-`0xFF` blob that makes the bootloader pick `ota_0`. Otherwise a
+   stale `otadata` left by the stock firmware could point the
+   bootloader at the empty `ota_1`.
 5. Update the web flasher on the `_flasher` branch (see its own
    `README.md` for the full layout and rationale -- it is an orphan
    branch with no shared history with `main`, published via GitHub

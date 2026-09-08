@@ -311,6 +311,43 @@ ESP-IDF two-OTA default) to make room for `otadata` + `phy_init` below
 the 64 KB-aligned `ota_0` offset; re-flashing Draftling onto an X4 Pro
 that already runs it therefore clears the stored BLE pairings once.
 
+## Xteink X4 Classic (X4 v2)
+
+Xteink X4 Classic -- also sold as "X4 v2" -- is the buttons-only
+sibling of the X4 Pro. It uses the same ESP32-S3 module, the same
+4.26" 800x480 e-paper glass and the same auto-detecting SSD1677 /
+UC8179 / UC8279 display backend (`display_xteink_epd.cpp`), the same
+CW2017 I2C fuel gauge and the same SDMMC 1-bit MicroSD slot, so most
+of the X4 Pro notes above apply. The differences Draftling cares
+about:
+
+* **No GT911 touch** and **no front-light** (`CONFIG_DRAFTLING_TOUCHSCREEN`
+  and `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` are both off). The GPIOs
+  the X4 Pro spends on touch power-enable (GPIO2) and the warm/cool
+  front-light PWM (GPIO8/GPIO9) are wired to extra front buttons here.
+* **Different panel control pins**: DC=14, RST=10, BUSY=18 (the X4 Pro
+  uses 18/14/6). SCLK=12, MOSI=11, CS=13 are the same, and
+  `display_xteink_epd.cpp` picks the pin set at build time on
+  `CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC`. Its UC8279 init also
+  omits the PLL (0x30) command the X4 Pro programs.
+* **SD power-enable on GPIO6** (GPIO5 on the X4 Pro), power-cycled
+  (HIGH ~80 ms, then held LOW) before mount.
+* **Eight buttons** drive the editor without a keyboard, the same
+  buttons-only model as the CrowPanel 5.79": Power (GPIO3, deep-sleep
+  wake) short-press = F1 / 2 s hold = forget BLE keyboards; two side
+  keys = Up / Down; four bottom keys = Left / Right / Enter / Esc.
+  See `xteink_x4_classic_btn_init()` in `firmware/main/main.cpp`.
+
+Partition table: `firmware/partitions_xteink_x4_classic.csv`, identical
+in layout to the X4 Pro's (dual-OTA, so the stock / Crosspoint OTA
+updaters can reinstall).
+
+**This board has been added without on-hardware testing.** Pin
+assignments come from the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
+(`docs/xteink-x4c-support.md`, MIT licensed), which reverse-engineered
+the OEM firmware. The screen-margin, portrait-rotation and
+grayscale-not-implemented caveats are all as for the X4 Pro.
+
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
 [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI
