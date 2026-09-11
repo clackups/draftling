@@ -1061,6 +1061,16 @@ typedef struct {
     int    saved_scroll;       /* saved scroll line */
     int    saved_sel_anchor;   /* saved selection anchor (< 0 = none) */
     bool   has_saved_view;     /* view captured at least once */
+
+    /* Number of logical lines actually rendered on screen by the last
+     * refresh_active_pane() call, i.e. how many lines fit in the pane
+     * once word-wrap is accounted for. Long/wrapped lines can each
+     * consume several visual rows, so this can be well below
+     * VISIBLE_LINES (which assumes one visual row per logical line).
+     * Page Up/Down use it to size a "page" jump to what is actually on
+     * screen instead of overshooting past the end of a short,
+     * long-line document. */
+    int    visible_line_count;
 } pane_t;
 
 static pane_t  s_panes[EDITOR_MAX_PANES];
@@ -1146,6 +1156,22 @@ static void close_inpane_browser(void);
 #define s_prev_line_visible      (s_rp->prev_line_visible)
 #define s_prev_line_was_selected (s_rp->prev_line_was_selected)
 #define s_cursor_on_screen       (s_rp->cursor_on_screen)
+#define s_visible_line_count     (s_rp->visible_line_count)
+
+/* Number of logical lines to advance for a "page" jump (PgUp/PgDn,
+ * Ctrl+Up/Down): the count of lines actually visible on screen right
+ * now (s_visible_line_count), not VISIBLE_LINES -- VISIBLE_LINES is a
+ * pixel-height / single-row-height estimate that assumes one visual
+ * row per logical line, so on a document made of long, word-wrapped
+ * lines it can be several times the number of lines that actually
+ * fit, sending Page Down straight past the end of a short document.
+ * Falls back to VISIBLE_LINES before the pane has ever rendered
+ * (visible_line_count still at its zero-initialized default). */
+static inline int page_line_count(void)
+{
+    int n = s_visible_line_count;
+    return n > 0 ? n : VISIBLE_LINES;
+}
 
 /* Capture the live document's view (cursor / scroll / selection) into a
  * pane's saved view state. Used to record a pane's view from the active
@@ -1781,10 +1807,20 @@ static void refresh_active_pane(bool draw_cursor)
         cur_y = -1;
         cur_x = -1;
         cur_h = LINE_H;
+        bool counted_visible = false; /* first hidden slot -> s_visible_line_count */
 
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
             int line_idx = scroll + i;
             if (line_idx >= total || y_pos >= s_rp->h) {
+                /* Record how many logical lines actually fit above this
+                 * slot -- see the pane_t::visible_line_count comment.
+                 * Once this branch triggers for a given i it triggers
+                 * for every later i too (line_idx and y_pos are both
+                 * monotonic), so the first hit gives the count. */
+                if (!counted_visible) {
+                    s_visible_line_count = i;
+                    counted_visible = true;
+                }
                 /* Only invalidate the slot when its visible state
                  * actually changes; otherwise lv_obj_add_flag()
                  * dirties the previous label rectangle on every
@@ -2084,6 +2120,11 @@ static void refresh_active_pane(bool draw_cursor)
 
             y_pos += rendered_h;
         }
+        /* Every slot fit on screen without tripping the count above
+         * (only possible when the whole MAX_LINE_LABELS-slot pool is
+         * filled with lines short enough to never exceed the pane
+         * height) -- fall back to the full pool size. */
+        if (!counted_visible) s_visible_line_count = MAX_LINE_LABELS;
 
         /* If the cursor line is in the expected range but wrapped lines
          * pushed it off-screen, scroll and re-render. Jump by
@@ -5200,7 +5241,7 @@ static void handle_editor_key(const kb_event_t *ev)
             s_visual_goal_x = -1;
             if (shift) editor_set_selection_anchor();
             else editor_clear_selection();
-            editor_move_page_down(VISIBLE_LINES);
+            editor_move_page_down(page_line_count());
             ensure_cursor_visible();
             if (s_pane_count > 1) refresh_focused_pane_and_title();
             else                  editor_ui_refresh();
@@ -5210,7 +5251,7 @@ static void handle_editor_key(const kb_event_t *ev)
             s_visual_goal_x = -1;             /* see Ctrl+Down comment above */
             if (shift) editor_set_selection_anchor();
             else editor_clear_selection();
-            editor_move_page_up(VISIBLE_LINES);
+            editor_move_page_up(page_line_count());
             ensure_cursor_visible();
             if (s_pane_count > 1) refresh_focused_pane_and_title();
             else                  editor_ui_refresh();
@@ -5457,12 +5498,12 @@ static void handle_editor_key(const kb_event_t *ev)
     case KB_KEY_PAGEUP:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_up(VISIBLE_LINES);
+        editor_move_page_up(page_line_count());
         break;
     case KB_KEY_PAGEDOWN:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_down(VISIBLE_LINES);
+        editor_move_page_down(page_line_count());
         break;
     case KB_KEY_BACKSPACE:
         if (s_append_only) {
