@@ -1019,8 +1019,8 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
  * editor_doc_t aliasing trick in editor.cpp. Code that operates on a
  * specific pane binds it first with pane_bind().
  *
- * Each pane keeps its own MAX_LINE_LABELS-slot label / selection pools
- * and per-slot render cache. A split layout halves each pane's width
+ * Each pane keeps its own MAX_LINE_LABELS-slot label pool and
+ * per-slot render cache. A split layout halves each pane's width
  * but keeps the full editor height, and each pane wraps text to its
  * own (narrower) width.
  *
@@ -1035,7 +1035,6 @@ typedef struct {
     lv_obj_t   *cursor;    /* thin vertical cursor bar */
     lv_obj_t   *logo;      /* "draftling" placeholder when the doc is empty */
     lv_obj_t   *line_labels[MAX_LINE_LABELS];
-    lv_obj_t   *sel_rects[MAX_LINE_LABELS];
     std::string prev_line_text[MAX_LINE_LABELS];
     int  prev_line_type[MAX_LINE_LABELS];    /* md_line_type_t, -1 if cache empty */
     int  prev_line_y[MAX_LINE_LABELS];       /* y_pos last used, -1 if cache empty */
@@ -1148,7 +1147,6 @@ static void close_inpane_browser(void);
 #define s_cursor                 (s_rp->cursor)
 #define s_img_logo               (s_rp->logo)
 #define s_line_labels            (s_rp->line_labels)
-#define s_sel_rects              (s_rp->sel_rects)
 #define s_prev_line_text         (s_rp->prev_line_text)
 #define s_prev_line_type         (s_rp->prev_line_type)
 #define s_prev_line_y            (s_rp->prev_line_y)
@@ -1686,22 +1684,6 @@ static int utf8_chars_in_bytes(const char *text, size_t byte_len)
     return count;
 }
 
-/* Return the byte offset of the n-th UTF-8 character in text. */
-static size_t utf8_char_offset(const char *text, int n)
-{
-    size_t off = 0;
-    int ch = 0;
-    while (text[off] && ch < n) {
-        unsigned char c = (unsigned char)text[off];
-        if (c < 0x80) off += 1;
-        else if ((c & 0xE0) == 0xC0) off += 2;
-        else if ((c & 0xF0) == 0xE0) off += 3;
-        else off += 4;
-        ch++;
-    }
-    return off;
-}
-
 
 /* Scan UTF-8 text for the first STRONG directional codepoint,
  * mirroring LVGL's auto base-direction detection. Returns +1 for
@@ -1844,10 +1826,6 @@ static void refresh_active_pane(bool draw_cursor)
                     !lv_obj_has_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN)) {
                     lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
                 }
-                if (s_sel_rects[i] &&
-                    !lv_obj_has_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN)) {
-                    lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
-                }
                 /* Always clear the cached state for hidden slots so a
                  * later transition back to visible is forced through
                  * the full re-render path with a clean baseline. */
@@ -1946,6 +1924,23 @@ static void refresh_active_pane(bool draw_cursor)
                 /* Re-apply width after style reset (remove_style_all clears it)
                  * so that LV_LABEL_LONG_WRAP can wrap at the correct boundary. */
                 lv_obj_set_width(s_line_labels[i], s_rp->w - 4);
+                /* Re-apply the LV_PART_SELECTED colors too (remove_style_all
+                 * wipes every part, not just LV_PART_MAIN) so the selection
+                 * highlight set below renders correctly. This uses LVGL's
+                 * native per-character text selection (lv_label_set_text_
+                 * selection_start/end) rather than a hand-rolled overlay,
+                 * so it draws correctly no matter how many visual rows a
+                 * wrapped line's selection spans. */
+                lv_obj_set_style_bg_color(s_line_labels[i], theme_fg(),
+                                          LV_PART_SELECTED);
+                lv_obj_set_style_bg_opa(s_line_labels[i], LV_OPA_COVER,
+                                        LV_PART_SELECTED);
+                lv_obj_set_style_text_color(s_line_labels[i], theme_bg(),
+                                            LV_PART_SELECTED);
+                lv_label_set_text_selection_start(s_line_labels[i],
+                                                  LV_LABEL_TEXT_SELECTION_OFF);
+                lv_label_set_text_selection_end(s_line_labels[i],
+                                                LV_LABEL_TEXT_SELECTION_OFF);
                 lv_label_set_text_static(s_line_labels[i], "");
                 lv_label_set_text(s_line_labels[i], tmp.c_str());
                 lv_obj_set_pos(s_line_labels[i], 2, y_pos);
@@ -1968,12 +1963,16 @@ static void refresh_active_pane(bool draw_cursor)
                 s_prev_line_visible[i] = true;
             }
 
-            /* Selection highlight.  Fully-selected lines and multi-row
-             * partial selections use color inversion on the label
-             * itself (black bg, white text).  Single-row partial
-             * selections use an overlay label (s_sel_rects) that
-             * renders only the selected substring in white on black,
-             * positioned exactly over those characters. */
+            /* Selection highlight.  A fully-selected line uses color
+             * inversion on the whole label (black bg, white text).  A
+             * partial selection -- which may span more than one visual
+             * row when the line word-wraps -- uses LVGL's native
+             * per-character text selection (lv_label_set_text_selection_
+             * start/end, drawn via the LV_PART_SELECTED style applied
+             * above) so every wrapped row is highlighted accurately
+             * instead of a hand-rolled single-row overlay that silently
+             * over-highlighted (and mis-reported to the user as fully
+             * selected) any selection spanning more than one row. */
             if (has_sel) {
                 size_t line_off = (size_t)(lt - flat_text);
                 size_t line_end_off = line_off + ll;
@@ -1994,9 +1993,7 @@ static void refresh_active_pane(bool draw_cursor)
                                             LV_OPA_COVER, 0);
                     lv_obj_set_style_text_color(s_line_labels[i],
                                                 theme_bg(), 0);
-                    if (s_sel_rects[i])
-                        lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
-                } else if (partial && s_sel_rects[i]) {
+                } else if (partial) {
                     /* Compute selection byte range within this line */
                     size_t raw_s = (sel_start > line_off)
                                        ? sel_start - line_off : 0;
@@ -2019,57 +2016,12 @@ static void refresh_active_pane(bool draw_cursor)
                         disp_e += bp;
                     }
                     if (disp_e > disp_s) {
-                        lv_point_t sp, ep;
-                        lv_label_get_letter_pos(s_line_labels[i],
-                                                (uint32_t)disp_s, &sp);
-                        lv_label_get_letter_pos(s_line_labels[i],
-                                                (uint32_t)disp_e, &ep);
-                        if (sp.y == ep.y) {
-                            /* Single visual row: overlay label with
-                             * only the selected substring in white
-                             * on black background. */
-                            size_t byte_s = utf8_char_offset(tmp.c_str(), disp_s);
-                            size_t byte_e = utf8_char_offset(tmp.c_str(), disp_e);
-                            if (byte_s > tmp.size()) byte_s = tmp.size();
-                            if (byte_e > tmp.size()) byte_e = tmp.size();
-                            if (byte_e < byte_s)     byte_e = byte_s;
-                            std::string sel_buf = tmp.substr(byte_s, byte_e - byte_s);
-
-                            const lv_font_t *sf =
-                                lv_obj_get_style_text_font(
-                                    s_line_labels[i], LV_PART_MAIN);
-                            lv_obj_set_style_text_font(
-                                s_sel_rects[i],
-                                sf ? sf : body_font(), 0);
-                            lv_label_set_text(s_sel_rects[i], sel_buf.c_str());
-                            lv_obj_set_pos(s_sel_rects[i],
-                                           2 + sp.x, y_pos + sp.y);
-                            lv_obj_move_foreground(s_sel_rects[i]);
-                            lv_obj_remove_flag(s_sel_rects[i],
-                                               LV_OBJ_FLAG_HIDDEN);
-                        } else {
-                            /* Multi-row partial: fall back to
-                             * full-line inversion on the label. */
-                            lv_obj_set_style_bg_color(s_line_labels[i],
-                                                      theme_fg(), 0);
-                            lv_obj_set_style_bg_opa(s_line_labels[i],
-                                                    LV_OPA_COVER, 0);
-                            lv_obj_set_style_text_color(s_line_labels[i],
-                                                        theme_bg(), 0);
-                            lv_obj_add_flag(s_sel_rects[i],
-                                            LV_OBJ_FLAG_HIDDEN);
-                        }
-                    } else {
-                        lv_obj_add_flag(s_sel_rects[i],
-                                        LV_OBJ_FLAG_HIDDEN);
+                        lv_label_set_text_selection_start(
+                            s_line_labels[i], (uint32_t)disp_s);
+                        lv_label_set_text_selection_end(
+                            s_line_labels[i], (uint32_t)disp_e);
                     }
-                } else {
-                    if (s_sel_rects[i])
-                        lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
                 }
-            } else {
-                if (s_sel_rects[i])
-                    lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
             }
 
             /* Remember whether this slot is currently rendering a
@@ -5648,16 +5600,15 @@ static void show_inpane_browser(void)
 
     /* Clear the covered pane's editor widgets so none of its text shows
      * through. The overlay list only paints rows it has; any area below
-     * the last entry (and the caret / selection rects / logo, which are
-     * raised above the list) would otherwise leave the previous
-     * document's lines visible behind the selector. Hide the focused
-     * pane's line labels, selection rects, cursor and logo explicitly. */
+     * the last entry (and the caret / logo, which are raised above the
+     * list) would otherwise leave the previous document's lines visible
+     * behind the selector. Hide the focused pane's line labels, cursor
+     * and logo explicitly. */
     {
         pane_t *save = s_rp;
         s_rp = &s_panes[s_focus];
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
             if (s_line_labels[i]) lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
-            if (s_sel_rects[i])   lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
         }
         if (s_cursor)   lv_obj_add_flag(s_cursor, LV_OBJ_FLAG_HIDDEN);
         if (s_img_logo) lv_obj_add_flag(s_img_logo, LV_OBJ_FLAG_HIDDEN);
@@ -5686,9 +5637,9 @@ static void close_inpane_browser(void)
 
     /* The focused pane was skipped while the overlay covered it (and
      * may now hold a freshly-opened, possibly shorter document). Hide
-     * every line label / selection rect and wipe its render cache so
-     * the next editor_ui_refresh() repaints the pane from scratch with
-     * no leftover lines from the previously shown file. Hiding the
+     * every line label and wipe its render cache so the next
+     * editor_ui_refresh() repaints the pane from scratch with no
+     * leftover lines from the previously shown file. Hiding the
      * widgets is required in addition to invalidating the cache: the
      * refresh path only hides a stale label when prev_line_visible[]
      * still marks it visible, and invalidate_render_cache() clears that
@@ -5698,7 +5649,6 @@ static void close_inpane_browser(void)
     s_rp = &s_panes[s_focus];
     for (int i = 0; i < MAX_LINE_LABELS; i++) {
         if (s_line_labels[i]) lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
-        if (s_sel_rects[i])   lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
     }
     invalidate_render_cache();
     s_rp = save;
@@ -6597,26 +6547,6 @@ static void build_screens(void)
                        (EDITOR_H - lv_font_get_line_height(FONT_18)) / 2);
         lv_obj_add_flag(s_img_logo, LV_OBJ_FLAG_HIDDEN);
 
-        /* Selection overlay labels (created before cursor and line
-         * labels so their initial z-order is behind text;
-         * partial-selection code calls lv_obj_move_foreground() to
-         * bring them on top). These display the selected text in white
-         * on a black background for proper inversion on the monochrome
-         * e-paper display. */
-        for (int i = 0; i < MAX_LINE_LABELS; i++) {
-            s_sel_rects[i] = lv_label_create(s_cont_edit);
-            lv_obj_set_style_bg_color(s_sel_rects[i],
-                                      theme_fg(), 0);
-            lv_obj_set_style_bg_opa(s_sel_rects[i], LV_OPA_COVER, 0);
-            lv_obj_set_style_text_color(s_sel_rects[i],
-                                        theme_bg(), 0);
-            lv_obj_set_style_border_width(s_sel_rects[i], 0, 0);
-            lv_obj_set_style_radius(s_sel_rects[i], 0, 0);
-            lv_obj_set_style_pad_all(s_sel_rects[i], 0, 0);
-            lv_label_set_text(s_sel_rects[i], "");
-            lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
-        }
-
         /* Cursor (thin vertical bar) */
         s_cursor = lv_obj_create(s_cont_edit);
         lv_obj_set_size(s_cursor, 2, LINE_H);
@@ -7263,9 +7193,9 @@ static void teardown_screens(void)
     }
 
     /* Delete every top-level screen we created. Children (status
-     * bars, line labels, selection rects, the passkey / save /
-     * search overlays parented to s_scr, the wifi icons, etc.) are
-     * deleted automatically with their parent. */
+     * bars, line labels, the passkey / save / search overlays
+     * parented to s_scr, the wifi icons, etc.) are deleted
+     * automatically with their parent. */
     if (s_scr_browser)    { lv_obj_delete(s_scr_browser);    s_scr_browser    = NULL; }
     if (s_scr_menu)       { lv_obj_delete(s_scr_menu);       s_scr_menu       = NULL; }
     if (s_scr_settings)   { lv_obj_delete(s_scr_settings);   s_scr_settings   = NULL; }
@@ -7274,8 +7204,8 @@ static void teardown_screens(void)
 
     /* NULL every child-widget pointer so any stale reference
      * crashes deterministically instead of touching freed memory.
-     * The per-pane widgets (container, cursor, logo, line / selection
-     * label pools) are cleared for every pane. */
+     * The per-pane widgets (container, cursor, logo, line label
+     * pool) are cleared for every pane. */
     s_lbl_title = s_lbl_status = NULL;
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
@@ -7286,7 +7216,6 @@ static void teardown_screens(void)
             s_cont_edit = s_cursor = s_img_logo = NULL;
             for (int i = 0; i < MAX_LINE_LABELS; i++) {
                 s_line_labels[i] = NULL;
-                s_sel_rects[i]   = NULL;
             }
         }
         s_rp = save_rp;
