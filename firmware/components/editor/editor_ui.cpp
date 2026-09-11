@@ -5193,6 +5193,29 @@ static void handle_editor_key(const kb_event_t *ev)
             editor_ui_focus_other_pane();
             return;
         }
+        if (ev->keycode == KB_KEY_DOWN) {     /* Ctrl+Down: same as PgDn */
+            /* Keycode matches plain Down, which the goal_x reset above
+             * skips -- clear it here so a following bare Up/Down starts
+             * from the post-jump cursor column rather than a stale one. */
+            s_visual_goal_x = -1;
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_down(VISIBLE_LINES);
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
+        if (ev->keycode == KB_KEY_UP) {       /* Ctrl+Up: same as PgUp */
+            s_visual_goal_x = -1;             /* see Ctrl+Down comment above */
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_up(VISIBLE_LINES);
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
 
         switch (ch) {
         case 's':
