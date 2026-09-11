@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-11
+
 ### Fixed
 
 - **E-paper boards in portrait orientation stopped updating while
