@@ -109,10 +109,23 @@ static void     *s_shared_i2c_bus = NULL;
 
 static int s_dirty_x0 = -1, s_dirty_y0 = -1, s_dirty_x1 = -1, s_dirty_y1 = -1;
 static int s_clip_x0 = -1, s_clip_y0 = -1, s_clip_x1 = -1, s_clip_y1 = -1;
+/* Sum of the (clamped) area of every mark_dirty_rect() call since the
+ * last clear_dirty(), as opposed to s_dirty_x0..y1's bounding box of
+ * those same calls. A single keystroke's worth of navigation pushes
+ * two small, unrelated regions in the same frame -- the title bar's
+ * line counter near the top and the cursor's line wherever it is --
+ * and lvgl_port.cpp deliberately batches both into one flush (see its
+ * flush_cb() comment) to avoid a double refresh. Their *bounding box*
+ * can span most of the panel height even though neither region is
+ * actually large, so display_flush()'s "huge dirty area -> full
+ * refresh" check uses this sum instead: it reflects how much content
+ * actually changed, not how far apart the changes happen to be. */
+static long s_dirty_area_sum = 0;
 
 static inline void clear_dirty(void)
 {
     s_dirty_x0 = s_dirty_y0 = s_dirty_x1 = s_dirty_y1 = -1;
+    s_dirty_area_sum = 0;
 }
 
 static inline void mark_dirty_rect(int x, int y, int w, int h)
@@ -123,6 +136,7 @@ static inline void mark_dirty_rect(int x, int y, int w, int h)
     int x1 = std::min(s_width,  x + w);
     int y1 = std::min(s_height, y + h);
     if (x1 <= x0 || y1 <= y0) return;
+    s_dirty_area_sum += (long)(x1 - x0) * (long)(y1 - y0);
     if (s_dirty_x0 < 0) {
         s_dirty_x0 = x0; s_dirty_y0 = y0;
         s_dirty_x1 = x1 - 1; s_dirty_y1 = y1 - 1;
@@ -452,6 +466,7 @@ extern "C" void display_flush(void)
     if (s_dirty_x0 < 0) return;
 
     int x0 = s_dirty_x0, y0 = s_dirty_y0, x1 = s_dirty_x1, y1 = s_dirty_y1;
+    long dirty_area_sum = s_dirty_area_sum;
     clear_dirty();
 
     if (s_clip_x0 >= 0 && s_clip_y0 >= 0 && s_clip_x1 >= s_clip_x0 && s_clip_y1 >= s_clip_y0) {
@@ -468,8 +483,12 @@ extern "C" void display_flush(void)
         return;
     }
 
-    long dirty_area = (long)(x1 - x0 + 1) * (y1 - y0 + 1);
-    bool huge = dirty_area * 4 > (long)s_width * s_height * 3;
+    /* "huge" drives the fast-vs-full waveform choice below, so it
+     * should reflect how much content actually changed -- use the sum
+     * of the individual pushed regions (dirty_area_sum), not the area
+     * of the bounding box that merely encloses them (x0..y1). See the
+     * comment on s_dirty_area_sum. */
+    bool huge = dirty_area_sum * 4 > (long)s_width * s_height * 3;
     bool do_full = s_needs_initial_full || s_force_full || huge ||
                    s_partial_count >= WS_EPD397_FULL_REFRESH_INTERVAL;
 
