@@ -2142,6 +2142,25 @@ static void refresh_focused_pane_and_title(void)
     sync_battery_labels();
 }
 
+/* How far to jump the viewport when the cursor falls outside it,
+ * as a fraction of VISIBLE_LINES. Snapping the cursor to the very
+ * edge row (the old behavior: scroll = cur_line, or cur_line -
+ * VISIBLE_LINES + 1) means the next line of continued typing or
+ * navigation in the same direction immediately falls outside the
+ * viewport again, re-triggering a scroll -- and its full-screen
+ * re-render -- on every single line. Jumping a majority of the
+ * screen height instead leaves headroom so several more lines fit
+ * before another scroll is needed, trading a slightly larger jump
+ * for far fewer redraws (particularly noticeable on e-paper boards,
+ * where every redraw is a visible, non-instant refresh). */
+#define SCROLL_JUMP_FRACTION 0.6f
+
+static inline int scroll_jump_step(void)
+{
+    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
+    return step > 0 ? step : 1;
+}
+
 static void ensure_cursor_visible(void)
 {
     int cur_line, cur_col;
@@ -2149,9 +2168,19 @@ static void ensure_cursor_visible(void)
     editor_get_cursor_pos(&cur_line, &cur_col);
     int scroll = editor_get_scroll_line();
     if (cur_line < scroll) {
-        editor_set_scroll_line(cur_line);
+        int new_scroll = scroll - scroll_jump_step();
+        if (new_scroll < 0) new_scroll = 0;
+        /* The cursor jumped further than one scroll step (Ctrl+Home,
+         * Find, goto-line, ...) -- a partial jump would still leave
+         * it off-screen, so land on it exactly instead. */
+        if (cur_line < new_scroll) new_scroll = cur_line;
+        editor_set_scroll_line(new_scroll);
     } else if (cur_line >= scroll + VISIBLE_LINES) {
-        editor_set_scroll_line(cur_line - VISIBLE_LINES + 1);
+        int new_scroll = scroll + scroll_jump_step();
+        if (cur_line >= new_scroll + VISIBLE_LINES) {
+            new_scroll = cur_line - VISIBLE_LINES + 1;
+        }
+        editor_set_scroll_line(new_scroll);
     }
 }
 
@@ -2383,8 +2412,15 @@ static void editor_ui_move_visual(int direction)
     }
 
     /* If the target visual row is outside the rendered editor area,
-     * scroll one logical line and re-render so the row above/below
-     * becomes addressable via ui_point_to_offset(). */
+     * scroll and re-render so the row above/below becomes addressable
+     * via ui_point_to_offset(). Jumping by scroll_jump_step() rather
+     * than a single line means holding Up/Down at the edge of the
+     * viewport needs a scroll (and its refresh) only once every few
+     * rows instead of on every keypress -- see the comment on
+     * SCROLL_JUMP_FRACTION. This does not change which visual row the
+     * cursor lands on: target_y is still exactly one row above/below
+     * the cursor's own (not-yet-moved) rendered position, wherever
+     * that ends up after the jump. */
     for (int attempt = 0; attempt < 2; attempt++) {
         if (target_y >= 0 && target_y < s_rp->h) break;
         int sc = editor_get_scroll_line();
@@ -2394,7 +2430,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc - 1);
+            int new_sc = sc - scroll_jump_step();
+            if (new_sc < 0) new_sc = 0;
+            editor_set_scroll_line(new_sc);
         } else {
             int total = editor_get_line_count();
             if (sc + 1 >= total) {
@@ -2402,7 +2440,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc + 1);
+            int new_sc = sc + scroll_jump_step();
+            if (new_sc > total - 1) new_sc = total - 1;
+            editor_set_scroll_line(new_sc);
         }
         refresh_focused_pane();
         if (!s_cursor || !s_cursor_on_screen) {
