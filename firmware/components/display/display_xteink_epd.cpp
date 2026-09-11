@@ -142,6 +142,7 @@ static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
 static uint8_t  *s_scratch = NULL;   /* UC8179/UC8279 padded/reversed staging buffer */
 static uint8_t  *s_white_scratch = NULL; /* constant all-white OLD-plane buffer, see uc8179/uc8279_display_full() */
+static uint8_t  *s_fb_inv = NULL;    /* SSD1677 bitwise-complement scratch, see ssd1677_display_full() */
 static bool      s_initialized = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
 static bool      s_bl_inited = false;
@@ -398,10 +399,20 @@ static xteink_ctrl_t probe_controller(void)
 /* ============================================================
  * SSD1677 (ported from Ssd1677Driver.cpp, ssd1677DefaultConfig() --
  * the Xteink X4 / X4 Pro defaults). Dual-RAM (BW=0x24, RED=0x26)
- * differential refresh, no mirror. Only the absolute (Full, 0xF7) and
- * differential (Fast, 0xFC) waveforms are used; the SDK's one-shot
- * "Half" first-paint optimization is skipped for simplicity -- the
- * very first flush after boot just uses Full. ============================================================ */
+ * differential refresh, no mirror. The SDK's one-shot "Half"
+ * first-paint optimization is skipped for simplicity -- the very
+ * first flush after boot just uses Full.
+ *
+ * Both ssd1677_display_full() and ssd1677_display_fast() drive the
+ * panel with the same differential (0xFC) waveform rather than the
+ * SDK's separate absolute/Full (0xF7) one -- see ssd1677_display_full()
+ * below. This was found and verified on the Waveshare
+ * ESP32-S3-ePaper-3.97 board's identical SSD1677 registers
+ * (display_ws_epd397.cpp), where 0xF7 (and repeated 0xC7) consistently
+ * left black text visibly faded on real hardware while 0xFC did not;
+ * it has not been separately verified against a real Xteink X4 Pro
+ * SSD1677 unit, so revisit this if that combination turns out to
+ * behave differently. ============================================================ */
 
 static void ssd1677_set_ram_area_full(void)
 {
@@ -464,10 +475,35 @@ static void ssd1677_refresh(uint8_t ctrl1, uint8_t seq)
 
 static void ssd1677_display_full(const uint8_t *fb)
 {
+    /* Reuse ssd1677_display_fast()'s 0xFC differential waveform
+     * instead of the absolute Full (0xF7) one -- see the section
+     * comment above. The controller's differential engine only
+     * re-drives a pixel whose RAM_BW (new) bit differs from its
+     * RAM_RED (previous-frame) bit, which is normally exactly the
+     * point, but a *full* refresh needs every pixel re-driven
+     * regardless, since pixels that ghosted without changing value are
+     * the entire reason periodic full refreshes exist. Loading RAM_RED
+     * with the bitwise complement of the new frame instead of the real
+     * previous frame makes every pixel read as "changed" (old
+     * black/new white or old white/new black), so the whole panel
+     * gets the same crisp transition a partial update gives a single
+     * character. */
+    for (size_t i = 0; i < FRAMEBUFFER_BYTES; ++i) {
+        s_fb_inv[i] = (uint8_t)~fb[i];
+    }
+
     ssd1677_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW */
-    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
-    ssd1677_refresh(0x40 /* CTRL1_BYPASS_RED */, 0xF7);
+    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);      /* WRITE_RAM_BW = new frame */
+    epd_cmd(0x26); epd_data(s_fb_inv, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED = forced-different baseline */
+
+    ssd1677_refresh(0x00 /* CTRL1_NORMAL, same differential mode as fast */, 0xFC);
+
+    /* Re-sync both planes to the just-shown frame so the next fast
+     * refresh diffs against a clean baseline (same as
+     * ssd1677_display_fast()'s post-sync below). */
+    ssd1677_set_ram_area_full();
+    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);
+    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES);
 }
 
 static void ssd1677_display_fast(const uint8_t *fb)
@@ -842,7 +878,9 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
      * there. Never mutated after this point. */
     s_white_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_white_scratch) s_white_scratch = (uint8_t *)heap_caps_malloc(UC81XX_SCRATCH_BYTES, MALLOC_CAP_8BIT);
-    if (!s_fb || !s_scratch || !s_white_scratch) {
+    s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_fb_inv) s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!s_fb || !s_scratch || !s_white_scratch || !s_fb_inv) {
         ESP_LOGE(TAG, "Framebuffer/scratch allocation failed");
         return;
     }

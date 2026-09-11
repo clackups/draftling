@@ -162,6 +162,26 @@ static int s_char_w       = 6;
 #define VISIBLE_LINES (s_line_h > 0 ? (s_rp->h / s_line_h) : 1)
 #define CHAR_W        s_char_w
 
+/* How far to jump the viewport when the cursor falls outside it, as a
+ * fraction of VISIBLE_LINES. Snapping the cursor to the very edge row
+ * (the old behavior: scroll = cur_line, or cur_line - VISIBLE_LINES +
+ * 1) means the next line of continued typing or navigation in the
+ * same direction immediately falls outside the viewport again,
+ * re-triggering a scroll -- and its full-screen re-render -- on
+ * every single line. Jumping a majority of the screen height instead
+ * leaves headroom so several more lines fit before another scroll is
+ * needed, trading a slightly larger jump for far fewer redraws
+ * (particularly noticeable on e-paper boards, where every redraw is
+ * a visible, non-instant refresh). Used by every scroll-adjustment
+ * site in this file, including refresh_active_pane()'s word-wrap
+ * correction loop below, so a scroll is never just one line whether
+ * it is triggered by ensure_cursor_visible(), editor_ui_move_visual(),
+ * or a paragraph wrapping into more rows than expected.
+ *
+ * Defined near s_rp below (VISIBLE_LINES expands to an s_rp
+ * dereference), rather than here alongside VISIBLE_LINES itself. */
+#define SCROLL_JUMP_FRACTION 0.6f
+
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
 
@@ -999,8 +1019,8 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
  * editor_doc_t aliasing trick in editor.cpp. Code that operates on a
  * specific pane binds it first with pane_bind().
  *
- * Each pane keeps its own MAX_LINE_LABELS-slot label / selection pools
- * and per-slot render cache. A split layout halves each pane's width
+ * Each pane keeps its own MAX_LINE_LABELS-slot label pool and
+ * per-slot render cache. A split layout halves each pane's width
  * but keeps the full editor height, and each pane wraps text to its
  * own (narrower) width.
  *
@@ -1015,7 +1035,6 @@ typedef struct {
     lv_obj_t   *cursor;    /* thin vertical cursor bar */
     lv_obj_t   *logo;      /* "draftling" placeholder when the doc is empty */
     lv_obj_t   *line_labels[MAX_LINE_LABELS];
-    lv_obj_t   *sel_rects[MAX_LINE_LABELS];
     std::string prev_line_text[MAX_LINE_LABELS];
     int  prev_line_type[MAX_LINE_LABELS];    /* md_line_type_t, -1 if cache empty */
     int  prev_line_y[MAX_LINE_LABELS];       /* y_pos last used, -1 if cache empty */
@@ -1041,12 +1060,30 @@ typedef struct {
     int    saved_scroll;       /* saved scroll line */
     int    saved_sel_anchor;   /* saved selection anchor (< 0 = none) */
     bool   has_saved_view;     /* view captured at least once */
+
+    /* Number of logical lines actually rendered on screen by the last
+     * refresh_active_pane() call, i.e. how many lines fit in the pane
+     * once word-wrap is accounted for. Long/wrapped lines can each
+     * consume several visual rows, so this can be well below
+     * VISIBLE_LINES (which assumes one visual row per logical line).
+     * Page Up/Down use it to size a "page" jump to what is actually on
+     * screen instead of overshooting past the end of a short,
+     * long-line document. */
+    int    visible_line_count;
 } pane_t;
 
 static pane_t  s_panes[EDITOR_MAX_PANES];
 static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
 static int     s_pane_count  = 1;            /* 1 = single, 2 = split */
 static int     s_focus       = 0;            /* focused pane index (0..count-1) */
+
+/* See the SCROLL_JUMP_FRACTION comment above; defined here (rather
+ * than alongside it) because VISIBLE_LINES dereferences s_rp. */
+static inline int scroll_jump_step(void)
+{
+    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
+    return step > 0 ? step : 1;
+}
 
 /* Split layout: single pane, or a two-pane split along the display's
  * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
@@ -1110,7 +1147,6 @@ static void close_inpane_browser(void);
 #define s_cursor                 (s_rp->cursor)
 #define s_img_logo               (s_rp->logo)
 #define s_line_labels            (s_rp->line_labels)
-#define s_sel_rects              (s_rp->sel_rects)
 #define s_prev_line_text         (s_rp->prev_line_text)
 #define s_prev_line_type         (s_rp->prev_line_type)
 #define s_prev_line_y            (s_rp->prev_line_y)
@@ -1118,6 +1154,22 @@ static void close_inpane_browser(void);
 #define s_prev_line_visible      (s_rp->prev_line_visible)
 #define s_prev_line_was_selected (s_rp->prev_line_was_selected)
 #define s_cursor_on_screen       (s_rp->cursor_on_screen)
+#define s_visible_line_count     (s_rp->visible_line_count)
+
+/* Number of logical lines to advance for a "page" jump (PgUp/PgDn,
+ * Ctrl+Up/Down): the count of lines actually visible on screen right
+ * now (s_visible_line_count), not VISIBLE_LINES -- VISIBLE_LINES is a
+ * pixel-height / single-row-height estimate that assumes one visual
+ * row per logical line, so on a document made of long, word-wrapped
+ * lines it can be several times the number of lines that actually
+ * fit, sending Page Down straight past the end of a short document.
+ * Falls back to VISIBLE_LINES before the pane has ever rendered
+ * (visible_line_count still at its zero-initialized default). */
+static inline int page_line_count(void)
+{
+    int n = s_visible_line_count;
+    return n > 0 ? n : VISIBLE_LINES;
+}
 
 /* Capture the live document's view (cursor / scroll / selection) into a
  * pane's saved view state. Used to record a pane's view from the active
@@ -1632,22 +1684,6 @@ static int utf8_chars_in_bytes(const char *text, size_t byte_len)
     return count;
 }
 
-/* Return the byte offset of the n-th UTF-8 character in text. */
-static size_t utf8_char_offset(const char *text, int n)
-{
-    size_t off = 0;
-    int ch = 0;
-    while (text[off] && ch < n) {
-        unsigned char c = (unsigned char)text[off];
-        if (c < 0x80) off += 1;
-        else if ((c & 0xE0) == 0xC0) off += 2;
-        else if ((c & 0xF0) == 0xE0) off += 3;
-        else off += 4;
-        ch++;
-    }
-    return off;
-}
-
 
 /* Scan UTF-8 text for the first STRONG directional codepoint,
  * mirroring LVGL's auto base-direction detection. Returns +1 for
@@ -1753,10 +1789,20 @@ static void refresh_active_pane(bool draw_cursor)
         cur_y = -1;
         cur_x = -1;
         cur_h = LINE_H;
+        bool counted_visible = false; /* first hidden slot -> s_visible_line_count */
 
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
             int line_idx = scroll + i;
             if (line_idx >= total || y_pos >= s_rp->h) {
+                /* Record how many logical lines actually fit above this
+                 * slot -- see the pane_t::visible_line_count comment.
+                 * Once this branch triggers for a given i it triggers
+                 * for every later i too (line_idx and y_pos are both
+                 * monotonic), so the first hit gives the count. */
+                if (!counted_visible) {
+                    s_visible_line_count = i;
+                    counted_visible = true;
+                }
                 /* Only invalidate the slot when its visible state
                  * actually changes; otherwise lv_obj_add_flag()
                  * dirties the previous label rectangle on every
@@ -1779,10 +1825,6 @@ static void refresh_active_pane(bool draw_cursor)
                 if (s_line_labels[i] &&
                     !lv_obj_has_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN)) {
                     lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
-                }
-                if (s_sel_rects[i] &&
-                    !lv_obj_has_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN)) {
-                    lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
                 }
                 /* Always clear the cached state for hidden slots so a
                  * later transition back to visible is forced through
@@ -1882,6 +1924,23 @@ static void refresh_active_pane(bool draw_cursor)
                 /* Re-apply width after style reset (remove_style_all clears it)
                  * so that LV_LABEL_LONG_WRAP can wrap at the correct boundary. */
                 lv_obj_set_width(s_line_labels[i], s_rp->w - 4);
+                /* Re-apply the LV_PART_SELECTED colors too (remove_style_all
+                 * wipes every part, not just LV_PART_MAIN) so the selection
+                 * highlight set below renders correctly. This uses LVGL's
+                 * native per-character text selection (lv_label_set_text_
+                 * selection_start/end) rather than a hand-rolled overlay,
+                 * so it draws correctly no matter how many visual rows a
+                 * wrapped line's selection spans. */
+                lv_obj_set_style_bg_color(s_line_labels[i], theme_fg(),
+                                          LV_PART_SELECTED);
+                lv_obj_set_style_bg_opa(s_line_labels[i], LV_OPA_COVER,
+                                        LV_PART_SELECTED);
+                lv_obj_set_style_text_color(s_line_labels[i], theme_bg(),
+                                            LV_PART_SELECTED);
+                lv_label_set_text_selection_start(s_line_labels[i],
+                                                  LV_LABEL_TEXT_SELECTION_OFF);
+                lv_label_set_text_selection_end(s_line_labels[i],
+                                                LV_LABEL_TEXT_SELECTION_OFF);
                 lv_label_set_text_static(s_line_labels[i], "");
                 lv_label_set_text(s_line_labels[i], tmp.c_str());
                 lv_obj_set_pos(s_line_labels[i], 2, y_pos);
@@ -1904,12 +1963,16 @@ static void refresh_active_pane(bool draw_cursor)
                 s_prev_line_visible[i] = true;
             }
 
-            /* Selection highlight.  Fully-selected lines and multi-row
-             * partial selections use color inversion on the label
-             * itself (black bg, white text).  Single-row partial
-             * selections use an overlay label (s_sel_rects) that
-             * renders only the selected substring in white on black,
-             * positioned exactly over those characters. */
+            /* Selection highlight.  A fully-selected line uses color
+             * inversion on the whole label (black bg, white text).  A
+             * partial selection -- which may span more than one visual
+             * row when the line word-wraps -- uses LVGL's native
+             * per-character text selection (lv_label_set_text_selection_
+             * start/end, drawn via the LV_PART_SELECTED style applied
+             * above) so every wrapped row is highlighted accurately
+             * instead of a hand-rolled single-row overlay that silently
+             * over-highlighted (and mis-reported to the user as fully
+             * selected) any selection spanning more than one row. */
             if (has_sel) {
                 size_t line_off = (size_t)(lt - flat_text);
                 size_t line_end_off = line_off + ll;
@@ -1930,9 +1993,7 @@ static void refresh_active_pane(bool draw_cursor)
                                             LV_OPA_COVER, 0);
                     lv_obj_set_style_text_color(s_line_labels[i],
                                                 theme_bg(), 0);
-                    if (s_sel_rects[i])
-                        lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
-                } else if (partial && s_sel_rects[i]) {
+                } else if (partial) {
                     /* Compute selection byte range within this line */
                     size_t raw_s = (sel_start > line_off)
                                        ? sel_start - line_off : 0;
@@ -1955,57 +2016,12 @@ static void refresh_active_pane(bool draw_cursor)
                         disp_e += bp;
                     }
                     if (disp_e > disp_s) {
-                        lv_point_t sp, ep;
-                        lv_label_get_letter_pos(s_line_labels[i],
-                                                (uint32_t)disp_s, &sp);
-                        lv_label_get_letter_pos(s_line_labels[i],
-                                                (uint32_t)disp_e, &ep);
-                        if (sp.y == ep.y) {
-                            /* Single visual row: overlay label with
-                             * only the selected substring in white
-                             * on black background. */
-                            size_t byte_s = utf8_char_offset(tmp.c_str(), disp_s);
-                            size_t byte_e = utf8_char_offset(tmp.c_str(), disp_e);
-                            if (byte_s > tmp.size()) byte_s = tmp.size();
-                            if (byte_e > tmp.size()) byte_e = tmp.size();
-                            if (byte_e < byte_s)     byte_e = byte_s;
-                            std::string sel_buf = tmp.substr(byte_s, byte_e - byte_s);
-
-                            const lv_font_t *sf =
-                                lv_obj_get_style_text_font(
-                                    s_line_labels[i], LV_PART_MAIN);
-                            lv_obj_set_style_text_font(
-                                s_sel_rects[i],
-                                sf ? sf : body_font(), 0);
-                            lv_label_set_text(s_sel_rects[i], sel_buf.c_str());
-                            lv_obj_set_pos(s_sel_rects[i],
-                                           2 + sp.x, y_pos + sp.y);
-                            lv_obj_move_foreground(s_sel_rects[i]);
-                            lv_obj_remove_flag(s_sel_rects[i],
-                                               LV_OBJ_FLAG_HIDDEN);
-                        } else {
-                            /* Multi-row partial: fall back to
-                             * full-line inversion on the label. */
-                            lv_obj_set_style_bg_color(s_line_labels[i],
-                                                      theme_fg(), 0);
-                            lv_obj_set_style_bg_opa(s_line_labels[i],
-                                                    LV_OPA_COVER, 0);
-                            lv_obj_set_style_text_color(s_line_labels[i],
-                                                        theme_bg(), 0);
-                            lv_obj_add_flag(s_sel_rects[i],
-                                            LV_OBJ_FLAG_HIDDEN);
-                        }
-                    } else {
-                        lv_obj_add_flag(s_sel_rects[i],
-                                        LV_OBJ_FLAG_HIDDEN);
+                        lv_label_set_text_selection_start(
+                            s_line_labels[i], (uint32_t)disp_s);
+                        lv_label_set_text_selection_end(
+                            s_line_labels[i], (uint32_t)disp_e);
                     }
-                } else {
-                    if (s_sel_rects[i])
-                        lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
                 }
-            } else {
-                if (s_sel_rects[i])
-                    lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
             }
 
             /* Remember whether this slot is currently rendering a
@@ -2056,13 +2072,28 @@ static void refresh_active_pane(bool draw_cursor)
 
             y_pos += rendered_h;
         }
+        /* Every slot fit on screen without tripping the count above
+         * (only possible when the whole MAX_LINE_LABELS-slot pool is
+         * filled with lines short enough to never exceed the pane
+         * height) -- fall back to the full pool size. */
+        if (!counted_visible) s_visible_line_count = MAX_LINE_LABELS;
 
         /* If the cursor line is in the expected range but wrapped lines
-         * pushed it off-screen, increment scroll and re-render.
-         * Use cur_y + cur_h to ensure the full cursor row is visible. */
+         * pushed it off-screen, scroll and re-render. Jump by
+         * scroll_jump_step() rather than a single line, same as every
+         * other scroll site in this file (see SCROLL_JUMP_FRACTION) --
+         * otherwise a wrapped paragraph near the bottom of the screen
+         * made this correction nudge by exactly one line while an
+         * unwrapped one jumped by ~60% via ensure_cursor_visible(),
+         * which felt like inconsistent, unpredictable scrolling.
+         * Clamped to cur_line so the jump cannot scroll past the very
+         * line it is trying to bring into view. Use cur_y + cur_h to
+         * ensure the full cursor row is visible. */
         if (cur_line >= scroll && scroll < cur_line &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
-            editor_set_scroll_line(scroll + 1);
+            int new_scroll = scroll + scroll_jump_step();
+            if (new_scroll > cur_line) new_scroll = cur_line;
+            editor_set_scroll_line(new_scroll);
             continue;
         }
         break;
@@ -2149,9 +2180,19 @@ static void ensure_cursor_visible(void)
     editor_get_cursor_pos(&cur_line, &cur_col);
     int scroll = editor_get_scroll_line();
     if (cur_line < scroll) {
-        editor_set_scroll_line(cur_line);
+        int new_scroll = scroll - scroll_jump_step();
+        if (new_scroll < 0) new_scroll = 0;
+        /* The cursor jumped further than one scroll step (Ctrl+Home,
+         * Find, goto-line, ...) -- a partial jump would still leave
+         * it off-screen, so land on it exactly instead. */
+        if (cur_line < new_scroll) new_scroll = cur_line;
+        editor_set_scroll_line(new_scroll);
     } else if (cur_line >= scroll + VISIBLE_LINES) {
-        editor_set_scroll_line(cur_line - VISIBLE_LINES + 1);
+        int new_scroll = scroll + scroll_jump_step();
+        if (cur_line >= new_scroll + VISIBLE_LINES) {
+            new_scroll = cur_line - VISIBLE_LINES + 1;
+        }
+        editor_set_scroll_line(new_scroll);
     }
 }
 
@@ -2383,8 +2424,15 @@ static void editor_ui_move_visual(int direction)
     }
 
     /* If the target visual row is outside the rendered editor area,
-     * scroll one logical line and re-render so the row above/below
-     * becomes addressable via ui_point_to_offset(). */
+     * scroll and re-render so the row above/below becomes addressable
+     * via ui_point_to_offset(). Jumping by scroll_jump_step() rather
+     * than a single line means holding Up/Down at the edge of the
+     * viewport needs a scroll (and its refresh) only once every few
+     * rows instead of on every keypress -- see the comment on
+     * SCROLL_JUMP_FRACTION. This does not change which visual row the
+     * cursor lands on: target_y is still exactly one row above/below
+     * the cursor's own (not-yet-moved) rendered position, wherever
+     * that ends up after the jump. */
     for (int attempt = 0; attempt < 2; attempt++) {
         if (target_y >= 0 && target_y < s_rp->h) break;
         int sc = editor_get_scroll_line();
@@ -2394,7 +2442,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc - 1);
+            int new_sc = sc - scroll_jump_step();
+            if (new_sc < 0) new_sc = 0;
+            editor_set_scroll_line(new_sc);
         } else {
             int total = editor_get_line_count();
             if (sc + 1 >= total) {
@@ -2402,7 +2452,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc + 1);
+            int new_sc = sc + scroll_jump_step();
+            if (new_sc > total - 1) new_sc = total - 1;
+            editor_set_scroll_line(new_sc);
         }
         refresh_focused_pane();
         if (!s_cursor || !s_cursor_on_screen) {
@@ -5134,6 +5186,29 @@ static void handle_editor_key(const kb_event_t *ev)
             editor_ui_focus_other_pane();
             return;
         }
+        if (ev->keycode == KB_KEY_DOWN) {     /* Ctrl+Down: same as PgDn */
+            /* Keycode matches plain Down, which the goal_x reset above
+             * skips -- clear it here so a following bare Up/Down starts
+             * from the post-jump cursor column rather than a stale one. */
+            s_visual_goal_x = -1;
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_down(page_line_count());
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
+        if (ev->keycode == KB_KEY_UP) {       /* Ctrl+Up: same as PgUp */
+            s_visual_goal_x = -1;             /* see Ctrl+Down comment above */
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_up(page_line_count());
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
 
         switch (ch) {
         case 's':
@@ -5375,12 +5450,12 @@ static void handle_editor_key(const kb_event_t *ev)
     case KB_KEY_PAGEUP:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_up(VISIBLE_LINES);
+        editor_move_page_up(page_line_count());
         break;
     case KB_KEY_PAGEDOWN:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_down(VISIBLE_LINES);
+        editor_move_page_down(page_line_count());
         break;
     case KB_KEY_BACKSPACE:
         if (s_append_only) {
@@ -5525,16 +5600,15 @@ static void show_inpane_browser(void)
 
     /* Clear the covered pane's editor widgets so none of its text shows
      * through. The overlay list only paints rows it has; any area below
-     * the last entry (and the caret / selection rects / logo, which are
-     * raised above the list) would otherwise leave the previous
-     * document's lines visible behind the selector. Hide the focused
-     * pane's line labels, selection rects, cursor and logo explicitly. */
+     * the last entry (and the caret / logo, which are raised above the
+     * list) would otherwise leave the previous document's lines visible
+     * behind the selector. Hide the focused pane's line labels, cursor
+     * and logo explicitly. */
     {
         pane_t *save = s_rp;
         s_rp = &s_panes[s_focus];
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
             if (s_line_labels[i]) lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
-            if (s_sel_rects[i])   lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
         }
         if (s_cursor)   lv_obj_add_flag(s_cursor, LV_OBJ_FLAG_HIDDEN);
         if (s_img_logo) lv_obj_add_flag(s_img_logo, LV_OBJ_FLAG_HIDDEN);
@@ -5563,9 +5637,9 @@ static void close_inpane_browser(void)
 
     /* The focused pane was skipped while the overlay covered it (and
      * may now hold a freshly-opened, possibly shorter document). Hide
-     * every line label / selection rect and wipe its render cache so
-     * the next editor_ui_refresh() repaints the pane from scratch with
-     * no leftover lines from the previously shown file. Hiding the
+     * every line label and wipe its render cache so the next
+     * editor_ui_refresh() repaints the pane from scratch with no
+     * leftover lines from the previously shown file. Hiding the
      * widgets is required in addition to invalidating the cache: the
      * refresh path only hides a stale label when prev_line_visible[]
      * still marks it visible, and invalidate_render_cache() clears that
@@ -5575,7 +5649,6 @@ static void close_inpane_browser(void)
     s_rp = &s_panes[s_focus];
     for (int i = 0; i < MAX_LINE_LABELS; i++) {
         if (s_line_labels[i]) lv_obj_add_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
-        if (s_sel_rects[i])   lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
     }
     invalidate_render_cache();
     s_rp = save;
@@ -6474,26 +6547,6 @@ static void build_screens(void)
                        (EDITOR_H - lv_font_get_line_height(FONT_18)) / 2);
         lv_obj_add_flag(s_img_logo, LV_OBJ_FLAG_HIDDEN);
 
-        /* Selection overlay labels (created before cursor and line
-         * labels so their initial z-order is behind text;
-         * partial-selection code calls lv_obj_move_foreground() to
-         * bring them on top). These display the selected text in white
-         * on a black background for proper inversion on the monochrome
-         * e-paper display. */
-        for (int i = 0; i < MAX_LINE_LABELS; i++) {
-            s_sel_rects[i] = lv_label_create(s_cont_edit);
-            lv_obj_set_style_bg_color(s_sel_rects[i],
-                                      theme_fg(), 0);
-            lv_obj_set_style_bg_opa(s_sel_rects[i], LV_OPA_COVER, 0);
-            lv_obj_set_style_text_color(s_sel_rects[i],
-                                        theme_bg(), 0);
-            lv_obj_set_style_border_width(s_sel_rects[i], 0, 0);
-            lv_obj_set_style_radius(s_sel_rects[i], 0, 0);
-            lv_obj_set_style_pad_all(s_sel_rects[i], 0, 0);
-            lv_label_set_text(s_sel_rects[i], "");
-            lv_obj_add_flag(s_sel_rects[i], LV_OBJ_FLAG_HIDDEN);
-        }
-
         /* Cursor (thin vertical bar) */
         s_cursor = lv_obj_create(s_cont_edit);
         lv_obj_set_size(s_cursor, 2, LINE_H);
@@ -7140,9 +7193,9 @@ static void teardown_screens(void)
     }
 
     /* Delete every top-level screen we created. Children (status
-     * bars, line labels, selection rects, the passkey / save /
-     * search overlays parented to s_scr, the wifi icons, etc.) are
-     * deleted automatically with their parent. */
+     * bars, line labels, the passkey / save / search overlays
+     * parented to s_scr, the wifi icons, etc.) are deleted
+     * automatically with their parent. */
     if (s_scr_browser)    { lv_obj_delete(s_scr_browser);    s_scr_browser    = NULL; }
     if (s_scr_menu)       { lv_obj_delete(s_scr_menu);       s_scr_menu       = NULL; }
     if (s_scr_settings)   { lv_obj_delete(s_scr_settings);   s_scr_settings   = NULL; }
@@ -7151,8 +7204,8 @@ static void teardown_screens(void)
 
     /* NULL every child-widget pointer so any stale reference
      * crashes deterministically instead of touching freed memory.
-     * The per-pane widgets (container, cursor, logo, line / selection
-     * label pools) are cleared for every pane. */
+     * The per-pane widgets (container, cursor, logo, line label
+     * pool) are cleared for every pane. */
     s_lbl_title = s_lbl_status = NULL;
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
@@ -7163,7 +7216,6 @@ static void teardown_screens(void)
             s_cont_edit = s_cursor = s_img_logo = NULL;
             for (int i = 0; i < MAX_LINE_LABELS; i++) {
                 s_line_labels[i] = NULL;
-                s_sel_rects[i]   = NULL;
             }
         }
         s_rp = save_rp;
