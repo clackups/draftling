@@ -29,12 +29,12 @@ load the firmware quickly without having to compile it.
 
 * DIY boards
   * Waveshare ESP32-S3-RLCD-4.2 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
+  * Waveshare ESP32-S3-ePaper-3.97
+  * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
   * Guition JC3248W535
   * 7" and 4.3" Sunton boards
   * 2.8" and 4" Freenove boards
-  * Waveshare ESP32-S3-Touch-LCD-7
-  * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
-
+  * Waveshare ESP32-S3-Touch-LCD-7 
 
 
 ## Features
