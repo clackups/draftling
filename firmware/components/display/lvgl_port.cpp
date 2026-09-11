@@ -164,6 +164,17 @@ static void map_area_to_physical(const lv_area_t *area, int rotate_deg,
     }
 }
 
+extern "C" void draftling_lvgl_port_map_to_physical(int x, int y, int w, int h,
+                                                    int *px, int *py, int *pw, int *ph)
+{
+    lv_area_t area;
+    area.x1 = x;
+    area.y1 = y;
+    area.x2 = x + w - 1;
+    area.y2 = y + h - 1;
+    map_area_to_physical(&area, s_rotate_deg, s_phys_w, s_phys_h, px, py, pw, ph);
+}
+
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_map)
 {
     int w = area->x2 - area->x1 + 1;

@@ -6,6 +6,22 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **E-paper boards in portrait orientation stopped updating while
+  typing** (reproduced on the Waveshare ESP32-S3-ePaper-3.97 and
+  Xteink X4 Pro): the fast partial-refresh path clipped the panel
+  refresh to a rectangle computed in LVGL's logical, pre-rotation
+  coordinates, but the panel driver intersects that clip against a
+  dirty region tracked in physical (post-rotation) coordinates. In
+  portrait the two spaces don't line up, so the clip usually
+  intersected to nothing and every keystroke's refresh was silently
+  dropped -- new text was written to the off-screen framebuffer but
+  never reached the panel until a full refresh (Ctrl+R) redrew
+  everything at once. The clip rectangle is now mapped through the
+  same rotation transform the flush path already applies to pixel
+  data.
+
 ## [1.0.3] - 2026-09-11
 
 ### Added

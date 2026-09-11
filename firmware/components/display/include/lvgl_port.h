@@ -24,6 +24,26 @@ bool draftling_lvgl_port_get_flip180(void);
  * Call with the LVGL lock held. */
 void draftling_lvgl_port_clear_buffers(void);
 
+/* Map a rectangle from LVGL's logical (post-rotation) coordinate space
+ * into physical panel coordinates, applying the same transform
+ * flush_cb() uses to place each rendered tile -- the current base
+ * rotation, the "Display orientation" portrait setting (folded into
+ * the base rotation at boot) and the runtime 180-degree flip all
+ * together.
+ *
+ * display_set_partial_clip() takes a one-shot clip rectangle that is
+ * intersected against the dirty bounding box display_push_rgb565()
+ * already accumulated in *physical* coordinates (flush_cb maps every
+ * pushed tile through this same transform first). A caller outside
+ * lvgl_port.cpp that computes a clip rectangle from LVGL widget
+ * positions -- which are logical, i.e. pre-rotation -- must map it
+ * through here first, or the clip is nonsensical whenever a rotation
+ * is in effect (portrait, or a non-zero base/flip rotation): it either
+ * intersects to nothing, silently dropping every partial-refresh flush
+ * so the panel stops updating until a full, unclipped refresh runs. */
+void draftling_lvgl_port_map_to_physical(int x, int y, int w, int h,
+                                         int *px, int *py, int *pw, int *ph);
+
 #ifdef __cplusplus
 }
 #endif

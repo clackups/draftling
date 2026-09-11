@@ -4890,7 +4890,20 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
     if (x_max > s_rp->x + s_rp->w) x_max = s_rp->x + s_rp->w;
     if (x_max <= x_min) return false;
 
-    display_set_partial_clip(x_min, pre->cur_y, x_max - x_min, pre->cur_h);
+    /* x_min/cur_y/... are LVGL logical coordinates (pre-rotation);
+     * display_set_partial_clip() intersects against a dirty bounding
+     * box accumulated in physical panel coordinates, so map through
+     * the same transform flush_cb() applies to every pushed tile.
+     * Skipping this is invisible in the default landscape orientation
+     * (logical == physical there) but silently drops every partial
+     * refresh -- typing updates the off-screen framebuffer but never
+     * reaches the panel -- as soon as a rotation (portrait, or a
+     * non-zero base/flip rotation) is in effect. */
+    int px, py, pw, ph;
+    draftling_lvgl_port_map_to_physical(x_min, pre->cur_y,
+                                        x_max - x_min, pre->cur_h,
+                                        &px, &py, &pw, &ph);
+    display_set_partial_clip(px, py, pw, ph);
     return true;
 }
 #endif /* CONFIG_DRAFTLING_DISPLAY_EPD */
