@@ -74,13 +74,17 @@ static const char *TAG = "DisplayWsEpd397";
 #define EPD_BUSY_PIN         3
 
 #define WS_EPD397_SPI_HOST   SPI2_HOST
-/* Conservative starting point. The Xteink X4 Pro's SSD1677-family
- * backend found 20 MHz produced a partial/faded update on real
- * hardware (marginal SPI signal integrity on a long RAM-plane burst)
- * and settled on 5 MHz; since this board is untested on real
- * hardware too, start at the same safe value rather than assume this
- * panel/wiring tolerates more. */
-#define WS_EPD397_SPI_CLOCK_HZ  (5 * 1000 * 1000)
+/* Waveshare's own ESP-IDF example for this exact board drives the
+ * panel at 20 MHz over its short on-PCB SPI traces (unlike the
+ * Xteink X4 Pro's SSD1677-family backend, which found 20 MHz produced
+ * a partial/faded update over its longer hand-wired run and settled
+ * on 5 MHz -- that finding doesn't transfer here since the wiring is
+ * a fixed, vendor-designed board rather than an unknown cable run).
+ * The framebuffer write is only a small slice of a full refresh's
+ * total time (the GC16 waveform's internal settling passes dominate),
+ * but it's free speed if the signal integrity holds up. Drop back
+ * toward 5 MHz if real hardware shows a faded/partial update. */
+#define WS_EPD397_SPI_CLOCK_HZ  (20 * 1000 * 1000)
 
 /* On enclosures whose cover overlaps the panel (user-adjustable via
  * Settings -> Screen margins, zero by default -- see
@@ -99,6 +103,9 @@ static const char *TAG = "DisplayWsEpd397";
 
 static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
+/* Bitwise-complement scratch copy of s_fb, used only by
+ * ws_epd397_display_full() -- see its comment. */
+static uint8_t  *s_fb_inv = NULL;
 static bool      s_initialized = false;
 static bool      s_needs_initial_full = true;
 static bool      s_force_full = true;
@@ -288,20 +295,38 @@ static void ws_epd397_refresh(uint8_t ctrl1, uint8_t seq)
 
 static void ws_epd397_display_full(const uint8_t *fb)
 {
+    /* Reuse ws_epd397_display_fast()'s 0xFC differential waveform
+     * instead of the flood-fill Mode 1/2 waveforms (0xF7, or repeated
+     * 0xC7) this function used before -- on real hardware those left
+     * black text visibly faded even after three passes, while the
+     * 0xFC path partial refreshes already use reaches true black
+     * cleanly in one activation. The controller's differential engine
+     * only re-drives a pixel whose RAM_BW (new) bit differs from its
+     * RAM_RED (previous-frame) bit, which is normally exactly the
+     * point -- but for a *full* refresh we want every pixel re-driven
+     * regardless, since pixels that ghosted without changing value are
+     * the entire reason periodic full refreshes exist. Loading RAM_RED
+     * with the bitwise complement of the new frame instead of the
+     * real previous frame makes every pixel read as "changed" (old
+     * black/new white or old white/new black), so the whole panel
+     * gets the same crisp transition a partial update gives a single
+     * character. */
+    for (size_t i = 0; i < FRAMEBUFFER_BYTES; ++i) {
+        s_fb_inv[i] = (uint8_t)~fb[i];
+    }
+
     ws_epd397_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW */
-    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
-    /* DISPLAY Mode 1 / GC16 (0xF7), same waveform
-     * display_xteink_epd.cpp's ssd1677_display_full() uses. Mode 2
-     * (0xC7) was tried here to shorten the visible multi-pass full
-     * refresh, but on real hardware its weaker waveform never drives
-     * black pixels to full saturation -- they read as light grey
-     * instead of black. Mode 1's several internal black/white
-     * settling passes are what fully saturate the ink, so the refresh
-     * duration is inherent to getting real black out of this panel;
-     * CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL is the lever for how
-     * often it's paid, not this waveform choice. */
-    ws_epd397_refresh(0x40 /* CTRL1_BYPASS_RED */, 0xF7);
+    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);      /* WRITE_RAM_BW = new frame */
+    epd_cmd(0x26); epd_data(s_fb_inv, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED = forced-different baseline */
+
+    ws_epd397_refresh(0x00 /* CTRL1_NORMAL, same differential mode as fast */, 0xFC);
+
+    /* Re-sync both planes to the just-shown frame so the next fast
+     * refresh diffs against a clean baseline (same as
+     * ws_epd397_display_fast()'s post-sync below). */
+    ws_epd397_set_ram_area_full();
+    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);
+    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES);
 }
 
 static void ws_epd397_display_fast(const uint8_t *fb)
@@ -360,6 +385,13 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
         return;
     }
     memset(s_fb, 0xFF, FRAMEBUFFER_BYTES);
+
+    s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_fb_inv) s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!s_fb_inv) {
+        ESP_LOGE(TAG, "Full-refresh scratch buffer allocation failed");
+        return;
+    }
 
     s_width = PANEL_WIDTH;
     s_height = PANEL_HEIGHT;
