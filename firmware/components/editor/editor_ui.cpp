@@ -162,6 +162,26 @@ static int s_char_w       = 6;
 #define VISIBLE_LINES (s_line_h > 0 ? (s_rp->h / s_line_h) : 1)
 #define CHAR_W        s_char_w
 
+/* How far to jump the viewport when the cursor falls outside it, as a
+ * fraction of VISIBLE_LINES. Snapping the cursor to the very edge row
+ * (the old behavior: scroll = cur_line, or cur_line - VISIBLE_LINES +
+ * 1) means the next line of continued typing or navigation in the
+ * same direction immediately falls outside the viewport again,
+ * re-triggering a scroll -- and its full-screen re-render -- on
+ * every single line. Jumping a majority of the screen height instead
+ * leaves headroom so several more lines fit before another scroll is
+ * needed, trading a slightly larger jump for far fewer redraws
+ * (particularly noticeable on e-paper boards, where every redraw is
+ * a visible, non-instant refresh). Used by every scroll-adjustment
+ * site in this file, including refresh_active_pane()'s word-wrap
+ * correction loop below, so a scroll is never just one line whether
+ * it is triggered by ensure_cursor_visible(), editor_ui_move_visual(),
+ * or a paragraph wrapping into more rows than expected.
+ *
+ * Defined near s_rp below (VISIBLE_LINES expands to an s_rp
+ * dereference), rather than here alongside VISIBLE_LINES itself. */
+#define SCROLL_JUMP_FRACTION 0.6f
+
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
 
@@ -1041,12 +1061,30 @@ typedef struct {
     int    saved_scroll;       /* saved scroll line */
     int    saved_sel_anchor;   /* saved selection anchor (< 0 = none) */
     bool   has_saved_view;     /* view captured at least once */
+
+    /* Number of logical lines actually rendered on screen by the last
+     * refresh_active_pane() call, i.e. how many lines fit in the pane
+     * once word-wrap is accounted for. Long/wrapped lines can each
+     * consume several visual rows, so this can be well below
+     * VISIBLE_LINES (which assumes one visual row per logical line).
+     * Page Up/Down use it to size a "page" jump to what is actually on
+     * screen instead of overshooting past the end of a short,
+     * long-line document. */
+    int    visible_line_count;
 } pane_t;
 
 static pane_t  s_panes[EDITOR_MAX_PANES];
 static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
 static int     s_pane_count  = 1;            /* 1 = single, 2 = split */
 static int     s_focus       = 0;            /* focused pane index (0..count-1) */
+
+/* See the SCROLL_JUMP_FRACTION comment above; defined here (rather
+ * than alongside it) because VISIBLE_LINES dereferences s_rp. */
+static inline int scroll_jump_step(void)
+{
+    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
+    return step > 0 ? step : 1;
+}
 
 /* Split layout: single pane, or a two-pane split along the display's
  * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
@@ -1118,6 +1156,22 @@ static void close_inpane_browser(void);
 #define s_prev_line_visible      (s_rp->prev_line_visible)
 #define s_prev_line_was_selected (s_rp->prev_line_was_selected)
 #define s_cursor_on_screen       (s_rp->cursor_on_screen)
+#define s_visible_line_count     (s_rp->visible_line_count)
+
+/* Number of logical lines to advance for a "page" jump (PgUp/PgDn,
+ * Ctrl+Up/Down): the count of lines actually visible on screen right
+ * now (s_visible_line_count), not VISIBLE_LINES -- VISIBLE_LINES is a
+ * pixel-height / single-row-height estimate that assumes one visual
+ * row per logical line, so on a document made of long, word-wrapped
+ * lines it can be several times the number of lines that actually
+ * fit, sending Page Down straight past the end of a short document.
+ * Falls back to VISIBLE_LINES before the pane has ever rendered
+ * (visible_line_count still at its zero-initialized default). */
+static inline int page_line_count(void)
+{
+    int n = s_visible_line_count;
+    return n > 0 ? n : VISIBLE_LINES;
+}
 
 /* Capture the live document's view (cursor / scroll / selection) into a
  * pane's saved view state. Used to record a pane's view from the active
@@ -1753,10 +1807,20 @@ static void refresh_active_pane(bool draw_cursor)
         cur_y = -1;
         cur_x = -1;
         cur_h = LINE_H;
+        bool counted_visible = false; /* first hidden slot -> s_visible_line_count */
 
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
             int line_idx = scroll + i;
             if (line_idx >= total || y_pos >= s_rp->h) {
+                /* Record how many logical lines actually fit above this
+                 * slot -- see the pane_t::visible_line_count comment.
+                 * Once this branch triggers for a given i it triggers
+                 * for every later i too (line_idx and y_pos are both
+                 * monotonic), so the first hit gives the count. */
+                if (!counted_visible) {
+                    s_visible_line_count = i;
+                    counted_visible = true;
+                }
                 /* Only invalidate the slot when its visible state
                  * actually changes; otherwise lv_obj_add_flag()
                  * dirties the previous label rectangle on every
@@ -2056,13 +2120,28 @@ static void refresh_active_pane(bool draw_cursor)
 
             y_pos += rendered_h;
         }
+        /* Every slot fit on screen without tripping the count above
+         * (only possible when the whole MAX_LINE_LABELS-slot pool is
+         * filled with lines short enough to never exceed the pane
+         * height) -- fall back to the full pool size. */
+        if (!counted_visible) s_visible_line_count = MAX_LINE_LABELS;
 
         /* If the cursor line is in the expected range but wrapped lines
-         * pushed it off-screen, increment scroll and re-render.
-         * Use cur_y + cur_h to ensure the full cursor row is visible. */
+         * pushed it off-screen, scroll and re-render. Jump by
+         * scroll_jump_step() rather than a single line, same as every
+         * other scroll site in this file (see SCROLL_JUMP_FRACTION) --
+         * otherwise a wrapped paragraph near the bottom of the screen
+         * made this correction nudge by exactly one line while an
+         * unwrapped one jumped by ~60% via ensure_cursor_visible(),
+         * which felt like inconsistent, unpredictable scrolling.
+         * Clamped to cur_line so the jump cannot scroll past the very
+         * line it is trying to bring into view. Use cur_y + cur_h to
+         * ensure the full cursor row is visible. */
         if (cur_line >= scroll && scroll < cur_line &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
-            editor_set_scroll_line(scroll + 1);
+            int new_scroll = scroll + scroll_jump_step();
+            if (new_scroll > cur_line) new_scroll = cur_line;
+            editor_set_scroll_line(new_scroll);
             continue;
         }
         break;
@@ -2149,9 +2228,19 @@ static void ensure_cursor_visible(void)
     editor_get_cursor_pos(&cur_line, &cur_col);
     int scroll = editor_get_scroll_line();
     if (cur_line < scroll) {
-        editor_set_scroll_line(cur_line);
+        int new_scroll = scroll - scroll_jump_step();
+        if (new_scroll < 0) new_scroll = 0;
+        /* The cursor jumped further than one scroll step (Ctrl+Home,
+         * Find, goto-line, ...) -- a partial jump would still leave
+         * it off-screen, so land on it exactly instead. */
+        if (cur_line < new_scroll) new_scroll = cur_line;
+        editor_set_scroll_line(new_scroll);
     } else if (cur_line >= scroll + VISIBLE_LINES) {
-        editor_set_scroll_line(cur_line - VISIBLE_LINES + 1);
+        int new_scroll = scroll + scroll_jump_step();
+        if (cur_line >= new_scroll + VISIBLE_LINES) {
+            new_scroll = cur_line - VISIBLE_LINES + 1;
+        }
+        editor_set_scroll_line(new_scroll);
     }
 }
 
@@ -2383,8 +2472,15 @@ static void editor_ui_move_visual(int direction)
     }
 
     /* If the target visual row is outside the rendered editor area,
-     * scroll one logical line and re-render so the row above/below
-     * becomes addressable via ui_point_to_offset(). */
+     * scroll and re-render so the row above/below becomes addressable
+     * via ui_point_to_offset(). Jumping by scroll_jump_step() rather
+     * than a single line means holding Up/Down at the edge of the
+     * viewport needs a scroll (and its refresh) only once every few
+     * rows instead of on every keypress -- see the comment on
+     * SCROLL_JUMP_FRACTION. This does not change which visual row the
+     * cursor lands on: target_y is still exactly one row above/below
+     * the cursor's own (not-yet-moved) rendered position, wherever
+     * that ends up after the jump. */
     for (int attempt = 0; attempt < 2; attempt++) {
         if (target_y >= 0 && target_y < s_rp->h) break;
         int sc = editor_get_scroll_line();
@@ -2394,7 +2490,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc - 1);
+            int new_sc = sc - scroll_jump_step();
+            if (new_sc < 0) new_sc = 0;
+            editor_set_scroll_line(new_sc);
         } else {
             int total = editor_get_line_count();
             if (sc + 1 >= total) {
@@ -2402,7 +2500,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            editor_set_scroll_line(sc + 1);
+            int new_sc = sc + scroll_jump_step();
+            if (new_sc > total - 1) new_sc = total - 1;
+            editor_set_scroll_line(new_sc);
         }
         refresh_focused_pane();
         if (!s_cursor || !s_cursor_on_screen) {
@@ -5134,6 +5234,29 @@ static void handle_editor_key(const kb_event_t *ev)
             editor_ui_focus_other_pane();
             return;
         }
+        if (ev->keycode == KB_KEY_DOWN) {     /* Ctrl+Down: same as PgDn */
+            /* Keycode matches plain Down, which the goal_x reset above
+             * skips -- clear it here so a following bare Up/Down starts
+             * from the post-jump cursor column rather than a stale one. */
+            s_visual_goal_x = -1;
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_down(page_line_count());
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
+        if (ev->keycode == KB_KEY_UP) {       /* Ctrl+Up: same as PgUp */
+            s_visual_goal_x = -1;             /* see Ctrl+Down comment above */
+            if (shift) editor_set_selection_anchor();
+            else editor_clear_selection();
+            editor_move_page_up(page_line_count());
+            ensure_cursor_visible();
+            if (s_pane_count > 1) refresh_focused_pane_and_title();
+            else                  editor_ui_refresh();
+            return;
+        }
 
         switch (ch) {
         case 's':
@@ -5375,12 +5498,12 @@ static void handle_editor_key(const kb_event_t *ev)
     case KB_KEY_PAGEUP:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_up(VISIBLE_LINES);
+        editor_move_page_up(page_line_count());
         break;
     case KB_KEY_PAGEDOWN:
         if (shift) editor_set_selection_anchor();
         else editor_clear_selection();
-        editor_move_page_down(VISIBLE_LINES);
+        editor_move_page_down(page_line_count());
         break;
     case KB_KEY_BACKSPACE:
         if (s_append_only) {

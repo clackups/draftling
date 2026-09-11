@@ -100,6 +100,7 @@ load the firmware quickly without having to compile it.
 | Arrow keys | Move cursor |
 | Home / End | Start / end of line |
 | PgUp / PgDn | Scroll by page |
+| Ctrl+Up/Down | Scroll by page (same as PgUp/PgDn) |
 | Ctrl+S | Save file |
 | Ctrl+O | Open file browser |
 | Ctrl+N | New file |
