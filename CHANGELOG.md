@@ -6,8 +6,16 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-11
+
 ### Added
 
+- **Waveshare ESP32-S3-ePaper-3.97** board support: a 3.97" 800x480
+  e-paper board with an SSD1677-family panel controller, an AXP2101
+  PMIC (battery monitoring, and switching the panel's own analog
+  supply rail), no touchscreen (four buttons drive editor navigation
+  instead), and on-board MicroSD over SDMMC. Build it with `idf.py
+  --preset waveshare_epaper_397`.
 - **Xteink X4 Classic** (also sold as "X4 v2") support: the
   buttons-only, no-front-light sibling of the X4 Pro. Shares the X4
   Pro's ESP32-S3, 800x480 e-paper panel (SSD1677 / UC8179 / UC8279,
@@ -17,6 +25,41 @@ in the git log.
   Left/Right/Enter/Esc. Added without on-hardware testing (pin map
   from the FreeInk SDK); build it with `idf.py --preset
   xteink_x4_classic`.
+- **Ctrl+ArrowDown / Ctrl+ArrowUp** as equivalents to Page Down / Page
+  Up.
+
+### Changed
+
+- Page Up/Down (and the new Ctrl+Down/Up) now jump by however many
+  lines actually fit on screen instead of a fixed estimate, so they no
+  longer overshoot past the end of a document made of long,
+  word-wrapped lines.
+- Scrolling at the edge of the view -- typing or navigating off the
+  bottom/top of the screen, including mid-paragraph word-wrap -- now
+  jumps by about 60% of the screen instead of one line at a time, so
+  continuous typing/navigation near the edge needs far fewer redraws.
+  Especially noticeable on e-paper, where every redraw is a visible,
+  non-instant refresh.
+
+### Fixed
+
+- **E-paper full refresh no longer leaves black text visibly faded**
+  on SSD1677-family panels (Waveshare ESP32-S3-ePaper-3.97, Xteink X4
+  Pro / Classic): full refresh now uses the same differential waveform
+  already used for partial refreshes, which reaches true black
+  cleanly.
+- **Fewer unnecessary full e-paper refreshes** on the Waveshare
+  ESP32-S3-ePaper-3.97: the check for "is this edit too big for a fast
+  partial refresh" now measures how much content actually changed,
+  instead of the bounding box between two small, far-apart changes
+  (e.g. the title bar and the cursor), which could by itself span most
+  of the screen.
+- **Selecting part of a word-wrapped line across the wrap point**
+  (e.g. Shift+ArrowUp, or several Ctrl+Shift+ArrowLeft, from the end
+  of a long line) no longer highlights the whole line as if it were
+  fully selected. Backspace was previously deleting only the true,
+  smaller selection, leaving the apparently-selected beginning of the
+  line behind.
 
 ## [1.0.2] - 2026-09-06
 
