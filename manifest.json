@@ -8,14 +8,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-m5stack_papers3-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-m5stack_papers3-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-m5stack_papers3.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-m5stack_papers3-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-m5stack_papers3-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-m5stack_papers3.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -27,15 +27,15 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_pro-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_pro-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_pro-otadata.bin", "offset": "0xd000" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_pro.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_pro-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_pro.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -47,15 +47,15 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_classic-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_classic-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_classic-otadata.bin", "offset": "0xd000" },
-            { "path": "firmware/v1.0.3/draftling-xteink_x4_classic.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_classic-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_classic-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_classic-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.4/draftling-xteink_x4_classic.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -67,14 +67,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-waveshare_rlcd42-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_rlcd42-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_rlcd42.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-waveshare_rlcd42-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_rlcd42-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_rlcd42.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -86,14 +86,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-waveshare_touch_lcd_349-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_touch_lcd_349-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_touch_lcd_349.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-waveshare_touch_lcd_349-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_touch_lcd_349-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_touch_lcd_349.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -105,14 +105,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-waveshare_epaper_397-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_epaper_397-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-waveshare_epaper_397.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-waveshare_epaper_397-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_epaper_397-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-waveshare_epaper_397.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -124,14 +124,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-lilygo_t5_epd_s3_pro-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-lilygo_t5_epd_s3_pro-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-lilygo_t5_epd_s3_pro.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-lilygo_t5_epd_s3_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-lilygo_t5_epd_s3_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-lilygo_t5_epd_s3_pro.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -143,14 +143,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104a-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104a-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104a.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104a-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104a-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104a.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -162,14 +162,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104b-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104b-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104b.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104b-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104b-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104b.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -181,14 +181,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104s-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104s-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-freenove_fnk0104s.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104s-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104s-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-freenove_fnk0104s.bin", "offset": "0x10000" }
           ]
         }
       ]
@@ -200,14 +200,14 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.3",
+          "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "8MB",
           "parts": [
-            { "path": "firmware/v1.0.3/draftling-elecrow_crowpanel_579-bootloader.bin", "offset": "0x0" },
-            { "path": "firmware/v1.0.3/draftling-elecrow_crowpanel_579-partition-table.bin", "offset": "0x8000" },
-            { "path": "firmware/v1.0.3/draftling-elecrow_crowpanel_579.bin", "offset": "0x10000" }
+            { "path": "firmware/v1.0.4/draftling-elecrow_crowpanel_579-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.4/draftling-elecrow_crowpanel_579-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.4/draftling-elecrow_crowpanel_579.bin", "offset": "0x10000" }
           ]
         }
       ]

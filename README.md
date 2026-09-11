@@ -42,7 +42,7 @@ exists only to be published via GitHub Pages.
 - `firmware/<tag>/draftling-<board>[-bootloader|-partition-table].bin`
   — the bootloader, partition table, and application binaries for
   each board, named and grouped by the release tag they were built
-  from (e.g. [v1.0.3](https://github.com/clackups/draftling/releases/tag/v1.0.3)).
+  from (e.g. [v1.0.4](https://github.com/clackups/draftling/releases/tag/v1.0.4)).
   These mirror the assets attached to the GitHub release of the same
   name, and are served same-origin so the browser can `fetch()` them
   without running into CORS restrictions on GitHub release assets.
