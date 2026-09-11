@@ -1,0 +1,28 @@
+# Xteink X4 Classic (X4 v2) -- partition table
+#
+# Identical layout to partitions_xteink_x4_pro.csv (see the rationale
+# there): the standard ESP-IDF dual-OTA layout -- an "otadata"
+# partition plus two app slots (ota_0 / ota_1). Draftling runs from
+# ota_0; ota_1 is left empty.
+#
+# Why this board is different from the single-"factory" default: the
+# X4 Classic, like the X4 Pro, ships with an OTA-capable partition
+# table, and both the stock Xteink firmware and the third-party
+# "Crosspoint" firmware are installed by OTA updaters that abort
+# against a table with no "otadata" partition ("Partition table has no
+# otadata partition"). Keeping an OTA layout here means the device can
+# be returned to stock, or moved to Crosspoint, without having to
+# re-flash a partition table over USB first.
+#
+# The app slots (0x7F0000 = ~8.1 MB each) are far larger than
+# Draftling needs (~2.3 MB), so a stock or Crosspoint image fits in
+# either slot too. "nvs" is 0x4000 (16 KB -- the ESP-IDF two-OTA
+# default) so that "otadata" and "phy_init" still fit below the 64
+# KB-aligned ota_0 offset.
+#
+# Name,   Type, SubType,  Offset,    Size,      Flags
+nvs,      data, nvs,      0x9000,    0x4000,
+otadata,  data, ota,      0xd000,    0x2000,
+phy_init, data, phy,      0xf000,    0x1000,
+ota_0,    app,  ota_0,    0x10000,   0x7F0000,
+ota_1,    app,  ota_1,    0x800000,  0x7F0000,

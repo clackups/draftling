@@ -73,6 +73,8 @@
 #include "boards/freenove_fnk0104s.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
 #include "boards/xteink_x4_pro.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+#include "boards/xteink_x4_classic.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 #include "boards/elecrow_crowpanel_579.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)

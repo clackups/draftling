@@ -1,0 +1,13 @@
+# CMakePresets.json board defaults: Xteink X4 Classic (X4 v2)
+# Sets the hardware model and IDF target used by the "xteink_x4_classic" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC=y
+
+# Dual-OTA partition table (with an "otadata" partition), same as the
+# X4 Pro: the stock Xteink firmware and the third-party Crosspoint
+# firmware are installed by OTA updaters that refuse to run without an
+# "otadata" partition, so keeping an OTA layout lets the device be
+# returned to stock or moved to Crosspoint without first re-flashing a
+# partition table over USB. See partitions_xteink_x4_classic.csv.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_xteink_x4_classic.csv"

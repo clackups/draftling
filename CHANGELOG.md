@@ -6,6 +6,18 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Xteink X4 Classic** (also sold as "X4 v2") support: the
+  buttons-only, no-front-light sibling of the X4 Pro. Shares the X4
+  Pro's ESP32-S3, 800x480 e-paper panel (SSD1677 / UC8179 / UC8279,
+  auto-detected), CW2017 fuel gauge and SDMMC card slot. Eight buttons
+  drive the whole editor without a keyboard: Power = F1 / hold to
+  forget keyboards, two side keys = Up/Down, four bottom keys =
+  Left/Right/Enter/Esc. Added without on-hardware testing (pin map
+  from the FreeInk SDK); build it with `idf.py --preset
+  xteink_x4_classic`.
+
 ## [1.0.2] - 2026-09-06
 
 ### Added

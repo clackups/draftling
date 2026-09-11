@@ -181,6 +181,31 @@ config DRAFTLING_MODEL_XTEINK_X4_PRO
         used here on real units. Grayscale / anti-aliasing rendering
         is not implemented (matches the existing e-paper boards).
 
+config DRAFTLING_MODEL_XTEINK_X4_CLASSIC
+    bool "Xteink X4 Classic / X4 v2 (ESP32-S3, SSD1677/UC8179/UC8279, 4.26\" e-paper, 800x480, no touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Xteink X4 Classic e-reader (also marketed "X4 v2"): the
+        buttons-only sibling of the Xteink X4 Pro. Same ESP32-S3
+        module, same 4.26" 800x480 e-paper glass and the same
+        auto-detecting SSD1677 / UC8179 / UC8279 display backend
+        (components/display/display_xteink_epd.cpp), same CW2017 I2C
+        fuel gauge and SDMMC 1-bit MicroSD -- but no GT911 touch and
+        no front-light. The panel's DC/RST/BUSY lines land on
+        different GPIOs than the X4 Pro (SCLK/MOSI/CS are the same).
+
+        Eight buttons drive the editor without a keyboard: Power
+        (deep-sleep wake / F1 / 2 s hold to forget BLE keyboards),
+        two side keys (Up / Down), and four bottom keys (Left, Right,
+        Enter, Esc).
+
+        This board has been added without on-hardware testing: pin
+        assignments come from the FreeInk SDK
+        (github.com/Free-Ink/freeink-sdk, MIT licensed),
+        docs/xteink-x4c-support.md. Grayscale / anti-aliasing
+        rendering is not implemented (matches the existing e-paper
+        boards).
+
 config DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     bool "Elecrow CrowPanel ESP32-S3 5.79\" E-Paper HMI (SSD1683 x2, 792x272)"
     depends on IDF_TARGET_ESP32S3
@@ -379,6 +404,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default n
@@ -417,6 +443,18 @@ config DRAFTLING_DISPLAY_H752_EPD
 config DRAFTLING_DISPLAY_XTEINK_EPD
     bool
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
+    default n
+
+# DRAFTLING_MODEL_XTEINK_X4 groups the two Xteink X4 boards
+# (X4 Pro and X4 Classic) that share the display_xteink_epd.cpp
+# backend, the CW2017 gauge, the SDMMC slot and the OTA partition
+# table. Code that is common to both keys off this instead of
+# testing the two model ids.
+config DRAFTLING_MODEL_XTEINK_X4
+    bool
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default n
 
 # DRAFTLING_DISPLAY_SSD1683 selects the from-scratch dual-controller
@@ -472,7 +510,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     # Xteink X4 Pro: dual-channel (cool/warm) PWM front-light, both
     # channels driven identically from this single percentage since
-    # Draftling has no warm/cool color-temperature UI.
+    # Draftling has no warm/cool color-temperature UI. The X4 Classic
+    # has no front-light and is deliberately left off here.
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default n
 
@@ -515,6 +554,8 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 0 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # X4 Classic has no front-light, so DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    # is off there and this value is never consulted.
     default 10
 
 # DRAFTLING_BL_DUTY_FLOOR_PCT shifts the bottom of the PWM duty
@@ -574,10 +615,10 @@ config DRAFTLING_HAS_BATTERY
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
-    # Xteink X4 Pro: battery is monitored via a CW2017 fuel gauge on
-    # the shared I2C bus (driver in components/battery, gated on
-    # DRAFTLING_BATTERY_CW2017 below).
-    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Xteink X4 Pro / X4 Classic: battery is monitored via a CW2017
+    # fuel gauge on the shared I2C bus (driver in components/battery,
+    # gated on DRAFTLING_BATTERY_CW2017 below).
+    default y if DRAFTLING_MODEL_XTEINK_X4
     # Waveshare ESP32-S3-ePaper-3.97: battery is monitored via an
     # AXP2101 PMIC on the shared I2C bus (driver in components/battery,
     # gated on DRAFTLING_BATTERY_AXP2101 below). The same chip also
@@ -594,7 +635,7 @@ config DRAFTLING_HAS_BATTERY
 # backend.
 config DRAFTLING_BATTERY_CW2017
     bool
-    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4
     default n
 
 # Selects the AXP2101 PMIC backend in components/battery/ instead of
@@ -769,8 +810,8 @@ config DRAFTLING_SD_SDMMC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
-    # Xteink X4 Pro: on-board MicroSD wired to SDMMC 1-bit.
-    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Xteink X4 Pro / X4 Classic: on-board MicroSD wired to SDMMC 1-bit.
+    default y if DRAFTLING_MODEL_XTEINK_X4
     # Waveshare ESP32-S3-ePaper-3.97: on-board MicroSD wired to SDMMC.
     # The vendor wires a full 4-bit bus, but Draftling only uses 1-bit
     # mode (CLK/CMD/D0); the D1-D3 lines are left unconfigured.
@@ -811,8 +852,9 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
-    # Xteink X4 Pro: Power button on GPIO3 (active-low, RTC-capable).
-    default 3  if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Xteink X4 Pro / X4 Classic: Power button on GPIO3 (active-low,
+    # RTC-capable).
+    default 3  if DRAFTLING_MODEL_XTEINK_X4
     # Elecrow CrowPanel 5.79" E-Paper HMI: Menu button on GPIO2
     # (active-low, RTC-capable).
     default 2  if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
@@ -1078,7 +1120,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
-    default 800 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 800 if DRAFTLING_MODEL_XTEINK_X4
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     help
@@ -1101,7 +1143,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
-    default 480 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 480 if DRAFTLING_MODEL_XTEINK_X4
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     help
@@ -1142,10 +1184,11 @@ config DRAFTLING_DISPLAY_ROTATE_ANGLE
 # a quarter turn clockwise; 270 turns it the other way. Non-prompted
 # derived int so the per-board value tracks the hardware-model choice.
 # The Xteink X4 Pro's enclosure reads better with portrait rotated the
-# opposite way from the default.
+# opposite way from the default; the X4 Classic is assumed to match
+# (its pocket enclosure is the same family; not verified on hardware).
 config DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE
     int
-    default 270 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 270 if DRAFTLING_MODEL_XTEINK_X4
     default 90
 
 # DRAFTLING_DISPLAY_HIDPI -- high-density panel that renders the UI
@@ -1168,7 +1211,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
-    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-ePaper-3.97: 800x480 on a 3.97" panel is
     # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"

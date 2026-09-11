@@ -2,7 +2,18 @@
 #if defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
 
 /*
- * Xteink X4 Pro SPI e-paper backend.
+ * Xteink X4 Pro / X4 Classic SPI e-paper backend.
+ *
+ * Both boards carry the same 4.26" 800x480 e-paper glass and the same
+ * three-controller lottery; they differ only in wiring and trim:
+ *   - X4 Pro:     DC=18, RST=14, BUSY=6, dual-channel front-light on
+ *                 GPIO8/GPIO9.
+ *   - X4 Classic: DC=14, RST=10, BUSY=18, NO front-light (GPIO8/GPIO9
+ *                 are buttons). Its UC8279 init also omits the PLL
+ *                 (0x30) command the X4 Pro programs.
+ * SCLK=12, MOSI=11, CS=13 are common. The pin set and the front-light
+ * code are selected at build time on CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC
+ * / CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT.
  *
  * Different manufacturing runs of this board ship one of three panel
  * controllers -- SSD1677, or one of two UltraChip parts (UC8179 /
@@ -22,10 +33,9 @@
  * Uc8279X4Driver.cpp, EpdBus.cpp and XteinkDetect.cpp). This board has
  * NOT been tested on physical hardware; see HARDWARE.md.
  *
- * Panel: 800x480, no mirror. SPI: SCLK=12, MOSI=11, CS=13, DC=18,
- * RST=14, BUSY=6, no MISO in normal operation (the boot-time probe
- * temporarily reconfigures MOSI as an input for its half-duplex
- * VER/FLG read). Dual-channel (cool/warm) PWM front-light on GPIO8/9.
+ * Panel: 800x480, no mirror. No MISO in normal operation (the
+ * boot-time probe temporarily reconfigures MOSI as an input for its
+ * half-duplex VER/FLG read).
  */
 
 #include <algorithm>
@@ -61,17 +71,25 @@ static const char *TAG = "DisplayXteink";
 #define UC8279_GATE_OFFSET     120
 #define UC81XX_SCRATCH_BYTES   (PANEL_WIDTH_BYTES * UC81XX_TRES_HEIGHT)
 
-/* ---- Pins. This backend is used by exactly one board, so the pins
- * are hard-coded here rather than threaded through a board header --
- * matching display_ili9341.cpp / display_h752.cpp. ---- */
+/* ---- Pins. This backend is used by exactly the two Xteink X4
+ * boards, so the pins are hard-coded here rather than threaded
+ * through a board header -- matching display_ili9341.cpp /
+ * display_h752.cpp -- and the small per-board delta is a build-time
+ * switch on the model symbol. ---- */
 #define EPD_SCLK_PIN         12
 #define EPD_MOSI_PIN         11
 #define EPD_CS_PIN           13
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+#define EPD_DC_PIN           14
+#define EPD_RST_PIN          10
+#define EPD_BUSY_PIN         18
+#else
 #define EPD_DC_PIN           18
 #define EPD_RST_PIN          14
 #define EPD_BUSY_PIN         6
 #define FRONTLIGHT_COOL_PIN  8
 #define FRONTLIGHT_WARM_PIN  9
+#endif
 
 #define XTEINK_SPI_HOST      SPI2_HOST
 /* The OEM firmware clocks this panel at 5 MHz. The SSD1677 is rated
@@ -101,8 +119,10 @@ static const char *TAG = "DisplayXteink";
 #define XTEINK_FULL_REFRESH_INTERVAL 30
 #endif
 
-/* Front-light LEDC: two channels driven identically (Draftling has no
- * warm/cool color-temperature UI), 10 kHz / 10-bit, active-HIGH. */
+/* Front-light LEDC (X4 Pro only -- the X4 Classic has none): two
+ * channels driven identically (Draftling has no warm/cool
+ * color-temperature UI), 10 kHz / 10-bit, active-HIGH. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
 #define BL_LEDC_TIMER        LEDC_TIMER_0
 #define BL_LEDC_MODE         LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL_COOL LEDC_CHANNEL_0
@@ -110,6 +130,7 @@ static const char *TAG = "DisplayXteink";
 #define BL_LEDC_DUTY_RES     LEDC_TIMER_10_BIT
 #define BL_LEDC_DUTY_MAX     ((1 << 10) - 1)
 #define BL_LEDC_FREQ_HZ      10000
+#endif
 
 enum xteink_ctrl_t {
     XTEINK_CTRL_SSD1677 = 0,
@@ -123,7 +144,9 @@ static uint8_t  *s_scratch = NULL;   /* UC8179/UC8279 padded/reversed staging bu
 static uint8_t  *s_white_scratch = NULL; /* constant all-white OLD-plane buffer, see uc8179/uc8279_display_full() */
 static uint8_t  *s_fb_inv = NULL;    /* SSD1677 bitwise-complement scratch, see ssd1677_display_full() */
 static bool      s_initialized = false;
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
 static bool      s_bl_inited = false;
+#endif
 static bool      s_needs_initial_full = true;
 static bool      s_force_full = true;
 static int       s_partial_count = 0;
@@ -662,7 +685,11 @@ static void uc8279_init(void)
     epd_cmd(0x65); epd_data1(0); epd_data1(0); epd_data1(0); epd_data1(0); /* GATE_SOURCE_START */
 
     epd_cmd(0x03); epd_data1(0x20); /* PFS */
-    epd_cmd(0x30); epd_data1(0x0E); /* PLL */
+#if !defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+    epd_cmd(0x30); epd_data1(0x0E); /* PLL -- X4 Pro only; the X4
+                                    * Classic OEM init omits it
+                                    * (FreeInk SDK xteink-x4c doc) */
+#endif
     epd_cmd(0xE1); epd_data1(0x02); /* GATE_SCAN */
 
     s_uc81xx_screen_on = false;
@@ -772,6 +799,8 @@ static void ctrl_deep_sleep(void)
 
 /* ---- Front-light (dual-channel PWM) ---- */
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+
 static void backlight_pwm_init(void)
 {
     if (s_bl_inited) return;
@@ -816,6 +845,17 @@ extern "C" void display_set_backlight(int percent)
     ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM, duty));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM));
 }
+
+#else  /* !CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT -- Xteink X4 Classic */
+
+static inline void backlight_pwm_init(void) {}
+
+/* No front-light on this board. Kept as a no-op so the editor's
+ * Ctrl+B / Settings path links even though its callers are compiled
+ * out (matches display_ssd1683.cpp). */
+extern "C" void display_set_backlight(int /*percent*/) {}
+
+#endif /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
 
 /* ---- display.h public API ---- */
 
@@ -904,7 +944,7 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     clear_dirty();
     s_initialized = true;
 
-    ESP_LOGI(TAG, "Xteink X4 Pro e-paper initialized (%dx%d, controller=%d)",
+    ESP_LOGI(TAG, "Xteink X4 e-paper initialized (%dx%d, controller=%d)",
              s_width, s_height, (int)s_ctrl);
 }
 
@@ -1031,6 +1071,7 @@ extern "C" void display_wake(void)
 
 extern "C" void display_deep_sleep_prepare(void)
 {
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
     if (s_bl_inited) {
         ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL, 0);
         ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL);
@@ -1044,6 +1085,7 @@ extern "C" void display_deep_sleep_prepare(void)
         gpio_set_level((gpio_num_t)pin, 0);
         gpio_hold_en((gpio_num_t)pin);
     }
+#endif
 
     if (s_initialized) ctrl_deep_sleep();
     s_initialized = false;

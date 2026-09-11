@@ -31,7 +31,8 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
-`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`.
+`freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
+`xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:

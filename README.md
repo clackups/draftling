@@ -22,6 +22,7 @@ load the firmware quickly without having to compile it.
 
 * Ready-made consumer grade hardware
   * Xteink X4 Pro, so far the best value for money amongst e-paper devices.
+  * Xteink X4 Classic (a.k.a. X4 v2) -- the buttons-only, no-front-light X4 (untested on physical hardware).
   * LilyGO T5 E-Paper S3 Pro / Pro Lite
   * M5Stack PaperS3 (discontinued)
   * Waveshare ESP32-S3-Touch-LCD-3.49
