@@ -162,6 +162,26 @@ static int s_char_w       = 6;
 #define VISIBLE_LINES (s_line_h > 0 ? (s_rp->h / s_line_h) : 1)
 #define CHAR_W        s_char_w
 
+/* How far to jump the viewport when the cursor falls outside it, as a
+ * fraction of VISIBLE_LINES. Snapping the cursor to the very edge row
+ * (the old behavior: scroll = cur_line, or cur_line - VISIBLE_LINES +
+ * 1) means the next line of continued typing or navigation in the
+ * same direction immediately falls outside the viewport again,
+ * re-triggering a scroll -- and its full-screen re-render -- on
+ * every single line. Jumping a majority of the screen height instead
+ * leaves headroom so several more lines fit before another scroll is
+ * needed, trading a slightly larger jump for far fewer redraws
+ * (particularly noticeable on e-paper boards, where every redraw is
+ * a visible, non-instant refresh). Used by every scroll-adjustment
+ * site in this file, including refresh_active_pane()'s word-wrap
+ * correction loop below, so a scroll is never just one line whether
+ * it is triggered by ensure_cursor_visible(), editor_ui_move_visual(),
+ * or a paragraph wrapping into more rows than expected.
+ *
+ * Defined near s_rp below (VISIBLE_LINES expands to an s_rp
+ * dereference), rather than here alongside VISIBLE_LINES itself. */
+#define SCROLL_JUMP_FRACTION 0.6f
+
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
 
@@ -1047,6 +1067,14 @@ static pane_t  s_panes[EDITOR_MAX_PANES];
 static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
 static int     s_pane_count  = 1;            /* 1 = single, 2 = split */
 static int     s_focus       = 0;            /* focused pane index (0..count-1) */
+
+/* See the SCROLL_JUMP_FRACTION comment above; defined here (rather
+ * than alongside it) because VISIBLE_LINES dereferences s_rp. */
+static inline int scroll_jump_step(void)
+{
+    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
+    return step > 0 ? step : 1;
+}
 
 /* Split layout: single pane, or a two-pane split along the display's
  * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
@@ -2058,11 +2086,21 @@ static void refresh_active_pane(bool draw_cursor)
         }
 
         /* If the cursor line is in the expected range but wrapped lines
-         * pushed it off-screen, increment scroll and re-render.
-         * Use cur_y + cur_h to ensure the full cursor row is visible. */
+         * pushed it off-screen, scroll and re-render. Jump by
+         * scroll_jump_step() rather than a single line, same as every
+         * other scroll site in this file (see SCROLL_JUMP_FRACTION) --
+         * otherwise a wrapped paragraph near the bottom of the screen
+         * made this correction nudge by exactly one line while an
+         * unwrapped one jumped by ~60% via ensure_cursor_visible(),
+         * which felt like inconsistent, unpredictable scrolling.
+         * Clamped to cur_line so the jump cannot scroll past the very
+         * line it is trying to bring into view. Use cur_y + cur_h to
+         * ensure the full cursor row is visible. */
         if (cur_line >= scroll && scroll < cur_line &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
-            editor_set_scroll_line(scroll + 1);
+            int new_scroll = scroll + scroll_jump_step();
+            if (new_scroll > cur_line) new_scroll = cur_line;
+            editor_set_scroll_line(new_scroll);
             continue;
         }
         break;
@@ -2140,25 +2178,6 @@ static void refresh_focused_pane_and_title(void)
     refresh_focused_pane();
     update_title_bar();
     sync_battery_labels();
-}
-
-/* How far to jump the viewport when the cursor falls outside it,
- * as a fraction of VISIBLE_LINES. Snapping the cursor to the very
- * edge row (the old behavior: scroll = cur_line, or cur_line -
- * VISIBLE_LINES + 1) means the next line of continued typing or
- * navigation in the same direction immediately falls outside the
- * viewport again, re-triggering a scroll -- and its full-screen
- * re-render -- on every single line. Jumping a majority of the
- * screen height instead leaves headroom so several more lines fit
- * before another scroll is needed, trading a slightly larger jump
- * for far fewer redraws (particularly noticeable on e-paper boards,
- * where every redraw is a visible, non-instant refresh). */
-#define SCROLL_JUMP_FRACTION 0.6f
-
-static inline int scroll_jump_step(void)
-{
-    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
-    return step > 0 ? step : 1;
 }
 
 static void ensure_cursor_visible(void)
