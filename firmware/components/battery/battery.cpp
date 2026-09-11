@@ -53,6 +53,7 @@ enum batt_backend {
     BATT_BACKEND_BQ27220,
     BATT_BACKEND_INA226,
     BATT_BACKEND_CW2017,
+    BATT_BACKEND_AXP2101,
 };
 static enum batt_backend s_backend = BATT_BACKEND_NONE;
 
@@ -102,6 +103,44 @@ static const uint8_t CW2017_BATINFO[CW2017_BATINFO_LEN] = {
 };
 #define CW2017_I2C_ADDR_DEFAULT 0x63
 static i2c_master_dev_handle_t   s_cw2017_dev = NULL;
+
+/* ---- AXP2101 backend state ----
+ * X-Powers AXP2101 PMIC, used on the Waveshare ESP32-S3-ePaper-3.97
+ * (I2C address 0x34). Register addresses/bit positions below are
+ * independently-confirmed facts about the chip (not vendor source);
+ * this driver is fresh code written for this repo's own style, not a
+ * port of anyone's library.
+ *
+ * On this board the AXP2101 also switches the e-paper panel's analog
+ * supply through its ALDO3 LDO output -- see
+ * battery_axp2101_enable_display_rail() below, which the display
+ * backend (components/display/display_ws_epd397.cpp) calls via its
+ * display_set_shared_i2c_bus() hook, before display_init() ever
+ * touches the panel over SPI and before battery_init_axp2101() (the
+ * normal battery-monitor init, called later in main.cpp's boot
+ * sequence) has run. Both entry points share one cached I2C device
+ * handle (s_axp2101_dev) via axp2101_ensure_dev() so the device is
+ * added to the bus at most once regardless of call order. */
+#define AXP2101_I2C_ADDR         0x34
+#define AXP2101_REG_STATUS1      0x00  /* bit 3 = battery connected */
+#define AXP2101_REG_STATUS2      0x01  /* bits [7:5]: 0=standby 1=chg 2=dischg */
+#define AXP2101_REG_ADC_CTRL     0x30  /* bit 0 = enable battery-voltage ADC */
+#define AXP2101_REG_VBAT_H       0x34  /* ADC result, H5L8, 1 mV/LSB */
+#define AXP2101_REG_VBAT_L       0x35
+#define AXP2101_REG_BAT_DET_CTRL 0x68  /* bit 0 = enable battery detection */
+#define AXP2101_REG_LDO_ONOFF0   0x90  /* bit 2 = ALDO3 enable */
+#define AXP2101_REG_LDO_VOL3     0x95  /* bits [4:0] = (mV - 500) / 100 */
+#define AXP2101_REG_FUEL_GAUGE   0xA2  /* bit 0 = enable internal fuel gauge */
+#define AXP2101_REG_BAT_PERCENT  0xA4  /* direct integer percent, 0..100 */
+
+#define AXP2101_ALDO3_MV         3300
+#define AXP2101_STATUS1_BAT_CONNECTED  0x08
+#define AXP2101_STATUS2_STATE_MASK     0xE0
+#define AXP2101_STATUS2_STATE_SHIFT    5
+#define AXP2101_STATE_CHARGING          1
+#define AXP2101_STATE_DISCHARGING        2
+
+static i2c_master_dev_handle_t   s_axp2101_dev = NULL;
 
 /* ---- INA226 backend state ----
  * Only the bus-voltage and shunt-voltage registers are used.
@@ -531,6 +570,125 @@ extern "C" int battery_init_cw2017(void *i2c_master_bus)
     return 0;
 }
 
+/* ---- AXP2101 backend ---- */
+
+static int axp2101_read_u8(uint8_t reg, uint8_t *out)
+{
+    if (!s_axp2101_dev) return -1;
+    uint8_t wr[1] = { reg };
+    uint8_t rd[1] = { 0 };
+    esp_err_t err = i2c_master_transmit_receive(s_axp2101_dev, wr, 1, rd, 1,
+                                                100 /* ms */);
+    if (err != ESP_OK) return -1;
+    *out = rd[0];
+    return 0;
+}
+
+static int axp2101_write_u8(uint8_t reg, uint8_t val)
+{
+    if (!s_axp2101_dev) return -1;
+    uint8_t wr[2] = { reg, val };
+    return (i2c_master_transmit(s_axp2101_dev, wr, 2, 100 /* ms */) == ESP_OK) ? 0 : -1;
+}
+
+/* Read-modify-write a single register, leaving bits outside `mask`
+ * untouched. Returns 0 on success. */
+static int axp2101_rmw_u8(uint8_t reg, uint8_t mask, uint8_t val)
+{
+    uint8_t cur = 0;
+    if (axp2101_read_u8(reg, &cur) != 0) return -1;
+    uint8_t next = (uint8_t)((cur & ~mask) | (val & mask));
+    if (next == cur) return 0;
+    return axp2101_write_u8(reg, next);
+}
+
+/* Idempotently probe and add the AXP2101 I2C device, caching the
+ * handle in s_axp2101_dev so a second caller (whichever of
+ * battery_axp2101_enable_display_rail() / battery_init_axp2101() runs
+ * second) reuses it instead of calling i2c_master_bus_add_device()
+ * twice for the same address. Returns 0 on success (device already
+ * present or freshly added), non-zero on failure. */
+static int axp2101_ensure_dev(void *i2c_master_bus)
+{
+    if (s_axp2101_dev) return 0;
+
+    if (i2c_master_bus == NULL) {
+        ESP_LOGW(TAG, "AXP2101 init: NULL I2C bus handle");
+        return -1;
+    }
+
+    i2c_master_bus_handle_t bus = (i2c_master_bus_handle_t)i2c_master_bus;
+
+    if (i2c_master_probe(bus, AXP2101_I2C_ADDR, 100 /* ms */) != ESP_OK) {
+        ESP_LOGW(TAG, "AXP2101 not responding at 0x%02X", AXP2101_I2C_ADDR);
+        return -1;
+    }
+
+    i2c_device_config_t dev_cfg = {};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address  = AXP2101_I2C_ADDR;
+    dev_cfg.scl_speed_hz    = 400000;
+    esp_err_t err = i2c_master_bus_add_device(bus, &dev_cfg, &s_axp2101_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "AXP2101 bus_add_device failed: %s", esp_err_to_name(err));
+        s_axp2101_dev = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+extern "C" int battery_axp2101_enable_display_rail(void *i2c_master_bus)
+{
+    if (axp2101_ensure_dev(i2c_master_bus) != 0) return -1;
+
+    /* REG 0x95 bits[4:0] = (mV - 500) / 100, bits[7:5] preserved. */
+    uint8_t vol_bits = (uint8_t)((AXP2101_ALDO3_MV - 500) / 100);
+    if (axp2101_rmw_u8(AXP2101_REG_LDO_VOL3, 0x1F, vol_bits) != 0) {
+        ESP_LOGE(TAG, "AXP2101: failed to set ALDO3 to %d mV", AXP2101_ALDO3_MV);
+        return -1;
+    }
+    /* REG 0x90 bit 2 = ALDO3 enable. */
+    if (axp2101_rmw_u8(AXP2101_REG_LDO_ONOFF0, 0x04, 0x04) != 0) {
+        ESP_LOGE(TAG, "AXP2101: failed to enable ALDO3");
+        return -1;
+    }
+    ESP_LOGI(TAG, "AXP2101: ALDO3 (e-paper panel rail) enabled at %d mV",
+             AXP2101_ALDO3_MV);
+    return 0;
+}
+
+extern "C" int battery_init_axp2101(void *i2c_master_bus)
+{
+    if (s_backend != BATT_BACKEND_NONE) return 0;
+
+    if (axp2101_ensure_dev(i2c_master_bus) != 0) return -1;
+
+    /* REG 0x68 bit 0 = enable battery detection. */
+    if (axp2101_rmw_u8(AXP2101_REG_BAT_DET_CTRL, 0x01, 0x01) != 0) {
+        ESP_LOGW(TAG, "AXP2101: failed to enable battery detection");
+    }
+    /* REG 0x30 bit 0 = enable the battery-voltage ADC channel. */
+    if (axp2101_rmw_u8(AXP2101_REG_ADC_CTRL, 0x01, 0x01) != 0) {
+        ESP_LOGW(TAG, "AXP2101: failed to enable battery-voltage ADC");
+    }
+    /* REG 0xA2 bit 0 = enable the internal fuel gauge (must be set
+     * before REG 0xA4 reports a real percentage). */
+    if (axp2101_rmw_u8(AXP2101_REG_FUEL_GAUGE, 0x01, 0x01) != 0) {
+        ESP_LOGW(TAG, "AXP2101: failed to enable fuel gauge");
+    }
+
+    s_backend = BATT_BACKEND_AXP2101;
+
+    uint8_t status1 = 0, pct = 0;
+    axp2101_read_u8(AXP2101_REG_STATUS1, &status1);
+    axp2101_read_u8(AXP2101_REG_BAT_PERCENT, &pct);
+    ESP_LOGI(TAG, "AXP2101 PMIC initialized at 0x%02X (battery %s, initial %u%%)",
+             AXP2101_I2C_ADDR,
+             (status1 & AXP2101_STATUS1_BAT_CONNECTED) ? "connected" : "not connected",
+             (unsigned)pct);
+    return 0;
+}
+
 /* ---- INA226 backend ---- */
 
 extern "C" int battery_init_ina226(void *i2c_master_bus, int i2c_addr,
@@ -919,6 +1077,15 @@ extern "C" int battery_read_mv(void)
         uint16_t raw14 = (uint16_t)((hi & 0x3F) << 8) | lo;
         return (int)((raw14 * 5 + 8) >> 4);
     }
+    if (s_backend == BATT_BACKEND_AXP2101) {
+        uint8_t status1 = 0;
+        if (axp2101_read_u8(AXP2101_REG_STATUS1, &status1) != 0) return 0;
+        if (!(status1 & AXP2101_STATUS1_BAT_CONNECTED)) return 0;
+        uint8_t hi = 0, lo = 0;
+        if (axp2101_read_u8(AXP2101_REG_VBAT_H, &hi) != 0) return 0;
+        if (axp2101_read_u8(AXP2101_REG_VBAT_L, &lo) != 0) return 0;
+        return (int)(((uint16_t)(hi & 0x1F) << 8) | lo);
+    }
     if (s_backend != BATT_BACKEND_ADC) return 0;
 
     bool en = enable_divider();
@@ -1038,6 +1205,17 @@ extern "C" int battery_read_percent(void)
         if (cw2017_read_u8(CW2017_REG_SOC, &soc) != 0) return -1;
         return (soc > 100) ? 100 : (int)soc;
     }
+    if (s_backend == BATT_BACKEND_AXP2101) {
+        /* The AXP2101 reports SOC as a direct integer percentage from
+         * its internal fuel gauge -- no discharge LUT needed, and no
+         * profile upload required (unlike the CW2017). */
+        uint8_t status1 = 0;
+        if (axp2101_read_u8(AXP2101_REG_STATUS1, &status1) != 0) return -1;
+        if (!(status1 & AXP2101_STATUS1_BAT_CONNECTED)) return -1;
+        uint8_t pct = 0;
+        if (axp2101_read_u8(AXP2101_REG_BAT_PERCENT, &pct) != 0) return -1;
+        return (pct > 100) ? 100 : (int)pct;
+    }
     if (s_backend != BATT_BACKEND_ADC) return -1;
 
     int mv = battery_read_mv();
@@ -1089,6 +1267,15 @@ extern "C" int battery_read_charging(void)
         int16_t raw = (int16_t)(((uint16_t)rd[0] << 8) | (uint16_t)rd[1]);
         if (raw <= -INA226_SHUNT_CHARGE_THRESHOLD) return 1;
         return 0;
+    }
+    if (s_backend == BATT_BACKEND_AXP2101) {
+        /* STATUS2 bits[7:5]: 0=standby, 1=charging, 2=discharging.
+         * Unlike the CW2017 (no charger IC on its bus), the AXP2101
+         * has a real integrated charger, so this is authoritative. */
+        uint8_t status2 = 0;
+        if (axp2101_read_u8(AXP2101_REG_STATUS2, &status2) != 0) return -1;
+        unsigned state = (status2 & AXP2101_STATUS2_STATE_MASK) >> AXP2101_STATUS2_STATE_SHIFT;
+        return (state == AXP2101_STATE_CHARGING) ? 1 : 0;
     }
     /* ADC backend, CW2017 (no charger IC on its bus, no current
      * register) and "no backend" cannot tell. */
