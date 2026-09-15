@@ -4,6 +4,9 @@
 ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97)
 is a DIY board with a high definition 3.97" screen.
 
+[Demo video of the
+device](https://www.youtube.com/watch?v=QtNKmCt7KFE&list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_).
+
 This enclosure consists of two 3d-printed parts, tied together by four
 M2 screws. Inside there's a pocket for the battery that comes with the
 board, and a space for the little speaker that is also available in
@@ -44,3 +47,4 @@ Part list:
 
 Printed parts: PLA, 0.2mm, 20% infill.
 
+Also, [available on Printables](https://www.printables.com/model/1843475-enclosure-for-waveshare-esp32-s3-epaper-397)
