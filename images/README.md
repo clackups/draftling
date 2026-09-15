@@ -1,5 +1,15 @@
 # Draftling photos
 
+
+## Waveshare ESP32-S3-ePaper-3.97
+
+The board as-is:
+![Bare ESP32-S3-ePaper-3.97](Waveshare_ESP32-S3-ePaper-3.97_01.jpg)
+
+The board in a [3D-printed enclosure](../3D_Prints/Waveshare_ESP32-S3-ePaper-3.97/)
+![Bare ESP32-S3-ePaper-3.97](Waveshare_ESP32-S3-ePaper-3.97_02.jpg)
+
+
 ## Xteink X4 Pro
 
 ![Xteink X4 Pro with a JOMAA Bluetooth keybboard](Xteink_X4_Pro_01.jpg)

@@ -29,8 +29,8 @@ load the firmware quickly without having to compile it.
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 * DIY boards
+  * Waveshare ESP32-S3-ePaper-3.97 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-ePaper-3.97/))
   * Waveshare ESP32-S3-RLCD-4.2 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
-  * Waveshare ESP32-S3-ePaper-3.97
   * Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
   * Guition JC3248W535
   * 7" and 4.3" Sunton boards
