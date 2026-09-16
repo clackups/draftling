@@ -239,7 +239,7 @@ config DRAFTLING_MODEL_WAVESHARE_EPAPER_397
         (Up/Function/Down plus BOOT) stand in for it, with
         Up/Function/Down wired to arrow keys / Enter and a 2 s hold of
         Function (the rocker's center press, GPIO5) entering deep
-        sleep (see DRAFTLING_ROCKER_SLEEP_GPIO). Battery and the
+        sleep (see DRAFTLING_SLEEP_BUTTON_GPIO). Battery and the
         e-paper panel's own supply rail are both managed by an
         on-board AXP2101 PMIC on I2C (see components/battery/battery.cpp
         and the display backend's file header comment for the power-
@@ -865,21 +865,20 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 0
 
-# DRAFTLING_ROCKER_SLEEP_GPIO names a second, board-specific GPIO
+# DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
 # that enters deep sleep (via standby_enter_sleep()) on a
 # BTN_LONG_PRESS_MS hold, independent of DRAFTLING_WAKEUP_GPIO above.
 # It exists for boards whose deep-sleep trigger is not the BOOT/wake
-# button but a separate navigation control -- e.g. a multi-way
-# "rocker" button whose center press is already wired to a short-press
-# action (Enter, F1, ...) in the board's own key poller. The generic
-# rocker_sleep_poll_cb() handler in main.cpp polls this pin on its own
-# timer, entirely independent of whatever short-press handling that
-# same pin already gets, so both behaviors coexist without extra
-# per-board C code. -1 (default) disables the handler: most boards
-# have no second sleep-trigger button and rely solely on
-# DRAFTLING_WAKEUP_GPIO / DRAFTLING_HAS_POWER_LATCH for a manual
-# sleep/power-off trigger.
-config DRAFTLING_ROCKER_SLEEP_GPIO
+# button but a separate navigation control -- e.g. a button that is
+# already wired to a short-press action (Enter, F1, ...) in the
+# board's own key poller. The generic sleep_button_poll_cb() handler
+# in main.cpp polls this pin on its own timer, entirely independent
+# of whatever short-press handling that same pin already gets, so
+# both behaviors coexist without extra per-board C code. -1 (default)
+# disables the handler: most boards have no second sleep-trigger
+# button and rely solely on DRAFTLING_WAKEUP_GPIO /
+# DRAFTLING_HAS_POWER_LATCH for a manual sleep/power-off trigger.
+config DRAFTLING_SLEEP_BUTTON_GPIO
     int
     # Waveshare ESP32-S3-ePaper-3.97: the Function button (GPIO5,
     # BTN_FUNCTION_PIN, the center press of the Up/Function/Down

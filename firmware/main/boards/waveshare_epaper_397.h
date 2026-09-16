@@ -70,9 +70,9 @@
  * no special handling needed here. All four are RTC-capable GPIOs.
  *
  * The Function button (GPIO5) doubles as this board's deep-sleep
- * trigger: a long press (2 s, CONFIG_DRAFTLING_ROCKER_SLEEP_GPIO in
+ * trigger: a long press (2 s, CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO in
  * Kconfig.projbuild) enters standby_enter_sleep() via the generic
- * rocker_sleep_poll_cb() handler in main.cpp, independent of the
+ * sleep_button_poll_cb() handler in main.cpp, independent of the
  * short-press KB_KEY_ENTER injection above. */
 #define BTN_UP_PIN       4
 #define BTN_FUNCTION_PIN 5
