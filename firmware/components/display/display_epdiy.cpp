@@ -68,6 +68,7 @@
 #include <driver/gpio.h>
 
 #include "display.h"
+#include "display_margins.h"
 #include "lvgl_port.h"
 
 #if defined(CONFIG_DRAFTLING_EPDIY_BOARD_PAPERS3)
@@ -427,10 +428,12 @@ extern "C" void display_clear(uint8_t color)
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
     if (!s_initialized) return;
-    /* Coordinates are *logical* pixels -- expand to a SCALE x SCALE
-     * block of panel pixels. */
-    int px = (int)x * EPDIY_SCALE;
-    int py = (int)y * EPDIY_SCALE;
+    /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
+     * the left/top margin into the full physical panel (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp),
+     * then expand to a SCALE x SCALE block of panel pixels. */
+    int px = ((int)x + display_margin_left()) * EPDIY_SCALE;
+    int py = ((int)y + display_margin_top())  * EPDIY_SCALE;
     fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE,
                     (color != 0) ? 0x0F : 0x00);
     mark_dirty_rect(px, py, EPDIY_SCALE, EPDIY_SCALE);
@@ -443,20 +446,23 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (w <= 0 || h <= 0) return false;
     const uint16_t *src = (const uint16_t *)color_map;
 
+    int ox = x + display_margin_left();
+    int oy = y + display_margin_top();
+
     /* Per-logical-pixel: write a SCALE x SCALE block into the
      * grayscale framebuffer. */
     for (int sy = 0; sy < h; sy++) {
         for (int sx = 0; sx < w; sx++) {
             uint16_t v = src[(size_t)sy * w + sx];
             uint8_t g = rgb565_to_gray4(v);
-            int px = (x + sx) * EPDIY_SCALE;
-            int py = (y + sy) * EPDIY_SCALE;
+            int px = (ox + sx) * EPDIY_SCALE;
+            int py = (oy + sy) * EPDIY_SCALE;
             fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE, g);
         }
     }
 
-    int dx = x * EPDIY_SCALE;
-    int dy = y * EPDIY_SCALE;
+    int dx = ox * EPDIY_SCALE;
+    int dy = oy * EPDIY_SCALE;
     int dw = w * EPDIY_SCALE;
     int dh = h * EPDIY_SCALE;
     mark_dirty_rect(dx, dy, dw, dh);

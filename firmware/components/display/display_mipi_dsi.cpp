@@ -89,6 +89,7 @@
 #include "bsp/m5stack_tab5.h"
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "Display";
 
@@ -292,6 +293,12 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
 {
     if (!s_panel)            return true;
     if (w <= 0 || h <= 0)    return true;
+
+    /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
+     * the left/top margin into the full physical panel (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    x += display_margin_left();
+    y += display_margin_top();
 
     if (MDSI_SCALE <= 1) {
         /* Fast path: 1:1, push the LVGL buffer straight into the
