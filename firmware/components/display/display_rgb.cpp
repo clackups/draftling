@@ -70,6 +70,7 @@
 #include <esp_lcd_panel_rgb.h>
 
 #include "display.h"
+#include "display_margins.h"
 #include "io_expander_ch422g.h"
 
 static const char *TAG = "DisplayRGB";
@@ -340,8 +341,11 @@ extern "C" void display_clear(uint8_t color)
 
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
-    int px = (int)x * RGB_SCALE;
-    int py = (int)y * RGB_SCALE;
+    /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
+     * the left/top margin into the full physical panel (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = ((int)x + display_margin_left()) * RGB_SCALE;
+    int py = ((int)y + display_margin_top())  * RGB_SCALE;
     if (px >= s_width || py >= s_height) return;
     uint16_t v = (color == 0) ? 0x0000 : 0xFFFF;
     int x_end = px + RGB_SCALE; if (x_end > s_width)  x_end = s_width;
@@ -367,8 +371,8 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
                                     const void *color_map)
 {
     if (w <= 0 || h <= 0) return true;
-    int px = x * RGB_SCALE;
-    int py = y * RGB_SCALE;
+    int px = (x + display_margin_left()) * RGB_SCALE;
+    int py = (y + display_margin_top())  * RGB_SCALE;
     int pw = w * RGB_SCALE;
     int ph = h * RGB_SCALE;
     if (px < 0 || py < 0) return true;

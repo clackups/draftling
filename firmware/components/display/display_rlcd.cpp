@@ -12,6 +12,7 @@
 #include <esp_lcd_panel_io.h>
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "Display";
 
@@ -185,7 +186,14 @@ extern "C" void display_clear(uint8_t color)
 
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
-    int lut_idx = x * s_height + y;
+    /* LVGL hands us coordinates in the margin-shrunk logical canvas
+     * (see app_config.h's DISPLAY_LOGICAL_WIDTH/HEIGHT); offset into
+     * the full physical panel by the left/top margin so unused panel
+     * area lands on the correct edges (same convention as
+     * display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    int lut_idx = px * s_height + py;
     uint16_t idx  = s_pixel_index_lut[lut_idx];
     uint8_t  mask = s_pixel_bit_lut[lut_idx];
     if (color)

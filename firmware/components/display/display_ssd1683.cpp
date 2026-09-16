@@ -70,6 +70,7 @@
 #include <esp_lcd_panel_io.h>
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "DisplaySSD1683";
 
@@ -707,12 +708,17 @@ extern "C" void display_clear(uint8_t color)
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
     if (!s_initialized) return;
-    if (x >= PANEL_W || y >= PANEL_H) return;
-    size_t idx  = (size_t)y * BYTES_PER_ROW + (x >> 3);
-    uint8_t mask = (uint8_t)(0x80 >> (x & 7));
+    /* LVGL hands us coordinates in the margin-shrunk logical canvas;
+     * offset into the full physical panel by the left/top margin (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    if (px < 0 || py < 0 || px >= PANEL_W || py >= PANEL_H) return;
+    size_t idx  = (size_t)py * BYTES_PER_ROW + (px >> 3);
+    uint8_t mask = (uint8_t)(0x80 >> (px & 7));
     if (color) s_disp_buf[idx] |= mask;   /* bit=1: white paper */
     else       s_disp_buf[idx] &= (uint8_t)~mask;  /* bit=0: black ink */
-    mark_dirty_rect(x, y, 1, 1);
+    mark_dirty_rect(px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int /*x*/, int /*y*/, int /*w*/, int /*h*/,

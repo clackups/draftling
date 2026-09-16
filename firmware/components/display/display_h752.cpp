@@ -12,6 +12,7 @@
 #include <FastEPD.h>
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "DisplayH752";
 
@@ -235,8 +236,11 @@ extern "C" void display_clear(uint8_t color)
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
     if (!s_initialized || !s_fb) return;
-    int px = (int)x * H752_SCALE;
-    int py = (int)y * H752_SCALE;
+    /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
+     * the left/top margin into the full physical panel (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = ((int)x + display_margin_left()) * H752_SCALE;
+    int py = ((int)y + display_margin_top())  * H752_SCALE;
     fill_panel_rect(px, py, H752_SCALE, H752_SCALE, color == 0);
     mark_dirty_rect(px, py, H752_SCALE, H752_SCALE);
 }
@@ -244,15 +248,17 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
 {
     if (!s_initialized || !s_fb || !color_map || w <= 0 || h <= 0) return false;
+    int ox = x + display_margin_left();
+    int oy = y + display_margin_top();
     const uint16_t *src = (const uint16_t *)color_map;
     for (int sy = 0; sy < h; ++sy) {
         for (int sx = 0; sx < w; ++sx) {
             bool black = rgb565_is_black(src[(size_t)sy * w + sx]);
-            fill_panel_rect((x + sx) * H752_SCALE, (y + sy) * H752_SCALE,
+            fill_panel_rect((ox + sx) * H752_SCALE, (oy + sy) * H752_SCALE,
                             H752_SCALE, H752_SCALE, black);
         }
     }
-    mark_dirty_rect(x * H752_SCALE, y * H752_SCALE,
+    mark_dirty_rect(ox * H752_SCALE, oy * H752_SCALE,
                     w * H752_SCALE, h * H752_SCALE);
     return true;
 }

@@ -38,6 +38,7 @@
 #include <esp_lcd_panel_io.h>
 
 #include "display.h"
+#include "display_margins.h"
 
 static const char *TAG = "DisplayILI9341";
 
@@ -398,22 +399,29 @@ extern "C" void display_clear(uint8_t color)
 
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
-    if (x >= s_width || y >= s_height) return;
-    s_fb[(size_t)y * s_width + x] = color ? 0xFFFF : 0x0000;
+    /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
+     * the left/top margin into the full physical panel (same
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    if (px < 0 || py < 0 || px >= s_width || py >= s_height) return;
+    s_fb[(size_t)py * s_width + px] = color ? 0xFFFF : 0x0000;
     if (s_dirty_x1 < 0) {
-        s_dirty_x1 = s_dirty_x2 = x;
-        s_dirty_y1 = s_dirty_y2 = y;
+        s_dirty_x1 = s_dirty_x2 = px;
+        s_dirty_y1 = s_dirty_y2 = py;
     } else {
-        if (x < s_dirty_x1) s_dirty_x1 = x;
-        if (x > s_dirty_x2) s_dirty_x2 = x;
-        if (y < s_dirty_y1) s_dirty_y1 = y;
-        if (y > s_dirty_y2) s_dirty_y2 = y;
+        if (px < s_dirty_x1) s_dirty_x1 = px;
+        if (px > s_dirty_x2) s_dirty_x2 = px;
+        if (py < s_dirty_y1) s_dirty_y1 = py;
+        if (py > s_dirty_y2) s_dirty_y2 = py;
     }
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
 {
     if (w <= 0 || h <= 0) return true;
+    x += display_margin_left();
+    y += display_margin_top();
     int x2 = x + w - 1;
     int y2 = y + h - 1;
     if (x2 >= s_width)  x2 = s_width  - 1;
