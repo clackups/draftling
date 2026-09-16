@@ -17,7 +17,7 @@
  * refresh protocol already used by
  * components/display/display_xteink_epd.cpp's ssd1677_* functions
  * (dual-RAM 0x24/0x26 writes, 0x22/0x20 update control / master
- * activation, busy-while-HIGH). This board has NOT been tested on
+ * activation, busy-while-HIGH). This board has been tested on
  * physical hardware.
  *
  * Panel: 800x480, no mirror. SPI: SCLK=11, MOSI=12, CS=10, DC=9,
