@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-16
+
 ### Added
 
 - **Display upside down** setting (F1 -> Settings): turns the whole
