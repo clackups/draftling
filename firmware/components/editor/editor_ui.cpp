@@ -29,6 +29,7 @@
 #include "display.h"
 #include "display_margins.h"
 #include "display_orientation.h"
+#include "display_flip.h"
 #include "standby.h"
 #include "greybeard.h"
 #include "battery.h"
@@ -641,9 +642,16 @@ static int s_margin_left = 0, s_margin_right = 0, s_margin_top = 0, s_margin_bot
  * that will apply on the next restart. */
 static bool s_pending_portrait = false;
 
-/* Set whenever a restart-only display setting -- a margin, or the
- * display orientation -- is changed during the current Settings visit;
- * drives the "restart now?" prompt shown on the way out (see
+/* Pending "Display upside down" flag (Settings -> Display upside
+ * down). Like the orientation above, this is frozen for the session
+ * (see display_flip.h); this local tracks the NVS-persisted value
+ * that will apply on the next restart. */
+static bool s_pending_upside_down = false;
+
+/* Set whenever a restart-only display setting -- a margin, the
+ * display orientation, or the upside-down flip -- is changed during
+ * the current Settings visit; drives the "restart now?" prompt shown
+ * on the way out (see
  * request_close_settings() / s_restart_confirm_open below), since that
  * is the earliest point a restart can be applied without yanking the
  * user out of the middle of adjusting settings. */
@@ -3431,14 +3439,25 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_APPEND_ONLY   (_SETTINGS_NEXT_AFTER_INVERT + 0)
 #define SETTINGS_IDX_LAYOUTS       (_SETTINGS_NEXT_AFTER_INVERT + 1)
 #define SETTINGS_IDX_ORIENTATION   (_SETTINGS_NEXT_AFTER_INVERT + 2)
-#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_INVERT + 3)
-#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_INVERT + 4)
-#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_INVERT + 5)
-#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_INVERT + 6)
+#define _SETTINGS_NEXT_AFTER_ORIENTATION (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+/* Boards with the live-apply "Rotate 180" toggle above already offer
+ * this exact turn with no restart needed; do not also offer a second,
+ * restart-requiring way to do the same thing. */
+#define SETTINGS_IDX_UPSIDE_DOWN   (-1)
+#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN _SETTINGS_NEXT_AFTER_ORIENTATION
+#else
+#define SETTINGS_IDX_UPSIDE_DOWN   (_SETTINGS_NEXT_AFTER_ORIENTATION + 0)
+#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN (_SETTINGS_NEXT_AFTER_ORIENTATION + 1)
+#endif
+#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 0)
+#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 1)
+#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 2)
+#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 3)
 /* "Sleep now" used to live here; it now lives in the F1 menu. */
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_INVERT + 7)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_INVERT + 8)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_INVERT + 9)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 4)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 5)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 6)
 
 static void refresh_settings_items(void)
 {
@@ -3523,6 +3542,18 @@ static void refresh_settings_items(void)
     snprintf(buf, sizeof(buf), "Display orientation: %s (restart to apply)",
              s_pending_portrait ? "Portrait" : "Landscape");
     lv_list_add_btn(s_settings_list, NULL, buf);
+
+#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    /* Display upside down -- adds a further 180-degree turn on top of
+     * whatever the orientation setting above already produces. Frozen
+     * for the session like the orientation, so it only takes effect on
+     * a restart. Boards with the live-apply "Rotate 180" toggle
+     * (CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE) skip this row -- see the
+     * SETTINGS_IDX_UPSIDE_DOWN comment above. */
+    snprintf(buf, sizeof(buf), "Display upside down: %s (restart to apply)",
+             s_pending_upside_down ? "On" : "Off");
+    lv_list_add_btn(s_settings_list, NULL, buf);
+#endif
 
     /* Screen margins -- pixels of panel hidden under the enclosure on
      * each edge. Zero by default; the LVGL display resolution is fixed
@@ -3831,6 +3862,19 @@ static bool settings_cycle_item(int idx, int dir)
         s_restart_needed = true;
         refresh_settings_items();
         return true;
+#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    } else if (idx == SETTINGS_IDX_UPSIDE_DOWN) {
+        /* Only two states, so either direction toggles. Persisted to
+         * NVS for the next boot; like the orientation above, the LVGL
+         * rotation and the whole widget tree are fixed for the
+         * session (see display_flip.h), so request_close_settings()
+         * offers a restart on the way out. */
+        s_pending_upside_down = !s_pending_upside_down;
+        display_flip_set_upside_down(s_pending_upside_down);
+        s_restart_needed = true;
+        refresh_settings_items();
+        return true;
+#endif
     } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
         int oi = find_margin_option(s_margin_left);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
@@ -7343,6 +7387,7 @@ extern "C" void editor_ui_init(void)
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();
+    s_pending_upside_down = display_flip_get_pending_upside_down();
     init_styles();
 
     /* Create key-event queue (must exist before BLE callback is set) */

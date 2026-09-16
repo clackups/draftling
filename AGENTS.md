@@ -389,10 +389,11 @@ Per-board display backends behind a single C API:
   talk to the panel over SPI until ALDO3 is enabled over I2C first --
   see `components/battery/battery.cpp`'s
   `battery_axp2101_enable_display_rail()`, called from this hook.
-- **display_margins.cpp** / **display_orientation.cpp** -- the two
-  runtime, NVS-persisted, frozen-at-boot display settings that feed
-  `SCR_W`/`SCR_H` and the LVGL rotation angle. See the "Screen margins"
-  and "Display orientation" sections further down.
+- **display_margins.cpp** / **display_orientation.cpp** /
+  **display_flip.cpp** -- the three runtime, NVS-persisted,
+  frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
+  LVGL rotation angle. See the "Screen margins", "Display
+  orientation" and "Display upside down" sections further down.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
@@ -438,13 +439,16 @@ in NVS under the `editor` namespace and applied at boot via
 `display_set_backlight()`; default 50%), color theme (only on
 `CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, **display
 orientation** (Landscape / Portrait -- see the "Display orientation"
-section below), four screen margins (Left/Right/Top/Bottom, 0-40 px in
+section below), **display upside down** (On / Off -- see the "Display
+upside down" section below; hidden on boards that already expose the
+live-apply "Rotate 180" toggle, `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`),
+four screen margins (Left/Right/Top/Bottom, 0-40 px in
 2 px steps, zero by default -- see the "Screen margins" section above),
-factory reset and back. The orientation and margin rows are persisted
-immediately but only take effect after a restart, hence the "(restart
-to apply)" suffix on their labels; leaving Settings with any of them
-changed this visit (`s_restart_needed`) raises the shared "Restart now
-to apply changes" prompt. ("Sleep now" used to sit here; it is now a top-level F1 menu item
+factory reset and back. The orientation, upside-down and margin rows
+are persisted immediately but only take effect after a restart, hence
+the "(restart to apply)" suffix on their labels; leaving Settings with
+any of them changed this visit (`s_restart_needed`) raises the shared
+"Restart now to apply changes" prompt. ("Sleep now" used to sit here; it is now a top-level F1 menu item
 -- see below.) Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
@@ -1239,6 +1243,47 @@ reason as the margins -- the LVGL canvas and widget tree are built once
 at boot -- so a change only applies after a restart, offered by
 `request_close_settings()` (shared with the margin-change prompt via
 `s_restart_needed` / the "Restart now to apply changes" list).
+
+### Display upside down (user-adjustable, not a Kconfig setting)
+
+Off (default) or on, a second **runtime, NVS-persisted** setting,
+modelled exactly on the "Display orientation" setting above:
+`components/display/display_flip.{h,cpp}` expose
+`display_flip_is_upside_down()` (frozen, session-lifetime, loaded by
+`display_flip_init()`, which `main.cpp` calls right after
+`display_orientation_init()`), plus `display_flip_set_upside_down()` /
+`display_flip_get_pending_upside_down()` for the F1 -> Settings
+"Display upside down" row. NVS namespace `dispflip`, key `updown`
+(u8). Off on a fresh install.
+
+When on, it adds a further 180 degrees on top of whatever
+`DISPLAY_ROTATE` and the portrait extra-rotate already produce:
+`app_config.h`'s `DISPLAY_ROTATE_EFFECTIVE` folds in
+`display_flip_is_upside_down() ? 180 : 0` after the portrait
+conditional, mod 360. A plain 180 turn never swaps width and height,
+so it composes with the portrait quarter turn in either order and does
+not affect `scr_axes_swapped()`; it reuses the exact same
+`DISPLAY_ROTATE_EFFECTIVE` -> `draftling_lvgl_port_init()` pipeline as
+the base rotation and portrait extra-rotate, so the software tile
+rotation (`flush_cb` in `lvgl_port.cpp`) and touch-point rotation stay
+correct for free. Frozen for the session for the same reason as the
+margins and orientation -- the LVGL rotation angle is fixed at
+`draftling_lvgl_port_init()` time -- so a change only applies after a
+restart, offered by `request_close_settings()` alongside the margin
+and orientation prompts.
+
+This setting is hidden from F1 -> Settings on boards where
+`CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE` is set (currently the
+parallel-RGB boards -- see "Display Rotation" below): those boards
+already expose a "Rotate 180" toggle that does the same 180-degree
+turn, applied immediately via `draftling_lvgl_port_set_flip180()`
+with no restart needed (a 180 flip never changes the reported
+resolution, so the LVGL widget tree does not need rebuilding).
+Offering both at once on the same board would be two redundant
+controls for the same turn; `editor_ui.cpp`'s
+`SETTINGS_IDX_UPSIDE_DOWN` is `-1` (and the row and its Enter/arrow
+handling compiled out) whenever `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`
+is defined.
 
 #### E-paper full-refresh interval (DRAFTLING_EPD_FULL_REFRESH_INTERVAL)
 

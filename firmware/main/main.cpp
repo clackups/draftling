@@ -1536,6 +1536,13 @@ extern "C" void app_main(void)
      * split-screen axis all have to see the same value for the session. */
     display_orientation_init();
 
+    /* Load the user-selected "Display upside down" flag (Settings ->
+     * Display upside down; off on a fresh install) before anything
+     * below derives DISPLAY_ROTATE_EFFECTIVE from it. It adds a
+     * further 180 degrees on top of whatever display_orientation_init()
+     * above just produced. */
+    display_flip_init();
+
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
     /* Close the hardware power latch first thing after NVS so the
      * battery rail stays alive when the user releases the boot-time
