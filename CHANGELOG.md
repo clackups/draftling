@@ -6,6 +6,15 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Display upside down** setting (F1 -> Settings): turns the whole
+  UI 180 degrees, for boards or enclosures that can be mounted either
+  way up. Persisted in NVS and applied on the next restart, which is
+  offered right when you leave the Settings screen. Boards that
+  already expose a live-apply "Rotate 180" toggle keep using that
+  instead (no duplicate setting).
+
 ## [1.0.4] - 2026-09-11
 
 ### Fixed

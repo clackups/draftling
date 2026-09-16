@@ -3,6 +3,7 @@
 #include "sdkconfig.h"
 #include "display_margins.h"
 #include "display_orientation.h"
+#include "display_flip.h"
 
 /* Display dimensions (derived from Kconfig hardware model selection) */
 #define DISPLAY_WIDTH   CONFIG_DRAFTLING_DISPLAY_WIDTH
@@ -17,14 +18,19 @@
  * adds DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE degrees (90 by default,
  * 270 on the Xteink X4 Pro whose enclosure reads better the other way)
  * on top of the base rotation for portrait, turning a landscape board
- * a quarter turn. display_orientation_init() must have run (main.cpp
- * calls it right after display_margins_init()) before this is
- * evaluated. */
+ * a quarter turn. The "Display upside down" setting (also F1 ->
+ * Settings, also restart to apply) then adds a further 180 degrees on
+ * top of that -- a plain half turn never changes which axis is which,
+ * so it composes with the portrait quarter turn in either order.
+ * display_orientation_init() and display_flip_init() must have both
+ * run (main.cpp calls them right after display_margins_init()) before
+ * this is evaluated. */
 #define DISPLAY_ROTATE_EFFECTIVE                                            \
-    (display_orientation_is_portrait()                                      \
-        ? ((DISPLAY_ROTATE + CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE) \
-           % 360)                                                          \
-        : DISPLAY_ROTATE)
+    (((display_orientation_is_portrait()                                    \
+        ? (DISPLAY_ROTATE + CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE)  \
+        : DISPLAY_ROTATE)                                                   \
+      + (display_flip_is_upside_down() ? 180 : 0))                          \
+     % 360)
 
 /* The editor and LVGL canvas render 1:1 at the panel resolution,
  * minus the user-adjustable margins (display_margins.h) -- pixels of
