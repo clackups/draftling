@@ -87,6 +87,8 @@ ROUTER(greybeard_16_ext, 15, 3);
 ROUTER(greybeard_18_ext, 17, 3);
 ROUTER(greybeard_22_ext, 21, 4);
 ROUTER(greybeard_26_ext, 25, 5);
+ROUTER(greybeard_30_ext, 30, 6);
+ROUTER(greybeard_34_ext, 33, 6);
 
 /* Routers chained after the Hebrew font so that Hebrew can hand off
  * to Cyrillic when both layouts are enabled. Defined unconditionally
@@ -97,6 +99,8 @@ ROUTER(greybeard_16_he_next, 15, 3);
 ROUTER(greybeard_18_he_next, 17, 3);
 ROUTER(greybeard_22_he_next, 21, 4);
 ROUTER(greybeard_26_he_next, 25, 5);
+ROUTER(greybeard_30_he_next, 30, 6);
+ROUTER(greybeard_34_he_next, 33, 6);
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;
@@ -105,6 +109,8 @@ extern const lv_font_t greybeard_cyrillic_16;
 extern const lv_font_t greybeard_cyrillic_18;
 extern const lv_font_t greybeard_cyrillic_22;
 extern const lv_font_t greybeard_cyrillic_26;
+extern const lv_font_t greybeard_cyrillic_30;
+extern const lv_font_t greybeard_cyrillic_34;
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -114,6 +120,8 @@ extern const lv_font_t greybeard_hebrew_16;
 extern const lv_font_t greybeard_hebrew_18;
 extern const lv_font_t greybeard_hebrew_22;
 extern const lv_font_t greybeard_hebrew_26;
+extern const lv_font_t greybeard_hebrew_30;
+extern const lv_font_t greybeard_hebrew_34;
 #endif
 
 void greybeard_init(void)
@@ -126,6 +134,8 @@ void greybeard_init(void)
     greybeard_18_ext.fallback = &greybeard_hebrew_18;
     greybeard_22_ext.fallback = &greybeard_hebrew_22;
     greybeard_26_ext.fallback = &greybeard_hebrew_26;
+    greybeard_30_ext.fallback = &greybeard_hebrew_30;
+    greybeard_34_ext.fallback = &greybeard_hebrew_34;
 #  ifdef CONFIG_KB_LAYOUT_ENABLE_UA
     greybeard_11_he_next.fallback = &greybeard_cyrillic_11;
     greybeard_14_he_next.fallback = &greybeard_cyrillic_14;
@@ -133,6 +143,8 @@ void greybeard_init(void)
     greybeard_18_he_next.fallback = &greybeard_cyrillic_18;
     greybeard_22_he_next.fallback = &greybeard_cyrillic_22;
     greybeard_26_he_next.fallback = &greybeard_cyrillic_26;
+    greybeard_30_he_next.fallback = &greybeard_cyrillic_30;
+    greybeard_34_he_next.fallback = &greybeard_cyrillic_34;
 #  endif
 #elif defined(CONFIG_KB_LAYOUT_ENABLE_UA)
     /* Base -> Cyrillic (no Hebrew) */
@@ -142,5 +154,7 @@ void greybeard_init(void)
     greybeard_18_ext.fallback = &greybeard_cyrillic_18;
     greybeard_22_ext.fallback = &greybeard_cyrillic_22;
     greybeard_26_ext.fallback = &greybeard_cyrillic_26;
+    greybeard_30_ext.fallback = &greybeard_cyrillic_30;
+    greybeard_34_ext.fallback = &greybeard_cyrillic_34;
 #endif
 }

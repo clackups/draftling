@@ -36,6 +36,15 @@
  *   18 px: adv_w 144 -> char width  9, line_height 17
  *   22 px: adv_w 176 -> char width 11, line_height 21
  *   26 px: adv_w 208 -> char width 13, line_height 25  (scaled from 22 px TTF)
+ *   30 px: adv_w 240 -> char width 15, line_height 30  (scaled from 22 px TTF)
+ *   34 px: adv_w 272 -> char width 17, line_height 33  (scaled from 22 px TTF)
+ *
+ * Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
+ * and 22 px base font sizes (see FONT_SIZE_OPTIONS in
+ * components/editor/editor_ui.cpp) -- there is no matching base
+ * font size that large, since Greybeard's monospace cell would make
+ * an 800x480-class panel show very little text at 30 px or 34 px body
+ * text.
  *
  * License: MIT
  * https://github.com/flowchartsman/greybeard
@@ -54,6 +63,8 @@ extern const lv_font_t greybeard_16;
 extern const lv_font_t greybeard_18;
 extern const lv_font_t greybeard_22;
 extern const lv_font_t greybeard_26;
+extern const lv_font_t greybeard_30;
+extern const lv_font_t greybeard_34;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;
@@ -62,6 +73,8 @@ extern const lv_font_t greybeard_cyrillic_16;
 extern const lv_font_t greybeard_cyrillic_18;
 extern const lv_font_t greybeard_cyrillic_22;
 extern const lv_font_t greybeard_cyrillic_26;
+extern const lv_font_t greybeard_cyrillic_30;
+extern const lv_font_t greybeard_cyrillic_34;
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -71,6 +84,8 @@ extern const lv_font_t greybeard_hebrew_16;
 extern const lv_font_t greybeard_hebrew_18;
 extern const lv_font_t greybeard_hebrew_22;
 extern const lv_font_t greybeard_hebrew_26;
+extern const lv_font_t greybeard_hebrew_30;
+extern const lv_font_t greybeard_hebrew_34;
 #endif
 
 /* Wire up the runtime fallback chain so the base fonts pick up

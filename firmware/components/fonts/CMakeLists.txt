@@ -6,6 +6,8 @@ set(srcs
     "greybeard_18.c"
     "greybeard_22.c"
     "greybeard_26.c"
+    "greybeard_30.c"
+    "greybeard_34.c"
 )
 
 if(CONFIG_KB_LAYOUT_ENABLE_UA)
@@ -16,6 +18,8 @@ if(CONFIG_KB_LAYOUT_ENABLE_UA)
         "greybeard_cyrillic_18.c"
         "greybeard_cyrillic_22.c"
         "greybeard_cyrillic_26.c"
+        "greybeard_cyrillic_30.c"
+        "greybeard_cyrillic_34.c"
     )
 endif()
 
@@ -27,6 +31,8 @@ if(CONFIG_KB_LAYOUT_ENABLE_HE)
         "greybeard_hebrew_18.c"
         "greybeard_hebrew_22.c"
         "greybeard_hebrew_26.c"
+        "greybeard_hebrew_30.c"
+        "greybeard_hebrew_34.c"
     )
 endif()
 

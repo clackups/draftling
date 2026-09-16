@@ -49,11 +49,11 @@
  * with an approximately matching row height.
  *
  * The body font is selected at runtime via the base font size user
- * setting (11, 14, or 16 px; high-density boards add a 20 px step,
- * plus a 9 px step even smaller than the smallest Greybeard-mirrored
- * slot for users who want to fit more text on a large, dense panel).
- * Heading fonts are scaled relative to the body size, using the 26 px
- * slot for the largest headings.
+ * setting (11, 14, 16, 18, or 22 px; high-density boards instead offer
+ * 9, 11, 14, 16, or 20 px, since the larger Hack glyphs need fewer
+ * body steps to cover the same visual range). Heading fonts are
+ * scaled relative to the body size, going as high as slot 34 (only
+ * defined on non-HIDPI boards, for the 22 px body size's H1).
  * Status bars always use FONT_11 regardless of the body font setting.
  */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
@@ -73,6 +73,8 @@
 #define FONT_18 (&greybeard_18)
 #define FONT_22 (&greybeard_22)
 #define FONT_26 (&greybeard_26)
+#define FONT_30 (&greybeard_30)
+#define FONT_34 (&greybeard_34)
 #endif
 
 static const char *TAG = "EditorUI";
@@ -126,21 +128,21 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #endif
 
 /* ---- Base font size setting ----
- * The user can pick 11, 14, or 16 px as the editor body font.
+ * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
  * Heading fonts are scaled up from the body size. High-density
  * (HIDPI) boards render with the larger Hack family and expose two
- * extra steps: 20 px, since their panels have the resolution to show
- * a bigger body font comfortably, and 9 px -- smaller than the
- * smallest Greybeard-mirrored slot -- for users who want to fit more
- * text on a large, dense panel. */
+ * extra steps instead: 20 px, since their panels have the resolution
+ * to show a bigger body font comfortably, and 9 px -- smaller than
+ * the smallest Greybeard-mirrored slot -- for users who want to fit
+ * more text on a large, dense panel. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 #define FONT_SIZE_COUNT 5
 static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 9, 11, 14, 16, 20 };
 static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "9 px", "11 px", "14 px", "16 px", "20 px" };
 #else
-#define FONT_SIZE_COUNT 3
-static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16 };
-static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "11 px", "14 px", "16 px" };
+#define FONT_SIZE_COUNT 5
+static const int FONT_SIZE_OPTIONS[FONT_SIZE_COUNT] = { 11, 14, 16, 18, 22 };
+static const char *FONT_SIZE_LABELS[FONT_SIZE_COUNT] = { "11 px", "14 px", "16 px", "18 px", "22 px" };
 #endif
 
 /* NVS namespace/key for font size */
@@ -199,6 +201,9 @@ static const lv_font_t *body_font(void)
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_18;
     if (s_font_size == 9)  return FONT_9;
+#else
+    if (s_font_size == 22) return FONT_22;
+    if (s_font_size == 18) return FONT_18;
 #endif
     if (s_font_size == 16) return FONT_16;
     if (s_font_size == 14) return FONT_14;
@@ -210,13 +215,21 @@ static const lv_font_t *body_font(void)
  *   body 11 -> h3 14, h2 16, h1 18
  *   body 14 -> h3 16, h2 18, h1 22
  *   body 16 -> h3 18, h2 22, h1 26
+ *   body 18 -> h3 22, h2 26, h1 30 (non-HIDPI only; slot 30 scaled from
+ *              Greybeard's 22 px TTF, since Greybeard has no native
+ *              size that large)
  *   body 20 -> h3 22, h2 26, h1 30 (HIDPI only; slot 30 is Hack-only)
+ *   body 22 -> h3 26, h2 30, h1 34 (non-HIDPI only; slots 30/34 scaled
+ *              from Greybeard's 22 px TTF)
  */
 static const lv_font_t *h1_font(void)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_30;
     if (s_font_size == 9)  return FONT_16;
+#else
+    if (s_font_size == 22) return FONT_34;
+    if (s_font_size == 18) return FONT_30;
 #endif
     if (s_font_size == 16) return FONT_26;
     if (s_font_size == 14) return FONT_22;
@@ -228,6 +241,9 @@ static const lv_font_t *h2_font(void)
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_26;
     if (s_font_size == 9)  return FONT_14;
+#else
+    if (s_font_size == 22) return FONT_30;
+    if (s_font_size == 18) return FONT_26;
 #endif
     if (s_font_size == 16) return FONT_22;
     if (s_font_size == 14) return FONT_18;
@@ -239,6 +255,9 @@ static const lv_font_t *h3_font(void)
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     if (s_font_size == 20) return FONT_22;
     if (s_font_size == 9)  return FONT_11;
+#else
+    if (s_font_size == 22) return FONT_26;
+    if (s_font_size == 18) return FONT_22;
 #endif
     if (s_font_size == 16) return FONT_18;
     if (s_font_size == 14) return FONT_16;
@@ -1673,6 +1692,8 @@ static int char_width_for_font(const lv_font_t *font)
     if (font == FONT_9)  return 10;   /* hack_9  (16 px): adv_w 160 / 16 */
     return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
 #else
+    if (font == FONT_34) return 17;   /* adv_w 272 / 16 = 17 */
+    if (font == FONT_30) return 15;   /* adv_w 240 / 16 = 15 */
     if (font == FONT_26) return 13;   /* adv_w 208 / 16 = 13 */
     if (font == FONT_22) return 11;   /* adv_w 176 / 16 = 11 */
     if (font == FONT_18) return 9;    /* adv_w 144 / 16 = 9 */
