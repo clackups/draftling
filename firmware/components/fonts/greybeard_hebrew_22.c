@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 22 px
  * Bpp: 1
- * Opts: --font Greybeard-22px.ttf -r 0x590-0x5FF --size 22 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_22_he_next --lv-font-name greybeard_hebrew_22 -o /tmp/gen/greybeard_hebrew_22.c
+ * Opts: --font Greybeard-22px.ttf --autohint-off -r 0x590-0x5FF --size 22 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_22_he_next --lv-font-name greybeard_hebrew_22 -o greybeard_hebrew_22.c
  ******************************************************************************/
 
 #include "lvgl.h"
@@ -322,7 +322,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 #endif
 };
 
-extern lv_font_t greybeard_22_he_next;
+extern const lv_font_t greybeard_22_he_next;
 
 
 /*-----------------

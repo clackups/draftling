@@ -52,6 +52,14 @@
  * X, since freetype's mono rasterizer has no clean pixel mapping at
  * a non-integer ratio.
  *
+ * The 18, 22 and 26 px sizes (and their Cyrillic/Hebrew subsets) are
+ * generated with `--autohint-off`. Without it, freetype's autohinter
+ * drops scanlines out of some glyphs at those specific pixel sizes
+ * (e.g. "O"/"Q" lose a row out of their ring, "V"/"X"/"2" lose a row
+ * mid-stroke) -- see components/fonts/AGENTS notes and AGENTS.md for
+ * details. 11/14/16 px are unaffected (autohinting is a no-op there)
+ * and are generated without the flag.
+ *
  * License: MIT
  * https://github.com/flowchartsman/greybeard
  */

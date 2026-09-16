@@ -962,16 +962,22 @@ the base font walks into Hebrew and/or Cyrillic as appropriate.
 Hebrew layouts also require `CONFIG_LV_USE_BIDI=y` so LVGL renders
 RTL strings in the correct visual order.
 
-`greybeard_18.c`, `greybeard_cyrillic_18.c` and `greybeard_hebrew_18.c`
-are generated with `--autohint-off`, unlike every other size. Without
-it, freetype's autohinter drops entire scanlines out of many glyphs
-at exactly 18px (e.g. diagonal strokes in "V"/"X" get a blank row
-mid-stroke, "M"/"N"/"W" lose a row near the crossbar) -- a rounding
-artifact specific to how the hinter grid-fits this particular
-outline at this particular pixel size. The same flag was tried
-against 11/14/16px (byte-identical output, hinting has no effect
-there) and 22px (only cosmetic 1px stem shifts, no dropouts) before
-concluding the defect, and the fix, are specific to 18px.
+Every `greybeard_NN.c`/`greybeard_cyrillic_NN.c`/`greybeard_hebrew_NN.c`
+file for NN in {18, 22, 26} is generated with `--autohint-off`; 11/14/16
+are not (see below for why). Without it, freetype's autohinter drops
+entire scanlines out of many glyphs -- diagonal strokes in "V"/"X" get
+a blank row mid-stroke, "O"/"Q" lose a row out of their ring, "2" loses
+the row joining its diagonal to its base, etc. This is a rounding
+artifact in how the hinter grid-fits a given outline at a given pixel
+size, so it does not affect every size or every glyph uniformly; it was
+found by rendering the full glyph set and looking for a fully blank
+scanline sandwiched between non-blank ones (excluding known
+intentionally-gapped glyphs like "!", ":", ";", "?", "i", "j", and
+accented Cyrillic/Hebrew letters, which have a real gap by design).
+`--autohint-off` was verified against 11/14/16px too: it produces
+byte-identical output there (hinting has no effect at those sizes), so
+those three are left as originally generated, without the flag, to
+keep the documented command lines minimal.
 
 ### Sizes and Metrics
 
