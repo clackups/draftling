@@ -421,6 +421,24 @@ static void set_full_window_for_trigger(void)
     send_command(0x4F); send_data(0x00); send_data(0x00);
 }
 
+/*
+ * Full refresh now uses the same fast differential waveform (0xFF) as a
+ * partial refresh, instead of the flood-fill "full OTP" waveform (0xF7)
+ * this function used before -- matching display_ws_epd397.cpp's
+ * ws_epd397_display_full(). That driver found its own flood-fill full
+ * waveforms left black text visibly faded even after three passes,
+ * while the fast differential path already used by partial refreshes
+ * reached true black cleanly in one activation. The SSD1683's
+ * differential engine only re-drives a pixel whose New-RAM bit differs
+ * from Old-RAM's, which for a full refresh needs every pixel to read as
+ * "changed" regardless of its real previous value -- achieved by
+ * loading Old RAM with the bitwise complement of the new frame instead
+ * of real prior content, so a transition fires at every pixel. This
+ * exact waveform swap has NOT been verified on this panel on real
+ * hardware; if a full refresh leaves visible ghosting or fails to reach
+ * true black/white, that is the first thing to revert (back to 0xF7
+ * with real, non-complemented Old RAM content).
+ */
 static void epd_update_full(void)
 {
     set_window_slave(0, 49, 0, PANEL_H - 1);
@@ -431,38 +449,40 @@ static void epd_update_full(void)
     pack_window(s_pack_b, 49, 98, 0, PANEL_H - 1);
     send_ram(0x24, s_pack_b, HALF_BUF_LEN);
 
+    /* Old RAM = bitwise complement of the New RAM just written, forcing
+     * every pixel to read as changed (see comment above). */
+    for (size_t i = 0; i < HALF_BUF_LEN; i++) s_pack_a[i] = (uint8_t)~s_pack_a[i];
+    set_window_slave(0, 49, 0, PANEL_H - 1);
+    send_ram(0xA6, s_pack_a, HALF_BUF_LEN);
+
+    for (size_t i = 0; i < HALF_BUF_LEN; i++) s_pack_b[i] = (uint8_t)~s_pack_b[i];
+    set_window_master(49, 98, 0, PANEL_H - 1);
+    send_ram(0x26, s_pack_b, HALF_BUF_LEN);
+
     set_full_window_for_trigger();
     set_cascade_mode();
-    send_command(0x22); send_data(0xF7);  /* full OTP waveform */
+    send_command(0x22); send_data(0xFF);  /* fast B/W OTP LUT, forced full redraw */
     send_command(0x20);
     wait_busy_after_refresh();
 
-    /* Keep Old RAM in sync with what is now actually on the panel
-     * (s_pack_a/s_pack_b already hold exactly that content from the
-     * packing above -- nothing overwrote them across the trigger) so
-     * that any *partial* refresh which does not happen to touch a
-     * given chip still has an accurate Old-RAM baseline there. Both
-     * chips' Master Activation is a shared broadcast trigger (there
-     * is no way to fire only one), so a partial refresh whose dirty
-     * rect only touches one chip's columns still re-triggers the
+    /* Undo the complement above so Old RAM matches what is now
+     * actually on the panel (s_pack_a/s_pack_b hold exactly that real
+     * content again -- nothing else overwrote them across the
+     * trigger), so that any *partial* refresh which does not happen to
+     * touch a given chip still has an accurate Old-RAM baseline there.
+     * Both chips' Master Activation is a shared broadcast trigger
+     * (there is no way to fire only one), so a partial refresh whose
+     * dirty rect only touches one chip's columns still re-triggers the
      * *other* chip's own refresh using whatever is currently in its
      * RAM -- if that chip's Old RAM were left stale (mismatched
      * against its own unchanged, correct New RAM), every such
      * unrelated keystroke would still make it redraw as if content
-     * had changed there. This was the previous approach here
-     * (forcing Old RAM to all-black after every full refresh), on the
-     * theory that the 0xF7 GC16 waveform's own documented auto-copy
-     * of New->Old after refresh needed correcting to avoid a stuck-
-     * black W->W transition on a later *repeat* full refresh -- but
-     * forcing it to black is exactly the mismatch described above,
-     * every single time until the next full refresh. A live editor's
-     * content is essentially never byte-identical across two full
-     * refreshes 30 keystrokes apart, so the repeat-content stuck-
-     * black risk this used to guard against is far less costly than
-     * paying it on every partial refresh in between. */
+     * had changed there. */
+    for (size_t i = 0; i < HALF_BUF_LEN; i++) s_pack_a[i] = (uint8_t)~s_pack_a[i];
     set_window_slave(0, 49, 0, PANEL_H - 1);
     send_ram(0xA6, s_pack_a, HALF_BUF_LEN);
 
+    for (size_t i = 0; i < HALF_BUF_LEN; i++) s_pack_b[i] = (uint8_t)~s_pack_b[i];
     set_window_master(49, 98, 0, PANEL_H - 1);
     send_ram(0x26, s_pack_b, HALF_BUF_LEN);
 }
@@ -710,12 +730,33 @@ extern "C" bool display_push_rgb565(int /*x*/, int /*y*/, int /*w*/, int /*h*/,
  * PR #47 discussion, github.com/clackups/draftling/pull/47).
  * Immediately repeating the exact same update a second time reliably
  * completes it, matching what pressing Ctrl+R already did manually --
- * display_flush() below runs both the full and partial refresh paths
- * twice for this reason. Re-triggering *without* rewriting RAM does
- * not work (it actively erases the just-drawn content instead); the
- * second call must be a full, independent run of the update.
+ * display_flush() below runs the full refresh path twice for this
+ * reason (see CROWPANEL_PARTIAL_SINGLE_TRIGGER below for the partial
+ * path). Re-triggering *without* rewriting RAM does not work (it
+ * actively erases the just-drawn content instead); the second call
+ * must be a full, independent run of the update.
  */
 #define CROWPANEL_PARTIAL_REFRESH 1
+
+/*
+ * EXPERIMENT, not yet hardware-verified: try a single Master Activation
+ * trigger for the partial (per-keystroke) refresh path only, matching
+ * display_ws_epd397.cpp's driver (one trigger per flush, no repeat,
+ * and no fixed post-refresh settle delay beyond BUSY itself). The
+ * double-trigger fix above is real and confirmed on this panel, but
+ * PR #47's investigation exercised the original ESPHome driver's own
+ * human-paced button-press test patterns, not this codebase's
+ * rapid-fire per-keystroke fast-waveform partial refreshes
+ * specifically -- so it is possible (not confirmed) that the ~400 ms
+ * EPD_REFRESH_SETTLE_MS gap already between every partial refresh in
+ * normal typing masks the same missing-transition failure mode a
+ * *full* refresh hits back-to-back. If a burst of typing on real
+ * hardware leaves stale/incomplete characters on screen (the
+ * "recently-written text goes missing" symptom from PR #47), set this
+ * back to 0 -- that reverts to the confirmed-safe double-trigger for
+ * partial refreshes too.
+ */
+#define CROWPANEL_PARTIAL_SINGLE_TRIGGER 1
 
 extern "C" void display_flush(void)
 {
@@ -762,10 +803,16 @@ extern "C" void display_flush(void)
          * s_dirty[] entry here (left over from when it only wrote a
          * narrow window) would repeat the same ~1s+ full-buffer
          * transfer up to MAX_DIRTY_RECTS times for a single keystroke,
-         * for no benefit -- call it twice total instead, matching
-         * epd_update_full()'s fix above. */
+         * for no benefit -- one call already covers the whole dirty
+         * set regardless of how many rectangles it merged. */
+#if CROWPANEL_PARTIAL_SINGLE_TRIGGER
+        epd_update_partial();
+#else
+        /* Confirmed-safe fallback -- see CROWPANEL_PARTIAL_SINGLE_TRIGGER
+         * above. Call it twice total, matching epd_update_full()'s fix. */
         epd_update_partial();
         epd_update_partial();
+#endif
         s_partial_count++;
     }
 
