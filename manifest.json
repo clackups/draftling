@@ -8,6 +8,17 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-m5stack_papers3-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-m5stack_papers3-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-m5stack_papers3.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -26,6 +37,18 @@
       "description": "ESP32-S3, 800x480 e-paper (SSD1677/UC8179/UC8279)",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_pro-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_pro.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.4",
           "flashMode": "dio",
@@ -47,6 +70,18 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_classic-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_classic-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_classic-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.5/draftling-xteink_x4_classic.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -67,6 +102,17 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-waveshare_rlcd42-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_rlcd42-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_rlcd42.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -85,6 +131,17 @@
       "description": "ESP32-S3, 3.49\" touch color LCD",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-waveshare_touch_lcd_349-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_touch_lcd_349-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_touch_lcd_349.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.4",
           "flashMode": "dio",
@@ -105,6 +162,17 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-waveshare_epaper_397-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_epaper_397-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-waveshare_epaper_397.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -123,6 +191,17 @@
       "description": "ESP32-S3, e-paper (epdiy)",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-lilygo_t5_epd_s3_pro-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-lilygo_t5_epd_s3_pro-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-lilygo_t5_epd_s3_pro.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.4",
           "flashMode": "dio",
@@ -143,6 +222,17 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104a-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104a-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104a.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -161,6 +251,17 @@
       "description": "ESP32-S3, color LCD (ILI9341/ST7796 SPI)",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104b-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104b-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104b.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.4",
           "flashMode": "dio",
@@ -181,6 +282,17 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104s-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104s-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-freenove_fnk0104s.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.4",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -199,6 +311,17 @@
       "description": "ESP32-S3, 5.79\" e-paper (SSD1683)",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.5",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "8MB",
+          "parts": [
+            { "path": "firmware/v1.0.5/draftling-elecrow_crowpanel_579-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.5/draftling-elecrow_crowpanel_579-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.5/draftling-elecrow_crowpanel_579.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.4",
           "flashMode": "dio",
