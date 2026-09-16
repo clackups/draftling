@@ -1242,17 +1242,6 @@ config DRAFTLING_DISPLAY_HIDPI
     # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"
     # (~219 DPI) above -- use the same Hack-font HIDPI path.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
-    # Elecrow CrowPanel 5.79": 792x272 on a 5.79" panel is only ~145
-    # DPI -- the lowest of any board here, the opposite of what this
-    # option was built for (every other entry above is ~219-235 DPI).
-    # Enabled anyway as an experiment: this board's panel is also by
-    # far the shortest (272 px), so Greybeard at native size already
-    # fits a lot of small text on it, and the larger Hack glyphs may
-    # read better on 1-bit e-paper with no anti-aliasing to fall back
-    # on. Trades line count for legibility -- revert this line if
-    # on-hardware testing shows the smaller visible-line count isn't
-    # worth it.
-    default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"

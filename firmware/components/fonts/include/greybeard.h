@@ -36,6 +36,29 @@
  *   18 px: adv_w 144 -> char width  9, line_height 17
  *   22 px: adv_w 176 -> char width 11, line_height 21
  *   26 px: adv_w 208 -> char width 13, line_height 25  (scaled from 22 px TTF)
+ *   30 px: adv_w 256 -> char width 16, line_height 30  (clean 2x pixel-double of 15 px TTF)
+ *   34 px: adv_w 288 -> char width 18, line_height 34  (clean 2x pixel-double of 17 px TTF)
+ *
+ * Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
+ * and 22 px base font sizes (see FONT_SIZE_OPTIONS in
+ * components/editor/editor_ui.cpp) -- there is no matching base
+ * font size that large, since Greybeard's monospace cell would make
+ * an 800x480-class panel show very little text at 30 px or 34 px body
+ * text. Unlike slot 26 (scaled from the 22 px TTF at a non-integer
+ * 1.18x ratio, which is an acceptable one-off since it is only ever
+ * used as a heading), slots 30 and 34 are rendered from the native
+ * 15 px and 17 px TTFs at exactly 2x: scaling 22 px by 1.36x/1.55x
+ * produced visibly uneven diagonal stair-steps on letters like V and
+ * X, since freetype's mono rasterizer has no clean pixel mapping at
+ * a non-integer ratio.
+ *
+ * The 18, 22 and 26 px sizes (and their Cyrillic/Hebrew subsets) are
+ * generated with `--autohint-off`. Without it, freetype's autohinter
+ * drops scanlines out of some glyphs at those specific pixel sizes
+ * (e.g. "O"/"Q" lose a row out of their ring, "V"/"X"/"2" lose a row
+ * mid-stroke) -- see components/fonts/AGENTS notes and AGENTS.md for
+ * details. 11/14/16 px are unaffected (autohinting is a no-op there)
+ * and are generated without the flag.
  *
  * License: MIT
  * https://github.com/flowchartsman/greybeard
@@ -54,6 +77,8 @@ extern const lv_font_t greybeard_16;
 extern const lv_font_t greybeard_18;
 extern const lv_font_t greybeard_22;
 extern const lv_font_t greybeard_26;
+extern const lv_font_t greybeard_30;
+extern const lv_font_t greybeard_34;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;
@@ -62,6 +87,8 @@ extern const lv_font_t greybeard_cyrillic_16;
 extern const lv_font_t greybeard_cyrillic_18;
 extern const lv_font_t greybeard_cyrillic_22;
 extern const lv_font_t greybeard_cyrillic_26;
+extern const lv_font_t greybeard_cyrillic_30;
+extern const lv_font_t greybeard_cyrillic_34;
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -71,6 +98,8 @@ extern const lv_font_t greybeard_hebrew_16;
 extern const lv_font_t greybeard_hebrew_18;
 extern const lv_font_t greybeard_hebrew_22;
 extern const lv_font_t greybeard_hebrew_26;
+extern const lv_font_t greybeard_hebrew_30;
+extern const lv_font_t greybeard_hebrew_34;
 #endif
 
 /* Wire up the runtime fallback chain so the base fonts pick up

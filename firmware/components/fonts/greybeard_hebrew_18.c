@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 18 px
  * Bpp: 1
- * Opts: --font Greybeard-18px.ttf -r 0x590-0x5FF --size 18 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_18_he_next --lv-font-name greybeard_hebrew_18 -o /tmp/gen/greybeard_hebrew_18.c
+ * Opts: --font Greybeard-18px.ttf --autohint-off -r 0x590-0x5FF --size 18 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_18_he_next --lv-font-name greybeard_hebrew_18 -o greybeard_hebrew_18.c
  ******************************************************************************/
 
 #include "lvgl.h"
@@ -300,7 +300,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 #endif
 };
 
-extern lv_font_t greybeard_18_he_next;
+extern const lv_font_t greybeard_18_he_next;
 
 
 /*-----------------

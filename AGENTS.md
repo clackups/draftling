@@ -962,20 +962,57 @@ the base font walks into Hebrew and/or Cyrillic as appropriate.
 Hebrew layouts also require `CONFIG_LV_USE_BIDI=y` so LVGL renders
 RTL strings in the correct visual order.
 
+Every `greybeard_NN.c`/`greybeard_cyrillic_NN.c`/`greybeard_hebrew_NN.c`
+file for NN in {18, 22, 26} is generated with `--autohint-off`; 11/14/16
+are not (see below for why). Without it, freetype's autohinter drops
+entire scanlines out of many glyphs -- diagonal strokes in "V"/"X" get
+a blank row mid-stroke, "O"/"Q" lose a row out of their ring, "2" loses
+the row joining its diagonal to its base, etc. This is a rounding
+artifact in how the hinter grid-fits a given outline at a given pixel
+size, so it does not affect every size or every glyph uniformly; it was
+found by rendering the full glyph set and looking for a fully blank
+scanline sandwiched between non-blank ones (excluding known
+intentionally-gapped glyphs like "!", ":", ";", "?", "i", "j", and
+accented Cyrillic/Hebrew letters, which have a real gap by design).
+`--autohint-off` was verified against 11/14/16px too: it produces
+byte-identical output there (hinting has no effect at those sizes), so
+those three are left as originally generated, without the flag, to
+keep the documented command lines minimal.
+
 ### Sizes and Metrics
 
-Six sizes are provided. All except the 26 px variant are rendered at
-their native TTF pixel size. The 26 px font is scaled from the 22 px
-TTF source.
+Eight sizes are provided. `greybeard_11` through `greybeard_22` are
+rendered at their native TTF pixel size. The remaining three have no
+matching native TTF and are derived from a smaller native size
+instead -- `greybeard_26` by scaling the 22 px TTF up by a
+non-integer 1.18x ratio (acceptable since it is only ever used as a
+heading, one step above the largest body size), and `greybeard_30` /
+`greybeard_34` as a clean 2x pixel-double of the native 15 px / 17 px
+TTFs respectively. The 2x-double approach was chosen over scaling
+from 22 px (as was tried initially) because a non-integer scale
+ratio (22 px -> 30 px is 1.36x, -> 34 px is 1.55x) produces visibly
+uneven, distorted diagonal stair-steps on letters like V and X --
+freetype's 1bpp mono rasterizer has no clean pixel mapping at a
+non-integer ratio. An exact 2x double instead maps each source pixel
+to a crisp 2x2 block, matching the technique already used for the
+Hack family's Hebrew subset (see "Hack fonts" below).
 
 | File | Pixel Size | Char Width | Line Height | Notes |
 |------|-----------|------------|-------------|-------|
 | greybeard_11.c | 11 | 6 | 11 | Smallest, used for compact UI elements |
 | greybeard_14.c | 14 | 7 | 13 | Default body text |
 | greybeard_16.c | 16 | 8 | 15 | |
-| greybeard_18.c | 18 | 9 | 17 | |
-| greybeard_22.c | 22 | 11 | 21 | Headings |
-| greybeard_26.c | 26 | 13 | 25 | Largest heading (scaled from 22 px TTF) |
+| greybeard_18.c | 18 | 9 | 17 | Also a base font size choice |
+| greybeard_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
+| greybeard_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
+| greybeard_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
+| greybeard_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
+
+Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
+and 22 px base font size choices (`FONT_SIZE_OPTIONS` in
+`components/editor/editor_ui.cpp`) -- 30/34 px are not offered as base
+(body) font sizes themselves, since the monospace cell that large
+would show very little content even on a large panel.
 
 All fonts are declared in `components/fonts/include/greybeard.h` as
 `extern const lv_font_t greybeard_NN` and compiled as an IDF component
@@ -995,15 +1032,17 @@ Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
 typeface instead of scaling Greybeard. Hack is a monospaced outline
 font (MIT, https://github.com/source-foundry/Hack). Eight sizes are
-generated with `lv_font_conv`. Six mirror the Greybeard "slots",
-chosen so each text row is approximately the height the user saw with
-Greybeard rendered at the old 2x scale; two are Hack-only slots with
-no Greybeard counterpart (Greybeard's own range is 11-26 px):
-slot 30 provides an H1 heading larger than slot 26 for the HIDPI-only
-20 px base font size, and slot 9 is an extra-compact body size below
-Greybeard's smallest (11), for users who want to fit more text on a
-large, dense panel (e.g. the Waveshare Touch-LCD-7's 7" 800x480
-panel). The file names mirror the Greybeard slots (`hack_11` ..
+generated with `lv_font_conv`. Seven mirror Greybeard slots of the
+same number (11 through 30), chosen so each text row is approximately
+the height the user saw with Greybeard rendered at the old 2x scale;
+slot 9 is Hack-only, with no Greybeard counterpart: an extra-compact
+body size below Greybeard's smallest (11), for users who want to fit
+more text on a large, dense panel (e.g. the Waveshare Touch-LCD-7's
+7" 800x480 panel). Slot 30 provides an H1 heading larger than slot 26
+for the HIDPI-only 20 px base font size; Greybeard also has its own
+slot 30 (and 34), added later to back headings for the non-HIDPI 18 px
+and 22 px base font sizes -- see "Sizes and Metrics" above. The file
+names mirror the Greybeard slots (`hack_11` ..
 `hack_26`) plus the two extras (`hack_9`, `hack_30`); the number is
 the slot, not the Hack pixel size:
 
@@ -1016,7 +1055,7 @@ the slot, not the Hack pixel size:
 | hack_18.c | 28 | 17 | 34 | greybeard_18 (x2) |
 | hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
 | hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
-| hack_30.c | 47 | 28 | 58 | (none; Hack-only H1 slot for the 20 px base size) |
+| hack_30.c | 47 | 28 | 58 | (Greybeard's slot 30 exists too, but is unrelated -- it is not pixel-doubled into this file, since HIDPI boards never fall back to Greybeard) |
 
 Slot 9's heading fonts (h1/h2/h3) reuse the existing slot 11/14/16
 fonts rather than needing new dedicated assets -- the heading scale
@@ -1061,12 +1100,19 @@ builds do not pay for them.
 
 The editor (`components/editor/editor_ui.cpp`) selects the family with
 a compile-time `#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI`: the `FONT_11`
-.. `FONT_26` macros (plus the HIDPI-only `FONT_9` and `FONT_30`),
+.. `FONT_26` macros (plus the HIDPI-only `FONT_9`, and `FONT_30`/
+`FONT_34` which are each defined only on one side of the `#ifdef`),
 `char_width_for_font()` and the boot-time init call all switch between
 Greybeard and Hack. Everything else in the editor is family-agnostic
-because it works through those slots. `FONT_30` is only defined and
-referenced in the HIDPI (Hack) branch, since it backs the H1 heading
-of the HIDPI-only 20 px base font size and has no Greybeard equivalent.
+because it works through those slots. `FONT_9` is HIDPI-only, backing
+the HIDPI-only 9 px base font size, and has no Greybeard equivalent.
+`FONT_30` is defined on both sides but for unrelated fonts: on HIDPI
+boards it is `&hack_30`, backing the H1 heading of the HIDPI-only
+20 px base font size; on non-HIDPI boards it is `&greybeard_30`,
+backing the H1 heading of the non-HIDPI 18 px base font size.
+`FONT_34` is non-HIDPI-only (`&greybeard_34`), backing the H1 heading
+of the non-HIDPI 22 px base font size -- Hack has no matching slot
+since HIDPI's base font sizes top out at 20 px.
 
 ## Hardware Definitions in Kconfig.projbuild
 
