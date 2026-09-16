@@ -30,9 +30,10 @@
  * resistive divider wired to any GPIO) or in any of the vendor's
  * Arduino examples -- see HARDWARE.md.
  *
- * This board has been added without on-hardware testing. Pin
- * assignments come from the vendor's Arduino examples and Eagle
- * schematic (github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-
+ * This board has been extensively tested on physical hardware (see
+ * HARDWARE.md, PR #47). Pin assignments come from the vendor's
+ * Arduino examples and Eagle schematic
+ * (github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-
  * Display-with-272-792) cross-checked against the community ESPHome
  * driver referenced above.
  *

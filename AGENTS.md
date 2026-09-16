@@ -1140,8 +1140,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   own SPI bus. Menu button (GPIO2) is the deep-sleep wake source and
   doubles as F1 / forget-keyboards; Back button + a 3-way dial
   switch (Up/Down/OK) provide full menu navigation without a
-  keyboard. No on-board battery monitor. Added without on-hardware
-  testing; see HARDWARE.md. *Requires ESP32-S3.*
+  keyboard. No on-board battery monitor. Extensively tested on
+  physical hardware; see HARDWARE.md. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:

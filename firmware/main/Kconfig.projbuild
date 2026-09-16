@@ -174,12 +174,13 @@ config DRAFTLING_MODEL_XTEINK_X4_PRO
         Down), Power is the deep-sleep wake / BLE-forget button.
         On-board MicroSD on SDMMC 1-bit.
 
-        This board has been added without on-hardware testing: the
-        register sequences and timing are ported from the FreeInk
-        SDK (github.com/Free-Ink/freeink-sdk, MIT licensed), which
-        reverse-engineered the OEM firmware and validated the paths
-        used here on real units. Grayscale / anti-aliasing rendering
-        is not implemented (matches the existing e-paper boards).
+        This board has been tested on physical hardware (see
+        HARDWARE.md). The register sequences and timing are ported
+        from the FreeInk SDK (github.com/Free-Ink/freeink-sdk, MIT
+        licensed), which reverse-engineered the OEM firmware and
+        validated the paths used here on real units. Grayscale /
+        anti-aliasing rendering is not implemented (matches the
+        existing e-paper boards).
 
 config DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     bool "Xteink X4 Classic / X4 v2 (ESP32-S3, SSD1677/UC8179/UC8279, 4.26\" e-paper, 800x480, no touch)"
@@ -221,8 +222,8 @@ config DRAFTLING_MODEL_ELECROW_CROWPANEL_579
         full menu navigation (Esc / arrow keys / Enter) without a
         keyboard. No on-board battery monitor.
 
-        This board has been added without on-hardware testing; see
-        HARDWARE.md.
+        This board has been extensively tested on physical hardware;
+        see HARDWARE.md.
 
 config DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     bool "Waveshare ESP32-S3-ePaper-3.97 (SSD1677-compatible, 800x480 e-paper)"
@@ -236,14 +237,16 @@ config DRAFTLING_MODEL_WAVESHARE_EPAPER_397
         here -- this board carries a single panel controller). No
         touch controller; four discrete active-low buttons
         (Up/Function/Down plus BOOT) stand in for it, with
-        Up/Function/Down wired to arrow keys / Enter. Battery and the
+        Up/Function/Down wired to arrow keys / Enter and a 2 s hold of
+        Function (the rocker's center press, GPIO5) entering deep
+        sleep (see DRAFTLING_SLEEP_BUTTON_GPIO). Battery and the
         e-paper panel's own supply rail are both managed by an
         on-board AXP2101 PMIC on I2C (see components/battery/battery.cpp
         and the display backend's file header comment for the power-
         sequencing dependency between them). On-board MicroSD on
         SDMMC 1-bit.
 
-        This board has been added without on-hardware testing. Pin
+        This board has been tested on physical hardware. Pin
         numbers and the AXP2101 register map come from Waveshare's
         official ESP-IDF example (github.com/waveshareteam/ESP32-S3-
         ePaper-3.97); that repository carries no license, so no code
@@ -861,6 +864,28 @@ config DRAFTLING_WAKEUP_GPIO
     # Waveshare ESP32-S3-ePaper-3.97: BOOT button on GPIO0.
     default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 0
+
+# DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
+# that enters deep sleep (via standby_enter_sleep()) on a
+# BTN_LONG_PRESS_MS hold, independent of DRAFTLING_WAKEUP_GPIO above.
+# It exists for boards whose deep-sleep trigger is not the BOOT/wake
+# button but a separate navigation control -- e.g. a button that is
+# already wired to a short-press action (Enter, F1, ...) in the
+# board's own key poller. The generic sleep_button_poll_cb() handler
+# in main.cpp polls this pin on its own timer, entirely independent
+# of whatever short-press handling that same pin already gets, so
+# both behaviors coexist without extra per-board C code. -1 (default)
+# disables the handler: most boards have no second sleep-trigger
+# button and rely solely on DRAFTLING_WAKEUP_GPIO /
+# DRAFTLING_HAS_POWER_LATCH for a manual sleep/power-off trigger.
+config DRAFTLING_SLEEP_BUTTON_GPIO
+    int
+    # Waveshare ESP32-S3-ePaper-3.97: the Function button (GPIO5,
+    # BTN_FUNCTION_PIN, the center press of the Up/Function/Down
+    # rocker) injects KB_KEY_ENTER on short press
+    # (ws_epaper397_nav_poll_cb); a 2 s hold enters deep sleep instead.
+    default 5  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default -1
 
 # ---- Touchscreen support ----
 #

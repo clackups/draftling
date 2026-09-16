@@ -139,9 +139,8 @@ an on-board ESP32-C6 co-processor via ESP-Hosted-MCU over SDIO; both
 same as on the ESP32-S3 boards. The C6 must be flashed once with the
 matching ESP-Hosted slave firmware -- see
 [docs/tab5-esp-hosted.md](docs/tab5-esp-hosted.md)` for the
-procedure. Touch and the on-board MicroSD slot work; this board has
-been added without on-hardware testing and will likely need bring-up
-tweaks.
+procedure. This board has been tested on physical hardware; touch and
+the on-board MicroSD slot both work.
 
 The M5Stack Tab5 is a much faster device than those using ESP32-S3,
 and it has a detachable battery. You can buy compatible batteries with
@@ -456,7 +455,7 @@ normal `battery_init_axp2101()` call later in boot. Both entry points
 share one cached I2C device handle so the AXP2101 is only ever added
 to the bus once.
 
-This board has been added without on-hardware testing. Pin numbers
+This board has been tested on physical hardware. Pin numbers
 and the AXP2101 register map used here were read out of Waveshare's
 official ESP-IDF example
 ([github.com/waveshareteam/ESP32-S3-ePaper-3.97](https://github.com/waveshareteam/ESP32-S3-ePaper-3.97)).

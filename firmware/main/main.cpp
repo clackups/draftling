@@ -1414,6 +1414,83 @@ static void wakeup_btn_init(void)
 #endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 &&
         * !CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
 
+/* ---- Generic button long-press-to-sleep handler ----
+ *
+ * DRAFTLING_SLEEP_BUTTON_GPIO (Kconfig) names a GPIO that enters deep
+ * sleep on a BTN_LONG_PRESS_MS hold, for boards whose sleep trigger is
+ * a second physical control rather than the BOOT/wake button already
+ * covered by wakeup_btn_poll_cb() above. This poller only watches for
+ * the long hold and calls standby_enter_sleep() -- it does not inject
+ * any key, so it coexists with whatever short-press handling the same
+ * pin already gets from a board-specific poller (e.g.
+ * ws_epaper397_nav_poll_cb's KB_KEY_ENTER on the Waveshare ePaper-3.97
+ * Function button, physically the center press of that board's
+ * Up/Function/Down rocker). Disabled (compiled out) when the Kconfig
+ * value is -1, the default for every board that has not opted in. */
+#if CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO >= 0
+
+#define SLEEP_BUTTON_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
+
+static void sleep_button_poll_cb(void *arg)
+{
+    (void)arg;
+    static bool down             = false;
+    static int  stable           = 0;
+    static int  hold_ticks       = 0;
+    static bool long_press_fired = false;
+
+    bool raw_down = gpio_get_level((gpio_num_t)CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO) == 0;
+
+    if (raw_down == down) {
+        if (down) {
+            hold_ticks++;
+            if (!long_press_fired && hold_ticks >= SLEEP_BUTTON_LONG_PRESS_TICKS) {
+                long_press_fired = true;
+                ESP_LOGI(TAG, "Sleep button: 2 s long press -- "
+                              "entering deep sleep (GPIO%d)",
+                         CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO);
+                standby_enter_sleep();
+                /* Does not return (EPD/deep-sleep boards). */
+            }
+        }
+        stable = 0;
+        return;
+    }
+
+    if (++stable < 2) return;
+
+    stable = 0;
+    down = raw_down;
+    if (down) {
+        hold_ticks       = 0;
+        long_press_fired = false;
+    } else {
+        long_press_fired = false;
+    }
+}
+
+static void sleep_button_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = 1ULL << CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO;
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = sleep_button_poll_cb;
+    targs.name     = "sleep_btn";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Sleep-button long-press poller started (GPIO%d, "
+                  "hold 2 s to enter deep sleep)",
+             CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO);
+}
+#endif /* CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO >= 0 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
 /* M5Stack Tab5 (ESP32-P4): pre-sleep peripheral teardown.
  *
@@ -2682,6 +2759,14 @@ extern "C" void app_main(void)
      * handler above. */
     ws_epaper397_nav_init();
 #endif
+#endif
+
+#if CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO >= 0
+    /* Second sleep trigger alongside whatever short-press handling
+     * the pin already got above (e.g. ws_epaper397_nav_init() on the
+     * Waveshare ePaper-3.97): hold DRAFTLING_SLEEP_BUTTON_GPIO for 2 s
+     * to enter deep sleep. */
+    sleep_button_init();
 #endif
 
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)

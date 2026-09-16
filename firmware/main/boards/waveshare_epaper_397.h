@@ -15,7 +15,7 @@
  * copied anywhere in this port -- only these factual pin/register
  * assignments were used, the same way the Elecrow CrowPanel 5.79"
  * board header treats its vendor's Eagle schematic as facts-only.
- * This board has NOT been tested on physical hardware.
+ * This board has been tested on physical hardware.
  *
  * E-paper panel SPI bus (SCLK=11, MOSI=12, CS=10, DC=9, RST=46,
  * BUSY=3) is hard-coded directly inside
@@ -67,7 +67,13 @@
  * Elecrow CrowPanel 5.79"'s Back/dial-switch convention. BOOT
  * (WAKEUP_GPIO_NUM) is the standard deep-sleep wake / BLE-forget
  * button every other board already gets via wakeup_btn_init() --
- * no special handling needed here. All four are RTC-capable GPIOs. */
+ * no special handling needed here. All four are RTC-capable GPIOs.
+ *
+ * The Function button (GPIO5) doubles as this board's deep-sleep
+ * trigger: a long press (2 s, CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO in
+ * Kconfig.projbuild) enters standby_enter_sleep() via the generic
+ * sleep_button_poll_cb() handler in main.cpp, independent of the
+ * short-press KB_KEY_ENTER injection above. */
 #define BTN_UP_PIN       4
 #define BTN_FUNCTION_PIN 5
 #define BTN_DOWN_PIN     6

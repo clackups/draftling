@@ -30,8 +30,9 @@
  * from the FreeInk SDK (https://github.com/Free-Ink/freeink-sdk, MIT
  * licensed), which reverse-engineered the Xteink X4 Pro OEM firmware
  * down to exact register values (Ssd1677Driver.cpp, Uc8179Driver.cpp,
- * Uc8279X4Driver.cpp, EpdBus.cpp and XteinkDetect.cpp). This board has
- * NOT been tested on physical hardware; see HARDWARE.md.
+ * Uc8279X4Driver.cpp, EpdBus.cpp and XteinkDetect.cpp). The X4 Pro has
+ * been tested on physical hardware; the X4 Classic has NOT -- see
+ * HARDWARE.md.
  *
  * Panel: 800x480, no mirror. No MISO in normal operation (the
  * boot-time probe temporarily reconfigures MOSI as an input for its
