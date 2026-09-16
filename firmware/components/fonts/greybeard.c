@@ -88,7 +88,7 @@ ROUTER(greybeard_18_ext, 17, 3);
 ROUTER(greybeard_22_ext, 21, 4);
 ROUTER(greybeard_26_ext, 25, 5);
 ROUTER(greybeard_30_ext, 30, 6);
-ROUTER(greybeard_34_ext, 33, 6);
+ROUTER(greybeard_34_ext, 34, 6);
 
 /* Routers chained after the Hebrew font so that Hebrew can hand off
  * to Cyrillic when both layouts are enabled. Defined unconditionally
@@ -100,7 +100,7 @@ ROUTER(greybeard_18_he_next, 17, 3);
 ROUTER(greybeard_22_he_next, 21, 4);
 ROUTER(greybeard_26_he_next, 25, 5);
 ROUTER(greybeard_30_he_next, 30, 6);
-ROUTER(greybeard_34_he_next, 33, 6);
+ROUTER(greybeard_34_he_next, 34, 6);
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;

@@ -964,9 +964,21 @@ RTL strings in the correct visual order.
 
 ### Sizes and Metrics
 
-Eight sizes are provided. All except the 26/30/34 px variants are
-rendered at their native TTF pixel size; those three are scaled from
-the 22 px TTF source, since Greybeard has no native size that large.
+Eight sizes are provided. `greybeard_11` through `greybeard_22` are
+rendered at their native TTF pixel size. The remaining three have no
+matching native TTF and are derived from a smaller native size
+instead -- `greybeard_26` by scaling the 22 px TTF up by a
+non-integer 1.18x ratio (acceptable since it is only ever used as a
+heading, one step above the largest body size), and `greybeard_30` /
+`greybeard_34` as a clean 2x pixel-double of the native 15 px / 17 px
+TTFs respectively. The 2x-double approach was chosen over scaling
+from 22 px (as was tried initially) because a non-integer scale
+ratio (22 px -> 30 px is 1.36x, -> 34 px is 1.55x) produces visibly
+uneven, distorted diagonal stair-steps on letters like V and X --
+freetype's 1bpp mono rasterizer has no clean pixel mapping at a
+non-integer ratio. An exact 2x double instead maps each source pixel
+to a crisp 2x2 block, matching the technique already used for the
+Hack family's Hebrew subset (see "Hack fonts" below).
 
 | File | Pixel Size | Char Width | Line Height | Notes |
 |------|-----------|------------|-------------|-------|
@@ -976,8 +988,8 @@ the 22 px TTF source, since Greybeard has no native size that large.
 | greybeard_18.c | 18 | 9 | 17 | Also a base font size choice |
 | greybeard_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
 | greybeard_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
-| greybeard_30.c | 30 | 15 | 30 | H1 for the 18 px base size (scaled from 22 px TTF) |
-| greybeard_34.c | 34 | 17 | 33 | H1 for the 22 px base size (scaled from 22 px TTF) |
+| greybeard_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
+| greybeard_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
 
 Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
 and 22 px base font size choices (`FONT_SIZE_OPTIONS` in

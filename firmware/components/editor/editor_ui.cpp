@@ -215,12 +215,12 @@ static const lv_font_t *body_font(void)
  *   body 11 -> h3 14, h2 16, h1 18
  *   body 14 -> h3 16, h2 18, h1 22
  *   body 16 -> h3 18, h2 22, h1 26
- *   body 18 -> h3 22, h2 26, h1 30 (non-HIDPI only; slot 30 scaled from
- *              Greybeard's 22 px TTF, since Greybeard has no native
- *              size that large)
+ *   body 18 -> h3 22, h2 26, h1 30 (non-HIDPI only; slot 30 is a clean
+ *              2x pixel-double of Greybeard's native 15 px TTF, since
+ *              Greybeard has no native 30 px size)
  *   body 20 -> h3 22, h2 26, h1 30 (HIDPI only; slot 30 is Hack-only)
- *   body 22 -> h3 26, h2 30, h1 34 (non-HIDPI only; slots 30/34 scaled
- *              from Greybeard's 22 px TTF)
+ *   body 22 -> h3 26, h2 30, h1 34 (non-HIDPI only; slot 34 is a clean
+ *              2x pixel-double of Greybeard's native 17 px TTF)
  */
 static const lv_font_t *h1_font(void)
 {
@@ -1692,8 +1692,8 @@ static int char_width_for_font(const lv_font_t *font)
     if (font == FONT_9)  return 10;   /* hack_9  (16 px): adv_w 160 / 16 */
     return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
 #else
-    if (font == FONT_34) return 17;   /* adv_w 272 / 16 = 17 */
-    if (font == FONT_30) return 15;   /* adv_w 240 / 16 = 15 */
+    if (font == FONT_34) return 18;   /* adv_w 288 / 16 = 18 */
+    if (font == FONT_30) return 16;   /* adv_w 256 / 16 = 16 */
     if (font == FONT_26) return 13;   /* adv_w 208 / 16 = 13 */
     if (font == FONT_22) return 11;   /* adv_w 176 / 16 = 11 */
     if (font == FONT_18) return 9;    /* adv_w 144 / 16 = 9 */
