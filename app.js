@@ -137,6 +137,10 @@ async function disconnect() {
   els.connectBtn.hidden = false;
   els.disconnectBtn.hidden = true;
   els.stepFlash.hidden = true;
+  els.stepDone.hidden = true;
+  els.progressList.innerHTML = "";
+  els.eraseAll.checked = false;
+  els.flashBtn.disabled = false;
 }
 
 function buildProgressRows() {
