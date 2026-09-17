@@ -16,6 +16,40 @@ in the git log.
   offered right when you leave the Settings screen. Boards that
   already expose a live-apply "Rotate 180" toggle keep using that
   instead (no duplicate setting).
+- **18px and 22px base font size** options (F1 -> Settings -> "Base
+  font size") on non-HIDPI (Greybeard font) boards, alongside the
+  existing 11/14/16px. Two new Greybeard heading slots (30px, 34px)
+  back their H1/H2 headings.
+- **Deep sleep from the rocker button** on the Waveshare
+  ESP32-S3-ePaper-3.97: holding the Up/Function/Down rocker's center
+  (Function) press for 2 seconds now enters deep sleep, alongside its
+  existing short-press Enter injection. Exposed as a generic Kconfig
+  option (`DRAFTLING_SLEEP_BUTTON_GPIO`) other boards can opt into.
+
+### Changed
+
+- **Faster e-paper refresh on the Elecrow CrowPanel 5.79"**: full
+  refresh now uses the same fast differential waveform as partial
+  refresh (matching the Waveshare ESP32-S3-ePaper-3.97) instead of the
+  slow flood-fill waveform, and per-keystroke partial refresh fires a
+  single activation trigger instead of two. User-tested on real
+  hardware as noticeably faster and smoother typing.
+
+### Fixed
+
+- **Screen margin settings ("Margin left" / "Margin top") moved the
+  wrong edge of the screen** on every board except the Waveshare
+  ESP32-S3-ePaper-3.97 and the Xteink e-paper boards -- e.g. "Margin
+  left" visibly shrank the *right* margin on the Waveshare RLCD-4.2.
+  The left/top offset is now applied consistently across all display
+  backends.
+- **Dropped scanlines in the 18px, 22px and 26px Greybeard fonts**:
+  freetype's autohinter was dropping rows out of glyphs (a blank row
+  mid-stroke on diagonals like "V"/"X", a missing row on "O"/"Q"'s
+  ring, etc.) when rendering at exactly these sizes. Regenerated with
+  autohinting disabled; only cosmetic at 22px, unnoticed before now
+  because 18px only backed headings until this release added it as a
+  body size.
 
 ## [1.0.4] - 2026-09-11
 
