@@ -9,5 +9,12 @@ idf_component_register(
     ## `driver/gpio.h`, so the matching
     ## `esp_driver_*` components must be listed explicitly. They
     ## also exist on IDF 5.3+, so the same list works on older IDFs.
-    PRIV_REQUIRES fatfs sdmmc vfs driver esp_driver_sdmmc esp_driver_sdspi esp_driver_spi esp_driver_gpio
+    PRIV_REQUIRES fatfs vfs driver esp_driver_sdmmc esp_driver_sdspi esp_driver_spi esp_driver_gpio
+    ## sdmmc is REQUIRES (public), not PRIV_REQUIRES: include/sd_card.h
+    ## declares sd_card_get_handle() returning a `sdmmc_card_t *` and
+    ## includes <sdmmc_cmd.h> for that type, so every component that
+    ## includes sd_card.h (not just sd_card.cpp itself) needs the
+    ## sdmmc component's include path too -- PRIV_REQUIRES would only
+    ## grant it to sd_card.cpp's own compilation.
+    REQUIRES sdmmc
 )

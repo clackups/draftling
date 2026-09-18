@@ -1,0 +1,22 @@
+## Pulls in Espressif's esp_tinyusb wrapper (TinyUSB device stack +
+## Mass Storage Class support) for exposing the SD card over the
+## ESP32-S3's native USB-OTG controller in device mode.
+##
+## Gated to `target == esp32s3`: every board this repo supports that
+## wires its USB port straight to the chip's native USB controller
+## (as opposed to a UART-to-USB bridge chip used only for flashing)
+## happens to be an ESP32-S3 board. That is broader than the actual
+## CONFIG_DRAFTLING_HAS_USB_MSC board list (see Kconfig.projbuild) --
+## several ESP32-S3 boards in this repo do not enable the feature --
+## but the component manager resolves dependencies before Kconfig is
+## evaluated, so a tighter, per-board rule is not available here (the
+## same constraint documented in components/usb_kbd/idf_component.yml
+## for its `target == esp32p4` rule). usb_msc.cpp is always compiled
+## (with a Kconfig-gated `#if`, see its CMakeLists.txt) so esp_tinyusb
+## ends up unreferenced -- and therefore not compiled in -- on boards
+## where CONFIG_DRAFTLING_HAS_USB_MSC is unset.
+dependencies:
+  espressif/esp_tinyusb:
+    version: "~2.3.0"
+    rules:
+      - if: "target == esp32s3"

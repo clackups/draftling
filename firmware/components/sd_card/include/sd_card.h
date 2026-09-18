@@ -7,6 +7,7 @@ extern "C" {
 #include <esp_err.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <sdmmc_cmd.h>
 
 /* Initialize the SD card on a 1-bit SDMMC slot. */
 esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point);
@@ -28,6 +29,15 @@ esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
 esp_err_t sd_card_deinit(void);
 bool sd_card_is_ready(void);
 const char *sd_card_get_mount_point(void);
+
+/* The sdmmc_card_t handle behind the currently mounted card, or NULL
+ * if none is mounted. Used by the usb_msc component to expose the
+ * same card's raw sectors to a USB host (tinyusb_msc_new_storage_sdmmc()
+ * reads/writes sectors directly against this handle -- it never goes
+ * through the FatFs mount sd_card.cpp keeps registered at
+ * sd_card_get_mount_point(), so local firmware code must simply stay
+ * off the card, rather than unmount it, while USB MSC owns it. */
+sdmmc_card_t *sd_card_get_handle(void);
 
 /* Read entire file; caller must free(*out_buf) */
 esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t *out_len);

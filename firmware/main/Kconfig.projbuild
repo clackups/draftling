@@ -748,6 +748,47 @@ config DRAFTLING_USB_KBD_PROBE_MS
         all keyboards tested so far. If shorter, slow keyboards may
         miss the window and BLE will be brought up instead.
 
+# Enables the "SD card via USB" F1 menu item (components/usb_msc):
+# expose the SD card as a USB Mass Storage device over the ESP32-S3's
+# native USB-OTG controller, for boards whose USB port wires that
+# controller straight to the connector (as opposed to a UART-to-USB
+# bridge chip used only for flashing / charging). Off, Read-only and
+# Read-write are the three menu values; see usb_msc.h for the
+# lifecycle. Every board here also needs CONFIG_TINYUSB_MSC_ENABLED=y
+# (set in its sdkconfig.defaults.<board>) for the underlying esp_tinyusb
+# storage class to actually be compiled in.
+#
+# M5Stack Tab5 (ESP32-P4) was tried on its separate USB-C charging
+# port (its USB-A port is already claimed, in USB Host mode, by the
+# wired-keyboard feature) and found not to work on physical hardware,
+# so it is deliberately absent from this list.
+config DRAFTLING_HAS_USB_MSC
+    bool
+    default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
+    default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
+    default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_M5STACK_PAPERS3
+    default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default y if DRAFTLING_MODEL_WAVESHARE_RLCD42
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
+    default n
+
+config DRAFTLING_USB_MSC_IDLE_TIMEOUT_SEC
+    int
+    depends on DRAFTLING_HAS_USB_MSC
+    default 300
+    help
+        Seconds usb_msc waits with no USB host attached (from
+        activation, or since the last detach) before automatically
+        reverting "SD card via USB" to Off, so leaving it on by
+        mistake does not permanently cut the editor off from the SD
+        card.
+
 # Enables the M5Stack Tab5 attachable keyboard driver
 # (components/tab5_kbd). The keyboard talks over its own dedicated
 # I2C bus (address 0x6D) plus a dedicated interrupt line. main.cpp

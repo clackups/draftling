@@ -50,6 +50,9 @@
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
 #include "tab5_kbd.h"
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+#include "usb_msc.h"
+#endif
 
 static const char *TAG = "Draftling";
 
@@ -194,6 +197,15 @@ static void pre_sleep_save_doc_cb(editor_doc_t *doc, void *ctx)
 static void pre_sleep_autosave(void)
 {
     ESP_LOGI(TAG, "Pre-sleep: autosave + EPD wipe (generic path)");
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* Cleanly tell any attached USB host the volume is going away and
+     * hand the SD card back to local FatFs before the autosave below
+     * writes to it -- deep sleep is not a graceful USB disconnect, and
+     * the editor should never write to the card while usb_msc still
+     * thinks it owns it. usb_msc_set_mode() is a no-op if the mode is
+     * already Off. */
+    usb_msc_set_mode(USB_MSC_MODE_OFF);
+#endif
     /* Persist every open document (both panes when split), not just the
      * active one. Each callback saves the body if modified and always
      * writes the cursor/scroll sidecar so reopening resumes in place. */

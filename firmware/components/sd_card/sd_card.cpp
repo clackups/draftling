@@ -375,6 +375,11 @@ extern "C" bool sd_card_is_ready(void)
     return s_card != NULL && sdmmc_get_status(s_card) == ESP_OK;
 }
 
+extern "C" sdmmc_card_t *sd_card_get_handle(void)
+{
+    return s_card;
+}
+
 extern "C" const char *sd_card_get_mount_point(void)
 {
     return s_mount;
