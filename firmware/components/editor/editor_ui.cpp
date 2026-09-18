@@ -21,6 +21,9 @@
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
 #include "tab5_kbd.h"
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+#include "usb_msc.h"
+#endif
 #include "kb_layout.h"
 #include "wifi_manager.h"
 #include "git_sync.h"
@@ -807,8 +810,66 @@ static int       s_menu_sel     = 0;
 static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
+/* F1 menu item indices. Fixed 0-6 for every board; "SD card via USB"
+ * (7) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
+ * "Sleep now" / "Close menu" shift down by one on every other board.
+ * Use the MENU_IDX_* constants instead of bare integers everywhere
+ * downstream so the two layouts stay in lock-step (mirrors the
+ * SETTINGS_IDX_* convention used by the Settings submenu below). */
+#define MENU_IDX_SETTINGS        0
+#define MENU_IDX_BLE_STATUS      1
+#define MENU_IDX_BLE_SCAN        2
+#define MENU_IDX_WIFI_CONNECT    3
+#define MENU_IDX_WIFI_DISCONNECT 4
+#define MENU_IDX_GIT_SYNC        5
+#define MENU_IDX_KB_LAYOUT       6
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+#define MENU_IDX_USB_MSC         7
+#define _MENU_NEXT_AFTER_USB_MSC 8
+#else
+#define _MENU_NEXT_AFTER_USB_MSC 7
+#endif
+#define MENU_IDX_SLEEP        _MENU_NEXT_AFTER_USB_MSC
+#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 1)
+
 /* Number of menu items */
-#define MENU_ITEM_COUNT 9
+#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_USB_MSC + 2)
+
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+/* "SD card via USB" picker + deferred-apply state. Selecting the item
+ * opens a 3-row picker (Off / Read-only / Read-write, mirroring the
+ * color-theme picker's s_settings_list reuse, but built into
+ * s_menu_list instead since this item lives on the top-level F1 menu
+ * rather than in Settings). Picking a row only stages it in
+ * s_usbmsc_pending_mode; the actual usb_msc_set_mode() call happens
+ * once the user leaves the whole F1 menu (see close_menu()), so
+ * browsing the rest of the menu after picking Read-only/Read-write
+ * does not instantly kick the user to the file browser. */
+static bool          s_usbmsc_picker_open = false;
+static int           s_usbmsc_picker_sel  = 0;
+static int           s_usbmsc_picker_sel_prev = -1;
+static usb_msc_mode_t s_usbmsc_pending_mode = USB_MSC_MODE_OFF;
+
+static const char *usb_msc_mode_name(usb_msc_mode_t mode)
+{
+    switch (mode) {
+    case USB_MSC_MODE_READ_ONLY:  return "Read-only";
+    case USB_MSC_MODE_READ_WRITE: return "Read-write";
+    default:                      return "Off";
+    }
+}
+
+/* The F1 menu item is disabled (shown as unavailable, Enter is a
+ * no-op) only while it is off AND no SD card is mounted -- there is
+ * nothing yet for usb_msc to expose, and usb_msc_set_mode() would
+ * just fail with ESP_ERR_INVALID_STATE. Once a session is already
+ * running it stays selectable regardless of card state, so a card
+ * pulled out mid-session can still be switched back off. */
+static bool usbmsc_item_disabled(void)
+{
+    return usb_msc_get_mode() == USB_MSC_MODE_OFF && !sd_card_is_ready();
+}
+#endif
 
 #if !defined(CONFIG_DRAFTLING_DISPLAY_EPD)
 static lv_timer_t *s_blink_timer = NULL;
@@ -2529,6 +2590,14 @@ static void settings_activate_item(int idx);
  * "Sleep now" item (menu_activate_item) needs it before that point. */
 static void show_sleep_prompt(void);
 
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+/* Defined with the split-layout code further down (editor_ui_apply_split_mode);
+ * commit_usb_msc_pending_mode(), called from close_menu() above it,
+ * collapses any split before handing the SD card to USB so no pane
+ * can be left silently editing a file it can no longer safely save. */
+static void editor_ui_apply_split_mode(split_mode_t mode);
+#endif
+
 /* ---- Touch input ----
  *
  * Touch is gated on CONFIG_DRAFTLING_TOUCHSCREEN. When enabled we
@@ -2921,6 +2990,28 @@ static void ble_prompt_forget_btn_cb(lv_event_t *e)
 
 /* ---- File browser ---- */
 
+/* The file browser status bar's "no transient message" text. Normally
+ * a fixed hint; while the SD card is handed to a USB host it instead
+ * reminds the user which keys still work (see commit_usb_msc_pending_mode()
+ * and the guards in browser_activate_item() / handle_browser_key()),
+ * since editor_ui_set_status()'s 3 s transient message would otherwise
+ * fade back to the normal (now-wrong) hint. Both call sites that used
+ * to hard-code "F1:Menu  N:New file" (editor_ui_show_file_browser()
+ * and restore_default_status()) go through this instead, so they and
+ * the auto-off idle timer (polled in key_drain_cb) all agree. */
+static void browser_status_hint(char *buf, size_t buf_size)
+{
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    usb_msc_mode_t mode = usb_msc_get_mode();
+    if (mode != USB_MSC_MODE_OFF) {
+        snprintf(buf, buf_size, "SD card via USB (%s) -- F1 to disable",
+                 mode == USB_MSC_MODE_READ_WRITE ? "read-write" : "read-only");
+        return;
+    }
+#endif
+    snprintf(buf, buf_size, "F1:Menu  N:New file");
+}
+
 static void refresh_file_list(void)
 {
     /* Remember the currently-selected entry's filename (if any) so we
@@ -3044,7 +3135,9 @@ extern "C" void editor_ui_show_file_browser(void)
      * status bar shows the static hint so it doesn't compete with
      * transient messages (e.g. Git-sync progress). */
     if (s_lbl_br_status) {
-        lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New file");
+        char hint[64];
+        browser_status_hint(hint, sizeof(hint));
+        lv_label_set_text(s_lbl_br_status, hint);
     }
 
     sync_battery_labels();
@@ -3149,7 +3242,9 @@ static void restore_default_status(void)
     }
     update_status_visibility();
     if (s_lbl_br_status) {
-        lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New file");
+        char hint[64];
+        browser_status_hint(hint, sizeof(hint));
+        lv_label_set_text(s_lbl_br_status, hint);
     }
 }
 
@@ -3349,10 +3444,25 @@ static void refresh_menu_items(void)
              kb_layout_name(kb_layout_get()));
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 7: Sleep now */
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* 7: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
+     * not necessarily what usb_msc is doing right now -- see the
+     * picker opened from menu_activate_item() and applied by
+     * commit_usb_msc_pending_mode(). See usbmsc_item_disabled() for
+     * when it is disabled instead. */
+    if (usbmsc_item_disabled()) {
+        snprintf(buf, sizeof(buf), "SD card via USB: (no SD card)");
+    } else {
+        snprintf(buf, sizeof(buf), "SD card via USB: %s  (Enter to change)",
+                 usb_msc_mode_name(s_usbmsc_pending_mode));
+    }
+    lv_list_add_btn(s_menu_list, NULL, buf);
+#endif
+
+    /* Sleep now */
     lv_list_add_btn(s_menu_list, NULL, "Sleep now");
 
-    /* 8: Close menu */
+    /* Close menu */
     lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
 
     /* Highlight selection */
@@ -3383,6 +3493,14 @@ static void show_menu(void)
 {
     s_menu_open = true;
     s_menu_sel = 0;
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* Sync the staged choice to whatever usb_msc is actually doing
+     * right now -- discards a stale pending value from a picker that
+     * was opened and abandoned (Esc) in a previous visit, and picks
+     * up an auto-off that happened while the menu was closed. */
+    s_usbmsc_picker_open = false;
+    s_usbmsc_pending_mode = usb_msc_get_mode();
+#endif
     refresh_menu_items();
     sync_battery_labels();
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
@@ -3398,8 +3516,67 @@ static void show_menu(void)
     lv_scr_load(s_scr_menu);
 }
 
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+/* Called by close_menu() right before leaving the F1 menu system:
+ * applies s_usbmsc_pending_mode if it differs from what usb_msc is
+ * actually doing right now. The picker in menu_activate_item() only
+ * ever stages a choice in s_usbmsc_pending_mode -- applying it here,
+ * on the way out of the whole menu, means browsing the rest of the
+ * menu after picking Read-only/Read-write does not instantly kick
+ * the user to the file browser mid-browse.
+ *
+ * Turning it off restarts the device (see usb_msc.h) -- this function
+ * does not return in that case. */
+static void commit_usb_msc_pending_mode(void)
+{
+    usb_msc_mode_t cur = usb_msc_get_mode();
+    if (s_usbmsc_pending_mode == cur) return;
+
+    if (s_usbmsc_pending_mode == USB_MSC_MODE_OFF) {
+        usb_msc_set_mode(USB_MSC_MODE_OFF);
+        /* usb_msc_set_mode(OFF) alone does not give the ESP32-S3's
+         * native USB pins back to USB-Serial-JTAG (flashing, and
+         * usually the console too, on these single-USB-port boards)
+         * -- see usb_msc.h. Restart now rather than leave the board
+         * unflashable until a physical reset; a status message here
+         * would never actually be seen, since the restart cuts it
+         * off before the next LVGL flush. */
+        ESP_LOGI(TAG, "Restarting to restore USB-Serial-JTAG after SD-via-USB");
+        esp_restart();
+        /* does not return */
+    }
+
+    if (cur == USB_MSC_MODE_OFF) {
+        /* Taking the card away from local editing for the first time:
+         * auto-save whatever is open and collapse any split so no
+         * pane is left trying to save into the now-USB-owned card,
+         * then force the file browser -- close_menu() below routes
+         * there whenever s_editor_screen_active is false. */
+        if (editor_is_modified() && editor_get_file_path()) {
+            editor_save_file();
+        }
+        editor_ui_apply_split_mode(SPLIT_NONE);
+        s_editor_screen_active = false;
+    }
+
+    esp_err_t err = usb_msc_set_mode(s_usbmsc_pending_mode);
+    if (err != ESP_OK) {
+        s_usbmsc_pending_mode = usb_msc_get_mode();
+        editor_ui_set_status("SD card via USB: failed to start (no SD card?)");
+        return;
+    }
+
+    editor_ui_set_status(s_usbmsc_pending_mode == USB_MSC_MODE_READ_WRITE
+                          ? "SD card via USB: Read-write"
+                          : "SD card via USB: Read-only");
+}
+#endif
+
 static void close_menu(void)
 {
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    commit_usb_msc_pending_mode();
+#endif
     s_menu_open = false;
     if (s_editor_screen_active)
         editor_ui_show_editor();
@@ -4148,15 +4325,56 @@ static void handle_settings_key(const kb_event_t *ev)
 static void wifi_connect_task(void *arg);
 static void wifi_connect_async(void);
 
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+/* ---- "SD card via USB" picker ----
+ * Renders the 3 modes into the same s_menu_list widget while
+ * s_usbmsc_picker_open is true, mirroring the color-theme picker's
+ * reuse of s_settings_list. Picking a row (Enter) only stages the
+ * choice in s_usbmsc_pending_mode and returns to the regular F1 menu
+ * list -- commit_usb_msc_pending_mode() (called from close_menu())
+ * is what actually applies it. */
+static void refresh_usbmsc_picker_items(void)
+{
+    lv_obj_clean(s_menu_list);
+    char buf[40];
+    static const usb_msc_mode_t kModes[3] = {
+        USB_MSC_MODE_OFF, USB_MSC_MODE_READ_ONLY, USB_MSC_MODE_READ_WRITE
+    };
+    for (int i = 0; i < 3; i++) {
+        snprintf(buf, sizeof(buf), "%s%s",
+                 (kModes[i] == s_usbmsc_pending_mode) ? "* " : "  ",
+                 usb_msc_mode_name(kModes[i]));
+        lv_list_add_btn(s_menu_list, NULL, buf);
+    }
+    apply_list_selection_styles(s_menu_list, s_usbmsc_picker_sel);
+    s_usbmsc_picker_sel_prev = s_usbmsc_picker_sel;
+    sync_battery_labels();
+}
+
+static void update_usbmsc_picker_highlight(void)
+{
+    update_list_highlight(s_menu_list, s_usbmsc_picker_sel,
+                          s_usbmsc_picker_sel_prev);
+    s_usbmsc_picker_sel_prev = s_usbmsc_picker_sel;
+}
+
+/* Cancel the picker and re-render the regular F1 menu list. */
+static void close_usbmsc_picker(void)
+{
+    s_usbmsc_picker_open = false;
+    refresh_menu_items();
+}
+#endif
+
 static void menu_activate_item(int idx)
 {
     switch (idx) {
-    case 0: /* Settings */
+    case MENU_IDX_SETTINGS:
         show_settings();
         break;
-    case 1: /* BLE status -- no action */
+    case MENU_IDX_BLE_STATUS: /* no action */
         break;
-    case 2: /* BLE scan */
+    case MENU_IDX_BLE_SCAN:
         /* BLE may be idle (disabled) when another keyboard owns input
          * -- e.g. a USB or Tab5 keyboard was present at boot. Re-enable
          * it first so an on-demand scan can actually start. No-op when
@@ -4166,19 +4384,32 @@ static void menu_activate_item(int idx)
         editor_ui_set_status("BLE: scanning...");
         close_menu();
         break;
-    case 3: /* WiFi connect */
+    case MENU_IDX_WIFI_CONNECT:
         if (!wifi_manager_is_connected()) {
             editor_ui_set_status("WiFi: connecting...");
             close_menu();
             wifi_connect_async();
         }
         break;
-    case 4: /* WiFi disconnect */
+    case MENU_IDX_WIFI_DISCONNECT:
         wifi_manager_disconnect();
         editor_ui_set_status("WiFi: disconnected");
         close_menu();
         break;
-    case 5: /* Git sync */
+    case MENU_IDX_GIT_SYNC:
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+        /* Git sync reads and writes the SD card directly (its own
+         * .git/ history plus the working tree), same as any other
+         * file I/O -- refuse it while the card belongs to a USB host,
+         * same as handle_browser_key()'s guard. This item is only
+         * reachable via the F1 menu, which stays reachable so the
+         * user can switch SD-via-USB back off; the menu is not itself
+         * gated the way the file browser is. */
+        if (usb_msc_get_mode() != USB_MSC_MODE_OFF) {
+            editor_ui_set_status("SD card via USB active -- disable it first");
+            break;
+        }
+#endif
         /* Auto-save unsaved edits so the sync task pushes the latest content. */
         if (editor_is_modified() && editor_get_file_path()) {
             editor_save_file();
@@ -4200,11 +4431,28 @@ static void menu_activate_item(int idx)
             editor_ui_set_status("Git: not configured");
         }
         break;
-    case 6: /* Keyboard layout cycle */
+    case MENU_IDX_KB_LAYOUT:
         kb_layout_next();
         refresh_menu_items();
         break;
-    case 7: /* Sleep now */
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    case MENU_IDX_USB_MSC:
+        if (usbmsc_item_disabled()) {
+            editor_ui_set_status("SD card via USB: insert an SD card first");
+            break;
+        }
+        /* Open the picker sub-list. Up/Down to navigate, Enter to
+         * stage a choice (applied on leaving the F1 menu -- see
+         * commit_usb_msc_pending_mode()), Esc to return without
+         * changing the staged choice. */
+        s_usbmsc_picker_open = true;
+        s_usbmsc_picker_sel = (s_usbmsc_pending_mode == USB_MSC_MODE_READ_ONLY) ? 1
+                            : (s_usbmsc_pending_mode == USB_MSC_MODE_READ_WRITE) ? 2
+                            : 0;
+        refresh_usbmsc_picker_items();
+        break;
+#endif
+    case MENU_IDX_SLEEP:
         /* Leave the menu first so, if we prompt about unsaved changes,
          * the dialog is drawn on the editor screen it lives on. With no
          * unsaved changes (or if the menu was opened from the file
@@ -4216,7 +4464,7 @@ static void menu_activate_item(int idx)
             standby_enter_sleep();
         }
         break;
-    case 8: /* Close menu */
+    case MENU_IDX_CLOSE:
         close_menu();
         break;
     default:
@@ -4226,6 +4474,33 @@ static void menu_activate_item(int idx)
 
 static void handle_menu_key(const kb_event_t *ev)
 {
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    if (s_usbmsc_picker_open) {
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+            if (s_usbmsc_picker_sel > 0) s_usbmsc_picker_sel--;
+            update_usbmsc_picker_highlight();
+            break;
+        case KB_KEY_DOWN:
+            if (s_usbmsc_picker_sel < 2) s_usbmsc_picker_sel++;
+            update_usbmsc_picker_highlight();
+            break;
+        case KB_KEY_ENTER:
+            s_usbmsc_pending_mode = (s_usbmsc_picker_sel == 1) ? USB_MSC_MODE_READ_ONLY
+                                   : (s_usbmsc_picker_sel == 2) ? USB_MSC_MODE_READ_WRITE
+                                   : USB_MSC_MODE_OFF;
+            close_usbmsc_picker();
+            break;
+        case KB_KEY_ESCAPE:
+            close_usbmsc_picker();
+            break;
+        default:
+            break;
+        }
+        return;
+    }
+#endif
+
     switch (ev->keycode) {
     case KB_KEY_UP:
         if (s_menu_sel > 0) s_menu_sel--;
@@ -5224,6 +5499,22 @@ static void handle_editor_key(const kb_event_t *ev)
         return;
     }
 
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* Defense-in-depth, not the primary guard: commit_usb_msc_pending_mode()
+     * forces the file browser (not the editor) whenever SD-via-USB
+     * turns on, and handle_browser_key() then refuses to open/create a
+     * file while it stays on, so this screen should be unreachable for
+     * as long as the card belongs to a USB host. Refuse every key but
+     * F1 here too anyway, in case some other path (a future feature, a
+     * bug) ever lands on the editor screen while it is active -- the
+     * card must not be written to while a host may also be writing to
+     * it. */
+    if (usb_msc_get_mode() != USB_MSC_MODE_OFF) {
+        editor_ui_set_status("SD card via USB active -- disable it in F1 menu first");
+        return;
+    }
+#endif
+
     /* Win+Space cycles the keyboard layout, mirroring Ctrl+L. HID
      * keycode 0x2C is Space; the GUI ("Win"/"Cmd") modifier is
      * KB_MOD_LGUI / KB_MOD_RGUI. */
@@ -5737,6 +6028,15 @@ static void close_inpane_browser(void)
  * handler and the touchscreen tap-to-activate path. */
 static void browser_activate_item(int row)
 {
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* Touch-tap path for opening a file -- mirrors the keyboard guard
+     * in handle_browser_key() so a touchscreen board cannot open a
+     * file while the SD card belongs to a USB host either. */
+    if (usb_msc_get_mode() != USB_MSC_MODE_OFF) {
+        editor_ui_set_status("SD card via USB active -- disable it in F1 menu first");
+        return;
+    }
+#endif
     lv_obj_t *btn = lv_obj_get_child(s_browser_list, row);
     if (!btn) return;
     int idx = (int)(intptr_t)lv_obj_get_user_data(btn);
@@ -5827,6 +6127,19 @@ static void handle_browser_key(const kb_event_t *ev)
         show_menu();
         return;
     }
+
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* While the SD card is handed to a USB host, refuse anything that
+     * would touch it from the firmware side -- opening/creating a
+     * file, Git sync, split changes, forced sleep, and so on. Only
+     * F1 (to reach the menu and switch it back off) and plain
+     * navigation stay live; see commit_usb_msc_pending_mode(). */
+    if (usb_msc_get_mode() != USB_MSC_MODE_OFF &&
+        ev->keycode != KB_KEY_UP && ev->keycode != KB_KEY_DOWN) {
+        editor_ui_set_status("SD card via USB active -- disable it in F1 menu first");
+        return;
+    }
+#endif
 
     /* Ctrl+G / Ctrl+W / Ctrl+M / Ctrl+P and the Ctrl+1/2/3 split
      * shortcuts work from the file browser as well. See the editor's
@@ -6005,6 +6318,18 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         return;
     }
 
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    /* Defense-in-depth, not the primary guard: split mode cannot be
+     * entered while SD-via-USB is on (commit_usb_msc_pending_mode()
+     * collapses it, and handle_browser_key() blocks Ctrl+2/3 from
+     * re-entering it), so this overlay should be unreachable in that
+     * state to begin with. See handle_editor_key()'s matching guard. */
+    if (usb_msc_get_mode() != USB_MSC_MODE_OFF) {
+        editor_ui_set_status("SD card via USB active -- disable it in F1 menu first");
+        return;
+    }
+#endif
+
     if (ctrl && ev->keycode == KB_KEY_TAB) {
         /* Ctrl+Tab leaves the in-pane file selector and moves keyboard
          * focus to the other (editor) pane. Close the overlay first so
@@ -6106,6 +6431,40 @@ static void apply_pending_connect_state(void);
 /* LVGL timer callback: drains the key-event queue in a batch.
  * This runs inside lv_timer_handler() which already holds the LVGL
  * mutex, so we must NOT call draftling_lvgl_port_lock() here. */
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+/* usb_msc's idle auto-off (see usb_msc.h / CONFIG_DRAFTLING_USB_MSC_IDLE_TIMEOUT_SEC)
+ * fires from an esp_timer callback with no way to safely touch LVGL,
+ * so key_drain_cb polls for it here instead -- the same reason
+ * apply_pending_connect_state() exists for BLE connect/disconnect.
+ * User-driven mode changes (commit_usb_msc_pending_mode(), called
+ * from close_menu()) already refresh the UI themselves; this only
+ * reacts to a change nobody in the LVGL task caused. */
+static usb_msc_mode_t s_last_polled_usb_msc_mode = USB_MSC_MODE_OFF;
+
+static void poll_usb_msc_auto_off(void)
+{
+    usb_msc_mode_t mode = usb_msc_get_mode();
+    if (mode == s_last_polled_usb_msc_mode) return;
+    bool auto_reverted = (s_last_polled_usb_msc_mode != USB_MSC_MODE_OFF &&
+                          mode == USB_MSC_MODE_OFF);
+    s_last_polled_usb_msc_mode = mode;
+    if (!auto_reverted) return;
+
+    /* The picker (if open) and the F1 menu row both show the staged
+     * s_usbmsc_pending_mode, not usb_msc_get_mode() directly -- drop
+     * the now-stale staged choice along with the real one so neither
+     * offers to "change" into a mode that is already active. */
+    s_usbmsc_pending_mode = USB_MSC_MODE_OFF;
+    s_usbmsc_picker_open = false;
+
+    editor_ui_set_status("SD card via USB: disabled (no host connected)");
+    /* Pick up whatever a host may have changed on the card, and drop
+     * the now-stale "via USB" hint from the menu if it is open. */
+    if (!s_editor_screen_active) refresh_file_list();
+    if (s_menu_open) refresh_menu_items();
+}
+#endif
+
 static void key_drain_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -6119,6 +6478,9 @@ static void key_drain_cb(lv_timer_t *timer)
      * stuck on the "Reconnecting..." prompt screen even after
      * the keyboard has connected). See apply_pending_connect_state(). */
     apply_pending_connect_state();
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    poll_usb_msc_auto_off();
+#endif
 
     while (xQueueReceive(s_key_queue, &ev, 0) == pdTRUE) {
         process_key_event(&ev);

@@ -6,6 +6,45 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **"SD card via USB" (F1 menu)**: on boards whose USB port wires the
+  ESP32-S3's native USB-OTG controller straight to the connector
+  (Xteink X4 Pro / Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite /
+  H752, M5Stack PaperS3, Waveshare ESP32-S3-ePaper-3.97,
+  ESP32-S3-RLCD-4.2, ESP32-S3-Touch-LCD-7 and ESP32-S3-Touch-LCD-3.49,
+  and all three Freenove FNK0104 boards -- confirmed working on
+  physical hardware for every one of these boards), a new F1 menu
+  item opens a picker for Off / Read-only / Read-write; the choice
+  takes effect when you leave the F1 menu, not the instant you pick
+  it, so browsing the rest of the menu afterward does not instantly
+  bounce you to the file browser. Turning it on exposes the SD card
+  to a connected computer as a normal USB mass-storage drive;
+  editing, creating files, and Git sync are all refused until it is
+  switched back off (both from the file browser and from the F1 menu
+  itself), switching between Read-only and Read-write while already
+  connected forces a clean USB disconnect/reconnect so the computer
+  re-reads the new write permission instead of keeping the one it saw
+  at first mount, and it switches itself back off automatically if no
+  USB host has been connected for 5 minutes (configurable), so
+  leaving it on by mistake cannot lock the device out of its own SD
+  card indefinitely. Turning it off (manually or via that automatic
+  timeout) restarts the device: the ESP32-S3's native USB pins are
+  shared between the OTG controller this feature uses and the
+  separate USB-Serial-JTAG controller boards without a UART bridge
+  chip rely on for flashing and the console, and handing the pins
+  back at runtime is not enough by itself to reliably restore
+  flashing on every board, so a restart -- the same fix a physical
+  reset button press provides -- runs as a safety net every time. The
+  menu item is disabled ("no SD card") and does nothing when picked
+  if no card is mounted; once a session is running it stays available
+  regardless of card state, so a card pulled out mid-session can
+  still be switched back off. M5Stack Tab5 was evaluated (its USB-C
+  charging port sits on a USB-OTG controller separate from the one
+  the wired-keyboard feature already uses in host mode on its USB-A
+  port) but does not work there in practice, so it is not on this
+  list.
+
 ## [1.0.5] - 2026-09-16
 
 ### Added

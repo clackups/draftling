@@ -11,3 +11,8 @@ CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC=y
 # returned to stock or moved to Crosspoint without first re-flashing a
 # partition table over USB. See partitions_xteink_x4_classic.csv.
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_xteink_x4_classic.csv"
+
+# "SD card via USB" (F1 menu): expose the on-board MicroSD as a USB
+# Mass Storage device over the ESP32-S3's native USB port. See
+# components/usb_msc.
+CONFIG_TINYUSB_MSC_ENABLED=y

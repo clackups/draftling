@@ -3,3 +3,8 @@
 
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_DRAFTLING_MODEL_M5STACK_PAPERS3=y
+
+# "SD card via USB" (F1 menu): expose the on-board MicroSD as a USB
+# Mass Storage device over the ESP32-S3's native USB port. See
+# components/usb_msc.
+CONFIG_TINYUSB_MSC_ENABLED=y
