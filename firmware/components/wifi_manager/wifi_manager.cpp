@@ -28,6 +28,9 @@ static int s_retry_count = 0;
 static char s_ip_str[20] = "";
 static char s_ssid[33]   = "";
 static bool s_initialized = false;
+static esp_netif_t *s_sta_netif = NULL;
+static bool s_ipv6_global = false;
+static char s_ip6_str[48] = "";
 
 static void set_state(wifi_state_t st)
 {
@@ -41,7 +44,16 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
     if (base == WIFI_EVENT) {
         if (id == WIFI_EVENT_STA_START) {
             esp_wifi_connect();
+        } else if (id == WIFI_EVENT_STA_CONNECTED) {
+            /* Bring up the link-local IPv6 address on this netif. That
+             * in turn makes lwIP send router solicitations, so if the
+             * AP's network advertises a global prefix (SLAAC, RFC
+             * 4862) we will receive a global address via a later
+             * IP_EVENT_GOT_IP6, handled below. */
+            if (s_sta_netif) esp_netif_create_ip6_linklocal(s_sta_netif);
         } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
+            s_ipv6_global = false;
+            s_ip6_str[0] = '\0';
             if (s_retry_count < MAX_RETRY) {
                 esp_wifi_connect();
                 s_retry_count++;
@@ -58,6 +70,19 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         s_retry_count = 0;
         xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
         set_state(WIFI_STATE_CONNECTED);
+    } else if (base == IP_EVENT && id == IP_EVENT_GOT_IP6) {
+        ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)data;
+        esp_ip6_addr_type_t type = esp_netif_ip6_get_addr_type(&event->ip6_info.ip);
+        ESP_LOGI(TAG, "Got IPv6 address " IPV6STR " (type %d)",
+                 IPV62STR(event->ip6_info.ip), type);
+        if (type == ESP_IP6_ADDR_IS_GLOBAL) {
+            s_ipv6_global = true;
+            snprintf(s_ip6_str, sizeof(s_ip6_str), IPV6STR, IPV62STR(event->ip6_info.ip));
+            /* Re-fire the state callback so the UI refreshes the WiFi
+             * icon (and anything else derived from dual-stack status)
+             * even though wifi_state_t itself did not change. */
+            set_state(s_state);
+        }
     }
 }
 
@@ -152,8 +177,9 @@ extern "C" esp_err_t wifi_manager_init(void)
      * realistic case): the netif persists but s_initialized stays
      * false, so the next call into wifi_manager_init aborts the
      * firmware. Reuse the existing handle when present. */
-    if (esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") == NULL) {
-        esp_netif_create_default_wifi_sta();
+    s_sta_netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (s_sta_netif == NULL) {
+        s_sta_netif = esp_netif_create_default_wifi_sta();
     } else {
         ESP_LOGW(TAG, "WIFI_STA_DEF netif already exists, reusing");
     }
@@ -178,11 +204,13 @@ extern "C" esp_err_t wifi_manager_init(void)
         return err;
     }
 
-    esp_event_handler_instance_t inst_any, inst_ip;
+    esp_event_handler_instance_t inst_any, inst_ip, inst_ip6;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &inst_any));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &inst_ip));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(
+        IP_EVENT, IP_EVENT_GOT_IP6, &wifi_event_handler, NULL, &inst_ip6));
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     s_initialized = true;
@@ -233,6 +261,8 @@ extern "C" esp_err_t wifi_manager_connect_to(const char *ssid, const char *passw
     strncpy(s_ssid, ssid, sizeof(s_ssid) - 1);
 
     s_retry_count = 0;
+    s_ipv6_global = false;
+    s_ip6_str[0] = '\0';
     set_state(WIFI_STATE_CONNECTING);
 
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
@@ -262,6 +292,8 @@ extern "C" esp_err_t wifi_manager_disconnect(void)
     esp_wifi_disconnect();
     esp_wifi_stop();
     s_ip_str[0] = '\0';
+    s_ipv6_global = false;
+    s_ip6_str[0] = '\0';
     set_state(WIFI_STATE_DISCONNECTED);
     return ESP_OK;
 }
@@ -271,3 +303,5 @@ extern "C" bool wifi_manager_is_connected(void) { return s_state == WIFI_STATE_C
 extern "C" void wifi_manager_set_callback(wifi_state_callback_t cb) { s_callback = cb; }
 extern "C" const char *wifi_manager_get_ip(void) { return s_ip_str; }
 extern "C" const char *wifi_manager_get_ssid(void) { return s_ssid; }
+extern "C" bool wifi_manager_has_global_ipv6(void) { return s_ipv6_global; }
+extern "C" const char *wifi_manager_get_ipv6(void) { return s_ip6_str; }

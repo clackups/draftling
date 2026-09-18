@@ -8,6 +8,13 @@ in the git log.
 
 ### Added
 
+- **IPv4/IPv6 dual stack**: the device now brings up IPv6 alongside
+  IPv4 on the WiFi station interface. When the network advertises a
+  global IPv6 prefix (SLAAC router advertisements), the WiFi status
+  icon in the editor and file browser status bars switches to a
+  "6"-badged variant, and Git sync tries the server's `AAAA` DNS
+  record first, falling back to `A` (IPv4) if the connection attempt
+  fails or the server has no AAAA record.
 - **"SD card via USB" (F1 menu)**: on boards whose USB port wires the
   ESP32-S3's native USB-OTG controller straight to the connector
   (Xteink X4 Pro / Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite /

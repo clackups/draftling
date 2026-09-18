@@ -10,6 +10,8 @@
 #include <esp_http_client.h>
 #include <esp_crt_bundle.h>
 
+#include "wifi_manager.h"
+
 static const char *TAG = "git.net";
 
 #define GIT_AGENT "agent=draftling/1.0"
@@ -48,7 +50,8 @@ static int hex4(const char *p)
 /* ------------------------------------------------------------------ */
 
 static esp_http_client_handle_t http_begin(const git_remote *r, const char *url,
-                                           esp_http_client_method_t method)
+                                           esp_http_client_method_t method,
+                                           esp_http_client_addr_type_t addr_type)
 {
     esp_http_client_config_t cfg = {0};
     cfg.url = url;
@@ -58,6 +61,7 @@ static esp_http_client_handle_t http_begin(const git_remote *r, const char *url,
     cfg.buffer_size = 4096;
     cfg.buffer_size_tx = 2048;
     cfg.keep_alive_enable = true;
+    cfg.addr_type = addr_type;
 
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (!c) return NULL;
@@ -68,6 +72,39 @@ static esp_http_client_handle_t http_begin(const git_remote *r, const char *url,
     if (r->auth_basic[0])
         esp_http_client_set_header(c, "Authorization", r->auth_basic);
     return c;
+}
+
+/* Open a connection to the Git server, preferring its AAAA record
+ * when our own WiFi has a global IPv6 address (dual-stack network).
+ * esp-tls's getaddrinfo() hint is a hard filter, not a preference --
+ * asking for AF_INET6 fails outright if the host has no AAAA record --
+ * so on failure this transparently retries with the default (system)
+ * resolution order instead of giving up. `extra` (if non-NULL) sets
+ * any request-specific headers that must land on *every* attempt,
+ * since each retry uses a brand new esp_http_client_handle_t. */
+typedef void (*http_extra_headers_fn)(esp_http_client_handle_t c);
+
+static esp_err_t http_open(esp_http_client_handle_t *out, const git_remote *r,
+                           const char *url, esp_http_client_method_t method,
+                           int write_len, http_extra_headers_fn extra)
+{
+    bool try_v6 = wifi_manager_has_global_ipv6();
+    for (int attempt = 0; attempt < (try_v6 ? 2 : 1); attempt++) {
+        esp_http_client_addr_type_t at =
+            (attempt == 0 && try_v6) ? HTTP_ADDR_TYPE_INET6 : HTTP_ADDR_TYPE_UNSPEC;
+        esp_http_client_handle_t c = http_begin(r, url, method, at);
+        if (!c) { *out = NULL; return ESP_FAIL; }
+        if (extra) extra(c);
+        esp_err_t err = esp_http_client_open(c, write_len);
+        if (err == ESP_OK) { *out = c; return ESP_OK; }
+        ESP_LOGW(TAG, "%s: connect via %s failed (%s)%s", url,
+                 at == HTTP_ADDR_TYPE_INET6 ? "AAAA" : "default resolution",
+                 esp_err_to_name(err),
+                 (attempt == 0 && try_v6) ? ", retrying via A" : "");
+        esp_http_client_cleanup(c);
+    }
+    *out = NULL;
+    return ESP_FAIL;
 }
 
 /* Hex+ASCII dump of the first bytes of a buffer, for protocol debugging. */
@@ -97,11 +134,9 @@ esp_err_t git_http_list_refs(const git_remote *r, const char *service,
     char url[420];
     snprintf(url, sizeof(url), "%s/info/refs?service=%s", r->base_url, service);
 
-    esp_http_client_handle_t c = http_begin(r, url, HTTP_METHOD_GET);
-    if (!c) return ESP_FAIL;
-
-    esp_err_t err = esp_http_client_open(c, 0);
-    if (err != ESP_OK) { esp_http_client_cleanup(c); return err; }
+    esp_http_client_handle_t c;
+    esp_err_t err = http_open(&c, r, url, HTTP_METHOD_GET, 0, NULL);
+    if (err != ESP_OK) return err;
     esp_http_client_fetch_headers(c);
     int status = esp_http_client_get_status_code(c);
     if (status != 200) {
@@ -166,6 +201,13 @@ esp_err_t git_http_list_refs(const git_remote *r, const char *service,
 /* git-upload-pack (fetch)                                            */
 /* ------------------------------------------------------------------ */
 
+static void fetch_pack_headers(esp_http_client_handle_t c)
+{
+    esp_http_client_set_header(c, "Content-Type", "application/x-git-upload-pack-request");
+    esp_http_client_set_header(c, "Accept", "application/x-git-upload-pack-result");
+    esp_http_client_set_header(c, "Git-Protocol", "version=2");
+}
+
 esp_err_t git_http_fetch_pack(const git_remote *r,
                               const git_oid *wants, int nwants,
                               const git_oid *haves, int nhaves,
@@ -198,17 +240,13 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
 
     char url[380];
     snprintf(url, sizeof(url), "%s/git-upload-pack", r->base_url);
-    esp_http_client_handle_t c = http_begin(r, url, HTTP_METHOD_POST);
-    if (!c) { git_buf_free(&req); return ESP_FAIL; }
-    esp_http_client_set_header(c, "Content-Type", "application/x-git-upload-pack-request");
-    esp_http_client_set_header(c, "Accept", "application/x-git-upload-pack-result");
-    esp_http_client_set_header(c, "Git-Protocol", "version=2");
 
     git_buf resp = GIT_BUF_INIT;
     FILE *fp = NULL;
 
-    esp_err_t ret = esp_http_client_open(c, (int)req.len);
-    if (ret != ESP_OK) goto cleanup;
+    esp_http_client_handle_t c;
+    esp_err_t ret = http_open(&c, r, url, HTTP_METHOD_POST, (int)req.len, fetch_pack_headers);
+    if (ret != ESP_OK) { git_buf_free(&req); return ret; }
     if (esp_http_client_write(c, (char *)req.data, (int)req.len) != (int)req.len) {
         ret = ESP_FAIL;
         goto cleanup;
@@ -334,6 +372,12 @@ cleanup:
 /* git-receive-pack (push)                                            */
 /* ------------------------------------------------------------------ */
 
+static void push_headers(esp_http_client_handle_t c)
+{
+    esp_http_client_set_header(c, "Content-Type", "application/x-git-receive-pack-request");
+    esp_http_client_set_header(c, "Accept", "application/x-git-receive-pack-result");
+}
+
 esp_err_t git_http_push(const git_remote *r, const char *refname,
                         const git_oid *old_oid, const git_oid *new_oid,
                         const char *pack_path, git_buf *report)
@@ -359,14 +403,11 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
 
     char url[380];
     snprintf(url, sizeof(url), "%s/git-receive-pack", r->base_url);
-    esp_http_client_handle_t c = http_begin(r, url, HTTP_METHOD_POST);
-    if (!c) { fclose(pf); git_buf_free(&cmds); return ESP_FAIL; }
-    esp_http_client_set_header(c, "Content-Type", "application/x-git-receive-pack-request");
-    esp_http_client_set_header(c, "Accept", "application/x-git-receive-pack-result");
 
     int total = (int)cmds.len + (int)pack_size;
-    esp_err_t ret = esp_http_client_open(c, total);
-    if (ret != ESP_OK) goto cleanup;
+    esp_http_client_handle_t c;
+    esp_err_t ret = http_open(&c, r, url, HTTP_METHOD_POST, total, push_headers);
+    if (ret != ESP_OK) { fclose(pf); git_buf_free(&cmds); return ret; }
 
     if (esp_http_client_write(c, (char *)cmds.data, (int)cmds.len) != (int)cmds.len) {
         ret = ESP_FAIL;

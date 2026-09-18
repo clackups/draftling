@@ -571,6 +571,13 @@ image instead of as a font glyph. Two pre-baked descriptors are
 exposed (black-on-transparent for the default theme and
 white-on-transparent for `CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND`).
 
+A second pair of descriptors (`wifi6_icon_black`/`wifi6_icon_white`)
+stacks a small "6" digit above the same Wi-Fi glyph. `update_wifi_icons()`
+in `editor_ui.cpp` switches to that variant -- and re-centers the icon
+vertically, since it is taller -- whenever `wifi_manager_has_global_ipv6()`
+is true, i.e. the WiFi network is IPv4/IPv6 dual-stack. See
+`components/wifi_manager/` above for how that flag is derived.
+
 ### components/fonts/
 
 Custom LVGL bitmap fonts. Standard-density boards use the Greybeard
@@ -604,7 +611,13 @@ Source layout (all in-tree, no managed components):
   delta application) and a non-delta packfile writer.
 - `git_net.c` -- pkt-line framing and the `esp_http_client`-based
   transport (`info/refs`, `git-upload-pack`, `git-receive-pack`), HTTP
-  Basic auth.
+  Basic auth. Every request goes through `http_open()`, which prefers
+  the server's `AAAA` record (`esp_http_client_config_t::addr_type =
+  HTTP_ADDR_TYPE_INET6`) whenever `wifi_manager_has_global_ipv6()` is
+  true, and transparently retries with default (`A`-or-whatever)
+  resolution if that connection attempt fails -- esp-tls's address
+  family hint is a hard filter, not a preference, so there is no
+  automatic fallback lower in the stack.
 - `git_merge.c` -- flat three-way tree merge with an LCS-based diff3 line
   merge; overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
   markers and **committed as-is** (never discarded).
@@ -869,9 +882,24 @@ functions with an event callback for connection state changes (idle,
 connecting, connected, disconnected, error). Required by `git_sync` for
 network access.
 
+IPv4/IPv6 dual stack: on `WIFI_EVENT_STA_CONNECTED` the manager calls
+`esp_netif_create_ip6_linklocal()` on the STA netif, which makes lwIP
+send router solicitations; if the AP's network advertises a global
+prefix (SLAAC, RFC 4862 -- requires `CONFIG_LWIP_IPV6_AUTOCONFIG=y`,
+set in `sdkconfig.defaults`) a later `IP_EVENT_GOT_IP6` carries a
+global-scope address and `wifi_manager_has_global_ipv6()` starts
+returning `true`. That flag drives two things: the editor's WiFi
+status icon switches to the "6"-badged variant (see
+`components/editor/wifi_icon.c` below), and `git_sync`'s HTTP layer
+(`git_net.c`) prefers the Git server's `AAAA` record, falling back to
+`A` if the connection attempt fails. The flag (and the cached address
+string from `wifi_manager_get_ipv6()`) resets on disconnect and at the
+start of every new connection attempt.
+
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
-`wifi_manager_get_ip()`, `wifi_manager_get_ssid()`.
+`wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
+`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`.
 
 ## Font Creation Process
 

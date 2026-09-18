@@ -1654,15 +1654,34 @@ static inline void sync_battery_labels(void) {}
 #endif
 
 /* Update the WiFi connectivity icons in both status bars: shown when
- * the WiFi stack is connected, hidden otherwise. */
+ * the WiFi stack is connected, hidden otherwise. Once connected, the
+ * icon itself switches to the "6" dual-stack badge (wifi6_icon_*)
+ * whenever the STA interface also holds a global IPv6 address (see
+ * wifi_manager_has_global_ipv6()); the two variants differ in height,
+ * so the icon is re-centered vertically in the status bar every time
+ * it is (re)picked here rather than only once at creation. */
 static void update_wifi_icons(void)
 {
     bool connected = wifi_manager_is_connected();
+    bool dual_stack = connected && wifi_manager_has_global_ipv6();
+    int icon_h = dual_stack ? WIFI6_ICON_H : WIFI_ICON_H;
+#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+    const lv_image_dsc_t *icon = dual_stack ? &wifi6_icon_white : &wifi_icon_white;
+#else
+    const lv_image_dsc_t *icon = dual_stack ? &wifi6_icon_black : &wifi_icon_black;
+#endif
+    int icon_y = SCR_H - STATUS_H + (STATUS_H - icon_h) / 2;
+
     if (s_img_wifi) {
+        lv_image_set_src(s_img_wifi, icon);
+        lv_obj_set_y(s_img_wifi, icon_y);
         if (connected) lv_obj_remove_flag(s_img_wifi, LV_OBJ_FLAG_HIDDEN);
         else           lv_obj_add_flag(s_img_wifi, LV_OBJ_FLAG_HIDDEN);
     }
     if (s_img_br_wifi) {
+        lv_image_set_src(s_img_br_wifi, icon);
+        lv_obj_set_y(s_img_br_wifi, icon_y);
         if (connected) lv_obj_remove_flag(s_img_br_wifi, LV_OBJ_FLAG_HIDDEN);
         else           lv_obj_add_flag(s_img_br_wifi, LV_OBJ_FLAG_HIDDEN);
     }
@@ -7054,21 +7073,12 @@ static void build_screens(void)
 #endif
 
     /* WiFi connectivity icon (right corner of editor status bar).
-     * Pick the foreground variant that contrasts with the active
-     * background: the EPD inverted theme and every color-LCD theme
-     * use a dark background, so the white-on-transparent variant
-     * applies. Other (default mono) builds use the black variant. */
-#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+     * Source image and vertical centering (which varies with icon
+     * height) are picked by update_wifi_icons(), called once both
+     * status bars exist; only the fixed horizontal position is set
+     * here. */
     s_img_wifi = lv_image_create(s_scr);
-    lv_image_set_src(s_img_wifi, &wifi_icon_white);
-#else
-    s_img_wifi = lv_image_create(s_scr);
-    lv_image_set_src(s_img_wifi, &wifi_icon_black);
-#endif
-    lv_obj_set_pos(s_img_wifi,
-                   SCR_W - WIFI_ICON_RIGHT_OFFSET,
-                   SCR_H - STATUS_H + (STATUS_H - 7) / 2);
+    lv_obj_set_x(s_img_wifi, SCR_W - WIFI_ICON_RIGHT_OFFSET);
     lv_obj_add_flag(s_img_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
@@ -7173,18 +7183,11 @@ static void build_screens(void)
 #define WIFI_ICON_RIGHT_OFFSET 15
 #endif
 
-    /* WiFi connectivity icon (right corner of browser status bar) */
-#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+    /* WiFi connectivity icon (right corner of browser status bar).
+     * See the matching editor-screen icon above: update_wifi_icons()
+     * picks the source image and vertical position. */
     s_img_br_wifi = lv_image_create(s_scr_browser);
-    lv_image_set_src(s_img_br_wifi, &wifi_icon_white);
-#else
-    s_img_br_wifi = lv_image_create(s_scr_browser);
-    lv_image_set_src(s_img_br_wifi, &wifi_icon_black);
-#endif
-    lv_obj_set_pos(s_img_br_wifi,
-                   SCR_W - WIFI_ICON_RIGHT_OFFSET,
-                   SCR_H - STATUS_H + (STATUS_H - 7) / 2);
+    lv_obj_set_x(s_img_br_wifi, SCR_W - WIFI_ICON_RIGHT_OFFSET);
     lv_obj_add_flag(s_img_br_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
