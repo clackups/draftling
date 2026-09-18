@@ -882,6 +882,15 @@ functions with an event callback for connection state changes (idle,
 connecting, connected, disconnected, error). Required by `git_sync` for
 network access.
 
+`wifi_manager_connect()` reads `/sdcard/wifi.cfg` on *every* call, not
+only when NVS has nothing cached: if the file's SSID or password no
+longer matches what NVS remembers from a previous connection, the
+stale NVS entry is overwritten with the file's credentials before
+connecting. This is what makes editing `wifi.cfg` on the SD card take
+effect on the next `Ctrl+W` -- without it, once NVS was populated the
+file was never consulted again and the device kept reconnecting to
+whichever SSID it first learned.
+
 IPv4/IPv6 dual stack: on `WIFI_EVENT_STA_CONNECTED` the manager calls
 `esp_netif_create_ip6_linklocal()` on the STA netif, which makes lwIP
 send router solicitations; if the AP's network advertises a global

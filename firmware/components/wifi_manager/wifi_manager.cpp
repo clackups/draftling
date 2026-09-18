@@ -231,15 +231,26 @@ extern "C" esp_err_t wifi_manager_deinit(void)
 extern "C" esp_err_t wifi_manager_connect(void)
 {
     char ssid[33] = "", pass[65] = "";
+    char file_ssid[33] = "", file_pass[65] = "";
 
-    /* Try NVS first, then config file */
-    if (!load_from_nvs(ssid, sizeof(ssid), pass, sizeof(pass))) {
-        if (!load_from_file(ssid, sizeof(ssid), pass, sizeof(pass))) {
-            ESP_LOGE(TAG, "No WiFi credentials found");
-            return ESP_ERR_NOT_FOUND;
-        }
-        /* Save file credentials to NVS for next time */
+    /* Always check /sdcard/wifi.cfg, not just when NVS is empty --
+     * otherwise editing the file after the first successful connect
+     * had no effect: NVS was consulted first and, once populated,
+     * the file was never looked at again, so the device kept
+     * reconnecting to whichever SSID it first learned. If the file
+     * now names different credentials (new SSID, or just a changed
+     * password for the same network), forget the stale NVS entry and
+     * use what is on the card. */
+    bool have_file = load_from_file(file_ssid, sizeof(file_ssid), file_pass, sizeof(file_pass));
+    bool have_nvs  = load_from_nvs(ssid, sizeof(ssid), pass, sizeof(pass));
+
+    if (have_file && (!have_nvs || strcmp(ssid, file_ssid) != 0 || strcmp(pass, file_pass) != 0)) {
+        strncpy(ssid, file_ssid, sizeof(ssid) - 1); ssid[sizeof(ssid) - 1] = '\0';
+        strncpy(pass, file_pass, sizeof(pass) - 1); pass[sizeof(pass) - 1] = '\0';
         save_to_nvs(ssid, pass);
+    } else if (!have_nvs) {
+        ESP_LOGE(TAG, "No WiFi credentials found");
+        return ESP_ERR_NOT_FOUND;
     }
 
     return wifi_manager_connect_to(ssid, pass, false);

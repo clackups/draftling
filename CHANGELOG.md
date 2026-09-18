@@ -52,6 +52,17 @@ in the git log.
   port) but does not work there in practice, so it is not on this
   list.
 
+### Fixed
+
+- **WiFi: editing `wifi.cfg` on the SD card now takes effect.**
+  Previously `wifi_manager_connect()` only read the file the very
+  first time (to seed NVS); every later `Ctrl+W` reconnect used the
+  cached NVS credentials and ignored the file entirely, so changing
+  the SSID or password on the card had no effect until NVS was wiped
+  by some other means. The file is now read on every connect attempt,
+  and a mismatch against the cached NVS credentials (new SSID, or a
+  changed password for the same one) replaces them before connecting.
+
 ## [1.0.5] - 2026-09-16
 
 ### Added
