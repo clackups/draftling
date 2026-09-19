@@ -622,6 +622,16 @@ Source layout (all in-tree, no managed components):
   merge; overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
   markers and **committed as-is** (never discarded).
 
+Convention: a `const git_oid *` parameter that represents an optional
+commit/tree ("no parent", "no base", "not cloned yet") is passed as a
+literal `NULL`, not a pointer to a zero-filled `git_oid`. Every function
+taking such a parameter must guard with `!oid || git_oid_is_zero(oid)`
+(`git_oid_is_zero()` itself does not null-check its argument). Missing
+that guard in `commit_tree_oid()` crashed a first-ever sync of an empty
+repo with no local files -- `have_head` was false on both sides, so
+`subtree_for_commit(NULL, ...)` was reached in the normal course of
+things, not just on a malformed repo.
+
 Behaviour:
 
 - The working tree is the flat set of `*.md` files in the sync dir. An

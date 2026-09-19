@@ -270,7 +270,7 @@ static esp_err_t results_to_tree(const git_merge_path_result *res, int n, git_oi
 
 static esp_err_t commit_tree_oid(const git_oid *commit_oid, git_oid *out_tree)
 {
-    if (git_oid_is_zero(commit_oid)) { git_oid_clear(out_tree); return ESP_OK; }
+    if (!commit_oid || git_oid_is_zero(commit_oid)) { git_oid_clear(out_tree); return ESP_OK; }
     git_commit c;
     esp_err_t ret = git_commit_load(commit_oid, &c);
     if (ret != ESP_OK) return ret;
@@ -365,7 +365,14 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         }
     }
 
+    /* git_ref_read() leaves *out untouched on failure (ref file does
+     * not exist yet -- the very first sync of a repo), so local_head
+     * must start zeroed: step 5 below reads it unconditionally
+     * (subtree_for_commit(&local_head, ...)), regardless of whether
+     * have_head is true, and an uninitialized oid there would compare
+     * as some garbage non-zero SHA instead of "no commit". */
     git_oid local_head;
+    git_oid_clear(&local_head);
     bool have_head = (git_ref_read(localref, &local_head) == ESP_OK) &&
                      !git_oid_is_zero(&local_head);
 

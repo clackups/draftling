@@ -62,6 +62,12 @@ in the git log.
   by some other means. The file is now read on every connect attempt,
   and a mismatch against the cached NVS credentials (new SSID, or a
   changed password for the same one) replaces them before connecting.
+- **Git sync: crash on a brand-new sync against an empty remote with
+  no local files.** Syncing an empty repository for the first time
+  (no commits on the remote, no `*.md` files on the SD card) crashed
+  the firmware (`LoadProhibited` at address 0) instead of completing
+  as a no-op. The crash was a `NULL` pointer read in the "which files
+  changed" bookkeeping, reached only when both sides start out empty.
 
 ## [1.0.5] - 2026-09-16
 
