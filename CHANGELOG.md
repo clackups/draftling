@@ -23,10 +23,10 @@ in the git log.
   and all three Freenove FNK0104 boards -- confirmed working on
   physical hardware for every one of these boards), a new F1 menu
   item opens a picker for Off / Read-only / Read-write; the choice
-  takes effect when you leave the F1 menu, not the instant you pick
-  it, so browsing the rest of the menu afterward does not instantly
-  bounce you to the file browser. Turning it on exposes the SD card
-  to a connected computer as a normal USB mass-storage drive;
+  takes effect as soon as you leave that picker (Enter to confirm, or
+  Esc to back out unchanged), not while you are still choosing.
+  Turning it on exposes the SD card to a connected computer as a
+  normal USB mass-storage drive;
   editing, creating files, and Git sync are all refused until it is
   switched back off (both from the file browser and from the F1 menu
   itself), switching between Read-only and Read-write while already

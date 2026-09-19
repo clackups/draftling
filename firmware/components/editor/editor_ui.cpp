@@ -840,11 +840,10 @@ static bool      s_menu_open    = false;
  * opens a 3-row picker (Off / Read-only / Read-write, mirroring the
  * color-theme picker's s_settings_list reuse, but built into
  * s_menu_list instead since this item lives on the top-level F1 menu
- * rather than in Settings). Picking a row only stages it in
+ * rather than in Settings). Picking a row stages it in
  * s_usbmsc_pending_mode; the actual usb_msc_set_mode() call happens
- * once the user leaves the whole F1 menu (see close_menu()), so
- * browsing the rest of the menu after picking Read-only/Read-write
- * does not instantly kick the user to the file browser. */
+ * once the user leaves the picker itself, Enter or Esc (see
+ * close_usbmsc_picker()), not the whole F1 menu. */
 static bool          s_usbmsc_picker_open = false;
 static int           s_usbmsc_picker_sel  = 0;
 static int           s_usbmsc_picker_sel_prev = -1;
@@ -2611,9 +2610,10 @@ static void show_sleep_prompt(void);
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 /* Defined with the split-layout code further down (editor_ui_apply_split_mode);
- * commit_usb_msc_pending_mode(), called from close_menu() above it,
- * collapses any split before handing the SD card to USB so no pane
- * can be left silently editing a file it can no longer safely save. */
+ * commit_usb_msc_pending_mode(), called from close_usbmsc_picker()
+ * above it, collapses any split before handing the SD card to USB so
+ * no pane can be left silently editing a file it can no longer safely
+ * save. */
 static void editor_ui_apply_split_mode(split_mode_t mode);
 #endif
 
@@ -3514,9 +3514,10 @@ static void show_menu(void)
     s_menu_sel = 0;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Sync the staged choice to whatever usb_msc is actually doing
-     * right now -- discards a stale pending value from a picker that
-     * was opened and abandoned (Esc) in a previous visit, and picks
-     * up an auto-off that happened while the menu was closed. */
+     * right now -- picks up an auto-off that happened while the menu
+     * was closed. (Leaving the picker itself, Enter or Esc, already
+     * commits any staged choice -- see close_usbmsc_picker() -- so
+     * this should normally be a no-op.) */
     s_usbmsc_picker_open = false;
     s_usbmsc_pending_mode = usb_msc_get_mode();
 #endif
@@ -3536,13 +3537,10 @@ static void show_menu(void)
 }
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-/* Called by close_menu() right before leaving the F1 menu system:
- * applies s_usbmsc_pending_mode if it differs from what usb_msc is
- * actually doing right now. The picker in menu_activate_item() only
- * ever stages a choice in s_usbmsc_pending_mode -- applying it here,
- * on the way out of the whole menu, means browsing the rest of the
- * menu after picking Read-only/Read-write does not instantly kick
- * the user to the file browser mid-browse.
+/* Called by close_usbmsc_picker() right after leaving the "SD card via
+ * USB" picker (Enter or Esc): applies s_usbmsc_pending_mode if it
+ * differs from what usb_msc is actually doing right now. Esc leaves
+ * s_usbmsc_pending_mode unchanged, so this is a no-op in that case.
  *
  * Turning it off restarts the device (see usb_msc.h) -- this function
  * does not return in that case. */
@@ -3569,8 +3567,9 @@ static void commit_usb_msc_pending_mode(void)
         /* Taking the card away from local editing for the first time:
          * auto-save whatever is open and collapse any split so no
          * pane is left trying to save into the now-USB-owned card,
-         * then force the file browser -- close_menu() below routes
-         * there whenever s_editor_screen_active is false. */
+         * then force the file browser -- close_menu() routes there
+         * whenever s_editor_screen_active is false, once the user
+         * eventually leaves the F1 menu too. */
         if (editor_is_modified() && editor_get_file_path()) {
             editor_save_file();
         }
@@ -3593,9 +3592,6 @@ static void commit_usb_msc_pending_mode(void)
 
 static void close_menu(void)
 {
-#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    commit_usb_msc_pending_mode();
-#endif
     s_menu_open = false;
     if (s_editor_screen_active)
         editor_ui_show_editor();
@@ -4348,10 +4344,10 @@ static void wifi_connect_async(void);
 /* ---- "SD card via USB" picker ----
  * Renders the 3 modes into the same s_menu_list widget while
  * s_usbmsc_picker_open is true, mirroring the color-theme picker's
- * reuse of s_settings_list. Picking a row (Enter) only stages the
- * choice in s_usbmsc_pending_mode and returns to the regular F1 menu
- * list -- commit_usb_msc_pending_mode() (called from close_menu())
- * is what actually applies it. */
+ * reuse of s_settings_list. Picking a row (Enter) stages the choice
+ * in s_usbmsc_pending_mode; either way (Enter or Esc), leaving the
+ * picker back to the regular F1 menu list runs
+ * commit_usb_msc_pending_mode() -- see close_usbmsc_picker(). */
 static void refresh_usbmsc_picker_items(void)
 {
     lv_obj_clean(s_menu_list);
@@ -4377,10 +4373,17 @@ static void update_usbmsc_picker_highlight(void)
     s_usbmsc_picker_sel_prev = s_usbmsc_picker_sel;
 }
 
-/* Cancel the picker and re-render the regular F1 menu list. */
+/* Leave the picker (Enter or Esc) and re-render the regular F1 menu
+ * list. This is the point where the staged choice actually takes
+ * effect -- see commit_usb_msc_pending_mode(). Esc leaves
+ * s_usbmsc_pending_mode unchanged, so the commit is a no-op then.
+ *
+ * Turning USB-MSC off restarts the device (see usb_msc.h) -- this
+ * function does not return in that case. */
 static void close_usbmsc_picker(void)
 {
     s_usbmsc_picker_open = false;
+    commit_usb_msc_pending_mode();
     refresh_menu_items();
 }
 #endif
@@ -4461,9 +4464,9 @@ static void menu_activate_item(int idx)
             break;
         }
         /* Open the picker sub-list. Up/Down to navigate, Enter to
-         * stage a choice (applied on leaving the F1 menu -- see
-         * commit_usb_msc_pending_mode()), Esc to return without
-         * changing the staged choice. */
+         * stage a choice, Esc to return without changing it -- either
+         * way, leaving the picker applies it (see
+         * close_usbmsc_picker() / commit_usb_msc_pending_mode()). */
         s_usbmsc_picker_open = true;
         s_usbmsc_picker_sel = (s_usbmsc_pending_mode == USB_MSC_MODE_READ_ONLY) ? 1
                             : (s_usbmsc_pending_mode == USB_MSC_MODE_READ_WRITE) ? 2
@@ -6456,8 +6459,8 @@ static void apply_pending_connect_state(void);
  * so key_drain_cb polls for it here instead -- the same reason
  * apply_pending_connect_state() exists for BLE connect/disconnect.
  * User-driven mode changes (commit_usb_msc_pending_mode(), called
- * from close_menu()) already refresh the UI themselves; this only
- * reacts to a change nobody in the LVGL task caused. */
+ * from close_usbmsc_picker()) already refresh the UI themselves; this
+ * only reacts to a change nobody in the LVGL task caused. */
 static usb_msc_mode_t s_last_polled_usb_msc_mode = USB_MSC_MODE_OFF;
 
 static void poll_usb_msc_auto_off(void)

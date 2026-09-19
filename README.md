@@ -98,11 +98,12 @@ load the firmware quickly without having to compile it.
   PaperS3, Waveshare ESP32-S3-ePaper-3.97, ESP32-S3-RLCD-4.2,
   ESP32-S3-Touch-LCD-7 and ESP32-S3-Touch-LCD-3.49, and all three
   Freenove FNK0104 boards), F1 -> "SD card via USB" opens a picker
-  for Off / Read-only / Read-write; the choice applies when you leave
-  the F1 menu (Esc / F1), exposing the SD card to a connected
-  computer as a normal USB mass-storage drive without removing the
-  card. While it is on, editing, creating files, and Git sync are all
-  refused; switching between Read-only and Read-write reconnects the
+  for Off / Read-only / Read-write; the choice applies as soon as you
+  leave that picker (Enter to confirm, or Esc to back out unchanged),
+  exposing the SD card to a connected computer as a normal USB
+  mass-storage drive without removing the card. While it is on,
+  editing, creating files, and Git sync are all refused; switching
+  between Read-only and Read-write reconnects the
   USB drive so the computer picks up the new permission, and it
   switches itself back off if no computer has been connected for 5
   minutes. Turning it back off restarts the device -- these boards'
