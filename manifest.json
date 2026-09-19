@@ -93,6 +93,18 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.6",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.6/draftling-xteink_x4_classic-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.6/draftling-xteink_x4_classic-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.6/draftling-xteink_x4_classic-otadata.bin", "offset": "0xd000" },
+            { "path": "firmware/v1.0.6/draftling-xteink_x4_classic.bin", "offset": "0x10000" }
+          ]
+        },
+        {
           "tag": "v1.0.5",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -206,6 +218,17 @@
       "description": "ESP32-S3, 3.97\" 800x480 e-paper (SSD1677) -- UNTESTED on physical hardware",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.6",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.6/draftling-waveshare_epaper_397-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.6/draftling-waveshare_epaper_397-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.6/draftling-waveshare_epaper_397.bin", "offset": "0x10000" }
+          ]
+        },
         {
           "tag": "v1.0.5",
           "flashMode": "dio",
