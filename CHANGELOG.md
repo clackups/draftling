@@ -74,6 +74,15 @@ in the git log.
   always trivially "nothing changed" and the block never ran -- local
   commits synced to the SD card's own `.git` history but never reached
   the server, silently, with no error shown.
+- **Git sync: commit timestamps could drift minutes into the future
+  after the device's first-ever boot.** The wall-clock SNTP sync
+  skipped itself whenever `time(NULL)` already read a "plausible"
+  post-2025 date -- but ESP-IDF's system clock keeps ticking through
+  deep sleep via the RTC timer domain (the internal RC oscillator on
+  boards with no external 32kHz crystal, which drifts), so it always
+  looked plausible after the very first boot and the real correction
+  never ran again. SNTP is now attempted once every boot regardless,
+  and the query now goes to `2.pool.ntp.org`.
 
 ## [1.0.5] - 2026-09-16
 

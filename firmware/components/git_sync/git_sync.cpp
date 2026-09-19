@@ -104,14 +104,33 @@ extern "C" size_t git_sync_max_file_size(void)
 static void ensure_time(void)
 {
     if (s_time_synced) return;
-    time_t now = time(NULL);
-    if (now > 1735689600) { s_time_synced = true; return; }   /* already > 2025-01 */
+    /* Only ever attempt this once per boot -- set the flag up front,
+     * regardless of whether the sync below actually succeeds, so an
+     * unreachable NTP server costs one bounded wait per boot rather
+     * than one on every single git sync.
+     *
+     * There used to be a "skip entirely if time(NULL) already reads a
+     * plausible post-2025 date" shortcut here. That is not the same
+     * thing as "the clock is trustworthy": ESP-IDF's system clock is
+     * backed by the RTC timer domain, which keeps ticking through
+     * deep sleep, so on every wake it already reads whatever the RTC
+     * tracked across the nap -- using the internal RC oscillator on
+     * boards with no external 32kHz crystal, which can drift by
+     * minutes over a long sleep. That drifted value still looks
+     * "plausible" (> 2025-01-01), so the shortcut skipped the actual
+     * correction on every wake, meaning a real SNTP sync effectively
+     * only ever ran once, on the device's very first-ever boot, and
+     * every commit since then used a clock that only ever drifts
+     * further. Attempting SNTP unconditionally on every boot corrects
+     * that drift each time instead of trusting a carried-over guess. */
+    s_time_synced = true;
 
-    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("2.pool.ntp.org");
     if (esp_netif_sntp_init(&cfg) == ESP_OK) {
         if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(6000)) == ESP_OK) {
-            s_time_synced = true;
             ESP_LOGI(TAG, "SNTP time acquired");
+        } else {
+            ESP_LOGW(TAG, "SNTP sync timed out, using RTC-tracked time");
         }
         esp_netif_sntp_deinit();
     }

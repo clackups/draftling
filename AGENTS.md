@@ -654,7 +654,17 @@ Behaviour:
   trivially always "equal" and silently skips every push to an empty
   remote.
 - Wall-clock for commit timestamps comes from a best-effort SNTP query
-  (`esp_netif_sntp`) on the first sync, floored at 2025-01-01 otherwise.
+  (`esp_netif_sntp` against `2.pool.ntp.org`) attempted exactly once per
+  boot (`ensure_time()`, bounded to a 6 s wait), floored at 2025-01-01
+  if `time(NULL)` still reads earlier than that when a commit is made.
+  This must run unconditionally every boot rather than being skipped
+  whenever `time(NULL)` already looks "plausible" (> 2025-01-01):
+  ESP-IDF's system clock is backed by the RTC timer domain, which
+  keeps ticking through deep sleep (using the internal RC oscillator
+  on boards with no external 32kHz crystal, which drifts), so on wake
+  it already reads a plausible-looking but possibly drifted time --
+  skipping the sync in that case means SNTP would never actually
+  correct it after the device's very first boot.
 
 Scope limits: one branch, no tags/submodules/signing, no shallow clone,
 flat `*.md` working tree only, HTTP Basic auth only (no SSH). LCS merge
