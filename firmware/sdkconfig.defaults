@@ -15,6 +15,14 @@ CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS=y
 # TLS
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 
+# IPv4/IPv6 dual stack: LWIP_IPV6 is already on by default, but stateless
+# address autoconfiguration (SLAAC, RFC 4862) is off by default, which
+# means the STA netif would only ever get its automatic link-local
+# address and never a router-advertised global address. Required for
+# wifi_manager's dual-stack detection (wifi_manager_has_global_ipv6())
+# and the AAAA-first Git server lookup in git_sync.
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
+
 # LVGL fonts -- only keep the default Montserrat 14 for LVGL internals.
 # The editor UI uses custom Greybeard fonts exclusively.
 CONFIG_LV_FONT_MONTSERRAT_14=y

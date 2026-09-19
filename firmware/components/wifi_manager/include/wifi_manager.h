@@ -28,6 +28,14 @@ void wifi_manager_set_callback(wifi_state_callback_t callback);
 const char *wifi_manager_get_ip(void);
 const char *wifi_manager_get_ssid(void);
 
+/* True once the STA interface has a global-scope IPv6 address
+ * (RA-advertised SLAAC prefix, not just the auto-assigned link-local
+ * address every interface gets). Callers use this to decide whether
+ * the network is IPv4/IPv6 dual-stack -- e.g. to pick the WiFi status
+ * icon, or to prefer an AAAA lookup for an outgoing connection. */
+bool wifi_manager_has_global_ipv6(void);
+const char *wifi_manager_get_ipv6(void);
+
 #ifdef __cplusplus
 }
 #endif

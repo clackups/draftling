@@ -10,6 +10,13 @@ transfer. There is no dependency on any host-specific REST API, so any
 standard Git HTTP host works (GitHub, Gitea, Forgejo, GitLab, cgit with
 smart HTTP, a bare repo behind `git http-backend`, ...).
 
+The device is IPv4/IPv6 dual-stack: if the WiFi network hands out a
+global IPv6 address (RA/SLAAC, not just the automatic link-local one),
+every request to the Git server tries its `AAAA` record first and
+transparently falls back to `A` (IPv4) if the host has none. A "6"
+badge over the WiFi status icon indicates that a global IPv6 address is
+active.
+
 ## What lives on the SD card
 
 ```

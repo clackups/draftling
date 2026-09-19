@@ -16,6 +16,10 @@
  * palette entry for "off" pixels so the icon composites cleanly
  * over the status-bar background.
  *
+ * A second pair of descriptors (wifi6_icon_*) stacks a hand-drawn 5px
+ * "6" digit above the same 7px Wi-Fi glyph, separated by a blank row,
+ * for the IPv6-dual-stack indicator -- see wifi_manager_has_global_ipv6().
+ *
  * Drawn by hand; pure project asset, no external image source.
  */
 
@@ -28,8 +32,6 @@
  *       entry 1 -> color for bit value 1
  *   - then the bitmap, MSB first, ceil(W/8) bytes per row */
 
-#define WIFI_ICON_W 11
-#define WIFI_ICON_H 7
 #define WIFI_ICON_STRIDE 2
 
 /* Black foreground over transparent background */
@@ -88,4 +90,82 @@ const lv_image_dsc_t wifi_icon_white = {
     },
     .data_size = sizeof(wifi_icon_white_data),
     .data = wifi_icon_white_data,
+};
+
+/* Wi-Fi + "6" dual-stack variant: a 5px "6" digit, one blank row, then
+ * the same 7px Wi-Fi glyph as above (identical bytes, copy-pasted so
+ * each descriptor's pixel data stays self-contained and independently
+ * reviewable).
+ *
+ * Black foreground over transparent background:
+ *   .###.......
+ *   #..........
+ *   ####.......
+ *   #...#......
+ *   .###.......
+ *   ...........
+ *   ..#######..
+ *   .#.......#.
+ *   #..#####..#
+ *   ..#.....#..
+ *   .#..###..#.
+ *   ....#.#....
+ *   .....#..... */
+static const uint8_t wifi6_icon_black_data[8 + WIFI_ICON_STRIDE * WIFI6_ICON_H] = {
+    0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xff,
+    0x0E, 0x00,
+    0x10, 0x00,
+    0x1E, 0x00,
+    0x11, 0x00,
+    0x0E, 0x00,
+    0x00, 0x00,
+    0x3F, 0x80,
+    0x40, 0x40,
+    0x9F, 0x20,
+    0x20, 0x80,
+    0x4E, 0x40,
+    0x0A, 0x00,
+    0x04, 0x00,
+};
+
+/* White foreground over transparent background (inverted theme) */
+static const uint8_t wifi6_icon_white_data[8 + WIFI_ICON_STRIDE * WIFI6_ICON_H] = {
+    0x00, 0x00, 0x00, 0x00,
+    0xff, 0xff, 0xff, 0xff,
+    0x0E, 0x00,
+    0x10, 0x00,
+    0x1E, 0x00,
+    0x11, 0x00,
+    0x0E, 0x00,
+    0x00, 0x00,
+    0x3F, 0x80,
+    0x40, 0x40,
+    0x9F, 0x20,
+    0x20, 0x80,
+    0x4E, 0x40,
+    0x0A, 0x00,
+    0x04, 0x00,
+};
+
+const lv_image_dsc_t wifi6_icon_black = {
+    .header = {
+        .w = WIFI6_ICON_W,
+        .h = WIFI6_ICON_H,
+        .stride = WIFI_ICON_STRIDE,
+        .cf = LV_COLOR_FORMAT_I1,
+    },
+    .data_size = sizeof(wifi6_icon_black_data),
+    .data = wifi6_icon_black_data,
+};
+
+const lv_image_dsc_t wifi6_icon_white = {
+    .header = {
+        .w = WIFI6_ICON_W,
+        .h = WIFI6_ICON_H,
+        .stride = WIFI_ICON_STRIDE,
+        .cf = LV_COLOR_FORMAT_I1,
+    },
+    .data_size = sizeof(wifi6_icon_white_data),
+    .data = wifi6_icon_white_data,
 };

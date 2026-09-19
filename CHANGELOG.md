@@ -8,6 +8,13 @@ in the git log.
 
 ### Added
 
+- **IPv4/IPv6 dual stack**: the device now brings up IPv6 alongside
+  IPv4 on the WiFi station interface. When the network advertises a
+  global IPv6 prefix (SLAAC router advertisements), the WiFi status
+  icon in the editor and file browser status bars switches to a
+  "6"-badged variant, and Git sync tries the server's `AAAA` DNS
+  record first, falling back to `A` (IPv4) if the connection attempt
+  fails or the server has no AAAA record.
 - **"SD card via USB" (F1 menu)**: on boards whose USB port wires the
   ESP32-S3's native USB-OTG controller straight to the connector
   (Xteink X4 Pro / Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite /
@@ -44,6 +51,38 @@ in the git log.
   the wired-keyboard feature already uses in host mode on its USB-A
   port) but does not work there in practice, so it is not on this
   list.
+
+### Fixed
+
+- **WiFi: editing `wifi.cfg` on the SD card now takes effect.**
+  Previously `wifi_manager_connect()` only read the file the very
+  first time (to seed NVS); every later `Ctrl+W` reconnect used the
+  cached NVS credentials and ignored the file entirely, so changing
+  the SSID or password on the card had no effect until NVS was wiped
+  by some other means. The file is now read on every connect attempt,
+  and a mismatch against the cached NVS credentials (new SSID, or a
+  changed password for the same one) replaces them before connecting.
+- **Git sync: crash on a brand-new sync against an empty remote with
+  no local files.** Syncing an empty repository for the first time
+  (no commits on the remote, no `*.md` files on the SD card) crashed
+  the firmware (`LoadProhibited` at address 0) instead of completing
+  as a no-op. The crash was a `NULL` pointer read in the "which files
+  changed" bookkeeping, reached only when both sides start out empty.
+- **Git sync: pushing to an empty (branch-less) remote never actually
+  pushed anything.** The push-trigger check compared the local commit
+  against itself instead of against the remote in this case, so it was
+  always trivially "nothing changed" and the block never ran -- local
+  commits synced to the SD card's own `.git` history but never reached
+  the server, silently, with no error shown.
+- **Git sync: commit timestamps could drift minutes into the future
+  after the device's first-ever boot.** The wall-clock SNTP sync
+  skipped itself whenever `time(NULL)` already read a "plausible"
+  post-2025 date -- but ESP-IDF's system clock keeps ticking through
+  deep sleep via the RTC timer domain (the internal RC oscillator on
+  boards with no external 32kHz crystal, which drifts), so it always
+  looked plausible after the very first boot and the real correction
+  never ran again. SNTP is now attempted once every boot regardless,
+  and the query now goes to `2.pool.ntp.org`.
 
 ## [1.0.5] - 2026-09-16
 
