@@ -644,7 +644,15 @@ Behaviour:
   `[draftling] N conflict(s)` note. The editor UI reloads the open
   buffer on `GIT_SYNC_SUCCESS`.
 - Push is a fast-forward ref update; a race (remote moved mid-sync) is
-  reported and the user re-syncs.
+  reported and the user re-syncs. When the remote branch does not
+  exist yet (brand-new / empty repo), the push's "old oid" baseline is
+  the all-zero oid, matching git's smart-HTTP convention for creating
+  a ref; `do_sync()`'s push-trigger condition compares `local_head`
+  against that same baseline (`remote_baseline`), not against
+  `remote_sha` unconditionally -- comparing against `&local_head`
+  itself in the no-branch-yet case, as an earlier version did, is
+  trivially always "equal" and silently skips every push to an empty
+  remote.
 - Wall-clock for commit timestamps comes from a best-effort SNTP query
   (`esp_netif_sntp`) on the first sync, floored at 2025-01-01 otherwise.
 

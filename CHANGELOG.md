@@ -68,6 +68,12 @@ in the git log.
   the firmware (`LoadProhibited` at address 0) instead of completing
   as a no-op. The crash was a `NULL` pointer read in the "which files
   changed" bookkeeping, reached only when both sides start out empty.
+- **Git sync: pushing to an empty (branch-less) remote never actually
+  pushed anything.** The push-trigger check compared the local commit
+  against itself instead of against the remote in this case, so it was
+  always trivially "nothing changed" and the block never ran -- local
+  commits synced to the SD card's own `.git` history but never reached
+  the server, silently, with no error shown.
 
 ## [1.0.5] - 2026-09-16
 

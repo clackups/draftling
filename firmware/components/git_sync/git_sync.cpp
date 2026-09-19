@@ -560,8 +560,18 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     bool want_push = (dir != GIT_SYNC_PULL);
     bool have_remote_target = (s_cfg.repo_url[0] != '\0');
 
-    if (want_push && have_remote_target && !git_oid_eq(
-            &local_head, remote_has_branch ? &remote_sha : &local_head)) {
+    /* What the push would be layered on top of: the remote's current
+     * tip, or the zero oid if the branch does not exist there yet (a
+     * brand-new / empty remote repo) -- git's smart-HTTP protocol
+     * represents "create this ref" with an all-zero old-oid. Comparing
+     * against &local_head itself in that case (as this used to) is
+     * trivially always "equal" and silently skips every push to an
+     * empty remote, no matter what is committed locally. */
+    git_oid remote_baseline;
+    if (remote_has_branch) remote_baseline = remote_sha;
+    else git_oid_clear(&remote_baseline);
+
+    if (want_push && have_remote_target && !git_oid_eq(&local_head, &remote_baseline)) {
 
         if (remote_has_branch && !git_is_ancestor(&remote_sha, &local_head)) {
             set_error("Push blocked: remote advanced during sync -- retry");
@@ -583,12 +593,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         git_oidset_free(&set);
         if (ret != ESP_OK) { remove(pack); set_error("Cannot build packfile"); return ret; }
 
-        git_oid old_oid;
-        git_oid_clear(&old_oid);
-        if (remote_has_branch) old_oid = remote_sha;
-
         git_buf report = GIT_BUF_INIT;
-        ret = git_http_push(&remote, server_ref, &old_oid, &local_head, pack, &report);
+        ret = git_http_push(&remote, server_ref, &remote_baseline, &local_head, pack, &report);
         remove(pack);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "push report: %.*s", (int)report.len, (char *)report.data);
