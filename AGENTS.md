@@ -1534,7 +1534,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `xteink_x4_pro`, `xteink_x4_classic`,
-`elecrow_crowpanel_579`). Each
+`elecrow_crowpanel_579`, `waveshare_epaper_397`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
@@ -1567,7 +1567,8 @@ first step of every release.
 
 A release also publishes prebuilt binaries for the boards covered by
 the web flasher (see below) -- currently `m5stack_papers3`,
-`xteink_x4_pro`, `waveshare_rlcd42`, `waveshare_touch_lcd_349`,
+`xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
+`waveshare_touch_lcd_349`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, and `elecrow_crowpanel_579`. Extend the list there
 as more boards get a web-flasher entry. A release does not need to
@@ -1588,6 +1589,8 @@ tree referenced in steps 1-4.
    cd firmware
    idf.py --preset m5stack_papers3 build
    idf.py --preset xteink_x4_pro build
+   idf.py --preset xteink_x4_classic build
+   idf.py --preset waveshare_epaper_397 build
    # ...and so on for every board in the release
    ```
 3. Tag and push:
@@ -1605,15 +1608,17 @@ tree referenced in steps 1-4.
    gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
        draftling-<board>-partition-table.bin draftling-<board>.bin
    ```
-   `xteink_x4_pro` (and `xteink_x4_classic`) also needs a fourth image,
-   `draftling-xteink_x4_pro-otadata.bin` (from
-   `firmware/build/xteink_x4_pro/ota_data_initial.bin`): its partition
-   table is dual-OTA (`partitions_xteink_x4_pro.csv` /
+   `xteink_x4_pro` and `xteink_x4_classic` each also need a fourth
+   image, `draftling-<board>-otadata.bin` (from
+   `firmware/build/<board>/ota_data_initial.bin`): their partition
+   tables are dual-OTA (`partitions_xteink_x4_pro.csv` /
    `partitions_xteink_x4_classic.csv`), so a clean flash must also
    (re)initialise the `otadata` partition at `0xd000` -- an 8 KB
    all-`0xFF` blob that makes the bootloader pick `ota_0`. Otherwise a
    stale `otadata` left by the stock firmware could point the
-   bootloader at the empty `ota_1`.
+   bootloader at the empty `ota_1`. `waveshare_epaper_397` uses the
+   default single-"factory"-app partition table like most other boards,
+   so it needs only the usual three images.
 5. Update the web flasher on the `_flasher` branch (see its own
    `README.md` for the full layout and rationale -- it is an orphan
    branch with no shared history with `main`, published via GitHub
@@ -1622,15 +1627,17 @@ tree referenced in steps 1-4.
    - Add `firmware/vX.Y.Z/` (on `_flasher`) with the same binaries
      uploaded to the release, named identically, for each board
      included in this release (including
-     `draftling-xteink_x4_pro-otadata.bin` for the X4 Pro).
+     `draftling-xteink_x4_pro-otadata.bin` and
+     `draftling-xteink_x4_classic-otadata.bin` for those two boards).
    - In `manifest.json`, each board has its own `releases` array
      (newest first). For each board this release covers, prepend a new
      entry with its `tag`, flash mode/freq/size, and `parts[].path`
      pointing at `firmware/vX.Y.Z/...`. Leave other boards' `releases`
      untouched -- they keep pointing at whatever tag they last shipped
-     under. `xteink_x4_pro` has a fourth `parts` entry:
-     `{ "path": "firmware/vX.Y.Z/draftling-xteink_x4_pro-otadata.bin",
-     "offset": "0xd000" }` (its `draftling-xteink_x4_pro.bin` app part
+     under. `xteink_x4_pro` and `xteink_x4_classic` each have a fourth
+     `parts` entry:
+     `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
+     "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
    - Commit and push to `_flasher` -- GitHub Pages redeploys
      automatically; no separate deploy step.
