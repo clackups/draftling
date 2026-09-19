@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-19
+
 ### Added
 
 - **IPv4/IPv6 dual stack**: the device now brings up IPv6 alongside
