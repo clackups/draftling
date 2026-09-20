@@ -28,6 +28,7 @@ load the firmware quickly without having to compile it.
   * Waveshare ESP32-S3-Touch-LCD-3.49
   * Seeed Studio reTerminal E1001 (7.5" e-paper)
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
+  * Seeed reTerminal Sticky (**experimental**, untested on physical hardware -- see [HARDWARE.md](HARDWARE.md))
 
 * DIY boards
   * Waveshare ESP32-S3-ePaper-3.97 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-ePaper-3.97/))
