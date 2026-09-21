@@ -1,0 +1,13 @@
+# CMakePresets.json board defaults: Seeed Studio reTerminal E1001
+# Sets the hardware model and IDF target used by the "seeed_reterminal_e1001" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001=y
+
+# No "SD card via USB" support on this board: the USB port is wired to
+# a CH341 UART-to-USB bridge chip (flashing / charging only), not the
+# ESP32-S3's native USB-OTG controller -- and GPIO19/20, which would be
+# the native USB D-/D+ pins, are already claimed by this board's I2C0
+# bus (see main/boards/seeed_reterminal_e1001.h). Leaving
+# CONFIG_TINYUSB_MSC_ENABLED enabled would compile in a USB device
+# stack this board cannot use.

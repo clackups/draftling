@@ -253,6 +253,21 @@ config DRAFTLING_MODEL_WAVESHARE_EPAPER_397
         was copied from it, only these factual pin/register
         assignments -- see main/boards/waveshare_epaper_397.h.
 
+config DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    bool "Seeed Studio reTerminal E1001 (UC8179, 7.5\" e-paper, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Seeed Studio reTerminal E1001 e-paper terminal: 7.5" 800x480
+        monochrome e-paper display (UC8179 / Good Display GDEY075T7)
+        driven over plain SPI by components/display/display_seeed_e1001.cpp,
+        supporting OTP fast partial refresh and full refresh.
+        On-board MicroSD slot sharing the same SPI bus (SPI2_HOST).
+        Battery monitoring via an ADC pin (GPIO1) with active-high
+        divider enable (GPIO21). Three user buttons: KEY0 (GPIO3) is
+        the deep-sleep wakeup and BLE-forget button; KEY1 (GPIO4) and
+        KEY2 (GPIO5) scroll the editor a screen at a time (Page Up /
+        Page Down). PCF8563 RTC on I2C.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -410,6 +425,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -481,6 +497,16 @@ config DRAFTLING_DISPLAY_SSD1683
 config DRAFTLING_DISPLAY_WS_EPD397
     bool
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default n
+
+# DRAFTLING_DISPLAY_SEEED_E1001 selects the from-scratch SPI e-paper
+# backend for the Seeed Studio reTerminal E1001
+# (components/display/display_seeed_e1001.cpp). Drives the 7.5"
+# 800x480 monochrome panel directly over SPI via the UC8179
+# controller with OTP waveforms for full and fast partial updates.
+config DRAFTLING_DISPLAY_SEEED_E1001
+    bool
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default n
 
 # DRAFTLING_EPDIY_BOARD_PAPERS3 selects the in-tree PaperS3 board
@@ -628,6 +654,7 @@ config DRAFTLING_HAS_BATTERY
     # switches the e-paper panel's own supply rail; see the display
     # backend's file header comment.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default n
 
 # Selects the CW2017 fuel-gauge backend in components/battery/
@@ -904,6 +931,8 @@ config DRAFTLING_WAKEUP_GPIO
     default 2  if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     # Waveshare ESP32-S3-ePaper-3.97: BOOT button on GPIO0.
     default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    # Seeed Studio reTerminal E1001: KEY0 button on GPIO3 (active-low, RTC-capable).
+    default 3  if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default 0
 
 # DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
@@ -1189,6 +1218,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_XTEINK_X4
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -1212,6 +1242,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_XTEINK_X4
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -1283,6 +1314,7 @@ config DRAFTLING_DISPLAY_HIDPI
     # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"
     # (~219 DPI) above -- use the same Hack-font HIDPI path.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
