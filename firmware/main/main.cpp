@@ -779,6 +779,17 @@ static void pre_sleep_ws_epaper397_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001)
+static void pre_sleep_seeed_reterminal_e1001_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Seeed reTerminal E1001 peripheral teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001 */
+
 /* Poll period and long-press threshold shared by the H752 side-key
  * handler and the generic wakeup-GPIO handler below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -1333,12 +1344,14 @@ static void ws_epaper397_nav_init(void)
  * On boards other than the H752 (which has its own key handler above)
  * the boot / wakeup button is monitored for a 2-second hold.  Holding
  * the button for 2 s clears every stored BLE keyboard bond and starts
- * a fresh scan, allowing the user to pair a new keyboard without
- * navigating the settings menu.
+ * a fresh scan (same action as the "Forget KB" touch button on the
+ * BLE-prompt screen; lets users without touch pair a replacement
+ * keyboard after moving away from the old one).
  *
- * The button is assumed to be active-low with the internal pull-up
- * enabled (the same electrical assumption the standby component makes
- * when it arms the EXT0 deep-sleep wake source on GPIO 0 / 18). */
+ * If the board defines a single BOOT/wake button (WAKEUP_GPIO_NUM) it
+ * is polled here.  Boards with no button at all (FNK0104A/B/S) skip
+ * this poller entirely.
+ */
 #if !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752) && \
     !defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579) && \
     !defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
@@ -1349,26 +1362,23 @@ static void ws_epaper397_nav_init(void)
 static void wakeup_btn_poll_cb(void *arg)
 {
     (void)arg;
+    gpio_num_t wake_gpio = (gpio_num_t)WAKEUP_GPIO_NUM;
     static bool down             = false;
     static int  stable           = 0;
     static int  hold_ticks       = 0;
     static bool long_press_fired = false;
 
-    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
-
+    bool raw_down = gpio_get_level(wake_gpio) == 0;
     if (raw_down == down) {
-        if (down) {
-            hold_ticks++;
-            if (!long_press_fired &&
-                hold_ticks >= WAKEUP_BTN_LONG_PRESS_TICKS) {
+        stable = 0;
+        if (down && !long_press_fired) {
+            if (++hold_ticks >= BTN_LONG_PRESS_TICKS) {
                 long_press_fired = true;
-                ESP_LOGI(TAG, "Wakeup button: 2 s long press -- "
-                              "forgetting all keyboards (GPIO%d)",
-                         WAKEUP_GPIO_NUM);
+                ESP_LOGI(TAG, "Wakeup button held %d ms -- forgetting all BLE bonds",
+                         BTN_LONG_PRESS_MS);
                 ble_keyboard_forget_all();
             }
         }
-        stable = 0;
         return;
     }
 
@@ -1424,7 +1434,8 @@ static void wakeup_btn_init(void)
              gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
 #endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 &&
-        * !CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 */
+        * !CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 &&
+        * !CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC */
 
 /* ---- Generic button long-press-to-sleep handler ----
  *
@@ -2010,6 +2021,10 @@ extern "C" void app_main(void)
      * SSD1677-family controller, no manufacturing-run detection
      * needed. Pin parameters are ignored. The AXP2101 ALDO3 panel
      * rail was already enabled above via display_set_shared_i2c_bus(). */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_SEEED_E1001)
+    /* Seeed Studio reTerminal E1001 (7.5" 800x480 UC8179 e-paper).
+     * Owns all panel GPIOs internally (see display_seeed_e1001.cpp). */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
@@ -2728,6 +2743,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_579_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
     standby_set_pre_sleep_cb(pre_sleep_ws_epaper397_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001)
+    standby_set_pre_sleep_cb(pre_sleep_seeed_reterminal_e1001_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

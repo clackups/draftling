@@ -153,6 +153,15 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_epaper_397",
                 "SDKCONFIG": "build/waveshare_epaper_397/sdkconfig"
             }
+        },
+        {
+            "name": "seeed_reterminal_e1001",
+            "displayName": "Seeed Studio reTerminal E1001 (7.5in UC8179 e-paper)",
+            "binaryDir": "build/seeed_reterminal_e1001",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.seeed_reterminal_e1001",
+                "SDKCONFIG": "build/seeed_reterminal_e1001/sdkconfig"
+            }
         }
     ]
 }
