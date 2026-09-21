@@ -121,13 +121,13 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #define STATUS_H     32
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
-#define LIST_PANEL_H (SCR_H - 36)  /* height for list panels below header */
+#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #else
 #define HEADER_H     16
 #define STATUS_H     16
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
-#define LIST_PANEL_H (SCR_H - 18)  /* height for list panels below header */
+#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
 
 /* ---- Base font size setting ----
@@ -7135,7 +7135,7 @@ static void build_screens(void)
     lv_label_set_text(br_title, "File Browser - Up/Down, Enter to open, N for new");
 
     s_list_files = lv_list_create(s_scr_browser);
-    lv_obj_set_pos(s_list_files, 0, 18);
+    lv_obj_set_pos(s_list_files, 0, HEADER_H);
     lv_obj_set_size(s_list_files, SCR_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_list_files, 0, 0);
     lv_obj_set_style_radius(s_list_files, 0, 0);
@@ -7404,7 +7404,7 @@ static void build_screens(void)
                       "Menu - Up/Down, Enter to select, Esc to close");
 
     s_menu_list = lv_list_create(s_scr_menu);
-    lv_obj_set_pos(s_menu_list, 0, 18);
+    lv_obj_set_pos(s_menu_list, 0, HEADER_H);
     lv_obj_set_size(s_menu_list, SCR_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_menu_list, 0, 0);
     lv_obj_set_style_radius(s_menu_list, 0, 0);
@@ -7443,7 +7443,7 @@ static void build_screens(void)
                       "Settings - Up/Down, Arrows to change, Esc to go back");
 
     s_settings_list = lv_list_create(s_scr_settings);
-    lv_obj_set_pos(s_settings_list, 0, 18);
+    lv_obj_set_pos(s_settings_list, 0, HEADER_H);
     lv_obj_set_size(s_settings_list, SCR_W, LIST_PANEL_H);
     lv_obj_set_style_border_width(s_settings_list, 0, 0);
     lv_obj_set_style_radius(s_settings_list, 0, 0);
