@@ -4,7 +4,10 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001=y
 
-# "SD card via USB" (F1 menu): expose the on-board MicroSD as a USB
-# Mass Storage device over the ESP32-S3's native USB port. See
-# components/usb_msc.
-CONFIG_TINYUSB_MSC_ENABLED=y
+# No "SD card via USB" support on this board: the USB port is wired to
+# a CH341 UART-to-USB bridge chip (flashing / charging only), not the
+# ESP32-S3's native USB-OTG controller -- and GPIO19/20, which would be
+# the native USB D-/D+ pins, are already claimed by this board's I2C0
+# bus (see main/boards/seeed_reterminal_e1001.h). Leaving
+# CONFIG_TINYUSB_MSC_ENABLED enabled would compile in a USB device
+# stack this board cannot use.
