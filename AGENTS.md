@@ -63,13 +63,15 @@ card).
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
+| Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
 
-UC8179-based panels (Seeed Studio reTerminal E1001 and the Waveshare
-E-Paper Driver HAT) were previously supported but have been removed:
-the controller proved too slow for an interactive Markdown editor
-even with fast partial updates and accumulated ghosting too quickly
-to be usable. The Xteink X4 Pro's UC8179 / UC8279 panel variants (see
-below) use a different, faster waveform than those panels and are
+The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
+monochrome e-paper panel driven by an UltraChip UC8179 controller over
+SPI. It uses OTP waveforms with hardware windowing (PARTIAL_IN 0x91,
+PARTIAL_WINDOW 0x90, PARTIAL_OUT 0x92) for fast partial updates (~450 ms)
+and TSSET 0x5A for periodic full refreshes (~1.2 s). The Waveshare E-Paper
+Driver HAT remains unsupported. The Xteink X4 Pro's UC8179 / UC8279 panel
+variants use their own reverse-engineered OEM waveforms and are also
 supported.
 
 The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was previously
@@ -389,6 +391,13 @@ Per-board display backends behind a single C API:
   talk to the panel over SPI until ALDO3 is enabled over I2C first --
   see `components/battery/battery.cpp`'s
   `battery_axp2101_enable_display_rail()`, called from this hook.
+- **display_seeed_e1001.cpp** -- from-scratch SPI e-paper backend for
+  the Seeed Studio reTerminal E1001, gated on
+  `CONFIG_DRAFTLING_DISPLAY_SEEED_E1001`. Drives the 7.5-inch 800x480
+  monochrome panel directly over SPI (SPI2_HOST, shared with the on-board
+  MicroSD slot) using the UltraChip UC8179 controller and OTP waveforms.
+  Supports full refresh (~1.2 s, TSSET 0x5A) and fast partial windowed
+  updates (~450 ms, TSSET 0x6E, PARTIAL_IN/WINDOW/OUT). No backlight.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -988,7 +997,7 @@ Under ESP-IDF the LVGL component is registered as `lvgl__lvgl` and the
 public header is exposed simply as `lvgl.h`; the `lvgl/lvgl.h` fallback
 path does not exist and breaks the build with
 `fatal error: lvgl/lvgl.h: No such file or directory`. After regenerating
-any font, replace that whole `#ifdef … #endif` block with a single line:
+any font, replace that whole `#ifdef ... #endif` block with a single line:
 
 ```c
 #include "lvgl.h"

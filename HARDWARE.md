@@ -488,6 +488,33 @@ temperature/humidity sensor, a QMI8658 IMU, and an ES8311 audio codec
 used by Draftling.
 
 
+## Seeed Studio reTerminal E1001
+
+The [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/reTerminal_E1001/)
+is a 7.5-inch 800x480 monochrome e-paper terminal powered by an ESP32-S3R8
+(8 MB PSRAM, 32 MB flash). It features a Good Display GDEY075T7 panel
+driven by an UltraChip UC8179 controller over SPI.
+
+- **Display**: 800x480 monochrome e-paper. Driven by `components/display/display_seeed_e1001.cpp`
+  over SPI2_HOST (SCLK=7, MOSI=9, MISO=8, CS=10, DC=11, RST=12, BUSY=13).
+  Full refresh runs at ~1.2 s using the OTP waveform with TSSET 0x5A; fast
+  partial updates run at ~450 ms using hardware windowing (PARTIAL_IN 0x91,
+  PARTIAL_WINDOW 0x90, PARTIAL_OUT 0x92) and TSSET 0x6E. Periodic ghost-clearing
+  full refresh is configurable via `CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL`
+  (default 30 partial updates).
+- **MicroSD slot**: Shares the SPI2_HOST bus with the display (SCLK=7,
+  MOSI=9, MISO=8) with CS on GPIO14, DET on GPIO15, and power enable on
+  GPIO16 (active high).
+- **Battery monitor**: Cell voltage is read through a 2:1 resistive divider
+  on GPIO1 (ADC1_CH0), with divider enable on GPIO21 (active high).
+- **Buttons**:
+  - KEY0 (GPIO3): deep-sleep wake / F1 Settings menu on short press /
+    forget all BLE keyboards on 2 s hold.
+  - KEY1 (GPIO4): Page Up (scroll up in document and menus).
+  - KEY2 (GPIO5): Page Down (scroll down in document and menus).
+- **Other hardware**: On-board PCF8563 RTC on I2C0 (SDA=19, SCL=20),
+  SHT40 sensor, user LED on GPIO6, buzzer on GPIO45. No touchscreen.
+
 
 ## Other hardware
 
@@ -499,14 +526,3 @@ the screen quality is too poor for any comfortable work, so the
 corresoindig [pull
 request](https://github.com/clackups/draftling/pull/37) stays
 unmerged.
-
-UC8179-based e-paper displays (such as those used by the Seeed Studio
-reTerminal E1001 and the Waveshare E-Paper Driver HAT) were previously
-supported, but proved too slow for an interactive Markdown editor:
-even with fast partial updates, the panel cannot keep up with typing
-and quickly accumulates ghosting artefacts. Support for UC8179 has
-therefore been removed from the codebase, except for the specific
-waveform/timing combination used by the Xteink X4 Pro's UC8179 /
-UC8279 panel controller variants (see above), which use a different,
-faster partial-refresh waveform than the panels that prompted the
-earlier removal.

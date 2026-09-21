@@ -26,6 +26,7 @@ load the firmware quickly without having to compile it.
   * LilyGO T5 E-Paper S3 Pro / Pro Lite
   * M5Stack PaperS3 (discontinued)
   * Waveshare ESP32-S3-Touch-LCD-3.49
+  * Seeed Studio reTerminal E1001 (7.5" e-paper)
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 * DIY boards

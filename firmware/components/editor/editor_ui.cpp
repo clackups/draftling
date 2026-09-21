@@ -117,18 +117,20 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
  * larger glyphs -- this reproduces the physical bar height users saw
  * when these boards still upscaled a FONT_11 (Greybeard 11 px) bar 2x. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-#define HEADER_H     32
+#define HEADER_H     36
 #define STATUS_H     32
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
-#define LIST_PANEL_H (SCR_H - 36)  /* height for list panels below header */
+#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #else
-#define HEADER_H     16
+#define HEADER_H     20
 #define STATUS_H     16
 #define EDITOR_Y     HEADER_H
 #define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
-#define LIST_PANEL_H (SCR_H - 18)  /* height for list panels below header */
+#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
+
+#define HEADER_TEXT_Y ((HEADER_H - 14) / 2)
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -6951,8 +6953,8 @@ static void build_screens(void)
 
     /* Title bar */
     s_lbl_title = lv_label_create(s_scr);
-    lv_obj_set_pos(s_lbl_title, 2, 0);
-    lv_obj_set_width(s_lbl_title, SCR_W - 4);
+    lv_obj_set_pos(s_lbl_title, 8, HEADER_TEXT_Y);
+    lv_obj_set_width(s_lbl_title, SCR_W - 16);
     lv_obj_set_style_text_font(s_lbl_title, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_title, theme_fg(), 0);
     lv_label_set_text(s_lbl_title, "Draftling");
@@ -7103,13 +7105,22 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_browser, theme_bg(), 0);
 
     lv_obj_t *br_title = lv_label_create(s_scr_browser);
-    lv_obj_set_pos(br_title, 2, 0);
+    lv_obj_set_pos(br_title, 8, HEADER_TEXT_Y);
     lv_obj_set_style_text_font(br_title, FONT_11, 0);
     lv_obj_set_style_text_color(br_title, theme_fg(), 0);
     lv_label_set_text(br_title, "File Browser - Up/Down, Enter to open, N for new");
 
+    lv_obj_t *br_hline = lv_obj_create(s_scr_browser);
+    lv_obj_set_size(br_hline, SCR_W, 1);
+    lv_obj_set_pos(br_hline, 0, HEADER_H - 1);
+    lv_obj_set_style_bg_color(br_hline, theme_fg(), 0);
+    lv_obj_set_style_bg_opa(br_hline, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(br_hline, 0, 0);
+    lv_obj_set_style_radius(br_hline, 0, 0);
+    lv_obj_set_style_pad_all(br_hline, 0, 0);
+
     s_list_files = lv_list_create(s_scr_browser);
-    lv_obj_set_pos(s_list_files, 0, 18);
+    lv_obj_set_pos(s_list_files, 0, HEADER_H);
     lv_obj_set_size(s_list_files, SCR_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_list_files, 0, 0);
     lv_obj_set_style_radius(s_list_files, 0, 0);
@@ -7371,14 +7382,23 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_menu, theme_bg(), 0);
 
     s_lbl_menu_hdr = lv_label_create(s_scr_menu);
-    lv_obj_set_pos(s_lbl_menu_hdr, 2, 0);
+    lv_obj_set_pos(s_lbl_menu_hdr, 8, HEADER_TEXT_Y);
     lv_obj_set_style_text_font(s_lbl_menu_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_menu_hdr, theme_fg(), 0);
     lv_label_set_text(s_lbl_menu_hdr,
                       "Menu - Up/Down, Enter to select, Esc to close");
 
+    lv_obj_t *menu_hline = lv_obj_create(s_scr_menu);
+    lv_obj_set_size(menu_hline, SCR_W, 1);
+    lv_obj_set_pos(menu_hline, 0, HEADER_H - 1);
+    lv_obj_set_style_bg_color(menu_hline, theme_fg(), 0);
+    lv_obj_set_style_bg_opa(menu_hline, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(menu_hline, 0, 0);
+    lv_obj_set_style_radius(menu_hline, 0, 0);
+    lv_obj_set_style_pad_all(menu_hline, 0, 0);
+
     s_menu_list = lv_list_create(s_scr_menu);
-    lv_obj_set_pos(s_menu_list, 0, 18);
+    lv_obj_set_pos(s_menu_list, 0, HEADER_H);
     lv_obj_set_size(s_menu_list, SCR_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_menu_list, 0, 0);
     lv_obj_set_style_radius(s_menu_list, 0, 0);
@@ -7410,14 +7430,23 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_settings, theme_bg(), 0);
 
     lv_obj_t *set_hdr = lv_label_create(s_scr_settings);
-    lv_obj_set_pos(set_hdr, 2, 0);
+    lv_obj_set_pos(set_hdr, 8, HEADER_TEXT_Y);
     lv_obj_set_style_text_font(set_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(set_hdr, theme_fg(), 0);
     lv_label_set_text(set_hdr,
                       "Settings - Up/Down, Arrows to change, Esc to go back");
 
+    lv_obj_t *set_hline = lv_obj_create(s_scr_settings);
+    lv_obj_set_size(set_hline, SCR_W, 1);
+    lv_obj_set_pos(set_hline, 0, HEADER_H - 1);
+    lv_obj_set_style_bg_color(set_hline, theme_fg(), 0);
+    lv_obj_set_style_bg_opa(set_hline, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(set_hline, 0, 0);
+    lv_obj_set_style_radius(set_hline, 0, 0);
+    lv_obj_set_style_pad_all(set_hline, 0, 0);
+
     s_settings_list = lv_list_create(s_scr_settings);
-    lv_obj_set_pos(s_settings_list, 0, 18);
+    lv_obj_set_pos(s_settings_list, 0, HEADER_H);
     lv_obj_set_size(s_settings_list, SCR_W, LIST_PANEL_H);
     lv_obj_set_style_border_width(s_settings_list, 0, 0);
     lv_obj_set_style_radius(s_settings_list, 0, 0);
@@ -7832,4 +7861,10 @@ extern "C" void editor_ui_init(void)
     }
 
     ESP_LOGI(TAG, "Editor UI initialized");
+}
+
+extern "C" bool editor_ui_is_in_editor(void)
+{
+    return s_editor_screen_active && !s_menu_open && !s_settings_open &&
+           !s_save_open && !s_search_open && !s_exit_open && !s_inpane_browser_open;
 }

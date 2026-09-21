@@ -23,6 +23,10 @@ void editor_ui_show_fatal(const char *msg);
  * after the BLE prompt screen has been torn down. */
 void editor_ui_set_ble_prompt_text(const char *text);
 
+/* Return true if the editor screen is active and no modal overlays
+ * (menu, settings, save prompt, exit prompt, search, etc.) are open. */
+bool editor_ui_is_in_editor(void);
+
 #ifdef __cplusplus
 }
 #endif
