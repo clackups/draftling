@@ -6504,9 +6504,35 @@ static void key_drain_cb(lv_timer_t *timer)
     poll_usb_msc_auto_off();
 #endif
 
+    int drained = 0;
     while (xQueueReceive(s_key_queue, &ev, 0) == pdTRUE) {
         process_key_event(&ev);
+        drained++;
     }
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* ClipGuard (see handle_editor_key()) sets a one-shot partial-
+     * refresh clip sized for a SINGLE keystroke's changed pixels, in
+     * its destructor. When keystrokes queue up faster than this timer
+     * can drain them -- e.g. while the previous tick's flush_cb() /
+     * display_flush() call was blocked for hundreds of ms driving an
+     * EPD partial refresh, which is easily longer than a fast typist's
+     * inter-key interval -- the loop above processes more than one key
+     * per tick, and each key's ClipGuard destructor overwrites the clip
+     * in turn: only the LAST key's tiny window survives to the flush
+     * that follows. The dirty bounding box has correctly accumulated
+     * every key's pixels by then, but the stale narrow clip discards
+     * everything outside that last window, and the backend's
+     * clear_dirty() then drops that region for good -- the earlier
+     * keystrokes' glyphs never reach the panel, showing up as
+     * persistent blank gaps under fast typing. Falling back to the
+     * full accumulated dirty bbox whenever more than one key was
+     * drained this tick keeps the narrow per-key fast path for the
+     * common (unhurried) case while staying correct in bursts. */
+    if (drained > 1) {
+        display_set_partial_clip(0, 0, 0, 0);
+    }
+#endif
 }
 
 /* BLE callback: enqueue the event and return immediately.
