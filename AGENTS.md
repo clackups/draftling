@@ -36,6 +36,21 @@ top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
   update `main/main.cpp`'s display / SD init switch as needed -- no other
   C / C++ file should require changes.
 
+## Changelog
+
+- Every change that adds a user-facing feature, changes user-visible
+  behaviour, or fixes a user-visible bug must add an entry to
+  `CHANGELOG.md` (repository root) under `## [Unreleased]`, in the
+  same commit / PR as the change itself. Use the existing
+  `### Added` / `### Changed` / `### Fixed` subsections and the
+  existing style: a bold one-line summary followed by a short
+  explanation written for users, not developers. Purely internal
+  changes (refactors, build tooling, documentation of the development
+  process) need no entry.
+- When publishing a release (see "Publishing a Release" below), rename
+  `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and start a new empty
+  `## [Unreleased]` section above it.
+
 ## Project Overview
 
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
@@ -1648,8 +1663,10 @@ its own binary-staging directory, named the same as (but unrelated to)
 the `firmware/` subdirectory on `main` that holds the actual build
 tree referenced in steps 1-4.
 
-1. Bump `PROJECT_VER` in `firmware/CMakeLists.txt`, commit, and push
-   `main` (along with whatever else is going into the release).
+1. Bump `PROJECT_VER` in `firmware/CMakeLists.txt`, move the
+   `CHANGELOG.md` `[Unreleased]` entries under a new `[X.Y.Z]` heading
+   (see "Changelog" above), commit, and push `main` (along with
+   whatever else is going into the release).
 2. For each board with prebuilt binaries, build at the commit that
    will be tagged and sanity-check the output:
    ```bash

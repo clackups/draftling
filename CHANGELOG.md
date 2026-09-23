@@ -6,6 +6,52 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **WYSIWYG Markdown rendering**: the editor now displays Markdown
+  formatting instead of plain text. **Bold**, *italic*, ***bold
+  italic***, ~~strikethrough~~ and `inline code` (boxed) are drawn
+  styled; headings are bold; list items get drawn bullets (a different
+  shape per nesting level); `---` becomes a horizontal rule. The
+  markup characters (`**`, `*`, `_`, `~~`, backticks, `#`, `>`,
+  ```` ``` ````) are hidden, except on the line holding the cursor,
+  which keeps them visible so they can be edited (its styling is still
+  shown). Numbered lists show their numbers again. Inline parsing is
+  stricter and closer to CommonMark: `_` / `__` / `***` delimiters,
+  nested styles and backslash escapes are supported, while
+  `2 * 3 * 4` and `snake_case_names` stay plain text. Leading
+  indentation of paragraphs and list items is shown as typed, and tabs
+  display as four spaces.
+- **WiFi network picker (F1 menu)**: "WiFi: New connection..." scans
+  for visible networks and lets you pick one from a list; a secured
+  network asks for its password first (the typed text is shown, not
+  masked). A successful connection is saved to `/sdcard/wifi.cfg`, so
+  `Ctrl+W` and the next boot reconnect to it. "WiFi: Connect to
+  <SSID>" keeps the quick reconnect to the saved network. The status
+  bar now reports the attempt's outcome: connected, "wrong password",
+  or failed.
+- **Seeed Studio reTerminal E1001 support**: 7.5-inch 800x480 e-paper
+  (UC8179) with fast partial updates (~450 ms) and periodic full
+  refreshes, on-board MicroSD. Holding KEY0 for 2 seconds forgets all
+  paired BLE keyboards. USB mass storage is not available on this
+  board (its USB port goes through a UART bridge chip).
+
+### Fixed
+
+- **Dropped characters on e-paper boards when typing fast**: when
+  several keystrokes were processed between two panel refreshes, only
+  the last one's area was refreshed, leaving blank gaps in freshly
+  typed text. Affected every e-paper board.
+- **WiFi: `Ctrl+W` stopped working after a failed connection attempt**
+  until a reboot. Reconnecting now works right away. Rejected
+  credentials fail immediately instead of being retried; other errors,
+  such as a weak signal, are still retried.
+- **File browser, F1 menu and Settings lists overlapped the title bar**
+  on high-density boards (e.g. the reTerminal E1001).
+- **Cursor drawn in the middle of a letter on blockquote lines** (and
+  offset on lines inside code blocks); taps on those lines were
+  slightly off too.
+
 ## [1.0.6] - 2026-09-19
 
 ### Added
