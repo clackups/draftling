@@ -810,8 +810,8 @@ static int       s_menu_sel     = 0;
 static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
-/* F1 menu item indices. Fixed 0-6 for every board; "SD card via USB"
- * (7) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
+/* F1 menu item indices. Fixed 0-7 for every board; "SD card via USB"
+ * (8) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
  * "Sleep now" / "Close menu" shift down by one on every other board.
  * Use the MENU_IDX_* constants instead of bare integers everywhere
  * downstream so the two layouts stay in lock-step (mirrors the
@@ -820,14 +820,15 @@ static bool      s_menu_open    = false;
 #define MENU_IDX_BLE_STATUS      1
 #define MENU_IDX_BLE_SCAN        2
 #define MENU_IDX_WIFI_CONNECT    3
-#define MENU_IDX_WIFI_DISCONNECT 4
-#define MENU_IDX_GIT_SYNC        5
-#define MENU_IDX_KB_LAYOUT       6
+#define MENU_IDX_WIFI_NEW        4
+#define MENU_IDX_WIFI_DISCONNECT 5
+#define MENU_IDX_GIT_SYNC        6
+#define MENU_IDX_KB_LAYOUT       7
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-#define MENU_IDX_USB_MSC         7
-#define _MENU_NEXT_AFTER_USB_MSC 8
+#define MENU_IDX_USB_MSC         8
+#define _MENU_NEXT_AFTER_USB_MSC 9
 #else
-#define _MENU_NEXT_AFTER_USB_MSC 7
+#define _MENU_NEXT_AFTER_USB_MSC 8
 #endif
 #define MENU_IDX_SLEEP        _MENU_NEXT_AFTER_USB_MSC
 #define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 1)
@@ -927,9 +928,9 @@ static bool      s_save_open     = false;
 static char      s_save_buf[128] = "";     /* editable filename (no directory) */
 static int       s_save_pos      = 0;      /* cursor position in s_save_buf (byte) */
 
-/* ---- WiFi "Connect" scan/pick flow ----
- * Selecting the F1 menu's "WiFi: Connect" row (MENU_IDX_WIFI_CONNECT)
- * triggers a background scan and then reuses s_menu_list to show the
+/* ---- WiFi "New connection" scan/pick flow ----
+ * Selecting the F1 menu's "WiFi: New connection..." row
+ * (MENU_IDX_WIFI_NEW) triggers a background scan and then reuses s_menu_list to show the
  * results, mirroring the "SD card via USB" mode picker's reuse of the
  * same list widget. Picking an open network connects immediately;
  * picking a secured one raises a small password-entry overlay (its
@@ -950,7 +951,7 @@ static int       s_wifi_scan_count           = 0;
 
 static lv_obj_t *s_wifi_pw_panel    = NULL;
 static lv_obj_t *s_wifi_pw_hdr_lbl  = NULL;
-static lv_obj_t *s_wifi_pw_name_lbl = NULL;   /* shows the password, masked with '*' */
+static lv_obj_t *s_wifi_pw_name_lbl = NULL;   /* shows the password as typed */
 static lv_obj_t *s_wifi_pw_cur      = NULL;
 static bool      s_wifi_pw_open     = false;
 static char      s_wifi_pw_ssid[33] = "";     /* SSID this password is for */
@@ -3471,30 +3472,38 @@ static void refresh_menu_items(void)
     /* 2: BLE scan */
     lv_list_add_btn(s_menu_list, NULL, "BLE: Start scan");
 
-    /* 3: WiFi status / connect */
+    /* 3: WiFi status / connect to the configured (wifi.cfg / NVS) SSID */
     if (wifi_manager_is_connected()) {
         snprintf(buf, sizeof(buf), "WiFi: %s (%s)",
                  wifi_manager_get_ssid(), wifi_manager_get_ip());
     } else {
-        snprintf(buf, sizeof(buf), "WiFi: Connect");
+        char cfg_ssid[33];
+        if (wifi_manager_get_configured_ssid(cfg_ssid, sizeof(cfg_ssid))) {
+            snprintf(buf, sizeof(buf), "WiFi: Connect to %s", cfg_ssid);
+        } else {
+            snprintf(buf, sizeof(buf), "WiFi: Connect (not configured)");
+        }
     }
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 4: WiFi disconnect */
+    /* 4: WiFi scan / pick a new network */
+    lv_list_add_btn(s_menu_list, NULL, "WiFi: New connection...");
+
+    /* 5: WiFi disconnect */
     lv_list_add_btn(s_menu_list, NULL, "WiFi: Disconnect");
 
-    /* 5: Git sync */
+    /* 6: Git sync */
     snprintf(buf, sizeof(buf), "Git Sync%s",
              git_sync_is_configured() ? "" : " (not configured)");
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 6: Keyboard layout */
+    /* 7: Keyboard layout */
     snprintf(buf, sizeof(buf), "Keyboard: %s  (Enter to cycle)",
              kb_layout_name(kb_layout_get()));
     lv_list_add_btn(s_menu_list, NULL, buf);
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    /* 7: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
+    /* 8: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
      * not necessarily what usb_msc is doing right now -- see the
      * picker opened from menu_activate_item() and applied by
      * commit_usb_msc_pending_mode(). See usbmsc_item_disabled() for
@@ -4388,22 +4397,14 @@ static void refresh_wifi_scan_picker_items(void);
  * Raised by the WiFi scan picker below when the user picks a secured
  * network. A top-level modal in its own right (parented to
  * s_scr_menu, not the picker's s_menu_list), structurally a copy of
- * the save-as prompt's header/value-label/cursor trio, except the
- * value label shows one '*' per typed character instead of the raw
- * text. Esc backs out to the SSID list rather than closing the whole
+ * the save-as prompt's header/value-label/cursor trio. The password is
+ * shown in clear text so the user can see what they type. Esc backs out to the SSID list rather than closing the whole
  * menu, so a wrong network pick is cheap to undo. */
 static void refresh_wifi_pw_prompt(void)
 {
     if (!s_wifi_pw_panel) return;
 
-    /* One '*' per UTF-8 character (not byte) typed so far. */
-    static char mask[sizeof(s_wifi_pw_buf)];
-    int n = 0;
-    for (int i = 0; s_wifi_pw_buf[i] != '\0' && n < (int)sizeof(mask) - 1; i++) {
-        if ((s_wifi_pw_buf[i] & 0xC0) != 0x80) mask[n++] = '*';
-    }
-    mask[n] = '\0';
-    lv_label_set_text(s_wifi_pw_name_lbl, mask);
+    lv_label_set_text(s_wifi_pw_name_lbl, s_wifi_pw_buf);
 
     int cw = char_width_for_font(FONT_11);
     int chars = 0;
@@ -4444,7 +4445,6 @@ static void wifi_pw_prompt_confirm(void)
     ssid[sizeof(ssid) - 1] = '\0';
     close_wifi_pw_prompt();
     s_wifi_scan_picker_open = false;
-    editor_ui_set_status("WiFi: connecting...");
     close_menu();
     wifi_connect_picked_async(ssid, s_wifi_pw_buf);
 }
@@ -4600,7 +4600,6 @@ static void wifi_scan_picker_activate(int idx)
     const wifi_scan_result_t *ap = &s_wifi_scan_results[idx];
     if (ap->open) {
         s_wifi_scan_picker_open = false;
-        editor_ui_set_status("WiFi: connecting...");
         close_menu();
         wifi_connect_picked_async(ap->ssid, "");
     } else {
@@ -4675,15 +4674,19 @@ static void menu_activate_item(int idx)
         close_menu();
         break;
     case MENU_IDX_WIFI_CONNECT:
-        /* Opens the scan/pick picker in s_menu_list rather than
-         * connecting outright -- see the "WiFi scan/connect picker"
-         * block above. Ctrl+W (handle_editor_key / handle_browser_key)
-         * still does the old fast reconnect-from-wifi.cfg/NVS via
-         * wifi_connect_async(), unaffected by this row's new behavior. */
+        /* Same fast reconnect-from-wifi.cfg/NVS as Ctrl+W. */
         if (!wifi_manager_is_connected()) {
-            s_wifi_scan_picker_open = true;
-            start_wifi_scan();
+            editor_ui_set_status("WiFi: connecting...");
+            close_menu();
+            wifi_connect_async();
         }
+        break;
+    case MENU_IDX_WIFI_NEW:
+        /* Opens the scan/pick picker in s_menu_list -- see the "WiFi
+         * scan/connect picker" block above. Also usable while
+         * connected: picking a network switches to it. */
+        s_wifi_scan_picker_open = true;
+        start_wifi_scan();
         break;
     case MENU_IDX_WIFI_DISCONNECT:
         wifi_manager_disconnect();
@@ -7117,11 +7120,14 @@ static void wifi_connect_task(void *arg)
 {
     (void)arg;
     esp_err_t ret = wifi_manager_connect();
-    if (ret == ESP_ERR_NOT_FOUND) {
-        /* No credentials -- the wifi_state callback will not fire,
-         * so update the status bar directly. */
+    if (ret == ESP_ERR_NOT_FOUND || ret == ESP_ERR_INVALID_STATE) {
+        /* No credentials, or another connect/scan is running -- the
+         * wifi_state callback will not fire, so update the status bar
+         * directly. */
         if (draftling_lvgl_port_lock(200)) {
-            editor_ui_set_status("WiFi: no credentials found");
+            editor_ui_set_status(ret == ESP_ERR_NOT_FOUND
+                                     ? "WiFi: no credentials found"
+                                     : "WiFi: busy, try again");
             draftling_lvgl_port_unlock();
         }
     }
@@ -7199,6 +7205,11 @@ static void wifi_connect_picked_task(void *arg)
     esp_err_t ret = wifi_manager_connect_to(args->ssid, args->password, true);
     if (ret == ESP_OK) {
         wifi_manager_save_to_file(args->ssid, args->password);
+    } else if (ret == ESP_ERR_INVALID_STATE) {
+        if (draftling_lvgl_port_lock(200)) {
+            editor_ui_set_status("WiFi: busy, try again");
+            draftling_lvgl_port_unlock();
+        }
     }
     free(args);
     vTaskDelete(NULL);
@@ -7230,7 +7241,10 @@ static void wifi_connect_picked_async(const char *ssid, const char *password)
  * any UI objects. */
 static void wifi_state_cb(wifi_state_t state)
 {
-    if (!draftling_lvgl_port_lock(200)) return;
+    /* Generous timeout: an e-paper full refresh can hold the LVGL lock
+     * for over a second, and a dropped CONNECTING / ERROR update would
+     * leave the user with no idea what the device is doing. */
+    if (!draftling_lvgl_port_lock(2000)) return;
 
     /* While a Git sync is running, do not overwrite the on-screen
      * progress messages with WiFi state notifications -- the user
@@ -7246,7 +7260,7 @@ static void wifi_state_cb(wifi_state_t state)
         case WIFI_STATE_CONNECTED:
         {
             char buf[80];
-            snprintf(buf, sizeof(buf), "WiFi: %s (%s)",
+            snprintf(buf, sizeof(buf), "WiFi: connected to %s (%s)",
                      wifi_manager_get_ssid(), wifi_manager_get_ip());
             editor_ui_set_status(buf);
             break;
@@ -7259,16 +7273,31 @@ static void wifi_state_cb(wifi_state_t state)
             char buf[80];
             const char *ssid = wifi_manager_get_ssid();
             if (ssid && ssid[0]) {
-                snprintf(buf, sizeof(buf), "WiFi: connecting to %s", ssid);
+                snprintf(buf, sizeof(buf), "WiFi: connecting to %s...", ssid);
             } else {
                 snprintf(buf, sizeof(buf), "WiFi: connecting...");
             }
-            editor_ui_set_status(buf);
+            /* No auto-clear: an attempt can take up to 30 s, and the
+             * message must stay until CONNECTED / ERROR replaces it. */
+            set_status_with_timeout(buf, 0);
             break;
         }
         case WIFI_STATE_ERROR:
-            editor_ui_set_status("WiFi: connection failed");
+        {
+            char buf[80];
+            const char *ssid = wifi_manager_get_ssid();
+            bool auth = wifi_manager_last_failure_was_auth();
+            if (ssid && ssid[0]) {
+                snprintf(buf, sizeof(buf), auth ? "WiFi: wrong password for %s"
+                                                : "WiFi: failed to connect to %s", ssid);
+            } else if (auth) {
+                snprintf(buf, sizeof(buf), "WiFi: wrong password");
+            } else {
+                snprintf(buf, sizeof(buf), "WiFi: connection failed");
+            }
+            set_status_with_timeout(buf, 5000);
             break;
+        }
         case WIFI_STATE_DISCONNECTED:
             editor_ui_set_status("WiFi: disconnected");
             break;

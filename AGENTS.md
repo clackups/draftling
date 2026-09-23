@@ -928,6 +928,26 @@ effect on the next `Ctrl+W` -- without it, once NVS was populated the
 file was never consulted again and the device kept reconnecting to
 whichever SSID it first learned.
 
+Connections are started explicitly: `wifi_manager_connect_to()` calls
+`esp_wifi_connect()` itself rather than relying on
+`WIFI_EVENT_STA_START` (which only fires on a stopped -> started
+transition, so a connect after a scan or after an earlier attempt
+never reached the AP). It first drops any current association, clears
+stale event-group bits, and on failure disables the auto-retry logic
+and stops the driver, so the next attempt (e.g. `Ctrl+W` back to the
+`wifi.cfg` network after a failed F1 -> "WiFi: New connection...")
+starts from a clean state. Connect and `wifi_manager_scan()` are
+serialized by a mutex; a second request while one is running returns
+`ESP_ERR_INVALID_STATE`.
+
+Retries: a dropped / failed association is retried up to `MAX_RETRY`
+times (weak signal, AP not found, beacon timeout, ...), but a
+disconnect reason meaning the credentials were rejected
+(`is_auth_failure()`: AUTH_FAIL, 4-way / handshake timeout, MIC
+failure, 802.1X failure, no AP with compatible security) fails the
+attempt at once. `wifi_manager_last_failure_was_auth()` lets the UI
+report "wrong password" instead of a generic failure.
+
 IPv4/IPv6 dual stack: on `WIFI_EVENT_STA_CONNECTED` the manager calls
 `esp_netif_create_ip6_linklocal()` on the STA netif, which makes lwIP
 send router solicitations; if the AP's network advertises a global
