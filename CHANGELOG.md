@@ -48,6 +48,12 @@ in the git log.
   refreshes, on-board MicroSD. Holding KEY0 for 2 seconds forgets all
   paired BLE keyboards. USB mass storage is not available on this
   board (its USB port goes through a UART bridge chip).
+- **Seeed reTerminal Sticky support (experimental)**: 3.97-inch
+  800x480 e-paper (SSD1677) with GT911 touch, BQ27220 battery gauge
+  and on-board MicroSD. The Up/Down buttons turn pages; the Power/AI
+  button wakes the device, puts it to sleep on a short press and
+  forgets paired BLE keyboards on a 2-second hold. Not yet tested on
+  real hardware.
 
 ### Fixed
 
