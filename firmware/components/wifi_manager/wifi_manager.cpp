@@ -31,6 +31,41 @@ static bool s_initialized = false;
 static esp_netif_t *s_sta_netif = NULL;
 static bool s_ipv6_global = false;
 static char s_ip6_str[48] = "";
+/* True while a connection attempt (or an established connection)
+ * wants WIFI_EVENT_STA_DISCONNECTED to trigger a reconnect. Cleared
+ * before every deliberate disconnect / stop and once the retry budget
+ * is spent, so a failed or abandoned attempt cannot keep the driver
+ * busy retrying in the background -- that used to leave the STA
+ * "connecting" forever and make every later Ctrl+W fail until reboot. */
+static volatile bool s_auto_retry = false;
+/* Serializes wifi_manager_connect_to() and wifi_manager_scan(): the
+ * driver rejects set_config / scan_start while a connect is in flight. */
+static SemaphoreHandle_t s_op_mutex = NULL;
+/* True when the last connection attempt was abandoned because the AP
+ * rejected our credentials -- see is_auth_failure(). */
+static volatile bool s_auth_failed = false;
+
+/* Disconnect reasons that mean the credentials (or security mode) are
+ * wrong, so retrying the same password cannot succeed. A wrong WPA2
+ * PSK normally surfaces as a 4-way handshake timeout (15 / 204), not
+ * AUTH_FAIL, which is what WPA3-SAE reports. Everything else (beacon
+ * timeout, AP not found, association failures from a weak signal)
+ * stays retryable. */
+static bool is_auth_failure(uint8_t reason)
+{
+    switch (reason) {
+    case WIFI_REASON_AUTH_FAIL:
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_MIC_FAILURE:
+    case WIFI_REASON_802_1X_AUTH_FAILED:
+    case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+    case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
+        return true;
+    default:
+        return false;
+    }
+}
 
 static void set_state(wifi_state_t st)
 {
@@ -42,9 +77,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
                                int32_t id, void *data)
 {
     if (base == WIFI_EVENT) {
-        if (id == WIFI_EVENT_STA_START) {
-            esp_wifi_connect();
-        } else if (id == WIFI_EVENT_STA_CONNECTED) {
+        /* No esp_wifi_connect() on WIFI_EVENT_STA_START: that event
+         * only fires when the driver goes from stopped to started, so
+         * a connect attempt made while it was already running (after a
+         * scan, or after a previous failed attempt) never connected.
+         * wifi_manager_connect_to() calls esp_wifi_connect() itself. */
+        if (id == WIFI_EVENT_STA_CONNECTED) {
             /* Bring up the link-local IPv6 address on this netif. That
              * in turn makes lwIP send router solicitations, so if the
              * AP's network advertises a global prefix (SLAAC, RFC
@@ -52,13 +90,26 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
              * IP_EVENT_GOT_IP6, handled below. */
             if (s_sta_netif) esp_netif_create_ip6_linklocal(s_sta_netif);
         } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
+            wifi_event_sta_disconnected_t *ev = (wifi_event_sta_disconnected_t *)data;
             s_ipv6_global = false;
             s_ip6_str[0] = '\0';
-            if (s_retry_count < MAX_RETRY) {
+            /* ASSOC_LEAVE is our own esp_wifi_disconnect() (e.g. the
+             * one wifi_manager_connect_to() issues before switching
+             * networks) -- never retry that. */
+            if (!s_auto_retry || (ev && ev->reason == WIFI_REASON_ASSOC_LEAVE)) {
+                /* nothing */
+            } else if (ev && is_auth_failure(ev->reason)) {
+                ESP_LOGW(TAG, "Authentication failed (reason %d), not retrying", ev->reason);
+                s_auto_retry = false;
+                s_auth_failed = true;
+                xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
+                set_state(WIFI_STATE_ERROR);
+            } else if (s_retry_count < MAX_RETRY) {
                 esp_wifi_connect();
                 s_retry_count++;
                 ESP_LOGI(TAG, "Retry %d/%d", s_retry_count, MAX_RETRY);
             } else {
+                s_auto_retry = false;
                 xEventGroupSetBits(s_event_group, WIFI_FAIL_BIT);
                 set_state(WIFI_STATE_ERROR);
             }
@@ -156,6 +207,11 @@ extern "C" esp_err_t wifi_manager_init(void)
     }
 
     s_event_group = xEventGroupCreate();
+    if (s_op_mutex == NULL) s_op_mutex = xSemaphoreCreateMutex();
+    if (s_event_group == NULL || s_op_mutex == NULL) {
+        xSemaphoreGive(init_mutex);
+        return ESP_ERR_NO_MEM;
+    }
 
     esp_err_t err = esp_netif_init();
     if (err != ESP_OK) {
@@ -221,6 +277,7 @@ extern "C" esp_err_t wifi_manager_init(void)
 
 extern "C" esp_err_t wifi_manager_deinit(void)
 {
+    s_auto_retry = false;
     esp_wifi_stop();
     esp_wifi_deinit();
     s_initialized = false;
@@ -228,9 +285,11 @@ extern "C" esp_err_t wifi_manager_deinit(void)
     return ESP_OK;
 }
 
-extern "C" esp_err_t wifi_manager_connect(void)
+/* Resolve the configured credentials: /sdcard/wifi.cfg if present,
+ * else NVS. When the file differs from NVS and `sync_nvs` is set, NVS
+ * is updated to match the file. */
+static bool load_configured(char *ssid, size_t ssid_sz, char *pass, size_t pass_sz, bool sync_nvs)
 {
-    char ssid[33] = "", pass[65] = "";
     char file_ssid[33] = "", file_pass[65] = "";
 
     /* Always check /sdcard/wifi.cfg, not just when NVS is empty --
@@ -242,18 +301,35 @@ extern "C" esp_err_t wifi_manager_connect(void)
      * password for the same network), forget the stale NVS entry and
      * use what is on the card. */
     bool have_file = load_from_file(file_ssid, sizeof(file_ssid), file_pass, sizeof(file_pass));
-    bool have_nvs  = load_from_nvs(ssid, sizeof(ssid), pass, sizeof(pass));
+    bool have_nvs  = load_from_nvs(ssid, ssid_sz, pass, pass_sz);
 
     if (have_file && (!have_nvs || strcmp(ssid, file_ssid) != 0 || strcmp(pass, file_pass) != 0)) {
-        strncpy(ssid, file_ssid, sizeof(ssid) - 1); ssid[sizeof(ssid) - 1] = '\0';
-        strncpy(pass, file_pass, sizeof(pass) - 1); pass[sizeof(pass) - 1] = '\0';
-        save_to_nvs(ssid, pass);
-    } else if (!have_nvs) {
+        strncpy(ssid, file_ssid, ssid_sz - 1); ssid[ssid_sz - 1] = '\0';
+        strncpy(pass, file_pass, pass_sz - 1); pass[pass_sz - 1] = '\0';
+        if (sync_nvs) save_to_nvs(ssid, pass);
+        return true;
+    }
+    return have_nvs;
+}
+
+extern "C" esp_err_t wifi_manager_connect(void)
+{
+    char ssid[33] = "", pass[65] = "";
+    if (!load_configured(ssid, sizeof(ssid), pass, sizeof(pass), true)) {
         ESP_LOGE(TAG, "No WiFi credentials found");
         return ESP_ERR_NOT_FOUND;
     }
-
     return wifi_manager_connect_to(ssid, pass, false);
+}
+
+extern "C" bool wifi_manager_get_configured_ssid(char *ssid, size_t ssid_sz)
+{
+    if (!ssid || ssid_sz == 0) return false;
+    char s[33] = "", p[65] = "";
+    bool ok = load_configured(s, sizeof(s), p, sizeof(p), false);
+    strncpy(ssid, ok ? s : "", ssid_sz - 1);
+    ssid[ssid_sz - 1] = '\0';
+    return ok;
 }
 
 extern "C" esp_err_t wifi_manager_connect_to(const char *ssid, const char *password, bool save)
@@ -266,31 +342,67 @@ extern "C" esp_err_t wifi_manager_connect_to(const char *ssid, const char *passw
     esp_err_t init_err = wifi_manager_init();
     if (init_err != ESP_OK) return init_err;
 
+    if (xSemaphoreTake(s_op_mutex, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Connect requested while another WiFi operation is running");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Drop any current association or leftover attempt first (the
+     * driver refuses esp_wifi_set_config() while still connecting).
+     * Errors are expected here when the driver is stopped / idle. */
+    s_auto_retry = false;
+    esp_wifi_disconnect();
+
     wifi_config_t wifi_cfg = {};
     strncpy((char *)wifi_cfg.sta.ssid, ssid, sizeof(wifi_cfg.sta.ssid) - 1);
     strncpy((char *)wifi_cfg.sta.password, password, sizeof(wifi_cfg.sta.password) - 1);
     strncpy(s_ssid, ssid, sizeof(s_ssid) - 1);
+    s_ssid[sizeof(s_ssid) - 1] = '\0';
 
     s_retry_count = 0;
+    s_auth_failed = false;
+    s_ip_str[0] = '\0';
     s_ipv6_global = false;
     s_ip6_str[0] = '\0';
+    /* A fail bit left over from an earlier attempt (e.g. one that hit
+     * the 30 s timeout and then exhausted its retries) would otherwise
+     * end this wait immediately. */
+    xEventGroupClearBits(s_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     set_state(WIFI_STATE_CONNECTING);
-
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
-    ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "WiFi: connecting to %s", ssid);
 
-    EventBits_t bits = xEventGroupWaitBits(s_event_group,
-        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(30000));
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg);
+    if (err == ESP_OK) err = esp_wifi_start();
+    if (err == ESP_OK) {
+        s_auto_retry = true;
+        err = esp_wifi_connect();
+    }
+
+    EventBits_t bits = 0;
+    if (err == ESP_OK) {
+        bits = xEventGroupWaitBits(s_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdTRUE, pdFALSE, pdMS_TO_TICKS(30000));
+    } else {
+        ESP_LOGE(TAG, "Starting connection failed: %s", esp_err_to_name(err));
+    }
 
     if (bits & WIFI_CONNECTED_BIT) {
         if (save) save_to_nvs(ssid, password);
+        xSemaphoreGive(s_op_mutex);
         return ESP_OK;
     }
 
+    /* Leave the driver stopped so the next attempt starts clean and no
+     * background retries linger. */
     ESP_LOGE(TAG, "Failed to connect to %s", ssid);
-    set_state(WIFI_STATE_ERROR);
+    s_auto_retry = false;
+    esp_wifi_disconnect();
+    esp_wifi_stop();
+    /* The event handler has already reported ERROR when it ran out of
+     * retries; report it here only for the timeout / start-error cases. */
+    if (!(bits & WIFI_FAIL_BIT)) set_state(WIFI_STATE_ERROR);
+    xSemaphoreGive(s_op_mutex);
     return ESP_FAIL;
 }
 
@@ -300,6 +412,7 @@ extern "C" esp_err_t wifi_manager_disconnect(void)
         set_state(WIFI_STATE_DISCONNECTED);
         return ESP_OK;
     }
+    s_auto_retry = false;
     esp_wifi_disconnect();
     esp_wifi_stop();
     s_ip_str[0] = '\0';
@@ -309,7 +422,119 @@ extern "C" esp_err_t wifi_manager_disconnect(void)
     return ESP_OK;
 }
 
+extern "C" esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_results, int *out_count)
+{
+    if (!results || max_results <= 0 || !out_count) return ESP_ERR_INVALID_ARG;
+    *out_count = 0;
+
+    esp_err_t err = wifi_manager_init();
+    if (err != ESP_OK) return err;
+
+    if (xSemaphoreTake(s_op_mutex, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "Scan requested while another WiFi operation is running");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* esp_wifi_scan_start() requires the STA interface to already be
+     * started. Starting it no longer auto-connects (see
+     * wifi_event_handler), so this is safe with a stale config. */
+    wifi_ap_record_t *records = NULL;
+    uint16_t got = 0;
+    err = esp_wifi_start();
+    if (err == ESP_OK) {
+        wifi_scan_config_t scan_cfg = {};
+        scan_cfg.show_hidden = false;
+        err = esp_wifi_scan_start(&scan_cfg, true /* block until done */);
+        if (err != ESP_OK) ESP_LOGE(TAG, "esp_wifi_scan_start failed: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGE(TAG, "esp_wifi_start (for scan) failed: %s", esp_err_to_name(err));
+    }
+    if (err == ESP_OK) {
+        uint16_t ap_count = 0;
+        esp_wifi_scan_get_ap_num(&ap_count);
+        if (ap_count > 0) {
+            records = (wifi_ap_record_t *)heap_caps_malloc(
+                sizeof(wifi_ap_record_t) * ap_count, MALLOC_CAP_SPIRAM);
+            if (!records) {
+                records = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
+            }
+        }
+        if (ap_count > 0 && !records) {
+            err = ESP_ERR_NO_MEM;
+        } else if (records) {
+            got = ap_count;
+            err = esp_wifi_scan_get_ap_records(&got, records);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "esp_wifi_scan_get_ap_records failed: %s", esp_err_to_name(err));
+            }
+        }
+    }
+    /* Don't keep the radio running after a scan unless we are online;
+     * wifi_manager_connect_to() starts it again. Done after the records
+     * were copied out, since stopping the driver discards them. */
+    if (s_state != WIFI_STATE_CONNECTED) esp_wifi_stop();
+    xSemaphoreGive(s_op_mutex);
+    if (err != ESP_OK) {
+        free(records);
+        return err;
+    }
+    if (!records) return ESP_OK;
+
+    int n = 0;
+    for (uint16_t i = 0; i < got && n < max_results; i++) {
+        const char *ssid = (const char *)records[i].ssid;
+        if (ssid[0] == '\0') continue; /* hidden network -- skip */
+
+        /* A single SSID is often broadcast by multiple BSSIDs (bands /
+         * mesh nodes); de-duplicate and keep the strongest signal. */
+        bool dup = false;
+        for (int j = 0; j < n; j++) {
+            if (strcmp(results[j].ssid, ssid) == 0) {
+                dup = true;
+                if (records[i].rssi > results[j].rssi) {
+                    results[j].rssi = records[i].rssi;
+                    results[j].open = (records[i].authmode == WIFI_AUTH_OPEN);
+                }
+                break;
+            }
+        }
+        if (dup) continue;
+
+        strncpy(results[n].ssid, ssid, sizeof(results[n].ssid) - 1);
+        results[n].ssid[sizeof(results[n].ssid) - 1] = '\0';
+        results[n].rssi = records[i].rssi;
+        results[n].open = (records[i].authmode == WIFI_AUTH_OPEN);
+        n++;
+    }
+    free(records);
+
+    /* Strongest signal first; n is bounded by max_results so a plain
+     * insertion sort is plenty. */
+    for (int i = 1; i < n; i++) {
+        wifi_scan_result_t tmp = results[i];
+        int j = i - 1;
+        while (j >= 0 && results[j].rssi < tmp.rssi) {
+            results[j + 1] = results[j];
+            j--;
+        }
+        results[j + 1] = tmp;
+    }
+
+    *out_count = n;
+    return ESP_OK;
+}
+
+extern "C" esp_err_t wifi_manager_save_to_file(const char *ssid, const char *password)
+{
+    if (!ssid) return ESP_ERR_INVALID_ARG;
+    char buf[33 + 1 + 64 + 1 + 1];
+    int len = snprintf(buf, sizeof(buf), "%s\n%s\n", ssid, password ? password : "");
+    if (len < 0 || (size_t)len >= sizeof(buf)) return ESP_ERR_INVALID_SIZE;
+    return sd_card_write_file("/sdcard/wifi.cfg", buf, (size_t)len);
+}
+
 extern "C" wifi_state_t wifi_manager_get_state(void) { return s_state; }
+extern "C" bool wifi_manager_last_failure_was_auth(void) { return s_auth_failed; }
 extern "C" bool wifi_manager_is_connected(void) { return s_state == WIFI_STATE_CONNECTED; }
 extern "C" void wifi_manager_set_callback(wifi_state_callback_t cb) { s_callback = cb; }
 extern "C" const char *wifi_manager_get_ip(void) { return s_ip_str; }
