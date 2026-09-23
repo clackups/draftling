@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
+#include <algorithm>
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_app_desc.h>
@@ -1146,6 +1148,59 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
  * mutations whenever a slot's visible text / style / position are
  * unchanged, which keeps the e-paper dirty region small enough for a
  * fast partial refresh instead of a full-screen flash. */
+/* ---- WYSIWYG line views ----
+ *
+ * Each rendered body line is shown with its Markdown markup applied
+ * rather than as raw text: heading, blockquote and code-fence markers,
+ * the "**" / "*" / "_" / "~~" / "`" around inline spans and the "---"
+ * of a horizontal rule are hidden, and the styled characters are drawn
+ * bold / slanted / struck through / boxed. The one exception is the
+ * line holding the focused pane's cursor, whose markers stay visible
+ * so they can be seen and edited ("live preview", as in Obsidian or
+ * Typora); its styling is still applied.
+ *
+ * The lv_label per line is kept (its letter-position and hit-test APIs
+ * drive the cursor, selection and touch code); the styling is painted
+ * on top of it from an LV_EVENT_DRAW_MAIN_END handler
+ * (line_deco_draw_cb()). There are no bold or italic font assets:
+ * bold is a second copy of each glyph one pixel to the right, and
+ * italic re-draws each glyph as horizontal bands shifted progressively
+ * further right towards the top -- both work for every font family,
+ * size and script without adding flash.
+ *
+ * Because markers can be hidden, the label text no longer maps 1:1 to
+ * the raw line. line_view_t::d2r records, for every display character,
+ * the raw byte offset it came from; view_raw_to_disp() /
+ * view_disp_to_raw() translate cursor, selection and touch positions
+ * through it. */
+enum {
+    DECO_BOLD   = 0x01,
+    DECO_ITALIC = 0x02,
+    DECO_STRIKE = 0x04,
+    DECO_CODE   = 0x08,
+    DECO_BULLET = 0x10,   /* list-marker cell: draw a bullet dot */
+};
+
+/* A run of identically-decorated characters on one visual row, in
+ * the label's content-area coordinates, laid out left to right (RTL
+ * text gets one segment per character). */
+typedef struct {
+    int32_t  x, y, w;
+    uint32_t char_idx;    /* display index of the first character */
+    uint32_t byte_off;    /* its byte offset in the label text */
+    uint32_t count;       /* characters in the run */
+    uint8_t  flags;       /* DECO_* */
+} deco_seg_t;
+
+typedef struct {
+    std::vector<uint32_t>   d2r;    /* display char -> raw byte offset */
+    std::vector<uint8_t>    flags;  /* DECO_* per display char */
+    std::vector<deco_seg_t> segs;   /* laid out by layout_line_decorations() */
+    size_t  raw_len;                /* raw line length in bytes */
+    uint8_t bullet_level;           /* list nesting, picks the bullet shape */
+    bool    hr;                     /* draw a horizontal rule */
+} line_view_t;
+
 #define EDITOR_MAX_PANES 2
 
 typedef struct {
@@ -1159,6 +1214,7 @@ typedef struct {
     int  prev_line_h[MAX_LINE_LABELS];       /* rendered_h last computed */
     bool prev_line_visible[MAX_LINE_LABELS]; /* slot was visible (not hidden) */
     bool prev_line_was_selected[MAX_LINE_LABELS]; /* line intersected the selection */
+    line_view_t view[MAX_LINE_LABELS];       /* display <-> raw mapping + styling */
     editor_doc_t *doc;     /* bound document (NULL until acquired) */
     int  x;                /* content-area left (screen x) */
     int  w;                /* content-area width */
@@ -1824,53 +1880,486 @@ static int utf8_chars_in_bytes(const char *text, size_t byte_len)
 }
 
 
+/* Decode the UTF-8 codepoint at s[*i] (bounded by len) and advance *i
+ * past it. A malformed or truncated sequence decodes as its lead byte
+ * and advances by one, so callers always make progress. */
+static uint32_t utf8_decode(const char *s, size_t len, size_t *i)
+{
+    size_t p = *i;
+    unsigned char c = (unsigned char)s[p];
+    uint32_t cp;
+    size_t adv;
+    if (c < 0x80) {
+        cp = c; adv = 1;
+    } else if ((c & 0xE0) == 0xC0 && p + 1 < len) {
+        cp = ((uint32_t)(c & 0x1F) << 6) |
+             ((unsigned char)s[p + 1] & 0x3F);
+        adv = 2;
+    } else if ((c & 0xF0) == 0xE0 && p + 2 < len) {
+        cp = ((uint32_t)(c & 0x0F) << 12) |
+             (((unsigned char)s[p + 1] & 0x3F) << 6) |
+             ((unsigned char)s[p + 2] & 0x3F);
+        adv = 3;
+    } else if ((c & 0xF8) == 0xF0 && p + 3 < len) {
+        cp = ((uint32_t)(c & 0x07) << 18) |
+             (((unsigned char)s[p + 1] & 0x3F) << 12) |
+             (((unsigned char)s[p + 2] & 0x3F) << 6) |
+             ((unsigned char)s[p + 3] & 0x3F);
+        adv = 4;
+    } else {
+        cp = c; adv = 1;
+    }
+    *i = p + adv;
+    return cp;
+}
+
+/* Bidi class of a codepoint: +1 strong LTR (Latin, Greek, Cyrillic),
+ * -1 strong RTL (Hebrew, Arabic and their presentation forms), 0 for
+ * direction-neutral characters (spaces, digits, punctuation). */
+static int cp_strong_dir(uint32_t cp)
+{
+    /* Strong LTR */
+    if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) return 1;
+    if (cp >= 0x00C0 && cp <= 0x024F) return 1;  /* Latin Extended */
+    if (cp >= 0x0370 && cp <= 0x03FF) return 1;  /* Greek */
+    if (cp >= 0x0400 && cp <= 0x04FF) return 1;  /* Cyrillic */
+    /* Strong RTL */
+    if (cp >= 0x0590 && cp <= 0x05FF) return -1; /* Hebrew */
+    if (cp >= 0x0600 && cp <= 0x06FF) return -1; /* Arabic */
+    if (cp >= 0x0700 && cp <= 0x074F) return -1; /* Syriac */
+    if (cp >= 0x0750 && cp <= 0x077F) return -1; /* Arabic Supplement */
+    if (cp >= 0xFB1D && cp <= 0xFEFF) return -1; /* Hebrew + Arabic
+                                                    Presentation Forms */
+    return 0;
+}
+
 /* Scan UTF-8 text for the first STRONG directional codepoint,
  * mirroring LVGL's auto base-direction detection. Returns +1 for
- * strong LTR (Latin, Greek, Cyrillic), -1 for strong RTL (Hebrew,
- * Arabic and their presentation forms), 0 if the text contains only
- * direction-neutral characters (spaces, digits, punctuation). */
+ * strong LTR, -1 for strong RTL, 0 if the text contains only
+ * direction-neutral characters (see cp_strong_dir()). */
 static int utf8_first_strong_dir(const char *s, size_t len)
 {
     size_t i = 0;
     while (i < len) {
-        unsigned char c = (unsigned char)s[i];
-        uint32_t cp;
-        size_t adv;
-        if (c < 0x80) {
-            cp = c; adv = 1;
-        } else if ((c & 0xE0) == 0xC0 && i + 1 < len) {
-            cp = ((uint32_t)(c & 0x1F) << 6) |
-                 ((unsigned char)s[i + 1] & 0x3F);
-            adv = 2;
-        } else if ((c & 0xF0) == 0xE0 && i + 2 < len) {
-            cp = ((uint32_t)(c & 0x0F) << 12) |
-                 (((unsigned char)s[i + 1] & 0x3F) << 6) |
-                 ((unsigned char)s[i + 2] & 0x3F);
-            adv = 3;
-        } else if ((c & 0xF8) == 0xF0 && i + 3 < len) {
-            cp = ((uint32_t)(c & 0x07) << 18) |
-                 (((unsigned char)s[i + 1] & 0x3F) << 12) |
-                 (((unsigned char)s[i + 2] & 0x3F) << 6) |
-                 ((unsigned char)s[i + 3] & 0x3F);
-            adv = 4;
-        } else {
-            cp = c; adv = 1;
-        }
-        i += adv;
-        /* Strong LTR */
-        if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) return 1;
-        if (cp >= 0x00C0 && cp <= 0x024F) return 1;  /* Latin Extended */
-        if (cp >= 0x0370 && cp <= 0x03FF) return 1;  /* Greek */
-        if (cp >= 0x0400 && cp <= 0x04FF) return 1;  /* Cyrillic */
-        /* Strong RTL */
-        if (cp >= 0x0590 && cp <= 0x05FF) return -1; /* Hebrew */
-        if (cp >= 0x0600 && cp <= 0x06FF) return -1; /* Arabic */
-        if (cp >= 0x0700 && cp <= 0x074F) return -1; /* Syriac */
-        if (cp >= 0x0750 && cp <= 0x077F) return -1; /* Arabic Supplement */
-        if (cp >= 0xFB1D && cp <= 0xFEFF) return -1; /* Hebrew + Arabic
-                                                        Presentation Forms */
+        int dir = cp_strong_dir(utf8_decode(s, len, &i));
+        if (dir != 0) return dir;
     }
     return 0;
+}
+
+/* ---- WYSIWYG line views (see the comment above line_view_t) ---- */
+
+/* Byte offset of the n-th UTF-8 codepoint of s, clamped to len. */
+static size_t utf8_byte_of_char(const char *s, size_t len, int n)
+{
+    size_t i = 0;
+    while (n-- > 0 && i < len) (void)utf8_decode(s, len, &i);
+    return i;
+}
+
+/* Build the display text for one raw line and its view (d2r mapping
+ * and per-character styling). reveal keeps every Markdown marker
+ * visible (the focused cursor line); otherwise the markers are hidden.
+ * Tabs are expanded to four spaces, since the bundled fonts have no
+ * tab glyph. An all-hidden line (e.g. a rule) displays as a single
+ * space so the label keeps one row of height. */
+static void build_line_view(const char *lt, size_t ll, const md_line_info_t *mi,
+                            bool reveal, std::string &text, line_view_t *v)
+{
+    static std::vector<uint8_t> hide;
+    static std::vector<uint8_t> rflags;
+    hide.assign(ll, 0);
+    rflags.assign(ll, 0);
+
+    size_t content_off = (size_t)(mi->content - lt);
+    size_t content_end = content_off + mi->content_len;
+    if (content_off > ll) content_off = ll;
+    if (content_end > ll) content_end = ll;
+
+    v->hr = false;
+    v->bullet_level = 0;
+    switch (mi->type) {
+    case MD_LINE_H1: case MD_LINE_H2: case MD_LINE_H3: case MD_LINE_H4:
+        if (!reveal) std::fill(hide.begin(), hide.begin() + content_off, 1);
+        for (size_t b = content_off; b < content_end; b++) rflags[b] |= DECO_BOLD;
+        break;
+    case MD_LINE_BLOCKQUOTE:
+    case MD_LINE_CODE_FENCE:
+        /* The quote bar / code box already mark these lines. */
+        if (!reveal) std::fill(hide.begin(), hide.begin() + content_off, 1);
+        break;
+    case MD_LINE_BULLET:
+        /* The "-" / "*" / "+" marker sits two bytes before the content;
+         * it is replaced by a drawn bullet even on the cursor line (1:1,
+         * so the mapping is unaffected). */
+        if (content_off >= 2) rflags[content_off - 2] |= DECO_BULLET;
+        v->bullet_level = (uint8_t)(mi->indent_level > 255 ? 255 : mi->indent_level);
+        break;
+    case MD_LINE_HR:
+        if (!reveal) {
+            std::fill(hide.begin(), hide.end(), 1);
+            v->hr = true;
+        }
+        break;
+    default:
+        break;
+    }
+
+    for (int k = 0; k < mi->span_count; k++) {
+        const md_span_t *sp = &mi->spans[k];
+        size_t cs = content_off + sp->start;
+        size_t ce = content_off + sp->end;
+        size_t m  = sp->mark_len;
+        if (cs < m || ce + m > ll) continue;
+        uint8_t f = (sp->bold ? DECO_BOLD : 0) | (sp->italic ? DECO_ITALIC : 0) |
+                    (sp->code ? DECO_CODE : 0) | (sp->strikethrough ? DECO_STRIKE : 0);
+        for (size_t b = cs; b < ce; b++) rflags[b] |= f;
+        if (!reveal) {
+            std::fill(hide.begin() + (cs - m), hide.begin() + cs, 1);
+            std::fill(hide.begin() + ce, hide.begin() + ce + m, 1);
+        }
+    }
+
+    text.clear();
+    v->d2r.clear();
+    v->flags.clear();
+    size_t b = 0;
+    while (b < ll) {
+        size_t start = b;
+        (void)utf8_decode(lt, ll, &b);
+        if (hide[start]) continue;
+        if (lt[start] == '\t') {
+            for (int t = 0; t < 4; t++) {
+                text.push_back(' ');
+                v->d2r.push_back((uint32_t)start);
+                v->flags.push_back(rflags[start]);
+            }
+            continue;
+        }
+        if (rflags[start] & DECO_BULLET) text.push_back(' ');
+        else text.append(lt + start, b - start);
+        v->d2r.push_back((uint32_t)start);
+        v->flags.push_back(rflags[start]);
+    }
+    v->raw_len = ll;
+    if (text.empty()) text = " ";
+}
+
+/* Display character index at which raw byte offset rb of the line is
+ * shown. Offsets inside a hidden marker land on the next visible
+ * character. */
+static int view_raw_to_disp(const line_view_t *v, size_t rb)
+{
+    return (int)(std::lower_bound(v->d2r.begin(), v->d2r.end(), (uint32_t)rb) -
+                 v->d2r.begin());
+}
+
+/* Raw byte offset for display character index d (past the end -> end
+ * of the raw line, i.e. after any hidden closing marker). */
+static size_t view_disp_to_raw(const line_view_t *v, int d)
+{
+    if (d < 0) d = 0;
+    if ((size_t)d >= v->d2r.size()) return v->raw_len;
+    return v->d2r[(size_t)d];
+}
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+/* True when a line has no styling of its own: the display text is the
+ * raw text verbatim, so the e-paper typing fast path's per-character
+ * width math applies. */
+static bool line_is_plain_text(const char *lt, size_t ll, const md_line_info_t *mi)
+{
+    if (mi->type != MD_LINE_PARAGRAPH && mi->type != MD_LINE_EMPTY) return false;
+    if (mi->span_count > 0) return false;
+    return memchr(lt, '\t', ll) == NULL;
+}
+#endif
+
+static void push_deco_seg(line_view_t *v, const deco_seg_t &s)
+{
+    if (!v->segs.empty()) {
+        deco_seg_t &p = v->segs.back();
+        if (p.flags == s.flags && p.y == s.y &&
+            p.x + p.w == s.x && p.char_idx + p.count == s.char_idx) {
+            p.w += s.w;
+            p.count += s.count;
+            return;
+        }
+    }
+    v->segs.push_back(s);
+}
+
+/* Lay out the display characters [i0, i1) (first byte b0), which all
+ * share flags f, as row segments. For left-to-right text the run is
+ * checked against the label's own layout from its end points alone and
+ * only split (recursively) where it wraps, so a run costs a few
+ * lv_label_get_letter_pos() calls per visual row rather than one per
+ * character. Text containing RTL characters is laid out per character:
+ * LVGL reports an RTL character's position at its right edge. */
+static void layout_deco_range(lv_obj_t *label, const lv_font_t *font,
+                              const char *txt, size_t txt_len, bool line_rtl,
+                              bool has_rtl, line_view_t *v, uint32_t i0,
+                              uint32_t i1, uint32_t b0, uint8_t f)
+{
+    if (i0 >= i1) return;
+
+    if (has_rtl) {
+        size_t b = b0;
+        for (uint32_t i = i0; i < i1; i++) {
+            size_t cb = b;
+            uint32_t cp = utf8_decode(txt, txt_len, &b);
+            int dir = cp_strong_dir(cp);
+            bool rtl = dir < 0 || (dir == 0 && line_rtl);
+            int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+            lv_point_t p;
+            lv_label_get_letter_pos(label, i, &p);
+            deco_seg_t s = { rtl ? p.x - gw : p.x, p.y, gw, i, (uint32_t)cb, 1, f };
+            push_deco_seg(v, s);
+        }
+        return;
+    }
+
+    lv_point_t p0;
+    lv_label_get_letter_pos(label, i0, &p0);
+    int32_t w = 0, last_w = 0;
+    size_t b = b0, mid_b = b0;
+    uint32_t mid = i0 + (i1 - i0) / 2;
+    for (uint32_t i = i0; i < i1; i++) {
+        if (i == mid) mid_b = b;
+        last_w = lv_font_get_glyph_width(font, utf8_decode(txt, txt_len, &b), 0);
+        w += last_w;
+    }
+    bool one_row = (i1 - i0 == 1);
+    if (!one_row) {
+        lv_point_t p1;
+        lv_label_get_letter_pos(label, i1 - 1, &p1);
+        one_row = (p1.y == p0.y && p1.x + last_w - p0.x == w);
+    }
+    if (one_row) {
+        deco_seg_t s = { p0.x, p0.y, w, i0, b0, i1 - i0, f };
+        push_deco_seg(v, s);
+        return;
+    }
+    layout_deco_range(label, font, txt, txt_len, line_rtl, false, v, i0, mid, b0, f);
+    layout_deco_range(label, font, txt, txt_len, line_rtl, false, v, mid, i1, (uint32_t)mid_b, f);
+}
+
+/* Compute v->segs for a label whose text / width were just set. */
+static void layout_line_decorations(lv_obj_t *label, const std::string &text,
+                                    line_view_t *v)
+{
+    v->segs.clear();
+    size_t n = v->flags.size();
+    bool any = false;
+    for (size_t i = 0; i < n && !any; i++) any = v->flags[i] != 0;
+    if (!any) return;
+
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    const char *txt = text.c_str();
+    size_t len = text.size();
+    bool has_rtl = false;
+    for (size_t b = 0; b < len && !has_rtl;) has_rtl = cp_strong_dir(utf8_decode(txt, len, &b)) < 0;
+    bool line_rtl = utf8_first_strong_dir(txt, len) < 0;
+
+    size_t b = 0;
+    uint32_t i = 0;
+    while (i < n && b < len) {
+        uint8_t f = v->flags[i];
+        uint32_t j = i;
+        size_t jb = b;
+        while (j < n && jb < len && v->flags[j] == f) {
+            (void)utf8_decode(txt, len, &jb);
+            j++;
+        }
+        if (f) {
+            layout_deco_range(label, font, txt, len, line_rtl, has_rtl, v,
+                              i, j, (uint32_t)b, f);
+        }
+        i = j;
+        b = jb;
+    }
+}
+
+static void deco_fill(lv_layer_t *layer, int32_t x1, int32_t y1, int32_t x2,
+                      int32_t y2, lv_color_t color)
+{
+    if (x2 < x1 || y2 < y1) return;
+    lv_draw_rect_dsc_t d;
+    lv_draw_rect_dsc_init(&d);
+    d.bg_color = color;
+    d.bg_opa   = LV_OPA_COVER;
+    lv_area_t a = { x1, y1, x2, y2 };
+    lv_draw_rect(layer, &d, &a);
+}
+
+/* Draw one glyph slanted: it is split into 4-row horizontal bands,
+ * each drawn shifted one more pixel right than the band below it,
+ * pivoting around the baseline (asc = rows above the baseline).
+ * Clipping each band goes through the layer's clip area, which LVGL
+ * documents as settable before adding draw tasks. */
+static void deco_draw_slanted(lv_layer_t *layer, lv_draw_label_dsc_t *dsc,
+                              uint32_t cp, int32_t x, int32_t top,
+                              int32_t lh, int32_t asc)
+{
+    const int32_t band = 4;
+    const lv_area_t orig = layer->_clip_area;
+    /* Centre the slant on the cell: shift everything left by half of
+     * the top band's shift. */
+    int32_t centre = (asc / band) / 2;
+    int32_t y0 = 0;
+    while (y0 < lh) {
+        /* Floor division so rows below the baseline shift left. */
+        int32_t d = asc - 1 - y0;
+        int32_t k = d >= 0 ? d / band : -((-d + band - 1) / band);
+        int32_t y1 = asc - 1 - k * band;
+        if (y1 > lh - 1) y1 = lh - 1;
+        lv_area_t clip = orig;
+        if (clip.y1 < top + y0) clip.y1 = top + y0;
+        if (clip.y2 > top + y1) clip.y2 = top + y1;
+        if (clip.y1 <= clip.y2) {
+            layer->_clip_area = clip;
+            lv_point_t pt = { x + k - centre, top };
+            lv_draw_character(layer, dsc, &pt, cp);
+        }
+        y0 = y1 + 1;
+    }
+    layer->_clip_area = orig;
+}
+
+/* Let the styling spill a few pixels past the label box: a faux-bold
+ * or slanted glyph in the last column, and the code-span box drawn
+ * just outside its cells. */
+static void line_deco_ext_size_cb(lv_event_t *e)
+{
+    lv_event_set_ext_draw_size(e, 3);
+}
+
+/* LV_EVENT_DRAW_MAIN_END handler of every editor line label: paints
+ * the view's rule, bullets and inline styling over the plain text the
+ * label has just drawn. Colors follow the label's own (a fully
+ * selected line is inverted) and its LV_PART_SELECTED style for
+ * characters inside a partial selection. */
+static void line_deco_draw_cb(lv_event_t *e)
+{
+    const line_view_t *v = (const line_view_t *)lv_event_get_user_data(e);
+    if (!v || (!v->hr && v->segs.empty())) return;
+    lv_obj_t *label = lv_event_get_target_obj(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+
+    lv_area_t ca;
+    lv_obj_get_content_coords(label, &ca);
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    int32_t lh  = lv_font_get_line_height(font);
+    int32_t asc = lh - font->base_line;
+    int32_t th  = lh >= 24 ? 2 : 1;         /* stroke thickness */
+    int32_t bdx = lh >= 40 ? 2 : 1;         /* faux-bold offset */
+
+    lv_color_t fg = lv_obj_get_style_text_color(label, LV_PART_MAIN);
+    lv_color_t bg = lv_obj_get_style_bg_opa(label, LV_PART_MAIN) >= LV_OPA_50
+                        ? lv_obj_get_style_bg_color(label, LV_PART_MAIN)
+                        : theme_bg();
+    lv_color_t sel_fg = lv_obj_get_style_text_color(label, LV_PART_SELECTED);
+    lv_color_t sel_bg = lv_obj_get_style_bg_color(label, LV_PART_SELECTED);
+    uint32_t ss = lv_label_get_text_selection_start(label);
+    uint32_t se = lv_label_get_text_selection_end(label);
+    bool has_sel = ss != LV_LABEL_TEXT_SELECTION_OFF &&
+                   se != LV_LABEL_TEXT_SELECTION_OFF && se > ss;
+
+    if (v->hr) {
+        int32_t y = ca.y1 + lh / 2 - th / 2;
+        deco_fill(layer, ca.x1, y, ca.x2, y + th - 1, fg);
+    }
+
+    const char *txt = lv_label_get_text(label);
+    size_t txt_len = strlen(txt);
+    lv_draw_label_dsc_t ld;
+    lv_draw_label_dsc_init(&ld);
+    ld.font = font;
+    ld.opa  = LV_OPA_COVER;
+
+    /* x-height centre (roughly), used by strikethrough and bullets. */
+    int32_t mid_y = asc - (asc * 3) / 10;
+
+    for (const deco_seg_t &s : v->segs) {
+        int32_t top = ca.y1 + s.y;
+        uint8_t f = s.flags;
+
+        /* Pass 1: per-character backgrounds / strokes; pass 2: glyphs.
+         * Italic cells are blanked in pass 1 so the slanted copies
+         * drawn in pass 2 are not overwritten by a neighbour's blank. */
+        for (int pass = 0; pass < 2; pass++) {
+            size_t b = s.byte_off;
+            int32_t cx = ca.x1 + s.x;
+            for (uint32_t k = 0; k < s.count && b < txt_len; k++) {
+                uint32_t cp = utf8_decode(txt, txt_len, &b);
+                int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+                int32_t gx = cx;
+                cx += gw;
+                uint32_t ci = s.char_idx + k;
+                bool sel = has_sel && ci >= ss && ci < se;
+                lv_color_t cfg = sel ? sel_fg : fg;
+                lv_color_t cbg = sel ? sel_bg : bg;
+
+                if (pass == 0) {
+                    if (f & DECO_ITALIC) {
+                        deco_fill(layer, gx, top, gx + gw - 1, top + lh - 1, cbg);
+                    }
+                    continue;
+                }
+
+                if (f & DECO_BULLET) {
+                    int32_t d = gw / 2 + 1;
+                    if (d < 3) d = 3;
+                    int32_t x1 = gx + (gw - d) / 2;
+                    int32_t y1 = top + mid_y - d / 2;
+                    lv_draw_rect_dsc_t rd;
+                    lv_draw_rect_dsc_init(&rd);
+                    int shape = v->bullet_level % 3;
+                    rd.radius = shape == 2 ? 0 : LV_RADIUS_CIRCLE;
+                    if (shape == 1) {
+                        rd.bg_opa       = LV_OPA_TRANSP;
+                        rd.border_color = cfg;
+                        rd.border_width = th;
+                        rd.border_opa   = LV_OPA_COVER;
+                    } else {
+                        rd.bg_color = cfg;
+                        rd.bg_opa   = LV_OPA_COVER;
+                    }
+                    lv_area_t a = { x1, y1, x1 + d - 1, y1 + d - 1 };
+                    lv_draw_rect(layer, &rd, &a);
+                    continue;
+                }
+
+                ld.color = cfg;
+                if (f & DECO_ITALIC) {
+                    deco_draw_slanted(layer, &ld, cp, gx, top, lh, asc);
+                    if (f & DECO_BOLD) {
+                        deco_draw_slanted(layer, &ld, cp, gx + bdx, top, lh, asc);
+                    }
+                } else if (f & DECO_BOLD) {
+                    lv_point_t pt = { gx + bdx, top };
+                    lv_draw_character(layer, &ld, &pt, cp);
+                }
+                if (f & DECO_STRIKE) {
+                    int32_t y = top + mid_y - th / 2;
+                    deco_fill(layer, gx, y, gx + gw - 1, y + th - 1, cfg);
+                }
+            }
+        }
+
+        if (f & DECO_CODE) {
+            /* Box the run's cells. Over selected characters it blends
+             * into the highlight, which is fine. */
+            lv_draw_rect_dsc_t rd;
+            lv_draw_rect_dsc_init(&rd);
+            rd.bg_opa       = LV_OPA_TRANSP;
+            rd.border_color = fg;
+            rd.border_width = 1;
+            rd.border_opa   = LV_OPA_COVER;
+            lv_area_t a = { ca.x1 + s.x - 1, top, ca.x1 + s.x + s.w, top + lh - 1 };
+            lv_draw_rect(layer, &rd, &a);
+        }
+    }
 }
 
 /* Render the currently-bound pane (s_rp) for its bound document. The
@@ -1922,8 +2411,8 @@ static void refresh_active_pane(bool draw_cursor)
             if (md_is_code_fence(lt, ll)) in_code = !in_code;
         }
 
-        std::string line_buf;   /* reusable scratch for bullet/HR prefixing */
         std::string tmp;        /* final rendered text for the current slot */
+        line_view_t view_tmp;   /* its display <-> raw mapping + styling */
         int y_pos = 0;       /* running y position in editor content area */
         cur_y = -1;
         cur_x = -1;
@@ -1980,30 +2469,15 @@ static void refresh_active_pane(bool draw_cursor)
             md_parse_line(lt, ll, &mi, in_code);
             if (mi.type == MD_LINE_CODE_FENCE) in_code = !in_code;
 
-            /* Prepare display text */
-            const char *disp_text = mi.content;
-            size_t disp_len = mi.content_len;
-            if (mi.type == MD_LINE_BULLET) {
-                int prefix = mi.indent_level * 2;
-                line_buf.assign((size_t)prefix, ' ');
-                line_buf.append("* ");
-                line_buf.append(disp_text, disp_len);
-                disp_text = line_buf.data();
-                disp_len  = line_buf.size();
-            } else if (mi.type == MD_LINE_HR) {
-                line_buf.assign(40, '-');
-                disp_text = line_buf.data();
-                disp_len  = line_buf.size();
-            } else if (mi.type == MD_LINE_EMPTY) {
-                disp_text = " ";
-                disp_len = 1;
-            }
-
-            /* Build the final display string up-front so we can compare
-             * against the cached previous content before touching any
-             * LVGL state. The std::string grows to fit, so paragraphs
-             * of arbitrary length render in full without truncation. */
-            tmp.assign(disp_text, disp_len);
+            /* Build the final display string (markers hidden except on
+             * the focused cursor line -- see line_view_t) up-front so
+             * we can compare against the cached previous content before
+             * touching any LVGL state. The std::string grows to fit, so
+             * paragraphs of arbitrary length render in full without
+             * truncation. */
+            bool reveal = draw_cursor && line_idx == cur_line;
+            build_line_view(lt, ll, &mi, reveal, tmp, &view_tmp);
+            line_view_t *view = &s_rp->view[i];
 
             /* Determine whether this line intersects the active
              * selection (used both for the highlight branches below
@@ -2036,7 +2510,10 @@ static void refresh_active_pane(bool draw_cursor)
                             !s_prev_line_was_selected[i] &&
                             s_prev_line_type[i] == (int)mi.type &&
                             s_prev_line_y[i] == y_pos &&
-                            s_prev_line_text[i] == tmp;
+                            s_prev_line_text[i] == tmp &&
+                            view->flags == view_tmp.flags &&
+                            view->hr == view_tmp.hr &&
+                            view->bullet_level == view_tmp.bullet_level;
 
             int line_h;
             int rendered_h;
@@ -2045,7 +2522,12 @@ static void refresh_active_pane(bool draw_cursor)
                  * the same text/font/width so its rendered geometry
                  * is unchanged. lv_label_get_letter_pos() (used for
                  * the cursor below) is non-mutating and works on the
-                 * existing label state. */
+                 * existing label state. The rendering (and so
+                 * view->segs) is unchanged too, but the raw line behind
+                 * it may differ (e.g. "*x*" vs "_x_"), so the mapping
+                 * is always refreshed. */
+                view->d2r.swap(view_tmp.d2r);
+                view->raw_len = view_tmp.raw_len;
                 rendered_h = s_prev_line_h[i];
                 const lv_font_t *line_font = lv_obj_get_style_text_font(
                                                 s_line_labels[i], LV_PART_MAIN);
@@ -2056,6 +2538,10 @@ static void refresh_active_pane(bool draw_cursor)
                     s_line_labels[i] = lv_label_create(s_cont_edit);
                     lv_obj_set_width(s_line_labels[i], s_rp->w - 4);
                     lv_label_set_long_mode(s_line_labels[i], LV_LABEL_LONG_WRAP);
+                    lv_obj_add_event_cb(s_line_labels[i], line_deco_draw_cb,
+                                        LV_EVENT_DRAW_MAIN_END, view);
+                    lv_obj_add_event_cb(s_line_labels[i], line_deco_ext_size_cb,
+                                        LV_EVENT_REFR_EXT_DRAW_SIZE, NULL);
                 }
                 lv_obj_remove_flag(s_line_labels[i], LV_OBJ_FLAG_HIDDEN);
                 lv_obj_remove_style_all(s_line_labels[i]);
@@ -2093,6 +2579,13 @@ static void refresh_active_pane(bool draw_cursor)
                 lv_obj_update_layout(s_line_labels[i]);
                 rendered_h = lv_obj_get_height(s_line_labels[i]);
                 if (rendered_h < line_h) rendered_h = line_h;
+
+                view->d2r.swap(view_tmp.d2r);
+                view->flags.swap(view_tmp.flags);
+                view->raw_len      = view_tmp.raw_len;
+                view->hr           = view_tmp.hr;
+                view->bullet_level = view_tmp.bullet_level;
+                layout_line_decorations(s_line_labels[i], tmp, view);
 
                 /* Update cache with what we just drew. */
                 s_prev_line_text[i]    = tmp;
@@ -2138,22 +2631,10 @@ static void refresh_active_pane(bool draw_cursor)
                                        ? sel_start - line_off : 0;
                     size_t raw_e = (sel_end < line_end_off)
                                        ? sel_end - line_off : ll;
-                    /* Convert raw byte offsets to display char indices.
-                     * md_parse_line may strip a prefix (e.g. "# ") or
-                     * a bullet formatter may prepend characters. */
-                    size_t prefix_bytes = (size_t)(mi.content - lt);
-                    int disp_s, disp_e;
-                    if (raw_s <= prefix_bytes) disp_s = 0;
-                    else disp_s = utf8_chars_in_bytes(
-                                      mi.content, raw_s - prefix_bytes);
-                    if (raw_e <= prefix_bytes) disp_e = 0;
-                    else disp_e = utf8_chars_in_bytes(
-                                      mi.content, raw_e - prefix_bytes);
-                    if (mi.type == MD_LINE_BULLET) {
-                        int bp = mi.indent_level * 2 + 2;
-                        disp_s += bp;
-                        disp_e += bp;
-                    }
+                    /* Convert raw byte offsets to display char indices
+                     * (hidden Markdown markers have no display char). */
+                    int disp_s = view_raw_to_disp(view, raw_s);
+                    int disp_e = view_raw_to_disp(view, raw_e);
                     if (disp_e > disp_s) {
                         lv_label_set_text_selection_start(
                             s_line_labels[i], (uint32_t)disp_s);
@@ -2170,20 +2651,13 @@ static void refresh_active_pane(bool draw_cursor)
             s_prev_line_was_selected[i] = line_intersects_sel;
 
             /* If this is the cursor line, compute its pixel position.
-             * For headings, md_parse_line strips the "# " prefix from content,
-             * so the cursor column (which counts from the raw line start) needs
-             * to be adjusted. */
+             * The cursor column counts UTF-8 characters from the raw
+             * line start; map it through the view, since the display
+             * text can differ from the raw line (hidden markers in an
+             * unfocused pane, expanded tabs). */
             if (line_idx == cur_line) {
-                int col_in_display = cur_col;
-                /* content pointer offset from raw line start, in UTF-8 chars */
-                if (mi.content > lt) {
-                    int prefix_chars = 0;
-                    for (const char *pp = lt; pp < mi.content; pp++) {
-                        if ((*pp & 0xC0) != 0x80) prefix_chars++;
-                    }
-                    col_in_display -= prefix_chars;
-                    if (col_in_display < 0) col_in_display = 0;
-                }
+                int col_in_display = view_raw_to_disp(
+                    view, utf8_byte_of_char(lt, ll, cur_col));
 
                 /* Use LVGL to find the actual pixel position of the cursor
                  * character.  This correctly handles word-level wrapping
@@ -2348,27 +2822,6 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel);
  * the rendered editor body?" regardless of whether the touchscreen
  * driver is enabled. */
 
-/* Walk N UTF-8 codepoints into a buffer and return the resulting
- * byte offset, clamped to len. The display layer already laid the
- * codepoints out in monospaced glyphs, so this is the inverse of
- * what lv_label_get_letter_on() reports for our needs. */
-static int ui_utf8_skip_cp(const char *s, int len, int n_cp)
-{
-    int i = 0;
-    while (n_cp > 0 && i < len) {
-        unsigned char c = (unsigned char)s[i];
-        int adv = 1;
-        if      ((c & 0x80) == 0x00) adv = 1;
-        else if ((c & 0xE0) == 0xC0) adv = 2;
-        else if ((c & 0xF0) == 0xE0) adv = 3;
-        else if ((c & 0xF8) == 0xF0) adv = 4;
-        if (i + adv > len) break;
-        i += adv;
-        n_cp--;
-    }
-    return i;
-}
-
 /* Convert a point (in s_cont_edit local coordinates) to a byte
  * offset within the editor's flat text buffer. Returns true on
  * success and fills *out_off; returns false if the point landed on
@@ -2436,58 +2889,14 @@ static bool ui_point_to_offset(int x, int y, size_t *out_off)
     }
     if (disp_char < 0) disp_char = 0;
 
-    /* Re-parse the line so we know the markdown-prefix lengths and
-     * can map the display character index back to a raw byte offset
-     * within the original line. */
-    md_line_info_t mi;
-    md_parse_line(lt, ll, &mi, false /* in_code irrelevant for column math */);
-
-    int disp_prefix_cp = 0;   /* codepoints rendered before mi.content */
-    int raw_prefix_b   = 0;   /* bytes skipped in the raw line before mi.content */
-
-    switch (mi.type) {
-    case MD_LINE_BULLET: {
-        /* Display string is "<2*indent spaces>* <bullet body>".
-         * The bullet body is the same as mi.content. The raw line
-         * is "<spaces>* <body>", which has the same number of
-         * leading display characters as our synthesized prefix --
-         * so disp_prefix_cp and raw_prefix_b describe equivalent
-         * spans and cancel out for ASCII bullet prefixes. */
-        disp_prefix_cp = mi.indent_level * 2 + 2;
-        raw_prefix_b   = (int)(mi.content - lt);
-        break;
-    }
-    case MD_LINE_HR:
-    case MD_LINE_EMPTY:
-        /* Display content is synthetic; map every point to the start
-         * of the raw line so Enter/typing inserts there. */
-        *out_off = line_off;
-        return true;
-    case MD_LINE_CODE_FENCE:
-    case MD_LINE_H1: case MD_LINE_H2: case MD_LINE_H3: case MD_LINE_H4:
-    case MD_LINE_BLOCKQUOTE:
-    case MD_LINE_NUMBERED:
-    case MD_LINE_PARAGRAPH:
-    case MD_LINE_CODE_CONTENT:
-    default:
-        /* Display is mi.content unchanged; the raw line skipped
-         * (mi.content - lt) bytes for the markdown marker. */
-        disp_prefix_cp = 0;
-        raw_prefix_b   = (int)(mi.content - lt);
-        if (raw_prefix_b < 0) raw_prefix_b = 0;
-        break;
-    }
-
-    /* Clamp the display column to the rendered text length so a
-     * point past end-of-line places the cursor right after the last char. */
-    int content_cp = disp_char - disp_prefix_cp;
-    if (content_cp < 0) content_cp = 0;
-
-    /* Walk content_cp codepoints into mi.content to get the raw
-     * byte offset inside the content span, then add the raw prefix. */
-    int byte_in_content = ui_utf8_skip_cp(mi.content,
-                                          (int)mi.content_len, content_cp);
-    *out_off = line_off + (size_t)raw_prefix_b + (size_t)byte_in_content;
+    /* Map the display character back to a raw byte offset through the
+     * view the slot was rendered with (hidden Markdown markers, drawn
+     * bullets and expanded tabs make the display text differ from the
+     * raw line). A point past the end of the rendered text lands after
+     * the last raw byte. */
+    size_t raw = view_disp_to_raw(&s_rp->view[slot], disp_char);
+    if (raw > ll) raw = ll;
+    *out_off = line_off + raw;
     return true;
 }
 
@@ -2683,12 +3092,8 @@ static bool touch_is_word_byte(unsigned char c)
     return false;
 }
 
-/* Walk N UTF-8 codepoints into a buffer and return the resulting
- * byte offset, clamped to len. The display layer already laid the
- * codepoints out in monospaced glyphs, so this is the inverse of
- * what lv_label_get_letter_on() reports for our needs. */
-/* (ui_utf8_skip_cp / ui_point_to_offset are defined unconditionally
- * above so visual-line cursor movement can use them too.) */
+/* (ui_point_to_offset is defined unconditionally above so
+ * visual-line cursor movement can use it too.) */
 
 /* Last tap state for software double-tap detection. LVGL fires
  * LV_EVENT_CLICKED on every release; we compare against the
@@ -5459,10 +5864,12 @@ static void capture_typing_pre_state(typing_pre_state_t *out)
      * raw text -- i.e. plain paragraphs and empty lines. Any line
      * inside a fenced code block, a heading/bullet/quote/etc. has a
      * styled rendering whose pixel layout we can't safely predict
-     * here. */
+     * here. So has a paragraph with inline spans: typing a closing
+     * "*" restyles characters left of the cursor, outside the clip
+     * (try_partial_clip_for_typing() re-checks the post-edit line). */
     md_line_info_t mi;
     md_parse_line(lt, ll, &mi, false);
-    if (mi.type != MD_LINE_PARAGRAPH && mi.type != MD_LINE_EMPTY) return;
+    if (!line_is_plain_text(lt, ll, &mi)) return;
 
     int chars = utf8_chars_in_bytes(lt, ll);
 
@@ -5519,7 +5926,7 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
 
     md_line_info_t mi;
     md_parse_line(lt, ll, &mi, false);
-    if (mi.type != MD_LINE_PARAGRAPH && mi.type != MD_LINE_EMPTY) return false;
+    if (!line_is_plain_text(lt, ll, &mi)) return false;
 
     int post_chars = utf8_chars_in_bytes(lt, ll);
     int char_w     = pre->char_w;

@@ -436,7 +436,15 @@ The largest component. Contains:
   status bar, file browser dialog, and settings menu (F1).
 - **md_parser.cpp** -- single-pass Markdown line parser. Recognizes
   headings H1-H4, bullet and numbered lists, blockquotes, code fences,
-  horizontal rules, and inline bold/italic/code/strikethrough spans.
+  horizontal rules, and inline spans: `` `code` `` (any backtick-run
+  length), `*italic*` / `_italic_`, `**bold**` / `__bold__`,
+  `***both***` and `~~strikethrough~~`. A simplified subset of the
+  CommonMark delimiter rules applies (an opener must be followed and a
+  closer preceded by non-whitespace, `_` never matches inside a word,
+  closer run length must equal the opener's, backslash escapes and
+  code spans are skipped), and emphasis spans nest ("**a *b* c**").
+  Each `md_span_t` carries `mark_len`, the length of its marker on
+  each side, so the UI can hide the markers.
 - **draftling_logo.c** -- embedded LVGL image for the splash screen.
 
 **Settings** is the first item in the F1 menu (moved to the top so it
@@ -469,6 +477,36 @@ Public API: `editor_init()`, `editor_open_file()`, `editor_save_file()`,
 `editor_ui_init()`, `editor_ui_handle_key()`, `editor_find()`,
 `editor_replace_range()`, `md_parse_line()`, and many
 cursor/selection/clipboard helpers.
+
+**WYSIWYG rendering.** Body lines are displayed with their Markdown
+applied, not as raw text. `build_line_view()` in `editor_ui.cpp` turns
+each raw line into the label's display text plus a `line_view_t`:
+heading / blockquote / code-fence markers, the markers around inline
+spans and a `---` rule are hidden, the bullet marker is replaced by a
+drawn dot (filled circle / hollow circle / square by nesting level),
+and tabs expand to four spaces. The line holding the focused pane's
+cursor is built with `reveal = true`: its markers stay visible so they
+can be edited (live preview), but its styling is still drawn. The
+per-line `lv_label` is kept -- its letter-position / hit-test and
+native text-selection APIs drive the cursor, selection and touch code
+-- and the styling is painted over it by `line_deco_draw_cb()`
+(`LV_EVENT_DRAW_MAIN_END`) from row segments computed by
+`layout_line_decorations()` once per re-render. There are no bold or
+italic font assets: bold redraws each glyph 1 px to the right (2 px on
+fonts with a line height >= 40), italic blanks the glyph cell and
+redraws it as 4-row horizontal bands shifted progressively right above
+the baseline (clipped via the layer's `_clip_area`), strikethrough is a
+bar at x-height, inline code a 1 px box, and headings are also bold.
+Because the display text can differ from the raw line,
+`line_view_t::d2r` maps each display character to its raw byte offset;
+cursor placement, partial selection and `ui_point_to_offset()` go
+through `view_raw_to_disp()` / `view_disp_to_raw()`, never through
+character counts on the raw line. The render cache compares the view's
+styling flags as well as the display text, since hidden markers can
+make two differently-styled lines display the same text. The e-paper
+typing fast path (`capture_typing_pre_state()`) only applies to lines
+with no styling at all (`line_is_plain_text()`), because typing a
+closing marker restyles characters left of the cursor.
 
 The editor stores text as **UTF-8** internally. `editor_open_file()`
 inspects the leading bytes of each file for a Unicode BOM and

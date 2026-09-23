@@ -50,8 +50,10 @@ load the firmware quickly without having to compile it.
   (entries sorted alphabetically, directories first)
 
 - **Markdown rendering**: headings (H1-H4), bullet and numbered lists,
-  blockquotes, code fences, horizontal rules, inline bold / italic /
-  code / strikethrough
+  blockquotes, code fences, horizontal rules, inline **bold**,
+  *italic*, `code` and ~~strikethrough~~ are displayed styled, with
+  the markup characters hidden. The line holding the cursor keeps its
+  markup visible so it can be edited.
 
 - **Support for large files** PSRAM on the ESP32 MCU is efficiently
   utilized to allow multi-megabyte file editing.
