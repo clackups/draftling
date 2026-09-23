@@ -31,6 +31,14 @@ static bool s_initialized = false;
 static esp_netif_t *s_sta_netif = NULL;
 static bool s_ipv6_global = false;
 static char s_ip6_str[48] = "";
+/* True for the duration of wifi_manager_scan()'s esp_wifi_start()
+ * call. WIFI_EVENT_STA_START unconditionally auto-connects (see
+ * wifi_event_handler below); scanning also needs the STA interface
+ * started but must NOT trigger a connection attempt using whatever
+ * config happens to be set (stale, or none at all on a first-ever
+ * scan), which would otherwise race the scan itself and can spuriously
+ * flip the UI to "connection failed". */
+static bool s_scan_in_progress = false;
 
 static void set_state(wifi_state_t st)
 {
@@ -43,7 +51,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 {
     if (base == WIFI_EVENT) {
         if (id == WIFI_EVENT_STA_START) {
-            esp_wifi_connect();
+            if (!s_scan_in_progress) esp_wifi_connect();
         } else if (id == WIFI_EVENT_STA_CONNECTED) {
             /* Bring up the link-local IPv6 address on this netif. That
              * in turn makes lwIP send router solicitations, so if the
@@ -307,6 +315,109 @@ extern "C" esp_err_t wifi_manager_disconnect(void)
     s_ip6_str[0] = '\0';
     set_state(WIFI_STATE_DISCONNECTED);
     return ESP_OK;
+}
+
+extern "C" esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_results, int *out_count)
+{
+    if (!results || max_results <= 0 || !out_count) return ESP_ERR_INVALID_ARG;
+    *out_count = 0;
+
+    esp_err_t err = wifi_manager_init();
+    if (err != ESP_OK) return err;
+
+    /* esp_wifi_scan_start() requires the STA interface to already be
+     * started. If we are idle (never connected, or disconnected since
+     * wifi_manager_disconnect() stops the driver), esp_wifi_start()
+     * fires WIFI_EVENT_STA_START -- guard it with s_scan_in_progress
+     * (see its declaration above) so that does not also kick off an
+     * unwanted connection attempt using a stale/absent config. */
+    s_scan_in_progress = true;
+    err = esp_wifi_start();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_CONN) {
+        s_scan_in_progress = false;
+        ESP_LOGE(TAG, "esp_wifi_start (for scan) failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    wifi_scan_config_t scan_cfg = {};
+    scan_cfg.show_hidden = false;
+    err = esp_wifi_scan_start(&scan_cfg, true /* block until done */);
+    s_scan_in_progress = false;
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_scan_start failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    if (ap_count == 0) return ESP_OK;
+
+    wifi_ap_record_t *records = (wifi_ap_record_t *)heap_caps_malloc(
+        sizeof(wifi_ap_record_t) * ap_count, MALLOC_CAP_SPIRAM);
+    if (!records) {
+        records = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
+    }
+    if (!records) return ESP_ERR_NO_MEM;
+
+    uint16_t got = ap_count;
+    err = esp_wifi_scan_get_ap_records(&got, records);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_scan_get_ap_records failed: %s", esp_err_to_name(err));
+        free(records);
+        return err;
+    }
+
+    int n = 0;
+    for (uint16_t i = 0; i < got && n < max_results; i++) {
+        const char *ssid = (const char *)records[i].ssid;
+        if (ssid[0] == '\0') continue; /* hidden network -- skip */
+
+        /* A single SSID is often broadcast by multiple BSSIDs (bands /
+         * mesh nodes); de-duplicate and keep the strongest signal. */
+        bool dup = false;
+        for (int j = 0; j < n; j++) {
+            if (strcmp(results[j].ssid, ssid) == 0) {
+                dup = true;
+                if (records[i].rssi > results[j].rssi) {
+                    results[j].rssi = records[i].rssi;
+                    results[j].open = (records[i].authmode == WIFI_AUTH_OPEN);
+                }
+                break;
+            }
+        }
+        if (dup) continue;
+
+        strncpy(results[n].ssid, ssid, sizeof(results[n].ssid) - 1);
+        results[n].ssid[sizeof(results[n].ssid) - 1] = '\0';
+        results[n].rssi = records[i].rssi;
+        results[n].open = (records[i].authmode == WIFI_AUTH_OPEN);
+        n++;
+    }
+    free(records);
+
+    /* Strongest signal first; n is bounded by max_results so a plain
+     * insertion sort is plenty. */
+    for (int i = 1; i < n; i++) {
+        wifi_scan_result_t tmp = results[i];
+        int j = i - 1;
+        while (j >= 0 && results[j].rssi < tmp.rssi) {
+            results[j + 1] = results[j];
+            j--;
+        }
+        results[j + 1] = tmp;
+    }
+
+    *out_count = n;
+    return ESP_OK;
+}
+
+extern "C" esp_err_t wifi_manager_save_to_file(const char *ssid, const char *password)
+{
+    if (!ssid) return ESP_ERR_INVALID_ARG;
+    char buf[33 + 1 + 64 + 1 + 1];
+    int len = snprintf(buf, sizeof(buf), "%s\n%s\n", ssid, password ? password : "");
+    if (len < 0 || (size_t)len >= sizeof(buf)) return ESP_ERR_INVALID_SIZE;
+    return sd_card_write_file("/sdcard/wifi.cfg", buf, (size_t)len);
 }
 
 extern "C" wifi_state_t wifi_manager_get_state(void) { return s_state; }

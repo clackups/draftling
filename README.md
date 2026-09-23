@@ -74,9 +74,10 @@ load the firmware quickly without having to compile it.
   are committed as-is with `<<<<<<<` / `=======` / `>>>>>>>` markers),
   writes the result back to the SD card and pushes to the server. The
   WiFi client and Git credentials are configured in `wifi.cfg` and
-  `git.cfg` on the SD card. Public and private repositories on GitHub
-  and other standard Git HTTP hosts are supported. See
-  [docs/git-sync.md](docs/git-sync.md).
+  `git.cfg` on the SD card -- or, for WiFi, picked from an on-device
+  scan (F1 -> WiFi: Connect), which writes `wifi.cfg` for you. Public
+  and private repositories on GitHub and other standard Git HTTP hosts
+  are supported. See [docs/git-sync.md](docs/git-sync.md).
 
 - **Per-file metadata saved**: when a `.md` file is closed (or
   before the device enters deep sleep), the editor records the current
@@ -285,6 +286,13 @@ The file consists of two text lines: the SSID and the password.
 MySSID
 MyPassword
 ```
+
+You do not have to edit this file by hand: F1 -> "WiFi: Connect" scans
+for visible networks, lets you pick one and (if it is not open) type
+its password, then writes `wifi.cfg` for you on a successful
+connection. Editing the file directly still works too -- `Ctrl+W`
+(quick reconnect, no scan) reads it fresh on every call, so a
+hand-edited file always takes effect on the next `Ctrl+W`.
 
 ### Git Sync (`git.cfg`)
 
