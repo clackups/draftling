@@ -15,7 +15,8 @@ in the git log.
   transitions, centered text, emphasis including `_underline_`, notes,
   boneyard, sections, synopses, page breaks and the title page. `Ctrl+F`
   in the file browser starts a new screenplay, and `Ctrl+S` offers a
-  `.fountain` file name for it. Enter after a scene heading or
+  `draft_NNN.fountain` name for it (draft numbers continue across
+  `.md` and `.fountain` drafts). Enter after a scene heading or
   transition adds the blank line that follows it, and Tab completes
   character names and scene headings already used in the script. In
   split mode each pane keeps its own format. Git sync now includes

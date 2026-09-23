@@ -5251,17 +5251,24 @@ static void handle_menu_key(const kb_event_t *ev)
 /* ---- Save-prompt overlay ---- */
 
 /* Compute a default filename for a new (untitled) document: a
- * ".fountain" name for a screenplay, ".md" otherwise.
+ * ".fountain" name for a screenplay, ".md" otherwise. The draft
+ * numbers are shared by both extensions, so a new screenplay after
+ * draft_001.md becomes draft_002.fountain, not draft_001.fountain.
  * Returns the bare filename (no directory prefix). */
 static bool generate_default_name(char *buf, size_t buf_size)
 {
+    static const char *const exts[] = { "md", "fountain" };
     const char *mp = sd_card_get_mount_point();
     if (!mp) return false;
     const char *ext = editor_is_fountain() ? "fountain" : "md";
     char path[256];
     for (int seq = 1; seq <= MAX_DRAFT_SEQ; seq++) {
-        snprintf(path, sizeof(path), "%s/draft_%03d.%s", mp, seq, ext);
-        if (!sd_card_file_exists(path)) {
+        bool taken = false;
+        for (const char *e : exts) {
+            snprintf(path, sizeof(path), "%s/draft_%03d.%s", mp, seq, e);
+            if (sd_card_file_exists(path)) taken = true;
+        }
+        if (!taken) {
             snprintf(buf, buf_size, "draft_%03d.%s", seq, ext);
             return true;
         }
