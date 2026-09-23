@@ -4,7 +4,8 @@
  * editor: it keeps a real commit history under <sdcard>/.git, and on
  * every sync it
  *
- *   1. commits the current working tree ("*.md" files) locally,
+ *   1. commits the current working tree ("*.md" and "*.fountain" files)
+ *      locally,
  *   2. fetches the remote branch over the smart Git HTTP protocol,
  *   3. fast-forwards or rebases the local commits onto the remote tip,
  *      running a diff3 line merge and committing any conflicts as-is
@@ -157,10 +158,20 @@ static void iso_now(char *out, size_t outsz)
 
 #define WT_MAX_FILES 128
 
-static bool is_md(const char *name)
+/* A working-tree document: Markdown ("*.md") or a Fountain screenplay
+ * ("*.fountain"). Hidden files (the editor's ".<name>.meta" sidecars)
+ * are never synced. */
+static bool has_suffix(const char *name, size_t l, const char *sfx)
+{
+    size_t n = strlen(sfx);
+    return l > n && strcmp(name + l - n, sfx) == 0;
+}
+
+static bool is_doc(const char *name)
 {
     size_t l = strlen(name);
-    return l > 3 && name[0] != '.' && strcmp(name + l - 3, ".md") == 0;
+    return name[0] != '.' &&
+           (has_suffix(name, l, ".md") || has_suffix(name, l, ".fountain"));
 }
 
 /* "<dir>/<name>" without tripping -Wformat-truncation. */
@@ -171,7 +182,7 @@ static void joinp(char *out, size_t osz, const char *dir, const char *name)
     strlcat(out, name, osz);
 }
 
-/* Build a flat tree object from the "*.md" files in the working dir.
+/* Build a flat tree object from the document files in the working dir.
  * Returns the tree oid (zero-cleared when there are no files). */
 static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
 {
@@ -188,7 +199,7 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
     git_tree t = {};
     esp_err_t ret = ESP_OK;
     for (int i = 0; i < count; i++) {
-        if (entries[i].is_dir || !is_md(entries[i].name)) continue;
+        if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
 
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, entries[i].name);
@@ -213,7 +224,7 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
 }
 
 /* Materialise a flat tree's blobs into the working dir; delete local
- * "*.md" files not present in the tree. */
+ * document files not present in the tree. */
 static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
 {
     if (out_written) *out_written = 0;
@@ -250,13 +261,13 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
         git_buf_free(&blob);
     }
 
-    /* Delete local *.md files that are gone from the tree. */
+    /* Delete local document files that are gone from the tree. */
     sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
         WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
     if (entries) {
         int count = sd_card_list_dir(s_cfg.local_path, entries, WT_MAX_FILES);
         for (int i = 0; i < count; i++) {
-            if (entries[i].is_dir || !is_md(entries[i].name)) continue;
+            if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
             if (git_tree_get(&t, entries[i].name)) continue;
             char path[400];
             joinp(path, sizeof(path), s_cfg.local_path, entries[i].name);

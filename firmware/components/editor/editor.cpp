@@ -3,6 +3,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cassert>
+#include <strings.h>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 
@@ -35,6 +36,7 @@ struct editor_doc_s {
     char   path[256];     /* backing file path, "" when untitled */
     bool   modified;
     bool   flat_dirty;
+    bool   fountain;      /* Fountain screenplay mode (else Markdown) */
     editor_mode_t mode;
     int    scroll_line;
     int    sel_anchor;    /* logical byte offset, -1 = no selection */
@@ -75,6 +77,7 @@ static size_t s_doc_buf_size = 0;
 #define s_path              (s_active->path)
 #define s_modified          (s_active->modified)
 #define s_flat_dirty        (s_active->flat_dirty)
+#define s_fountain          (s_active->fountain)
 #define s_mode              (s_active->mode)
 #define s_scroll_line       (s_active->scroll_line)
 #define s_sel_anchor        (s_active->sel_anchor)
@@ -126,6 +129,7 @@ static void doc_reset_empty(editor_doc_t *d)
     d->gap_end     = d->buf_size;
     d->path[0]     = '\0';
     d->modified    = false;
+    d->fountain    = false;
     d->mode        = EDITOR_MODE_NORMAL;
     d->scroll_line = 0;
     d->sel_anchor  = -1;
@@ -519,6 +523,7 @@ extern "C" esp_err_t editor_open_file(const char *path)
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
     s_modified = false;
+    s_fountain = editor_path_is_fountain(path);
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_flat();
@@ -547,7 +552,27 @@ extern "C" esp_err_t editor_save_file_as(const char *path)
 {
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
+    /* The extension picks the format; any other name keeps the mode
+     * the document was written in. */
+    size_t n = strlen(path);
+    if (editor_path_is_fountain(path)) s_fountain = true;
+    else if (n > 3 && strcasecmp(path + n - 3, ".md") == 0) s_fountain = false;
     return editor_save_file();
+}
+
+extern "C" bool editor_path_is_fountain(const char *path)
+{
+    static const char ext[] = ".fountain";
+    size_t n = path ? strlen(path) : 0;
+    return n > sizeof(ext) - 1 &&
+           strcasecmp(path + n - (sizeof(ext) - 1), ext) == 0;
+}
+
+extern "C" bool editor_is_fountain(void) { return s_active && s_fountain; }
+
+extern "C" void editor_set_fountain(bool on)
+{
+    if (s_active) s_fountain = on;
 }
 
 extern "C" void editor_new_file(void)
@@ -556,6 +581,7 @@ extern "C" void editor_new_file(void)
     s_gap_end   = s_buf_size;
     s_path[0]   = '\0';
     s_modified  = false;
+    s_fountain  = false;
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_flat();
@@ -705,7 +731,9 @@ extern "C" void editor_discard_all_changes(void)
                          path);
             }
         } else {
+            bool fountain = d->fountain;
             editor_new_file();
+            d->fountain = fountain;
         }
     }
     s_active = (prev && prev->in_use) ? prev : pick_any_active();

@@ -20,6 +20,22 @@ typedef enum {
     MD_LINE_CODE_CONTENT,
     MD_LINE_HR,
     MD_LINE_EMPTY,
+
+    /* Fountain screenplay elements, produced only by fountain_parse_line()
+     * (see fountain_parser.h). Sections reuse MD_LINE_H1..H3 and page
+     * breaks reuse MD_LINE_HR; everything else has its own type. */
+    MD_LINE_FTN_ACTION,
+    MD_LINE_FTN_SCENE,
+    MD_LINE_FTN_CHARACTER,
+    MD_LINE_FTN_DIALOGUE,
+    MD_LINE_FTN_PARENTHETICAL,
+    MD_LINE_FTN_TRANSITION,
+    MD_LINE_FTN_CENTERED,
+    MD_LINE_FTN_LYRIC,
+    MD_LINE_FTN_SYNOPSIS,
+    MD_LINE_FTN_TITLE,
+    MD_LINE_FTN_NOTE,       /* line entirely inside a [[note]] */
+    MD_LINE_FTN_BONEYARD,   /* line entirely inside a boneyard comment */
 } md_line_type_t;
 
 /* An inline span. start/end delimit the styled text (the part between
@@ -28,7 +44,9 @@ typedef enum {
  * start and of the identical closing marker immediately at end (e.g. 2
  * for "**bold**", 1 for "`code`"). Spans may nest ("**a *b* c**"
  * yields an outer bold span and an inner italic one), so a consumer
- * should OR the flags of every span covering a character. */
+ * should OR the flags of every span covering a character. The
+ * Fountain parser also emits spans with mark_len 0 (markers that stay
+ * visible, e.g. notes, or no markers at all, e.g. a title-page key). */
 typedef struct {
     size_t start;
     size_t end;
@@ -37,6 +55,7 @@ typedef struct {
     bool italic;
     bool code;
     bool strikethrough;
+    bool underline;     /* Fountain _underline_ */
 } md_span_t;
 
 #define MD_MAX_SPANS 32

@@ -136,7 +136,8 @@ components/                 Reusable IDF components
   battery/                  Battery voltage monitor (ADC)
   ble_keyboard/             BLE HID keyboard host (Bluedroid)
   display/                  RLCD SPI display driver and LVGL port
-  editor/                   Gap-buffer text editor, Markdown parser, LVGL UI
+  editor/                   Gap-buffer text editor, Markdown / Fountain
+                            parsers and format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
   git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
@@ -460,7 +461,43 @@ The largest component. Contains:
   code spans are skipped), and emphasis spans nest ("**a *b* c**").
   Each `md_span_t` carries `mark_len`, the length of its marker on
   each side, so the UI can hide the markers.
+- **fountain_parser.cpp** -- line classifier for the Fountain
+  screenplay format (https://fountain.io/syntax/). A Fountain element
+  depends on its neighbours, so the caller threads an `ftn_state_t`
+  from the first line down and says whether the next line is blank.
+  Results are reported as an `md_line_info_t`: the `MD_LINE_FTN_*`
+  types (scene heading, action, character, dialogue, parenthetical,
+  transition, centered, lyric, synopsis, title page, note, boneyard),
+  plus `MD_LINE_H1..H3` for sections, `MD_LINE_HR` for page breaks and
+  `MD_LINE_EMPTY`; `content` excludes forcing characters (`.`, `!`,
+  `@`, `>`, `~`, `=`), the dual-dialogue `^` and centering `<`. Spans
+  carry `*` / `**` / `***` emphasis, `_underline_` (`md_span_t::
+  underline`), notes (`code`, `mark_len` 0) and boneyard text
+  (`strikethrough`, `mark_len` 0); notes and boneyard may span lines.
+- **editor_format.h** (`private_include/`), **md_editor.cpp**,
+  **fountain_editor.cpp** -- per-format editing behaviour.
+  `editor_ui.cpp` holds everything the formats share and asks
+  `editor_format_active()` (picked from the active document's
+  `editor_is_fountain()` flag) for line classification with scan state
+  (`parse_line`), marker hiding / line-wide decoration (`mark_line`),
+  per-element label layout (`apply_layout`: Fountain's screenplay
+  indents and alignment), the e-paper typing fast-path check
+  (`line_is_plain`; always false for Fountain) and Enter / Tab hooks
+  (Fountain: a blank line after a scene heading / transition, and
+  Slugline-style Tab completion of character names and scene
+  headings). Keep format-specific code in these files rather than in
+  `editor_ui.cpp`.
 - **draftling_logo.c** -- embedded LVGL image for the splash screen.
+
+**Fountain mode** is a per-document flag in `editor_doc_t`
+(`editor_is_fountain()` / `editor_set_fountain()`):
+`editor_open_file()` sets it for a `.fountain` path,
+`editor_save_file_as()` follows a `.fountain` / `.md` name, and
+`Ctrl+F` in either file browser starts an untitled screenplay (the
+save prompt then proposes `draft_NNN.fountain`). Because every pane
+renders its own bound document, the two panes of a split can show
+different formats. The file browser lists `.md` and `.fountain`
+files.
 
 **Settings** is the first item in the F1 menu (moved to the top so it
 is a single Enter away without navigating past the connectivity
@@ -520,7 +557,7 @@ character counts on the raw line. The render cache compares the view's
 styling flags as well as the display text, since hidden markers can
 make two differently-styled lines display the same text. The e-paper
 typing fast path (`capture_typing_pre_state()`) only applies to lines
-with no styling at all (`line_is_plain_text()`), because typing a
+with no styling at all (the format's `line_is_plain` hook), because typing a
 closing marker restyles characters left of the cursor.
 
 The editor stores text as **UTF-8** internally. `editor_open_file()`
@@ -661,7 +698,8 @@ standard Git HTTP host works. Configuration (`repo_url`, `branch`,
 
 Source layout (all in-tree, no managed components):
 
-- `git_sync.cpp` -- config parsing, the sync task, and the orchestration
+- `git_sync.cpp` -- config parsing, the sync task, the working-tree
+  file filter (`is_doc()`: `*.md` and `*.fountain`), and the orchestration
   (advertise -> clone -> local commit -> fetch -> fast-forward/rebase ->
   three-way merge -> checkout -> push). Keeps the historical public API.
 - `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA), and
@@ -696,7 +734,8 @@ things, not just on a malformed repo.
 
 Behaviour:
 
-- The working tree is the flat set of `*.md` files in the sync dir. An
+- The working tree is the flat set of `*.md` and `*.fountain` files
+  in the sync dir. An
   optional `path=` maps that set onto a sub-tree of the repository (the
   rest of the repo tree is preserved across commits).
 - First sync clones full history; later syncs send `have` lines so the
@@ -729,7 +768,7 @@ Behaviour:
   correct it after the device's very first boot.
 
 Scope limits: one branch, no tags/submodules/signing, no shallow clone,
-flat `*.md` working tree only, HTTP Basic auth only (no SSH). LCS merge
+flat `*.md` / `*.fountain` working tree only, HTTP Basic auth only (no SSH). LCS merge
 falls back to a whole-file conflict above ~1400 lines per side.
 
 Public API (unchanged): `git_sync_init()`, `git_sync_start()`,

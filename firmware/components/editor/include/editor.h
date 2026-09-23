@@ -110,8 +110,20 @@ void editor_init(void);
 esp_err_t editor_open_file(const char *path);
 esp_err_t editor_save_file(void);
 esp_err_t editor_save_file_as(const char *path);
+/* Start a new untitled document in Markdown mode (see
+ * editor_set_fountain() for a screenplay). */
 void editor_new_file(void);
 void editor_close_file(void);
+
+/* Fountain screenplay mode (https://fountain.io/). Each document is
+ * either Markdown (the default) or Fountain: editor_open_file() picks
+ * Fountain for a ".fountain" file, editor_save_file_as() switches the
+ * mode to match a ".fountain" / ".md" name, and editor_set_fountain()
+ * sets it explicitly (e.g. for a new untitled screenplay). The flag
+ * only changes how the UI renders and edits the text. */
+bool editor_is_fountain(void);
+void editor_set_fountain(bool on);
+bool editor_path_is_fountain(const char *path);
 /* Persist per-file metadata (cursor, scroll line, ...) to the
  * sidecar next to the currently-open file. No-op if no file is
  * open. Safe to call repeatedly. */
