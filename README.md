@@ -46,7 +46,12 @@ load the firmware quickly without having to compile it.
 - **Works with any Bluetooth Low Energy (BLE) keyboard**. M5Stack Tab5
   supports also a wired USB keyboard.
 
-- **File browser** to open and manage `.md` files on the SD card
+- **Fountain screenplays**: `.fountain` files open in a screenplay
+  mode that formats scenes, characters, dialogue and transitions as you
+  type. See [Writing screenplays](#writing-screenplays-fountain) below.
+
+- **File browser** to open and manage `.md` and `.fountain` files on
+  the SD card
   (entries sorted alphabetically, directories first)
 
 - **Markdown rendering**: headings (H1-H4), bullet and numbered lists,
@@ -89,7 +94,7 @@ load the firmware quickly without having to compile it.
   restored to its previous position and the view scrolls so the cursor
   is visible. The `.meta` files are hidden from the file browser (they
   start with a dot) and are ignored by Git sync (which only commits
-  `*.md` files).
+  `*.md` and `*.fountain` files).
 
 - **Color themes** On color LCD boards the editor offers a
   runtime-selectable color theme (F1 -> Settings -> Color theme):
@@ -150,6 +155,51 @@ load the firmware quickly without having to compile it.
 
 `Ctrl+P` and `Ctrl+1` / `Ctrl+2` / `Ctrl+3` also work in the file
 browser (the split layout applies the next time you open a file).
+In the file browser, `N` starts a new Markdown file and `Ctrl+F` a new
+Fountain screenplay.
+
+
+## Writing screenplays (Fountain)
+
+Besides Markdown, Draftling edits screenplays in the plain-text
+[Fountain](https://fountain.io/syntax/) format. A file whose name ends
+in `.fountain` opens in Fountain mode; `Ctrl+F` in the file browser
+starts a new, untitled screenplay, and `Ctrl+S` then offers a
+`draft_NNN.fountain` name. Saving under a `.md` name switches the
+document back to Markdown. In split mode each pane keeps its own
+format, so a screenplay can sit next to Markdown notes.
+
+As in the Slugline editor, the screenplay is formatted as you type,
+following the Fountain rules:
+
+- **Scene headings** -- a line starting with `INT.`, `EXT.`, `EST.`,
+  `INT./EXT.` or `I/E` after a blank line -- are bold. Force one with a
+  leading `.`.
+- **Character** names -- an all-uppercase line after a blank line,
+  optionally with an extension such as `(V.O.)` -- are indented, and
+  the lines below them are laid out as **dialogue** and
+  **parentheticals** until the next blank line. Force a mixed-case name
+  with `@`; a trailing `^` marks dual dialogue.
+- **Transitions** (an uppercase line ending in `TO:`, or forced with
+  `>`) are flush right; `>centered text<` is centered.
+- `*italic*`, `**bold**`, `***bold italic***` and `_underline_` are
+  drawn styled; `~lyrics` and `= synopses` are italic; `#` sections
+  look like headings; `===` is a page break; `[[notes]]` are boxed and
+  `/* boneyard */` text is struck through.
+- A title page (`Title:`, `Credit:`, `Author:`, ... at the top of the
+  file) shows its keys in bold.
+
+Markers such as the forcing characters are hidden except on the line
+holding the cursor. Two editing helpers are available:
+
+- **Enter** at the end of a scene heading or transition also inserts
+  the blank line that must follow it (Shift+Enter inserts a single
+  newline).
+- **Tab** completes names used in the script: on an empty line it
+  offers character names, starting with the one who spoke before the
+  last speaker; on a partly typed line (e.g. `br` or `int`) it offers
+  matching character names, scene headings and transitions. Press Tab
+  again for the next suggestion.
 
 
 

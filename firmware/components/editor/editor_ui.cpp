@@ -16,6 +16,7 @@
 #include "editor_ui.h"
 #include "editor.h"
 #include "md_parser.h"
+#include "editor_format.h"
 #include "ble_keyboard.h"
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
 #include "usb_kbd.h"
@@ -1172,14 +1173,8 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
  * the raw line. line_view_t::d2r records, for every display character,
  * the raw byte offset it came from; view_raw_to_disp() /
  * view_disp_to_raw() translate cursor, selection and touch positions
- * through it. */
-enum {
-    DECO_BOLD   = 0x01,
-    DECO_ITALIC = 0x02,
-    DECO_STRIKE = 0x04,
-    DECO_CODE   = 0x08,
-    DECO_BULLET = 0x10,   /* list-marker cell: draw a bullet dot */
-};
+ * through it. The DECO_* decoration flags live in editor_format.h,
+ * shared with the per-format hooks (md_editor.cpp, fountain_editor.cpp). */
 
 /* A run of identically-decorated characters on one visual row, in
  * the label's content-area coordinates, laid out left to right (RTL
@@ -1776,7 +1771,7 @@ static void update_wifi_icons(void)
 static void update_title_bar(void)
 {
     const char *path = editor_get_file_path();
-    const char *name = "Untitled";
+    const char *name = editor_is_fountain() ? "Untitled screenplay" : "Untitled";
     if (path) {
         const char *slash = strrchr(path, '/');
         name = slash ? slash + 1 : path;
@@ -1960,11 +1955,14 @@ static size_t utf8_byte_of_char(const char *s, size_t len, int n)
 /* Build the display text for one raw line and its view (d2r mapping
  * and per-character styling). reveal keeps every Markdown marker
  * visible (the focused cursor line); otherwise the markers are hidden.
+ * The document's format (fmt) decides which markers are hidden and
+ * which line-wide styling applies; inline spans are applied here.
  * Tabs are expanded to four spaces, since the bundled fonts have no
  * tab glyph. An all-hidden line (e.g. a rule) displays as a single
  * space so the label keeps one row of height. */
-static void build_line_view(const char *lt, size_t ll, const md_line_info_t *mi,
-                            bool reveal, std::string &text, line_view_t *v)
+static void build_line_view(const editor_format_t *fmt, const char *lt, size_t ll,
+                            const md_line_info_t *mi, bool reveal,
+                            std::string &text, line_view_t *v)
 {
     static std::vector<uint8_t> hide;
     static std::vector<uint8_t> rflags;
@@ -1976,34 +1974,11 @@ static void build_line_view(const char *lt, size_t ll, const md_line_info_t *mi,
     if (content_off > ll) content_off = ll;
     if (content_end > ll) content_end = ll;
 
-    v->hr = false;
-    v->bullet_level = 0;
-    switch (mi->type) {
-    case MD_LINE_H1: case MD_LINE_H2: case MD_LINE_H3: case MD_LINE_H4:
-        if (!reveal) std::fill(hide.begin(), hide.begin() + content_off, 1);
-        for (size_t b = content_off; b < content_end; b++) rflags[b] |= DECO_BOLD;
-        break;
-    case MD_LINE_BLOCKQUOTE:
-    case MD_LINE_CODE_FENCE:
-        /* The quote bar / code box already mark these lines. */
-        if (!reveal) std::fill(hide.begin(), hide.begin() + content_off, 1);
-        break;
-    case MD_LINE_BULLET:
-        /* The "-" / "*" / "+" marker sits two bytes before the content;
-         * it is replaced by a drawn bullet even on the cursor line (1:1,
-         * so the mapping is unaffected). */
-        if (content_off >= 2) rflags[content_off - 2] |= DECO_BULLET;
-        v->bullet_level = (uint8_t)(mi->indent_level > 255 ? 255 : mi->indent_level);
-        break;
-    case MD_LINE_HR:
-        if (!reveal) {
-            std::fill(hide.begin(), hide.end(), 1);
-            v->hr = true;
-        }
-        break;
-    default:
-        break;
-    }
+    fmt_marks_t marks = { hide.data(), rflags.data(), ll, content_off, content_end,
+                          false, 0 };
+    fmt->mark_line(mi, reveal, &marks);
+    v->hr = marks.hr;
+    v->bullet_level = marks.bullet_level;
 
     for (int k = 0; k < mi->span_count; k++) {
         const md_span_t *sp = &mi->spans[k];
@@ -2012,7 +1987,8 @@ static void build_line_view(const char *lt, size_t ll, const md_line_info_t *mi,
         size_t m  = sp->mark_len;
         if (cs < m || ce + m > ll) continue;
         uint8_t f = (sp->bold ? DECO_BOLD : 0) | (sp->italic ? DECO_ITALIC : 0) |
-                    (sp->code ? DECO_CODE : 0) | (sp->strikethrough ? DECO_STRIKE : 0);
+                    (sp->code ? DECO_CODE : 0) | (sp->strikethrough ? DECO_STRIKE : 0) |
+                    (sp->underline ? DECO_UNDER : 0);
         for (size_t b = cs; b < ce; b++) rflags[b] |= f;
         if (!reveal) {
             std::fill(hide.begin() + (cs - m), hide.begin() + cs, 1);
@@ -2062,18 +2038,6 @@ static size_t view_disp_to_raw(const line_view_t *v, int d)
     if ((size_t)d >= v->d2r.size()) return v->raw_len;
     return v->d2r[(size_t)d];
 }
-
-#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
-/* True when a line has no styling of its own: the display text is the
- * raw text verbatim, so the e-paper typing fast path's per-character
- * width math applies. */
-static bool line_is_plain_text(const char *lt, size_t ll, const md_line_info_t *mi)
-{
-    if (mi->type != MD_LINE_PARAGRAPH && mi->type != MD_LINE_EMPTY) return false;
-    if (mi->span_count > 0) return false;
-    return memchr(lt, '\t', ll) == NULL;
-}
-#endif
 
 static void push_deco_seg(line_view_t *v, const deco_seg_t &s)
 {
@@ -2358,6 +2322,12 @@ static void line_deco_draw_cb(lv_event_t *e)
                     int32_t y = top + mid_y - th / 2;
                     deco_fill(layer, gx, y, gx + gw - 1, y + th - 1, cfg);
                 }
+                if (f & DECO_UNDER) {
+                    /* One row below the baseline, inside the cell. */
+                    int32_t y = top + asc + 1;
+                    if (y + th > top + lh) y = top + lh - th;
+                    deco_fill(layer, gx, y, gx + gw - 1, y + th - 1, cfg);
+                }
             }
         }
 
@@ -2416,13 +2386,16 @@ static void refresh_active_pane(bool draw_cursor)
     for (int _scroll_retry = 0; _scroll_retry < MAX_LINE_LABELS;
          _scroll_retry++) {
         int scroll = editor_get_scroll_line();
-        bool in_code = false;
+        const editor_format_t *fmt = editor_format_active();
+        fmt_scan_t scan;
+        editor_format_scan_begin(fmt, &scan);
 
-        /* Track code fence state up to scroll line */
+        /* Carry the format's line state (Markdown: code fences;
+         * Fountain: the element context) up to the scroll line */
         for (int i = 0; i < scroll && i < total; i++) {
             size_t ll;
             const char *lt = editor_get_line(i, &ll);
-            if (md_is_code_fence(lt, ll)) in_code = !in_code;
+            fmt->parse_line(&scan, lt, ll, NULL);
         }
 
         std::string tmp;        /* final rendered text for the current slot */
@@ -2480,8 +2453,7 @@ static void refresh_active_pane(bool draw_cursor)
             const char *lt = editor_get_line(line_idx, &ll);
 
             md_line_info_t mi;
-            md_parse_line(lt, ll, &mi, in_code);
-            if (mi.type == MD_LINE_CODE_FENCE) in_code = !in_code;
+            fmt->parse_line(&scan, lt, ll, &mi);
 
             /* Build the final display string (markers hidden except on
              * the focused cursor line -- see line_view_t) up-front so
@@ -2490,7 +2462,7 @@ static void refresh_active_pane(bool draw_cursor)
              * paragraphs of arbitrary length render in full without
              * truncation. */
             bool reveal = draw_cursor && line_idx == cur_line;
-            build_line_view(lt, ll, &mi, reveal, tmp, &view_tmp);
+            build_line_view(fmt, lt, ll, &mi, reveal, tmp, &view_tmp);
             line_view_t *view = &s_rp->view[i];
 
             /* Determine whether this line intersects the active
@@ -2563,6 +2535,7 @@ static void refresh_active_pane(bool draw_cursor)
                 /* Re-apply width after style reset (remove_style_all clears it)
                  * so that LV_LABEL_LONG_WRAP can wrap at the correct boundary. */
                 lv_obj_set_width(s_line_labels[i], s_rp->w - 4);
+                fmt->apply_layout(s_line_labels[i], mi.type, s_rp->w - 4);
                 /* Re-apply the LV_PART_SELECTED colors too (remove_style_all
                  * wipes every part, not just LV_PART_MAIN) so the selection
                  * highlight set below renders correctly. This uses LVGL's
@@ -3485,7 +3458,7 @@ static void browser_status_hint(char *buf, size_t buf_size)
         return;
     }
 #endif
-    snprintf(buf, buf_size, "F1:Menu  N:New file");
+    snprintf(buf, buf_size, "F1:Menu  N:New  Ctrl+F:Screenplay");
 }
 
 static void refresh_file_list(void)
@@ -3512,7 +3485,7 @@ static void refresh_file_list(void)
     s_browser_count = sd_card_list_dir(mp, s_browser_entries, 64);
     if (s_browser_count < 0) s_browser_count = 0;
 
-    /* Filter to show only .md files and directories */
+    /* Filter to show only .md / .fountain files and directories */
     lv_obj_clean(s_browser_list);
 
     int restored_row = -1;
@@ -3522,7 +3495,8 @@ static void refresh_file_list(void)
         bool show = s_browser_entries[i].is_dir;
         if (!show) {
             size_t nlen = strlen(name);
-            show = (nlen > 3 && strcmp(name + nlen - 3, ".md") == 0);
+            show = (nlen > 3 && strcmp(name + nlen - 3, ".md") == 0) ||
+                   editor_path_is_fountain(name);
         }
         if (show) {
             char label[sizeof(s_browser_entries[0].name) + 8];
@@ -5276,17 +5250,26 @@ static void handle_menu_key(const kb_event_t *ev)
 
 /* ---- Save-prompt overlay ---- */
 
-/* Compute a default filename for a new (untitled) document.
+/* Compute a default filename for a new (untitled) document: a
+ * ".fountain" name for a screenplay, ".md" otherwise. The draft
+ * numbers are shared by both extensions, so a new screenplay after
+ * draft_001.md becomes draft_002.fountain, not draft_001.fountain.
  * Returns the bare filename (no directory prefix). */
 static bool generate_default_name(char *buf, size_t buf_size)
 {
+    static const char *const exts[] = { "md", "fountain" };
     const char *mp = sd_card_get_mount_point();
     if (!mp) return false;
+    const char *ext = editor_is_fountain() ? "fountain" : "md";
     char path[256];
     for (int seq = 1; seq <= MAX_DRAFT_SEQ; seq++) {
-        snprintf(path, sizeof(path), "%s/draft_%03d.md", mp, seq);
-        if (!sd_card_file_exists(path)) {
-            snprintf(buf, buf_size, "draft_%03d.md", seq);
+        bool taken = false;
+        for (const char *e : exts) {
+            snprintf(path, sizeof(path), "%s/draft_%03d.%s", mp, seq, e);
+            if (sd_card_file_exists(path)) taken = true;
+        }
+        if (!taken) {
+            snprintf(buf, buf_size, "draft_%03d.%s", seq, ext);
             return true;
         }
     }
@@ -5887,10 +5870,10 @@ static void capture_typing_pre_state(typing_pre_state_t *out)
      * styled rendering whose pixel layout we can't safely predict
      * here. So has a paragraph with inline spans: typing a closing
      * "*" restyles characters left of the cursor, outside the clip
-     * (try_partial_clip_for_typing() re-checks the post-edit line). */
-    md_line_info_t mi;
-    md_parse_line(lt, ll, &mi, false);
-    if (!line_is_plain_text(lt, ll, &mi)) return;
+     * (try_partial_clip_for_typing() re-checks the post-edit line).
+     * The document's format decides (Fountain never qualifies: a
+     * line's element depends on its neighbours). */
+    if (!editor_format_active()->line_is_plain(lt, ll)) return;
 
     int chars = utf8_chars_in_bytes(lt, ll);
 
@@ -5945,9 +5928,7 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
     const char *lt = editor_get_line(line, &ll);
     if (!lt) return false;
 
-    md_line_info_t mi;
-    md_parse_line(lt, ll, &mi, false);
-    if (!line_is_plain_text(lt, ll, &mi)) return false;
+    if (!editor_format_active()->line_is_plain(lt, ll)) return false;
 
     int post_chars = utf8_chars_in_bytes(lt, ll);
     int char_w     = pre->char_w;
@@ -6608,6 +6589,7 @@ static void handle_editor_key(const kb_event_t *ev)
         break;
     case KB_KEY_ENTER:
         content_changed = true;
+        if (editor_format_active()->handle_enter(shift)) break;
         /* Newlines are the one insertion allowed anywhere while
          * append-only editing is active, so no end-of-document jump
          * is needed here -- but deletion is still disallowed, so a
@@ -6619,6 +6601,7 @@ static void handle_editor_key(const kb_event_t *ev)
         break;
     case KB_KEY_TAB:
         content_changed = true;
+        if (editor_format_active()->handle_tab(s_append_only)) break;
         if (s_append_only) {
             editor_clear_selection();
             if (!cursor_at_doc_end()) editor_move_doc_end();
@@ -6743,7 +6726,7 @@ static void show_inpane_browser(void)
     /* The editor screen stays active (the other pane keeps rendering);
      * keystrokes are rerouted by the s_inpane_browser_open check in
      * process_key_event. */
-    editor_ui_set_status("Open into pane - Up/Down Enter  N:new  Esc:cancel");
+    editor_ui_set_status("Open into pane: Enter  N:new  ^F:screenplay  Esc:cancel");
 }
 
 /* Dismiss the in-pane file selector and restore the full-screen list
@@ -6927,6 +6910,14 @@ static void handle_browser_key(const kb_event_t *ev)
             return;
         }
 
+        if (ck == 'f') {
+            /* Ctrl+F: new untitled screenplay in Fountain mode (Ctrl+S
+             * then offers a ".fountain" name). */
+            editor_new_file();
+            editor_set_fountain(true);
+            editor_ui_show_editor();
+            return;
+        }
         if (ck == 'p') {
             /* Ctrl+P: deep sleep. No editor screen to prompt on here;
              * the standby pre-sleep hook auto-saves any open document. */
@@ -7111,21 +7102,21 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         return;
     }
 
-    if (!ctrl) {
-        char ch = kb_layout_shortcut_char(ev->keycode);
-        if (ch == 'n') {
-            /* New untitled document in the focused pane (not a global
-             * replace -- that is the single-pane behavior). */
-            if (!open_into_pane(s_focus, NULL)) {
-                editor_ui_set_status("New failed");
-                return;
-            }
-            s_open_target_pane = s_focus;
-            close_inpane_browser();
-            ensure_cursor_visible();
-            editor_ui_show_editor();
+    char nch = kb_layout_shortcut_char(ev->keycode);
+    if ((!ctrl && nch == 'n') || (ctrl && nch == 'f')) {
+        /* New untitled document (N) or screenplay (Ctrl+F) in the
+         * focused pane (not a global replace -- that is the
+         * single-pane behavior). */
+        if (!open_into_pane(s_focus, NULL)) {
+            editor_ui_set_status("New failed");
             return;
         }
+        editor_set_fountain(ctrl);
+        s_open_target_pane = s_focus;
+        close_inpane_browser();
+        ensure_cursor_visible();
+        editor_ui_show_editor();
+        return;
     }
 
     handle_browser_key(ev);
@@ -8035,7 +8026,7 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_status, SCR_W - 4);
     lv_obj_set_style_text_font(s_lbl_br_status, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_status, theme_fg(), 0);
-    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  Ctrl+G:Git  Ctrl+W:WiFi");
+    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  Ctrl+F:Screenplay");
 
 #if defined(CONFIG_DRAFTLING_HAS_BATTERY)
     /* Device battery label (right-aligned in browser status bar) */

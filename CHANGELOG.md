@@ -8,6 +8,19 @@ in the git log.
 
 ### Added
 
+- **Fountain screenplays**: files ending in `.fountain` open in a
+  screenplay mode that formats the script as you type, following the
+  [Fountain](https://fountain.io/syntax/) rules: bold scene headings,
+  indented character names, dialogue and parentheticals, right-aligned
+  transitions, centered text, emphasis including `_underline_`, notes,
+  boneyard, sections, synopses, page breaks and the title page. `Ctrl+F`
+  in the file browser starts a new screenplay, and `Ctrl+S` offers a
+  `draft_NNN.fountain` name for it (draft numbers continue across
+  `.md` and `.fountain` drafts). Enter after a scene heading or
+  transition adds the blank line that follows it, and Tab completes
+  character names and scene headings already used in the script. In
+  split mode each pane keeps its own format. Git sync now includes
+  `*.fountain` files alongside `*.md`.
 - **WYSIWYG Markdown rendering**: the editor now displays Markdown
   formatting instead of plain text. **Bold**, *italic*, ***bold
   italic***, ~~strikethrough~~ and `inline code` (boxed) are drawn

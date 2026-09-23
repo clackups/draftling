@@ -80,6 +80,7 @@ static void add_span(md_line_info_t *info, int start, int end, int mark,
     sp->italic        = italic;
     sp->code          = code;
     sp->strikethrough = strike;
+    sp->underline     = false;
 }
 
 /* Recognise inline spans in s[from, to): `code` (any backtick-run
