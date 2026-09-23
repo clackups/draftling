@@ -546,6 +546,19 @@ and an LEDC buzzer, none of which Draftling uses, matching the
 "vendor board carries more than the firmware touches" pattern already
 seen on the Waveshare ESP32-S3-ePaper-3.97 and the Xteink boards.
 
+The GT911 digitizer is mounted in portrait under the landscape panel:
+it reports a 480x800 frame (raw X along the panel's short side), which
+`TOUCH_NATIVE_W`/`TOUCH_NATIVE_H` = 480/800 describe, and swap + mirror
+both axes map it onto the 800x480 panel frame. An earlier revision of
+this port declared the raw frame as 800x480, which squeezed every tap
+into the lower part of the screen and was reported by a user as touch
+not working. The corrected mapping agrees with three
+hardware-verified sources: FreeInk's `STICKY` profile, the
+[sticky-micronotes](https://github.com/LowFlowIO/sticky-micronotes)
+firmware (same SSD1677 RAM addressing as this port) and the ESPHome
+configs for this device (`swap_xy` only, on a display frame rotated
+180 degrees from this one).
+
 
 ## Seeed Studio reTerminal E1001
 

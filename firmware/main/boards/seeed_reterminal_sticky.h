@@ -97,14 +97,23 @@
 #define TOUCH_INT_PIN       CONFIG_DRAFTLING_TOUCH_INT_GPIO
 #define TOUCH_RST_PIN       CONFIG_DRAFTLING_TOUCH_RST_GPIO
 #define TOUCH_POWER_EN_PIN  42
-/* Portrait digitizer mounted under a landscape panel (FreeInk:
- * "swapXY + flip both maps the sensor frame onto the panel-native
- * frame"). Unverified on real hardware by either this port or
- * FreeInk itself -- if taps land mirrored/rotated on a real unit,
- * dial these in with CONFIG_DRAFTLING_TOUCH_DEBUG_LOG (see
- * components/touchscreen/include/touchscreen.h). */
-#define TOUCH_NATIVE_W      800
-#define TOUCH_NATIVE_H      480
+/* Portrait digitizer mounted under a landscape panel: the GT911
+ * reports a 480x800 portrait frame (raw X 0..479 along the panel's
+ * short side, raw Y 0..799 along its long side). TOUCH_NATIVE_W/H
+ * describe that raw, pre-swap frame -- the same convention as the
+ * Xteink X4 Pro's portrait GT911 -- and swapXY + flip both maps it
+ * onto the 800x480 panel frame. Sources that agree, all verified on
+ * hardware by their authors: the FreeInk SDK Sticky profile
+ * ("confirmed by corner + menu bring-up taps"; panel ranges X 0..799,
+ * Y 0..479 after the swap), LowFlowIO/sticky-micronotes
+ * (panel x = 799 - rawY, y = 479 - rawX, with the same SSD1677 RAM
+ * addressing as display_reterminal_sticky.cpp) and ESPHome's
+ * swap_xy-only config, whose display frame is this one rotated 180
+ * degrees. Not yet confirmed on a unit by this port; if taps land
+ * off, CONFIG_DRAFTLING_TOUCH_DEBUG_LOG prints raw and logical
+ * coordinates (see components/touchscreen/include/touchscreen.h). */
+#define TOUCH_NATIVE_W      480
+#define TOUCH_NATIVE_H      800
 #define TOUCH_SWAP_XY       1
 #define TOUCH_MIRROR_X      1
 #define TOUCH_MIRROR_Y      1
