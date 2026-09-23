@@ -29,73 +29,147 @@ static bool is_hr_line(const char *s, int len)
     return count >= 3;
 }
 
+static bool is_ws(char c)
+{
+    return c == ' ' || c == '\t';
+}
+
+/* Word character for the "_" intraword rule. Any non-ASCII byte counts
+ * as a word character, so "_" inside Cyrillic / Hebrew words is left
+ * alone just like inside Latin ones. */
+static bool is_word(char c)
+{
+    unsigned char u = (unsigned char)c;
+    return u >= 0x80 || (u >= '0' && u <= '9') ||
+           (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+}
+
+static int run_len(const char *s, int i, int to, char c)
+{
+    int n = 0;
+    while (i + n < to && s[i + n] == c) n++;
+    return n;
+}
+
+/* Find the closing run of exactly n backticks for a code span opened
+ * at from (the first byte after the opening run). Returns its index,
+ * or -1 if the span is unterminated on this line. */
+static int find_code_close(const char *s, int from, int to, int n)
+{
+    int j = from;
+    while (j < to) {
+        if (s[j] == '`') {
+            int m = run_len(s, j, to, '`');
+            if (m == n) return j;
+            j += m;
+        } else {
+            j++;
+        }
+    }
+    return -1;
+}
+
+static void add_span(md_line_info_t *info, int start, int end, int mark,
+                     bool bold, bool italic, bool code, bool strike)
+{
+    md_span_t *sp = &info->spans[info->span_count++];
+    sp->start         = (size_t)start;
+    sp->end           = (size_t)end;
+    sp->mark_len      = (size_t)mark;
+    sp->bold          = bold;
+    sp->italic        = italic;
+    sp->code          = code;
+    sp->strikethrough = strike;
+}
+
+/* Recognise inline spans in s[from, to): `code` (any backtick-run
+ * length), *italic* / _italic_, **bold** / __bold__, ***both*** /
+ * ___both___ and ~~strikethrough~~. A simplified subset of the
+ * CommonMark delimiter rules keeps ordinary text from being styled by
+ * accident:
+ *  - an opener must be followed, and a closer preceded, by a
+ *    non-whitespace character ("2 * 3 * 4" stays plain);
+ *  - "_" never opens or closes inside a word (snake_case_names);
+ *  - a closer must be a run of the same length as the opener;
+ *  - backslash-escaped characters and code spans are skipped.
+ * Emphasis spans are parsed recursively so they can nest. */
+static void parse_range(const char *s, int from, int to, md_line_info_t *info)
+{
+    int i = from;
+    while (i < to && info->span_count < MD_MAX_SPANS) {
+        char c = s[i];
+        if (c == '\\' && i + 1 < to) {
+            i += 2;
+            continue;
+        }
+        if (c == '`') {
+            int n = run_len(s, i, to, '`');
+            int close = find_code_close(s, i + n, to, n);
+            if (close > i + n) {
+                add_span(info, i + n, close, n, false, false, true, false);
+                i = close + n;
+            } else {
+                i += n;
+            }
+            continue;
+        }
+        if (c != '*' && c != '_' && c != '~') {
+            i++;
+            continue;
+        }
+
+        int n = run_len(s, i, to, c);
+        bool opener = (c == '~') ? (n == 2) : (n <= 3);
+        if (opener && (i + n >= to || is_ws(s[i + n]))) opener = false;
+        if (opener && c == '_' && i > 0 && is_word(s[i - 1])) opener = false;
+        if (!opener) {
+            i += n;
+            continue;
+        }
+
+        int close = -1;
+        int j = i + n;
+        while (j < to) {
+            if (s[j] == '\\') {
+                j += 2;
+                continue;
+            }
+            if (s[j] == '`') {
+                int m = run_len(s, j, to, '`');
+                int cc = find_code_close(s, j + m, to, m);
+                j = (cc > 0) ? cc + m : j + m;
+                continue;
+            }
+            if (s[j] == c) {
+                int m = run_len(s, j, to, c);
+                if (m == n && !is_ws(s[j - 1]) &&
+                    (c != '_' || j + m >= to || !is_word(s[j + m]))) {
+                    close = j;
+                    break;
+                }
+                j += m;
+                continue;
+            }
+            j++;
+        }
+        if (close < 0) {
+            i += n;
+            continue;
+        }
+
+        bool strike = (c == '~');
+        bool bold   = !strike && n >= 2;
+        bool italic = !strike && n != 2;
+        add_span(info, i + n, close, n, bold, italic, false, strike);
+        parse_range(s, i + n, close, info);
+        i = close + n;
+    }
+}
+
 static void parse_inline_spans(const char *s, int len, md_line_info_t *info)
 {
     info->span_count = 0;
-    int i = 0;
-    while (i < len && info->span_count < 16) {
-        /* Inline code */
-        if (s[i] == '`') {
-            int start = i + 1;
-            int end = start;
-            while (end < len && s[end] != '`') end++;
-            if (end < len) {
-                md_span_t *sp = &info->spans[info->span_count++];
-                sp->start = start;
-                sp->end   = end;
-                sp->bold  = false; sp->italic = false;
-                sp->code  = true;  sp->strikethrough = false;
-                i = end + 1;
-                continue;
-            }
-        }
-        /* Bold **text** */
-        if (i + 1 < len && s[i] == '*' && s[i+1] == '*') {
-            int start = i + 2;
-            int end = start;
-            while (end + 1 < len && !(s[end] == '*' && s[end+1] == '*')) end++;
-            if (end + 1 < len) {
-                md_span_t *sp = &info->spans[info->span_count++];
-                sp->start = start;
-                sp->end   = end;
-                sp->bold  = true; sp->italic = false;
-                sp->code  = false; sp->strikethrough = false;
-                i = end + 2;
-                continue;
-            }
-        }
-        /* Italic *text* */
-        if (s[i] == '*' && (i + 1 >= len || s[i+1] != '*')) {
-            int start = i + 1;
-            int end = start;
-            while (end < len && s[end] != '*') end++;
-            if (end < len) {
-                md_span_t *sp = &info->spans[info->span_count++];
-                sp->start = start;
-                sp->end   = end;
-                sp->bold  = false; sp->italic = true;
-                sp->code  = false; sp->strikethrough = false;
-                i = end + 1;
-                continue;
-            }
-        }
-        /* Strikethrough ~~text~~ */
-        if (i + 1 < len && s[i] == '~' && s[i+1] == '~') {
-            int start = i + 2;
-            int end = start;
-            while (end + 1 < len && !(s[end] == '~' && s[end+1] == '~')) end++;
-            if (end + 1 < len) {
-                md_span_t *sp = &info->spans[info->span_count++];
-                sp->start = start;
-                sp->end   = end;
-                sp->bold  = false; sp->italic = false;
-                sp->code  = false; sp->strikethrough = true;
-                i = end + 2;
-                continue;
-            }
-        }
-        i++;
-    }
+    parse_range(s, 0, len, info);
 }
 
 extern "C" bool md_is_code_fence(const char *line, size_t len)
