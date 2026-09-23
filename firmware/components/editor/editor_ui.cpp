@@ -2226,6 +2226,20 @@ static void deco_draw_slanted(lv_layer_t *layer, lv_draw_label_dsc_t *dsc,
     layer->_clip_area = orig;
 }
 
+/* Offset of a label's content area (where lv_label_get_letter_pos()
+ * coordinates start) from its outer top-left corner: padding plus
+ * border. Non-zero for the blockquote style (left bar + padding) and
+ * the code style (box + left padding); a cursor placed at the raw
+ * letter position would otherwise land inside the glyph. */
+static lv_point_t label_content_offset(lv_obj_t *label)
+{
+    lv_area_t oc, cc;
+    lv_obj_get_coords(label, &oc);
+    lv_obj_get_content_coords(label, &cc);
+    lv_point_t p = { cc.x1 - oc.x1, cc.y1 - oc.y1 };
+    return p;
+}
+
 /* Let the styling spill a few pixels past the label box: a faux-bold
  * or slanted glyph in the last column, and the code-span box drawn
  * just outside its cells. */
@@ -2666,8 +2680,9 @@ static void refresh_active_pane(bool draw_cursor)
                 lv_point_t lpos;
                 lv_label_get_letter_pos(s_line_labels[i],
                                         (uint32_t)col_in_display, &lpos);
-                cur_x = 2 + lpos.x;
-                cur_y = y_pos + lpos.y;
+                lv_point_t cofs = label_content_offset(s_line_labels[i]);
+                cur_x = 2 + cofs.x + lpos.x;
+                cur_y = y_pos + cofs.y + lpos.y;
                 cur_h = line_h;
 
                 /* A line with no strong directional character (empty
@@ -2880,9 +2895,15 @@ static bool ui_point_to_offset(int x, int y, size_t *out_off)
      * lookup is a no-op. */
     int disp_char = 0;
     if (s_line_labels[slot]) {
+        /* lv_label_get_letter_on() discounts the label's padding but
+         * not its border (the blockquote bar, the code-block box), so
+         * take the border off here. */
+        lv_point_t cofs = label_content_offset(s_line_labels[slot]);
         lv_point_t p;
-        p.x = x_in_label;
-        p.y = y_in_label;
+        p.x = x_in_label -
+              (cofs.x - lv_obj_get_style_pad_left(s_line_labels[slot], LV_PART_MAIN));
+        p.y = y_in_label -
+              (cofs.y - lv_obj_get_style_pad_top(s_line_labels[slot], LV_PART_MAIN));
         /* bidi=true so taps on RTL/mixed lines map through LVGL's
          * visual->logical reordering instead of the raw byte order. */
         disp_char = (int)lv_label_get_letter_on(s_line_labels[slot], &p, true);
