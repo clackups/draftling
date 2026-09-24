@@ -46,7 +46,7 @@ before deep sleep. The sync task runs these steps in order:
 2. **Clone** – on the very first sync, if the remote branch exists its
    full history is fetched and checked out. (History is fetched in
    full; there is no shallow clone.)
-3. **Commit** – the current `*.md` and `*.fountain` files in the working directory are
+3. **Commit** -- the current `*.md`, `*.fountain` and `*.txt` files in the working directory are
    written as a tree and committed on top of the local branch tip. If
    nothing changed, no commit is made.
 4. **Fetch** – if the remote tip is not already in local history, the
@@ -116,11 +116,11 @@ timestamp, so an inaccurate clock does not corrupt anything.
 This is deliberately a minimal client:
 
 - **One branch**, no tags, no submodules, no signed commits.
-- The working tree is the **flat set of `*.md` and `*.fountain` files** in the sync
+- The working tree is the **flat set of `*.md`, `*.fountain` and `*.txt` files** in the sync
   directory (non-recursive). Sub-directories in the repository under
   `path` are not checked out. Dotfiles (`.git`, `*.meta`, `wifi.cfg`,
   `git.cfg`) are never committed.
-- Deleting every local `*.md` / `*.fountain` file will commit the deletion of the whole
+- Deleting every local `*.md` / `*.fountain` / `*.txt` file will commit the deletion of the whole
   synced sub-tree on the next sync – that is correct Git behaviour, but
   worth knowing.
 - The initial sync fetches full history; for a large repository that can

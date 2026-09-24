@@ -36,7 +36,7 @@ struct editor_doc_s {
     char   path[256];     /* backing file path, "" when untitled */
     bool   modified;
     bool   flat_dirty;
-    bool   fountain;      /* Fountain screenplay mode (else Markdown) */
+    editor_doc_format_t format; /* Markdown, Fountain or plain text */
     editor_mode_t mode;
     int    scroll_line;
     int    sel_anchor;    /* logical byte offset, -1 = no selection */
@@ -77,7 +77,7 @@ static size_t s_doc_buf_size = 0;
 #define s_path              (s_active->path)
 #define s_modified          (s_active->modified)
 #define s_flat_dirty        (s_active->flat_dirty)
-#define s_fountain          (s_active->fountain)
+#define s_format            (s_active->format)
 #define s_mode              (s_active->mode)
 #define s_scroll_line       (s_active->scroll_line)
 #define s_sel_anchor        (s_active->sel_anchor)
@@ -129,7 +129,7 @@ static void doc_reset_empty(editor_doc_t *d)
     d->gap_end     = d->buf_size;
     d->path[0]     = '\0';
     d->modified    = false;
-    d->fountain    = false;
+    d->format      = EDITOR_DOC_MARKDOWN;
     d->mode        = EDITOR_MODE_NORMAL;
     d->scroll_line = 0;
     d->sel_anchor  = -1;
@@ -275,7 +275,7 @@ extern "C" size_t editor_get_max_doc_size(void)
 
 /* ---- Per-file metadata sidecar ----
  *
- * Each opened .md file gets a tiny key=value text sidecar saved next
+ * Each opened document gets a tiny key=value text sidecar saved next
  * to it that records the cursor position and visible scroll line so
  * the editor can resume exactly where the user left off. The sidecar
  * file name is derived by prefixing the basename with a dot and
@@ -283,7 +283,7 @@ extern "C" size_t editor_get_max_doc_size(void)
  *
  * The leading dot keeps the sidecar hidden from sd_card_list_dir()
  * (which already filters dotfiles), and the .meta extension keeps it
- * out of the git_sync commits (which only match *.md). The format
+ * out of the git_sync commits (which only match documents). The format
  * is line-oriented "key=value" so future metadata fields can be
  * appended without breaking older sidecars.
  */
@@ -523,7 +523,8 @@ extern "C" esp_err_t editor_open_file(const char *path)
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
     s_modified = false;
-    s_fountain = editor_path_is_fountain(path);
+    s_format = EDITOR_DOC_MARKDOWN;
+    editor_path_format(path, &s_format);
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_flat();
@@ -554,25 +555,80 @@ extern "C" esp_err_t editor_save_file_as(const char *path)
     s_path[sizeof(s_path) - 1] = '\0';
     /* The extension picks the format; any other name keeps the mode
      * the document was written in. */
-    size_t n = strlen(path);
-    if (editor_path_is_fountain(path)) s_fountain = true;
-    else if (n > 3 && strcasecmp(path + n - 3, ".md") == 0) s_fountain = false;
+    editor_path_format(path, &s_format);
     return editor_save_file();
 }
 
-extern "C" bool editor_path_is_fountain(const char *path)
+static bool has_ext(const char *path, size_t n, const char *ext)
 {
-    static const char ext[] = ".fountain";
-    size_t n = path ? strlen(path) : 0;
-    return n > sizeof(ext) - 1 &&
-           strcasecmp(path + n - (sizeof(ext) - 1), ext) == 0;
+    size_t el = strlen(ext);
+    return n > el && strcasecmp(path + n - el, ext) == 0;
 }
 
-extern "C" bool editor_is_fountain(void) { return s_active && s_fountain; }
-
-extern "C" void editor_set_fountain(bool on)
+extern "C" bool editor_path_format(const char *path, editor_doc_format_t *out)
 {
-    if (s_active) s_fountain = on;
+    size_t n = path ? strlen(path) : 0;
+    editor_doc_format_t f;
+    if      (has_ext(path, n, ".md"))       f = EDITOR_DOC_MARKDOWN;
+    else if (has_ext(path, n, ".fountain")) f = EDITOR_DOC_FOUNTAIN;
+    else if (has_ext(path, n, ".txt"))      f = EDITOR_DOC_TEXT;
+    else return false;
+    if (out) *out = f;
+    return true;
+}
+
+extern "C" const char *editor_format_ext(editor_doc_format_t f)
+{
+    switch (f) {
+    case EDITOR_DOC_FOUNTAIN: return "fountain";
+    case EDITOR_DOC_TEXT:     return "txt";
+    default:                  return "md";
+    }
+}
+
+extern "C" editor_doc_format_t editor_get_format(void)
+{
+    return s_active ? s_format : EDITOR_DOC_MARKDOWN;
+}
+
+extern "C" void editor_set_format(editor_doc_format_t f)
+{
+    if (s_active) s_format = f;
+}
+
+extern "C" esp_err_t editor_rename_file(const char *old_path, const char *new_path)
+{
+    if (!old_path || !new_path || !old_path[0] || !new_path[0])
+        return ESP_ERR_INVALID_ARG;
+    if (strlen(new_path) >= sizeof(s_docs[0].path)) return ESP_ERR_INVALID_SIZE;
+    /* A case-only change names the same file on FAT. */
+    if (strcasecmp(old_path, new_path) != 0 && sd_card_file_exists(new_path))
+        return ESP_ERR_INVALID_STATE;
+    esp_err_t err = sd_card_rename(old_path, new_path);
+    if (err != ESP_OK) return err;
+
+    /* The metadata sidecar follows its file. Best effort: a missing
+     * or unmovable sidecar only loses the resume position. */
+    char old_meta[320], new_meta[320];
+    meta_path_for(old_path, old_meta, sizeof(old_meta));
+    meta_path_for(new_path, new_meta, sizeof(new_meta));
+    if (old_meta[0] && new_meta[0] && sd_card_file_exists(old_meta)) {
+        if (sd_card_file_exists(new_meta)) sd_card_delete_file(new_meta);
+        if (sd_card_rename(old_meta, new_meta) != ESP_OK)
+            ESP_LOGW(TAG, "Rename: could not move %s", old_meta);
+    }
+
+    /* An open document keeps editing the renamed file, in the format
+     * its new extension names. */
+    for (int i = 0; i < EDITOR_MAX_DOCS; i++) {
+        editor_doc_t *d = &s_docs[i];
+        if (!d->in_use || strcmp(d->path, old_path) != 0) continue;
+        strncpy(d->path, new_path, sizeof(d->path) - 1);
+        d->path[sizeof(d->path) - 1] = '\0';
+        editor_path_format(new_path, &d->format);
+    }
+    ESP_LOGI(TAG, "Renamed: %s -> %s", old_path, new_path);
+    return ESP_OK;
 }
 
 extern "C" void editor_new_file(void)
@@ -581,7 +637,7 @@ extern "C" void editor_new_file(void)
     s_gap_end   = s_buf_size;
     s_path[0]   = '\0';
     s_modified  = false;
-    s_fountain  = false;
+    s_format    = EDITOR_DOC_MARKDOWN;
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_flat();
@@ -731,9 +787,9 @@ extern "C" void editor_discard_all_changes(void)
                          path);
             }
         } else {
-            bool fountain = d->fountain;
+            editor_doc_format_t format = d->format;
             editor_new_file();
-            d->fountain = fountain;
+            d->format = format;
         }
     }
     s_active = (prev && prev->in_use) ? prev : pick_any_active();

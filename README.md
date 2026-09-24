@@ -50,8 +50,11 @@ load the firmware quickly without having to compile it.
   mode that formats scenes, characters, dialogue and transitions as you
   type. See [Writing screenplays](#writing-screenplays-fountain) below.
 
-- **File browser** to open and manage `.md` and `.fountain` files on
-  the SD card
+- **Plain text**: `.txt` files open with no formatting at all -- the
+  text is shown and edited exactly as typed.
+
+- **File browser** to open, create and rename `.md`, `.fountain` and
+  `.txt` files on the SD card
   (entries sorted alphabetically, directories first)
 
 - **Markdown rendering**: headings (H1-H4), bullet and numbered lists,
@@ -94,7 +97,7 @@ load the firmware quickly without having to compile it.
   restored to its previous position and the view scrolls so the cursor
   is visible. The `.meta` files are hidden from the file browser (they
   start with a dot) and are ignored by Git sync (which only commits
-  `*.md` and `*.fountain` files).
+  `*.md`, `*.fountain` and `*.txt` files).
 
 - **Color themes** On color LCD boards the editor offers a
   runtime-selectable color theme (F1 -> Settings -> Color theme):
@@ -132,7 +135,7 @@ load the firmware quickly without having to compile it.
 | Ctrl+Up/Down | Scroll by page (same as PgUp/PgDn) |
 | Ctrl+S | Save file |
 | Ctrl+O | Open file browser |
-| Ctrl+N | New file |
+| Ctrl+N | New file (asks for the format: Markdown, Fountain or plain text) |
 | Ctrl+L | Cycle keyboard layout |
 | Win+Space | Cycle keyboard layout (same as Ctrl+L) |
 | Ctrl+M | Menu (same as F1) |
@@ -155,18 +158,26 @@ load the firmware quickly without having to compile it.
 
 `Ctrl+P` and `Ctrl+1` / `Ctrl+2` / `Ctrl+3` also work in the file
 browser (the split layout applies the next time you open a file).
-In the file browser, `N` starts a new Markdown file and `Ctrl+F` a new
-Fountain screenplay.
+
+In the file browser:
+
+| Shortcut | Action |
+|----------|--------|
+| Up / Down, Enter | Select and open a file |
+| N or Ctrl+N | New file: pick Markdown (`.md`), Fountain screenplay (`.fountain`) or plain text (`.txt`) with Up/Down + Enter, or press M / F / T |
+| Alt+R | Rename the selected file. The name must end in `.md`, `.fountain` or `.txt`; the saved cursor position (the `.meta` file) moves with it, and changing the extension changes the format |
+| F1 / Ctrl+M | Menu |
 
 
 ## Writing screenplays (Fountain)
 
 Besides Markdown, Draftling edits screenplays in the plain-text
 [Fountain](https://fountain.io/syntax/) format. A file whose name ends
-in `.fountain` opens in Fountain mode; `Ctrl+F` in the file browser
-starts a new, untitled screenplay, and `Ctrl+S` then offers a
-`draft_NNN.fountain` name. Saving under a `.md` name switches the
-document back to Markdown. In split mode each pane keeps its own
+in `.fountain` opens in Fountain mode; `Ctrl+N` (or `N` in the file
+browser) followed by "Fountain screenplay" starts a new, untitled
+screenplay, and `Ctrl+S` then offers a `draft_NNN.fountain` name.
+Saving under a `.md` or `.txt` name switches the document to Markdown
+or plain text. In split mode each pane keeps its own
 format, so a screenplay can sit next to Markdown notes.
 
 As in the Slugline editor, the screenplay is formatted as you type,

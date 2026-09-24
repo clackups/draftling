@@ -137,7 +137,8 @@ components/                 Reusable IDF components
   ble_keyboard/             BLE HID keyboard host (Bluedroid)
   display/                  RLCD SPI display driver and LVGL port
   editor/                   Gap-buffer text editor, Markdown / Fountain
-                            parsers and format hooks, LVGL UI
+                            parsers, Markdown / Fountain / plain-text
+                            format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
   git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
@@ -475,29 +476,56 @@ The largest component. Contains:
   underline`), notes (`code`, `mark_len` 0) and boneyard text
   (`strikethrough`, `mark_len` 0); notes and boneyard may span lines.
 - **editor_format.h** (`private_include/`), **md_editor.cpp**,
-  **fountain_editor.cpp** -- per-format editing behaviour.
-  `editor_ui.cpp` holds everything the formats share and asks
-  `editor_format_active()` (picked from the active document's
-  `editor_is_fountain()` flag) for line classification with scan state
+  **fountain_editor.cpp**, **text_editor.cpp** -- per-format editing
+  behaviour. `editor_ui.cpp` holds everything the formats share and
+  asks `editor_format_active()` (picked from the active document's
+  `editor_get_format()`) for line classification with scan state
   (`parse_line`), marker hiding / line-wide decoration (`mark_line`),
   per-element label layout (`apply_layout`: Fountain's screenplay
   indents and alignment), the e-paper typing fast-path check
   (`line_is_plain`; always false for Fountain) and Enter / Tab hooks
   (Fountain: a blank line after a scene heading / transition, and
   Slugline-style Tab completion of character names and scene
-  headings). Keep format-specific code in these files rather than in
+  headings). The plain-text format classifies every line as a
+  paragraph (or empty) with no spans, markers or decorations, so the
+  text displays exactly as typed (tabs still expand to four cells).
+  Keep format-specific code in these files rather than in
   `editor_ui.cpp`.
 - **draftling_logo.c** -- embedded LVGL image for the splash screen.
 
-**Fountain mode** is a per-document flag in `editor_doc_t`
-(`editor_is_fountain()` / `editor_set_fountain()`):
-`editor_open_file()` sets it for a `.fountain` path,
-`editor_save_file_as()` follows a `.fountain` / `.md` name, and
-`Ctrl+F` in either file browser starts an untitled screenplay (the
-save prompt then proposes `draft_NNN.fountain`). Because every pane
-renders its own bound document, the two panes of a split can show
-different formats. The file browser lists `.md` and `.fountain`
-files.
+**Document format** is a per-document `editor_doc_format_t` in
+`editor_doc_t` (`EDITOR_DOC_MARKDOWN`, `EDITOR_DOC_FOUNTAIN`,
+`EDITOR_DOC_TEXT`; `editor_get_format()` / `editor_set_format()`).
+`editor_path_format()` maps a `.md` / `.fountain` / `.txt` name to its
+format (and is what the file browser filters on);
+`editor_open_file()` sets the format from the path (Markdown for an
+unrecognised extension), `editor_save_file_as()` follows a recognised
+extension and otherwise keeps the current format, and
+`editor_format_ext()` gives the extension `generate_default_name()`
+proposes (`draft_NNN.<ext>`, numbers shared across all three). Because
+every pane renders its own bound document, the two panes of a split
+can show different formats.
+
+**New file.** `Ctrl+N` in the editor and `N` / `Ctrl+N` in either file
+browser raise the format picker overlay (`s_newfmt_panel`,
+`show_newfmt_prompt()` / `handle_newfmt_prompt_key()`): Markdown,
+Fountain screenplay or plain text, chosen with Up/Down + Enter or the
+M / F / T accelerators. A `newdoc_target_t` remembers where it was
+raised (full-screen browser, split-mode in-pane selector, or editor)
+so `newfmt_prompt_activate()` creates the untitled document in the
+right place and then applies the format.
+
+**Rename.** `Alt+R` in either file browser opens the save-as name
+overlay in rename mode (`show_rename_prompt()`, `s_save_is_rename`).
+The overlay (like the format picker) is re-parented with
+`lv_obj_set_parent()` onto the active screen each time it is shown,
+since the browser and the editor are different LVGL screens.
+`editor_rename_file()` renames the file and its `.<name>.meta`
+sidecar, refuses to overwrite an existing file (a case-only change is
+allowed), and re-points any open document with the old path at the
+new one (taking the new extension's format). The UI rejects names
+without a document extension, since the file would vanish from the
+browser. Directories cannot be renamed.
 
 **Settings** is the first item in the F1 menu (moved to the top so it
 is a single Enter away without navigating past the connectivity
@@ -526,6 +554,7 @@ on. The persistent state (open document, NVS-backed font size /
 theme / backlight / standby timeout) survives the rebuild.
 
 Public API: `editor_init()`, `editor_open_file()`, `editor_save_file()`,
+`editor_rename_file()`, `editor_get_format()` / `editor_set_format()`,
 `editor_ui_init()`, `editor_ui_handle_key()`, `editor_find()`,
 `editor_replace_range()`, `md_parse_line()`, and many
 cursor/selection/clipboard helpers.
@@ -699,7 +728,7 @@ standard Git HTTP host works. Configuration (`repo_url`, `branch`,
 Source layout (all in-tree, no managed components):
 
 - `git_sync.cpp` -- config parsing, the sync task, the working-tree
-  file filter (`is_doc()`: `*.md` and `*.fountain`), and the orchestration
+  file filter (`is_doc()`: `*.md`, `*.fountain` and `*.txt`), and the orchestration
   (advertise -> clone -> local commit -> fetch -> fast-forward/rebase ->
   three-way merge -> checkout -> push). Keeps the historical public API.
 - `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA), and
@@ -734,7 +763,7 @@ things, not just on a malformed repo.
 
 Behaviour:
 
-- The working tree is the flat set of `*.md` and `*.fountain` files
+- The working tree is the flat set of `*.md`, `*.fountain` and `*.txt` files
   in the sync dir. An
   optional `path=` maps that set onto a sub-tree of the repository (the
   rest of the repo tree is preserved across commits).
@@ -768,7 +797,7 @@ Behaviour:
   correct it after the device's very first boot.
 
 Scope limits: one branch, no tags/submodules/signing, no shallow clone,
-flat `*.md` / `*.fountain` working tree only, HTTP Basic auth only (no SSH). LCS merge
+flat `*.md` / `*.fountain` / `*.txt` working tree only, HTTP Basic auth only (no SSH). LCS merge
 falls back to a whole-file conflict above ~1400 lines per side.
 
 Public API (unchanged): `git_sync_init()`, `git_sync_start()`,
@@ -827,8 +856,8 @@ in the F1 -> Settings menu; it defaults to US + UA. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
 Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
-in `editor_ui.cpp`) and the file browser's unmodified `N` (new file)
-accelerator resolve their letter via `kb_layout_shortcut_char()`, not
+in `editor_ui.cpp`), `Alt+R` and the file browser's unmodified `N`
+(new file) accelerator resolve their letter via `kb_layout_shortcut_char()`, not
 a raw `kb_layout_translate()` call: under a Latin layout (US/DE/FR) it
 follows the national layout, and is not limited to the classic 26-key
 US letter block -- so Ctrl+Z lands on the key printed "Z" on a German

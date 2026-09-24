@@ -8,15 +8,29 @@ in the git log.
 
 ### Added
 
+- **Plain text files**: files ending in `.txt` now show up in the file
+  browser and open with no formatting at all -- no hidden markers,
+  headings or bullets, just the text as typed. Git sync includes
+  `*.txt` files alongside `*.md` and `*.fountain`.
+- **Choose the format of a new file**: `Ctrl+N` (in the editor or the
+  file browser) and `N` in the file browser now ask whether the new
+  file is Markdown, a Fountain screenplay or plain text. Pick with
+  Up/Down and Enter, or press M, F or T.
+- **Rename files**: `Alt+R` in the file browser renames the selected
+  file. Its saved cursor position moves with it, and a file that is
+  open in the other split pane keeps editing under the new name.
+  Changing the extension (e.g. `.md` to `.txt`) changes how the file
+  is displayed.
+
 - **Fountain screenplays**: files ending in `.fountain` open in a
   screenplay mode that formats the script as you type, following the
   [Fountain](https://fountain.io/syntax/) rules: bold scene headings,
   indented character names, dialogue and parentheticals, right-aligned
   transitions, centered text, emphasis including `_underline_`, notes,
-  boneyard, sections, synopses, page breaks and the title page. `Ctrl+F`
-  in the file browser starts a new screenplay, and `Ctrl+S` offers a
-  `draft_NNN.fountain` name for it (draft numbers continue across
-  `.md` and `.fountain` drafts). Enter after a scene heading or
+  boneyard, sections, synopses, page breaks and the title page. Pick
+  "Fountain screenplay" when creating a new file to start one, and
+  `Ctrl+S` offers a `draft_NNN.fountain` name for it (draft numbers
+  continue across `.md`, `.fountain` and `.txt` drafts). Enter after a scene heading or
   transition adds the blank line that follows it, and Tab completes
   character names and scene headings already used in the script. In
   split mode each pane keeps its own format. Git sync now includes
