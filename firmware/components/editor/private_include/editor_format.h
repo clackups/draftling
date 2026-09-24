@@ -2,8 +2,8 @@
 
 /* Per-format editing behaviour, private to the editor component.
  *
- * A document is either Markdown or Fountain (editor_is_fountain()).
- * editor_ui.cpp owns everything the two formats share -- line labels,
+ * A document is Markdown, Fountain or plain text (editor_get_format()).
+ * editor_ui.cpp owns everything the formats share -- line labels,
  * cursor, selection, the WYSIWYG decoration painter -- and asks the
  * active document's editor_format_t for what differs: how a line is
  * classified (with any state carried from the lines above it), which
@@ -11,7 +11,8 @@
  * the per-element label layout, whether the e-paper typing fast path
  * may be used, and format-specific Enter / Tab behaviour.
  *
- * md_editor.cpp implements Markdown, fountain_editor.cpp Fountain. */
+ * md_editor.cpp implements Markdown, fountain_editor.cpp Fountain and
+ * text_editor.cpp plain text. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -77,11 +78,16 @@ typedef struct {
 
 extern const editor_format_t md_editor_format;
 extern const editor_format_t fountain_editor_format;
+extern const editor_format_t text_editor_format;
 
 /* The format of the active document. */
 static inline const editor_format_t *editor_format_active(void)
 {
-    return editor_is_fountain() ? &fountain_editor_format : &md_editor_format;
+    switch (editor_get_format()) {
+    case EDITOR_DOC_FOUNTAIN: return &fountain_editor_format;
+    case EDITOR_DOC_TEXT:     return &text_editor_format;
+    default:                  return &md_editor_format;
+    }
 }
 
 /* Start a top-to-bottom scan of the active document. */

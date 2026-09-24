@@ -15,8 +15,8 @@
  *
  * Scope limits (documented in AGENTS.md / README.md):
  *   - a single branch, no tags, no submodules, no signed objects
- *   - the working tree is the flat set of "*.md" and "*.fountain"
- *     files in <workdir>; an optional remote sub-directory prefix
+ *   - the working tree is the flat set of "*.md", "*.fountain" and
+ *     "*.txt" files in <workdir>; an optional remote sub-directory prefix
  *     ("path=") maps that flat set onto a sub-tree of the repository
  *   - full history is fetched on the first sync (no shallow clone)
  */
@@ -105,7 +105,7 @@ const char *git_obj_type_name(git_obj_type t);
 git_obj_type git_obj_type_from_name(const char *s);
 
 /* Open (creating .git if needed). `workdir` is the SD directory that
- * holds the "*.md" / "*.fountain" working tree (e.g. "/sdcard"). */
+ * holds the "*.md" / "*.fountain" / "*.txt" working tree (e.g. "/sdcard"). */
 esp_err_t git_repo_open(const char *workdir);
 void      git_repo_close(void);
 const char *git_repo_gitdir(void);   /* "<workdir>/.git" */

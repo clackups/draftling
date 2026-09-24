@@ -111,19 +111,36 @@ esp_err_t editor_open_file(const char *path);
 esp_err_t editor_save_file(void);
 esp_err_t editor_save_file_as(const char *path);
 /* Start a new untitled document in Markdown mode (see
- * editor_set_fountain() for a screenplay). */
+ * editor_set_format() for another format). */
 void editor_new_file(void);
 void editor_close_file(void);
 
-/* Fountain screenplay mode (https://fountain.io/). Each document is
- * either Markdown (the default) or Fountain: editor_open_file() picks
- * Fountain for a ".fountain" file, editor_save_file_as() switches the
- * mode to match a ".fountain" / ".md" name, and editor_set_fountain()
- * sets it explicitly (e.g. for a new untitled screenplay). The flag
- * only changes how the UI renders and edits the text. */
-bool editor_is_fountain(void);
-void editor_set_fountain(bool on);
-bool editor_path_is_fountain(const char *path);
+/* Document format. Each document is Markdown (the default), a
+ * Fountain screenplay (https://fountain.io/) or plain text:
+ * editor_open_file() picks the format from the file's extension
+ * (".md", ".fountain", ".txt"), editor_save_file_as() switches it to
+ * match a recognised extension, and editor_set_format() sets it
+ * explicitly (e.g. for a new untitled document). The format only
+ * changes how the UI renders and edits the text. */
+typedef enum {
+    EDITOR_DOC_MARKDOWN,
+    EDITOR_DOC_FOUNTAIN,
+    EDITOR_DOC_TEXT,
+} editor_doc_format_t;
+
+editor_doc_format_t editor_get_format(void);
+void editor_set_format(editor_doc_format_t f);
+/* True if path ends in a document extension; stores its format in
+ * *out (when non-NULL). */
+bool editor_path_format(const char *path, editor_doc_format_t *out);
+/* The file extension of a format, without the dot ("md", ...). */
+const char *editor_format_ext(editor_doc_format_t f);
+
+/* Rename a file on the SD card together with its metadata sidecar.
+ * Any open document backed by old_path follows the file (and takes the
+ * format of the new extension). Fails with ESP_ERR_INVALID_STATE if
+ * new_path already exists. */
+esp_err_t editor_rename_file(const char *old_path, const char *new_path);
 /* Persist per-file metadata (cursor, scroll line, ...) to the
  * sidecar next to the currently-open file. No-op if no file is
  * open. Safe to call repeatedly. */

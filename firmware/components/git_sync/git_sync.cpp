@@ -4,8 +4,8 @@
  * editor: it keeps a real commit history under <sdcard>/.git, and on
  * every sync it
  *
- *   1. commits the current working tree ("*.md" and "*.fountain" files)
- *      locally,
+ *   1. commits the current working tree ("*.md", "*.fountain" and
+ *      "*.txt" files) locally,
  *   2. fetches the remote branch over the smart Git HTTP protocol,
  *   3. fast-forwards or rebases the local commits onto the remote tip,
  *      running a diff3 line merge and committing any conflicts as-is
@@ -158,8 +158,8 @@ static void iso_now(char *out, size_t outsz)
 
 #define WT_MAX_FILES 128
 
-/* A working-tree document: Markdown ("*.md") or a Fountain screenplay
- * ("*.fountain"). Hidden files (the editor's ".<name>.meta" sidecars)
+/* A working-tree document: Markdown ("*.md"), a Fountain screenplay
+ * ("*.fountain") or plain text ("*.txt"). Hidden files (the editor's ".<name>.meta" sidecars)
  * are never synced. */
 static bool has_suffix(const char *name, size_t l, const char *sfx)
 {
@@ -171,7 +171,8 @@ static bool is_doc(const char *name)
 {
     size_t l = strlen(name);
     return name[0] != '.' &&
-           (has_suffix(name, l, ".md") || has_suffix(name, l, ".fountain"));
+           (has_suffix(name, l, ".md") || has_suffix(name, l, ".fountain") ||
+            has_suffix(name, l, ".txt"));
 }
 
 /* "<dir>/<name>" without tripping -Wformat-truncation. */
