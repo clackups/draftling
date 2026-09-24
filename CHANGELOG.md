@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-24
+
 ### Added
 
 - **Plain text files**: files ending in `.txt` now show up in the file
