@@ -79,6 +79,7 @@ card).
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
+| M5Stack PaperMono / PaperMono-Lite (**experimental**, untested on physical hardware) | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
 monochrome e-paper panel driven by an UltraChip UC8179 controller over
@@ -141,7 +142,8 @@ components/                 Reusable IDF components
                             format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard family)
   git_sync/                 Native Git client (smart HTTP) + local history
-  io_expander/              CH422G I2C IO-expander driver (Waveshare Touch-LCD-7)
+  io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
+                            (M5Stack PaperMono) I2C IO-expander drivers
   kb_layout/                Keyboard layout translation (US/UA/DE/FR)
   power/                    TCA9554-latched battery rail + PWR-button driver
   sd_card/                  SD card (SDMMC 1-bit) file operations
@@ -244,6 +246,21 @@ Two backends:
   `battery_init_axp2101()` runs later in the normal boot sequence.
   Both entry points share one cached I2C device handle so the chip is
   only ever added to the bus once, regardless of call order.
+* **M5Stack M5PM1 power-management chip** over I2C
+  (`battery_init_m5pm1(bus)`): used on the M5Stack PaperMono, at
+  0x6E. The chip keeps its registers across ESP32 resets and may sit
+  in I2C idle sleep, so init first wakes it with an address probe,
+  then disables its I2C idle sleep (register 0x09) and watchdog
+  (0x0A) and sets the rail/charging bits in PWR_CFG (0x06) -- the same
+  writes as M5GFX's board_M5PaperMono bring-up. main.cpp therefore
+  calls it early, before `display_init()`, and the normal battery-init
+  call later is a no-op. Voltage comes from VBAT (0x22/0x23, 12-bit
+  mV); there is no fuel gauge, so the percentage uses the LiPo LUT.
+  `battery_read_charging()` reports 1 while PWR_SRC (0x04) says USB
+  (5VIN) powers the board. The chip's GPIO3 doubles as PWM0, which
+  drives the PaperMono front-light:
+  `battery_m5pm1_set_frontlight(percent)`, called by that board's
+  display backend from `display_set_backlight()`.
 
 When no backend has been initialized, `battery_read_percent()`
 returns -1 and the editor UI hides the battery indicator.
@@ -258,6 +275,7 @@ hides the `+` charging glyph on those boards.
 Public API: `battery_init()`, `battery_init_bq27220()`,
 `battery_init_ina226()`, `battery_init_cw2017()`,
 `battery_init_axp2101()`, `battery_axp2101_enable_display_rail()`,
+`battery_init_m5pm1()`, `battery_m5pm1_set_frontlight()`,
 `battery_read_mv()`, `battery_read_percent()`, `battery_read_charging()`.
 
 ### components/ble_keyboard/
@@ -415,6 +433,17 @@ Per-board display backends behind a single C API:
   MicroSD slot) using the UltraChip UC8179 controller and OTP waveforms.
   Supports full refresh (~1.2 s, TSSET 0x5A) and fast partial windowed
   updates (~450 ms, TSSET 0x6E, PARTIAL_IN/WINDOW/OUT). No backlight.
+- **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
+  for the M5Stack PaperMono / PaperMono-Lite, gated on
+  `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
+  differential-refresh protocol and RAM addressing as
+  `display_ws_epd397.cpp` (M5GFX's Panel_SSD1677 addresses this panel
+  the same way), with M5GFX's booster soft-start / border values. The
+  panel has no reset GPIO: its supply and RST are M5IOE1 expander
+  outputs that main.cpp drives before `display_init()`, so
+  `display_set_shared_i2c_bus()` is a no-op here. The front-light is
+  the M5PM1's PWM0 (`battery_m5pm1_set_frontlight()`).
+  **Experimental / untested on physical hardware.**
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -836,6 +865,24 @@ needs to toggle again -- see `sd_card_init_spi()`'s handling of
 for the full EXIO pin map.
 
 Public API: `ch422g_init()`, `ch422g_set_pin()`.
+
+The component also carries an M5Stack M5IOE1 driver
+(`io_expander_m5ioe1.cpp`), compiled in only when
+`CONFIG_DRAFTLING_HAS_M5IOE1` is set (currently only the M5Stack
+PaperMono) and stubbed out otherwise. The M5IOE1 (fixed address 0x4F)
+is a register-addressed 14-pin expander: each GPIO setting is a
+16-bit little-endian register pair, one bit per pin (PYG1 = bit 0).
+Only digital outputs are implemented: `m5ioe1_set_pin(pin, level)`
+makes PYG<pin> a push-pull output without pulls and drives it, and
+`m5ioe1_release_pin()` returns it to a high-impedance input.
+`m5ioe1_init()` probes the chip (which wakes it from I2C idle sleep)
+and disables its idle sleep (register 0x23). On the PaperMono,
+main.cpp uses it before `display_init()` to power the e-paper panel,
+the FT6336G touch controller and the MicroSD card and to pulse the
+panel and touch reset lines, and the pre-sleep hook switches those
+supplies off again.
+
+Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
 
 ### components/kb_layout/
 
@@ -1403,16 +1450,34 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   switch (Up/Down/OK) provide full menu navigation without a
   keyboard. No on-board battery monitor. Extensively tested on
   physical hardware; see HARDWARE.md. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_M5STACK_PAPERMONO** -- M5Stack PaperMono /
+  PaperMono-Lite (one build for both; the full PaperMono's NFC and
+  LoRa modules are left unused): 3.97" 800x480 SSD1677 e-paper driven
+  by `components/display/display_m5_papermono.cpp`, front-light,
+  FT6336G touch, MicroSD on SDMMC 1-bit, all on peripherals switched
+  by an M5IOE1 IO expander and an M5PM1 power-management chip on the
+  shared I2C bus (SDA=47, SCL=48). main.cpp brings both chips up
+  before `display_init()`: `battery_init_m5pm1()`, then
+  `m5ioe1_init()` + `m5ioe1_set_pin()` to power the panel, touch and
+  SD card and pulse the panel/touch reset lines. Touch reports a
+  480x800 portrait frame (`TOUCH_NATIVE_W/H` 480/800, swap + mirror
+  X). Button A (GPIO2) is the wake source, Page Up on a short press
+  and forget-keyboards on a 2 s hold; Button B (GPIO3) is Page Down on
+  a short press and sleep on a 2 s hold
+  (`CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO`); `papermono_btn_init()` in
+  main.cpp suppresses the Page Up/Down on a long hold. **Experimental
+  -- added without on-hardware testing**; see HARDWARE.md.
+  *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic), 792
-  (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
+  M5Stack PaperMono), 792 (Elecrow CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic), 272
-  (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
+  M5Stack PaperMono), 272 (Elecrow CrowPanel 5.79").
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -1563,30 +1628,33 @@ in C / C++ code:
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
 | DRAFTLING_MODEL_XTEINK_X4         | Common to the Xteink X4 Pro and X4 Classic (shared `display_xteink_epd.cpp` backend, CW2017 gauge, SDMMC slot, OTA partition table, GPIO1 peripheral-rail latch, GPIO3 Power/wake) | Xteink X4 Pro, Xteink X4 Classic |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_WS_EPD397       | Selects `display_ws_epd397.cpp` (plain SPI, single SSD1677-family controller, no boot-time detection) | Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_DISPLAY_M5_PAPERMONO    | Selects `display_m5_papermono.cpp` (plain SPI, single SSD1677 controller; panel supply/reset on the M5IOE1, front-light on the M5PM1) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
 | DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
+| DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97 |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
-| DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S |
+| DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S, M5Stack PaperMono (FT6336G) |
 
 Components MUST key off these derived symbols; they MUST NOT
 test `DRAFTLING_MODEL_*` directly. Adding a new model means
@@ -1684,7 +1752,8 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `xteink_x4_pro`, `xteink_x4_classic`,
-`elecrow_crowpanel_579`, `waveshare_epaper_397`). Each
+`elecrow_crowpanel_579`, `waveshare_epaper_397`,
+`seeed_reterminal_e1001`, `m5stack_papermono`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
@@ -1720,7 +1789,9 @@ the web flasher (see below) -- currently `m5stack_papers3`,
 `xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
 `waveshare_touch_lcd_349`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, and `elecrow_crowpanel_579`. Extend the list there
+`freenove_fnk0104s`, `elecrow_crowpanel_579`, and `m5stack_papermono`
+(experimental -- untested on physical hardware, same as
+`xteink_x4_classic`). Extend the list there
 as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply

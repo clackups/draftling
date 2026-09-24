@@ -25,6 +25,7 @@ load the firmware quickly without having to compile it.
   * Xteink X4 Classic (**unlocked devices only!**) -- the buttons-only, no-front-light X4 (untested on physical hardware).
   * LilyGO T5 E-Paper S3 Pro / Pro Lite
   * M5Stack PaperS3 (discontinued)
+  * M5Stack PaperMono / PaperMono-Lite (experimental, untested on physical hardware)
   * Waveshare ESP32-S3-Touch-LCD-3.49
   * Seeed Studio reTerminal E1001 (7.5" e-paper)
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
@@ -107,7 +108,7 @@ load the firmware quickly without having to compile it.
 - **SD card via USB** On boards whose USB port wires the ESP32-S3's
   native USB controller straight to the connector (Xteink X4 Pro /
   Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite / H752, M5Stack
-  PaperS3, Waveshare ESP32-S3-ePaper-3.97, ESP32-S3-RLCD-4.2,
+  PaperS3 and PaperMono, Waveshare ESP32-S3-ePaper-3.97, ESP32-S3-RLCD-4.2,
   ESP32-S3-Touch-LCD-7 and ESP32-S3-Touch-LCD-3.49, and all three
   Freenove FNK0104 boards), F1 -> "SD card via USB" opens a picker
   for Off / Read-only / Read-write; the choice applies as soon as you

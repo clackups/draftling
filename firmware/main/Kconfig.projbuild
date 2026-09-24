@@ -268,6 +268,29 @@ config DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
         KEY2 (GPIO5) scroll the editor a screen at a time (Page Up /
         Page Down). PCF8563 RTC on I2C.
 
+config DRAFTLING_MODEL_M5STACK_PAPERMONO
+    bool "M5Stack PaperMono / PaperMono-Lite (SSD1677, 3.97\" e-paper, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        M5Stack PaperMono-Lite (and the full PaperMono, whose extra
+        NFC and LoRa modules Draftling leaves unused): 3.97" 800x480
+        e-paper panel (SSD1677) driven over plain SPI by
+        components/display/display_m5_papermono.cpp, FT6336G
+        capacitive touch, front-light, on-board MicroSD on SDMMC
+        1-bit. Two chips on the shared I2C bus (SDA=47, SCL=48) gate
+        the board's peripherals: the M5IOE1 IO expander switches the
+        e-paper panel supply, the panel and touch reset lines and the
+        touch and MicroSD power (components/io_expander/), and the
+        M5PM1 power-management chip reports the battery voltage and
+        dims the front-light (components/battery/). Button A (GPIO2)
+        wakes the device from deep sleep; see main/boards/
+        m5stack_papermono.h for the button mapping.
+
+        EXPERIMENTAL: added without on-hardware testing. Pin numbers
+        and the M5PM1 / M5IOE1 register maps come from M5Stack's
+        documentation and its MIT-licensed M5GFX, M5PM1, M5IOE1 and
+        M5PaperMono-PowerDemo sources.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -426,6 +449,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -509,6 +533,26 @@ config DRAFTLING_DISPLAY_SEEED_E1001
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default n
 
+# DRAFTLING_DISPLAY_M5_PAPERMONO selects the from-scratch SPI e-paper
+# backend for the M5Stack PaperMono / PaperMono-Lite
+# (components/display/display_m5_papermono.cpp): the same single
+# SSD1677-family controller and differential-refresh protocol as
+# display_ws_epd397.cpp, with the panel supply and reset behind the
+# M5IOE1 IO expander (driven from main.cpp before display_init()) and
+# the front-light dimmed through the M5PM1 PWM output.
+config DRAFTLING_DISPLAY_M5_PAPERMONO
+    bool
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    default n
+
+# DRAFTLING_HAS_M5IOE1 compiles in the M5Stack M5IOE1 I2C IO-expander
+# driver (components/io_expander/io_expander_m5ioe1.cpp). On every
+# other board its functions are no-op stubs.
+config DRAFTLING_HAS_M5IOE1
+    bool
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    default n
+
 # DRAFTLING_EPDIY_BOARD_PAPERS3 selects the in-tree PaperS3 board
 # definition (components/display/epd_board_papers3.c) instead of
 # epdiy's built-in epd_board_v7. The PaperS3 has no TPS65185 and no
@@ -542,6 +586,9 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # Draftling has no warm/cool color-temperature UI. The X4 Classic
     # has no front-light and is deliberately left off here.
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # M5Stack PaperMono: front-light PWM on the M5PM1's GPIO3 (PWM0),
+    # set over I2C by the display backend.
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
 # DRAFTLING_DISPLAY_BACKLIGHT_BINARY is set automatically on boards
@@ -583,6 +630,7 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 0 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default 0 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     # X4 Classic has no front-light, so DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # is off there and this value is never consulted.
     default 10
@@ -655,6 +703,20 @@ config DRAFTLING_HAS_BATTERY
     # backend's file header comment.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    # M5Stack PaperMono: battery voltage read from the M5PM1
+    # power-management chip (DRAFTLING_BATTERY_M5PM1 below).
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    default n
+
+# Selects the M5Stack M5PM1 power-management backend in
+# components/battery/. main.cpp calls battery_init_m5pm1(shared_i2c_bus)
+# early in boot, before display_init(): besides reporting the battery
+# voltage it disables the chip's I2C idle sleep and watchdog and turns
+# on its 3.3 V rails, and its PWM0 output drives the front-light
+# (battery_m5pm1_set_frontlight(), called by the display backend).
+config DRAFTLING_BATTERY_M5PM1
+    bool
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
 # Selects the CW2017 fuel-gauge backend in components/battery/
@@ -803,6 +865,7 @@ config DRAFTLING_HAS_USB_MSC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
 config DRAFTLING_USB_MSC_IDLE_TIMEOUT_SEC
@@ -887,6 +950,9 @@ config DRAFTLING_SD_SDMMC
     # The vendor wires a full 4-bit bus, but Draftling only uses 1-bit
     # mode (CLK/CMD/D0); the D1-D3 lines are left unconfigured.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    # M5Stack PaperMono: 4-bit wired, used in 1-bit mode. The card's
+    # supply is switched by the M5IOE1 expander (main.cpp turns it on).
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
 # DRAFTLING_WAKEUP_GPIO is the per-board RTC-capable GPIO used as
@@ -933,6 +999,8 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     # Seeed Studio reTerminal E1001: KEY0 button on GPIO3 (active-low, RTC-capable).
     default 3  if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    # M5Stack PaperMono: Button A on GPIO2 (active-low, RTC-capable).
+    default 2  if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default 0
 
 # DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
@@ -955,6 +1023,9 @@ config DRAFTLING_SLEEP_BUTTON_GPIO
     # rocker) injects KB_KEY_ENTER on short press
     # (ws_epaper397_nav_poll_cb); a 2 s hold enters deep sleep instead.
     default 5  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    # M5Stack PaperMono: Button B (GPIO3) is Page Down on a short
+    # press (papermono_btn_poll_cb); a 2 s hold enters deep sleep.
+    default 3  if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default -1
 
 # ---- Touchscreen support ----
@@ -1002,6 +1073,7 @@ config DRAFTLING_TOUCHSCREEN
     # block in main.cpp. Default touch on to match the "Touch-LCD"
     # naming and the reliable wiring.
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -1049,6 +1121,8 @@ config DRAFTLING_TOUCH_FT6336U
     depends on DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # M5Stack PaperMono: FT6336G (same register protocol) at 0x38.
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
     help
         FocalTech FT6336U. Register-addressed protocol: 8-bit
@@ -1106,6 +1180,9 @@ config DRAFTLING_TOUCH_INT_GPIO
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     # Xteink X4 Pro: GT911 INT.
     default 10 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # M5Stack PaperMono: FT6336G INT on GPIO4. Its reset line is on
+    # the M5IOE1 expander, pulsed from main.cpp.
+    default 4  if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default -1
 
 # Touchscreen reset GPIO. The reset line is often tied to the LCD
@@ -1219,6 +1296,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default 800 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -1243,6 +1321,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default 480 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -1315,6 +1394,7 @@ config DRAFTLING_DISPLAY_HIDPI
     # (~219 DPI) above -- use the same Hack-font HIDPI path.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"

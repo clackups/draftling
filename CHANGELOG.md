@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **M5Stack PaperMono / PaperMono-Lite support (experimental)**:
+  3.97-inch 800x480 e-paper with touch, front-light, battery indicator
+  and MicroSD. Button A scrolls up and wakes the device (hold 2 s to
+  forget paired BLE keyboards), Button B scrolls down (hold 2 s to
+  sleep). Not yet tested on real hardware.
+
 ## [1.0.7] - 2026-09-24
 
 ### Added
