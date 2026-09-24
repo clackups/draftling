@@ -930,6 +930,11 @@ static lv_obj_t *s_save_cur      = NULL;   /* blinking cursor in name field */
 static bool      s_save_open     = false;
 static char      s_save_buf[128] = "";     /* editable filename (no directory) */
 static int       s_save_pos      = 0;      /* cursor position in s_save_buf (byte) */
+/* The same overlay renames the file browser's selected file (Alt+R):
+ * s_rename_src then holds the full path of the file being renamed and
+ * the panel is moved onto whichever screen is showing the browser. */
+static bool      s_save_is_rename = false;
+static char      s_rename_src[512] = "";
 
 /* ---- WiFi "New connection" scan/pick flow ----
  * Selecting the F1 menu's "WiFi: New connection..." row
@@ -1023,6 +1028,33 @@ static const char *const SLEEP_OPT_LABELS[EXIT_OPT_COUNT] = {
     "Save and sleep",
     "Sleep without saving",
     "Cancel (keep editing)",
+};
+
+/* ---- New-document format picker ----
+ * Ctrl+N (and N in the file browser) asks which format the new
+ * untitled document is written in. The overlay is moved onto the
+ * active screen when shown: the editor screen for Ctrl+N in the editor
+ * and the split-mode in-pane selector, the browser screen otherwise. */
+typedef enum {
+    NEWDOC_BROWSER,   /* full-screen file browser: replace the document */
+    NEWDOC_INPANE,    /* split-mode in-pane selector: the focused pane */
+    NEWDOC_EDITOR,    /* Ctrl+N in the editor: the focused pane */
+} newdoc_target_t;
+
+#define NEWFMT_COUNT 3
+static lv_obj_t *s_newfmt_panel = NULL;
+static lv_obj_t *s_newfmt_opt_lbl[NEWFMT_COUNT] = { NULL, NULL, NULL };
+static bool      s_newfmt_open  = false;
+static int       s_newfmt_sel   = 0;
+static newdoc_target_t s_newfmt_target = NEWDOC_BROWSER;
+
+static const editor_doc_format_t NEWFMT_FORMATS[NEWFMT_COUNT] = {
+    EDITOR_DOC_MARKDOWN, EDITOR_DOC_FOUNTAIN, EDITOR_DOC_TEXT,
+};
+static const char *const NEWFMT_LABELS[NEWFMT_COUNT] = {
+    "Markdown (.md)",
+    "Fountain screenplay (.fountain)",
+    "Plain text (.txt)",
 };
 
 /* ---- Device battery display ----
@@ -1310,6 +1342,7 @@ static bool      s_inpane_browser_open = false;
 /* Defined further down with the rest of the file-browser code. */
 static void show_inpane_browser(void);
 static void close_inpane_browser(void);
+static editor_doc_t *open_into_pane(int target, const char *path);
 
 /* Alias the historical per-document globals onto the current pane. */
 #define s_cont_edit              (s_rp->cont)
@@ -1771,7 +1804,12 @@ static void update_wifi_icons(void)
 static void update_title_bar(void)
 {
     const char *path = editor_get_file_path();
-    const char *name = editor_is_fountain() ? "Untitled screenplay" : "Untitled";
+    const char *name;
+    switch (editor_get_format()) {
+    case EDITOR_DOC_FOUNTAIN: name = "Untitled screenplay"; break;
+    case EDITOR_DOC_TEXT:     name = "Untitled text";       break;
+    default:                  name = "Untitled";            break;
+    }
     if (path) {
         const char *slash = strrchr(path, '/');
         name = slash ? slash + 1 : path;
@@ -3458,18 +3496,21 @@ static void browser_status_hint(char *buf, size_t buf_size)
         return;
     }
 #endif
-    snprintf(buf, buf_size, "F1:Menu  N:New  Ctrl+F:Screenplay");
+    snprintf(buf, buf_size, "F1:Menu  N:New  Alt+R:Rename");
 }
 
-static void refresh_file_list(void)
+static void refresh_file_list(const char *select_name = NULL)
 {
     /* Remember the currently-selected entry's filename (if any) so we
      * can restore the selection after the list is rebuilt. This keeps
      * the highlight where the user left it when returning from the
      * editor, and also preserves selection across a Git-sync refresh
-     * that added or removed files. */
+     * that added or removed files. select_name, when given, is
+     * selected instead (e.g. a file's new name after a rename). */
     char remembered_name[sizeof(s_browser_entries[0].name)] = {0};
-    if (s_browser_list && s_browser_sel >= 0 &&
+    if (select_name) {
+        strncpy(remembered_name, select_name, sizeof(remembered_name) - 1);
+    } else if (s_browser_list && s_browser_sel >= 0 &&
         s_browser_sel < (int)lv_obj_get_child_count(s_browser_list)) {
         lv_obj_t *cur_btn = lv_obj_get_child(s_browser_list, s_browser_sel);
         if (cur_btn) {
@@ -3485,7 +3526,8 @@ static void refresh_file_list(void)
     s_browser_count = sd_card_list_dir(mp, s_browser_entries, 64);
     if (s_browser_count < 0) s_browser_count = 0;
 
-    /* Filter to show only .md / .fountain files and directories */
+    /* Filter to show only documents (.md / .fountain / .txt) and
+     * directories */
     lv_obj_clean(s_browser_list);
 
     int restored_row = -1;
@@ -3493,11 +3535,7 @@ static void refresh_file_list(void)
     for (int i = 0; i < s_browser_count; i++) {
         const char *name = s_browser_entries[i].name;
         bool show = s_browser_entries[i].is_dir;
-        if (!show) {
-            size_t nlen = strlen(name);
-            show = (nlen > 3 && strcmp(name + nlen - 3, ".md") == 0) ||
-                   editor_path_is_fountain(name);
-        }
+        if (!show) show = editor_path_format(name, NULL);
         if (show) {
             char label[sizeof(s_browser_entries[0].name) + 8];
             if (s_browser_entries[i].is_dir)
@@ -5250,17 +5288,17 @@ static void handle_menu_key(const kb_event_t *ev)
 
 /* ---- Save-prompt overlay ---- */
 
-/* Compute a default filename for a new (untitled) document: a
- * ".fountain" name for a screenplay, ".md" otherwise. The draft
- * numbers are shared by both extensions, so a new screenplay after
+/* Compute a default filename for a new (untitled) document, with the
+ * extension of its format (".md", ".fountain" or ".txt"). The draft
+ * numbers are shared by all extensions, so a new screenplay after
  * draft_001.md becomes draft_002.fountain, not draft_001.fountain.
  * Returns the bare filename (no directory prefix). */
 static bool generate_default_name(char *buf, size_t buf_size)
 {
-    static const char *const exts[] = { "md", "fountain" };
+    static const char *const exts[] = { "md", "fountain", "txt" };
     const char *mp = sd_card_get_mount_point();
     if (!mp) return false;
-    const char *ext = editor_is_fountain() ? "fountain" : "md";
+    const char *ext = editor_format_ext(editor_get_format());
     char path[256];
     for (int seq = 1; seq <= MAX_DRAFT_SEQ; seq++) {
         bool taken = false;
@@ -5312,7 +5350,38 @@ static void show_save_prompt(void)
     }
     s_save_pos = (int)strlen(s_save_buf);
     s_save_open = true;
+    s_save_is_rename = false;
+    lv_label_set_text(s_save_hdr_lbl, "Save as (Enter/Esc):");
+    lv_obj_set_parent(s_save_panel, s_scr);
     lv_obj_remove_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_save_panel);
+    refresh_save_prompt();
+}
+
+/* Alt+R in the file browser: ask for a new name for the selected file. */
+static void show_rename_prompt(void)
+{
+    if (!s_save_panel || !s_browser_list) return;
+    lv_obj_t *btn = lv_obj_get_child(s_browser_list, s_browser_sel);
+    if (!btn) return;
+    int idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    if (idx < 0 || idx >= s_browser_count) return;
+    if (s_browser_entries[idx].is_dir) {
+        editor_ui_set_status("Only files can be renamed");
+        return;
+    }
+    const char *name = s_browser_entries[idx].name;
+    snprintf(s_rename_src, sizeof(s_rename_src), "%s/%s",
+             sd_card_get_mount_point(), name);
+    strncpy(s_save_buf, name, sizeof(s_save_buf) - 1);
+    s_save_buf[sizeof(s_save_buf) - 1] = '\0';
+    s_save_pos = (int)strlen(s_save_buf);
+    s_save_open = true;
+    s_save_is_rename = true;
+    lv_label_set_text(s_save_hdr_lbl, "Rename to (Enter/Esc):");
+    lv_obj_set_parent(s_save_panel, lv_scr_act());
+    lv_obj_remove_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_save_panel);
     refresh_save_prompt();
 }
 
@@ -5322,10 +5391,46 @@ static void close_save_prompt(void)
     lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void rename_prompt_confirm(void)
+{
+    const char *old_name = strrchr(s_rename_src, '/');
+    old_name = old_name ? old_name + 1 : s_rename_src;
+    if (strcmp(s_save_buf, old_name) == 0) {
+        close_save_prompt();
+        restore_default_status();
+        return;
+    }
+    if (!editor_path_format(s_save_buf, NULL)) {
+        /* Any other extension would hide the file from the browser. */
+        editor_ui_set_status("Name must end in .md, .fountain or .txt");
+        return;
+    }
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", sd_card_get_mount_point(), s_save_buf);
+    esp_err_t err = editor_rename_file(s_rename_src, path);
+    if (err == ESP_ERR_INVALID_STATE) {
+        editor_ui_set_status("Rename failed: name already exists");
+        return;
+    }
+    close_save_prompt();
+    if (err != ESP_OK) {
+        editor_ui_set_status("Rename failed!");
+        return;
+    }
+    refresh_file_list(s_save_buf);
+    char msg[80];
+    snprintf(msg, sizeof(msg), "Renamed to %.40s", s_save_buf);
+    editor_ui_set_status(msg);
+}
+
 static void save_prompt_confirm(void)
 {
     if (s_save_buf[0] == '\0') {
         /* Empty name -- ignore */
+        return;
+    }
+    if (s_save_is_rename) {
+        rename_prompt_confirm();
         return;
     }
     const char *mp = sd_card_get_mount_point();
@@ -5356,8 +5461,11 @@ static void handle_save_prompt_key(const kb_event_t *ev)
         return;
     case KB_KEY_ESCAPE:
         close_save_prompt();
-        editor_ui_set_status(
-            "F1:Menu Ctrl+S:Save Ctrl+L:Layout Ctrl+G:Git Esc:Files");
+        if (s_save_is_rename)
+            restore_default_status();
+        else
+            editor_ui_set_status(
+                "F1:Menu Ctrl+S:Save Ctrl+L:Layout Ctrl+G:Git Esc:Files");
         return;
     case KB_KEY_LEFT:
         if (s_save_pos > 0) {
@@ -5428,6 +5536,114 @@ static void handle_save_prompt_key(const kb_event_t *ev)
     }
     }
     refresh_save_prompt();
+}
+
+/* ---- New-document format picker logic ---- */
+
+static void refresh_newfmt_prompt(void)
+{
+    if (!s_newfmt_panel) return;
+    for (int i = 0; i < NEWFMT_COUNT; i++) {
+        if (!s_newfmt_opt_lbl[i]) continue;
+        bool sel = (i == s_newfmt_sel);
+        lv_obj_set_style_bg_color(s_newfmt_opt_lbl[i],
+                                  sel ? theme_fg() : theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_newfmt_opt_lbl[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(s_newfmt_opt_lbl[i],
+                                    sel ? theme_bg() : theme_fg(), 0);
+    }
+}
+
+static void show_newfmt_prompt(newdoc_target_t target)
+{
+    if (!s_newfmt_panel) return;
+    s_newfmt_target = target;
+    s_newfmt_open = true;
+    s_newfmt_sel = 0;
+    lv_obj_set_parent(s_newfmt_panel, lv_scr_act());
+    lv_obj_remove_flag(s_newfmt_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_newfmt_panel);
+    refresh_newfmt_prompt();
+}
+
+static void close_newfmt_prompt(void)
+{
+    s_newfmt_open = false;
+    if (s_newfmt_panel) lv_obj_add_flag(s_newfmt_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Start a new untitled document in the picked format where the picker
+ * was raised from. */
+static void newfmt_prompt_activate(void)
+{
+    editor_doc_format_t f = NEWFMT_FORMATS[s_newfmt_sel];
+    newdoc_target_t target = s_newfmt_target;
+    close_newfmt_prompt();
+
+    switch (target) {
+    case NEWDOC_BROWSER:
+        editor_new_file();
+        editor_set_format(f);
+        editor_ui_show_editor();
+        break;
+    case NEWDOC_INPANE:
+        /* A new document in the focused pane (not a global replace --
+         * that is the single-pane behavior). */
+        if (!open_into_pane(s_focus, NULL)) {
+            editor_ui_set_status("New failed");
+            return;
+        }
+        editor_set_format(f);
+        s_open_target_pane = s_focus;
+        close_inpane_browser();
+        ensure_cursor_visible();
+        editor_ui_show_editor();
+        break;
+    case NEWDOC_EDITOR:
+        /* In single-pane mode this is the historical "replace current
+         * doc" behavior; while split it only affects the focused pane. */
+        pane_bind_focus();
+        if (s_pane_count <= 1) {
+            editor_new_file();
+            s_panes[0].doc = editor_get_active();
+            s_panes[0].has_saved_view = false;   /* adopt the new doc's view */
+        } else {
+            open_into_pane(s_focus, NULL);
+        }
+        editor_set_format(f);
+        ensure_cursor_visible();
+        editor_ui_refresh();
+        break;
+    }
+}
+
+static void handle_newfmt_prompt_key(const kb_event_t *ev)
+{
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        s_newfmt_sel = (s_newfmt_sel + NEWFMT_COUNT - 1) % NEWFMT_COUNT;
+        refresh_newfmt_prompt();
+        return;
+    case KB_KEY_DOWN:
+        s_newfmt_sel = (s_newfmt_sel + 1) % NEWFMT_COUNT;
+        refresh_newfmt_prompt();
+        return;
+    case KB_KEY_ENTER:
+        newfmt_prompt_activate();
+        return;
+    case KB_KEY_ESCAPE:
+        close_newfmt_prompt();
+        return;
+    default:
+        break;
+    }
+    /* M / F / T pick a format directly. */
+    char ch = kb_layout_shortcut_char(ev->keycode);
+    int pick = (ch == 'm') ? 0 : (ch == 'f') ? 1 : (ch == 't') ? 2 : -1;
+    if (pick >= 0) {
+        s_newfmt_sel = pick;
+        newfmt_prompt_activate();
+    }
 }
 
 /* ---- Exit / sleep prompt overlay ----
@@ -6319,17 +6535,10 @@ static void handle_editor_key(const kb_event_t *ev)
             show_save_prompt();
             break;
         case 'n':
-            /* New empty document in the focused pane. In single-pane
-             * mode this is the historical "replace current doc"
-             * behavior; while split it only affects the focused pane. */
-            if (s_pane_count <= 1) {
-                editor_new_file();
-                s_panes[0].doc = editor_get_active();
-                s_panes[0].has_saved_view = false;   /* adopt the new doc's view */
-            } else {
-                open_into_pane(s_focus, NULL);
-            }
-            break;
+            /* New empty document in the focused pane, in the format
+             * picked from the overlay (see newfmt_prompt_activate()). */
+            show_newfmt_prompt(NEWDOC_EDITOR);
+            return;
         case 'o':
             /* Opening another file leaves the current document behind.
              * If it has unsaved changes, prompt to save / discard /
@@ -6726,7 +6935,7 @@ static void show_inpane_browser(void)
     /* The editor screen stays active (the other pane keeps rendering);
      * keystrokes are rerouted by the s_inpane_browser_open check in
      * process_key_event. */
-    editor_ui_set_status("Open into pane: Enter  N:new  ^F:screenplay  Esc:cancel");
+    editor_ui_set_status("Open into pane: Enter  N:new  Alt+R:rename  Esc:cancel");
 }
 
 /* Dismiss the in-pane file selector and restore the full-screen list
@@ -6910,14 +7119,6 @@ static void handle_browser_key(const kb_event_t *ev)
             return;
         }
 
-        if (ck == 'f') {
-            /* Ctrl+F: new untitled screenplay in Fountain mode (Ctrl+S
-             * then offers a ".fountain" name). */
-            editor_new_file();
-            editor_set_fountain(true);
-            editor_ui_show_editor();
-            return;
-        }
         if (ck == 'p') {
             /* Ctrl+P: deep sleep. No editor screen to prompt on here;
              * the standby pre-sleep hook auto-saves any open document. */
@@ -6995,17 +7196,24 @@ static void handle_browser_key(const kb_event_t *ev)
      * shortcuts are resolved (see kb_layout_shortcut_char()), not via
      * a raw layout translation -- otherwise the N key would produce a
      * non-Latin character under Ukrainian/Hebrew and this shortcut
-     * would silently stop working. */
+     * would silently stop working. N and Ctrl+N both ask for the new
+     * document's format first. */
     char ch = kb_layout_shortcut_char(ev->keycode);
+    bool alt = (ev->modifier & (KB_MOD_LALT | KB_MOD_RALT)) != 0;
 
-    uint32_t child_count = lv_obj_get_child_count(s_browser_list);
-    if (child_count == 0) {
-        if (ch == 'n') {
-            editor_new_file();
-            editor_ui_show_editor();
-        }
+    if (ch == 'n' && !alt) {
+        show_newfmt_prompt(s_inpane_browser_open ? NEWDOC_INPANE
+                                                 : NEWDOC_BROWSER);
         return;
     }
+    if (ch == 'r' && alt && !ctrl) {
+        /* Alt+R: rename the selected file (and its metadata sidecar). */
+        show_rename_prompt();
+        return;
+    }
+
+    uint32_t child_count = lv_obj_get_child_count(s_browser_list);
+    if (child_count == 0) return;
 
     switch (ev->keycode) {
     case KB_KEY_UP:
@@ -7026,11 +7234,6 @@ static void handle_browser_key(const kb_event_t *ev)
         return;
     }
     default:
-        if (ch == 'n') {
-            editor_new_file();
-            editor_ui_show_editor();
-            return;
-        }
         break;
     }
 
@@ -7102,23 +7305,6 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         return;
     }
 
-    char nch = kb_layout_shortcut_char(ev->keycode);
-    if ((!ctrl && nch == 'n') || (ctrl && nch == 'f')) {
-        /* New untitled document (N) or screenplay (Ctrl+F) in the
-         * focused pane (not a global replace -- that is the
-         * single-pane behavior). */
-        if (!open_into_pane(s_focus, NULL)) {
-            editor_ui_set_status("New failed");
-            return;
-        }
-        editor_set_fountain(ctrl);
-        s_open_target_pane = s_focus;
-        close_inpane_browser();
-        ensure_cursor_visible();
-        editor_ui_show_editor();
-        return;
-    }
-
     handle_browser_key(ev);
 }
 
@@ -7150,6 +7336,8 @@ static void process_key_event(const kb_event_t *ev)
 
     if (s_save_open) {
         handle_save_prompt_key(e);
+    } else if (s_newfmt_open) {
+        handle_newfmt_prompt_key(e);
     } else if (s_exit_open) {
         handle_exit_prompt_key(e);
     } else if (s_search_open) {
@@ -7471,6 +7659,7 @@ static void apply_pending_connect_state(void)
         s_layouts_picker_open = false;
         s_save_open = false;
         if (s_save_panel) lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
+        close_newfmt_prompt();
         s_exit_open = false;
         if (s_exit_panel) lv_obj_add_flag(s_exit_panel, LV_OBJ_FLAG_HIDDEN);
         s_search_open = false;
@@ -8026,7 +8215,7 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_status, SCR_W - 4);
     lv_obj_set_style_text_font(s_lbl_br_status, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_status, theme_fg(), 0);
-    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  Ctrl+F:Screenplay");
+    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  Alt+R:Rename");
 
 #if defined(CONFIG_DRAFTLING_HAS_BATTERY)
     /* Device battery label (right-aligned in browser status bar) */
@@ -8439,6 +8628,40 @@ static void build_screens(void)
         }
     }
 
+    /* ---- New-document format picker (moved onto the active screen
+     * when shown) ---- */
+    {
+        int row_y = overlay_row_y();
+        int panel_h = row_y + NEWFMT_COUNT * (LINE_H + 2) + 2 * OVERLAY_PAD;
+        s_newfmt_panel = lv_obj_create(s_scr);
+        lv_obj_set_size(s_newfmt_panel, SCR_W - 20, panel_h);
+        lv_obj_set_pos(s_newfmt_panel, 10, (SCR_H - panel_h) / 2);
+        lv_obj_set_style_bg_color(s_newfmt_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_newfmt_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_newfmt_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_newfmt_panel, 2, 0);
+        lv_obj_set_style_radius(s_newfmt_panel, 4, 0);
+        lv_obj_set_style_pad_all(s_newfmt_panel, OVERLAY_PAD, 0);
+        lv_obj_remove_flag(s_newfmt_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_newfmt_panel, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *hdr = lv_label_create(s_newfmt_panel);
+        lv_obj_set_style_text_font(hdr, FONT_11, 0);
+        lv_obj_set_style_text_color(hdr, theme_fg(), 0);
+        lv_label_set_text(hdr, "New file format (Enter/Esc):");
+        lv_obj_set_pos(hdr, 0, 0);
+
+        for (int i = 0; i < NEWFMT_COUNT; i++) {
+            s_newfmt_opt_lbl[i] = lv_label_create(s_newfmt_panel);
+            lv_obj_set_style_text_font(s_newfmt_opt_lbl[i], FONT_11, 0);
+            lv_obj_set_style_text_color(s_newfmt_opt_lbl[i], theme_fg(), 0);
+            lv_obj_set_width(s_newfmt_opt_lbl[i], SCR_W - 20 - 12);
+            lv_obj_set_style_pad_hor(s_newfmt_opt_lbl[i], 2, 0);
+            lv_label_set_text(s_newfmt_opt_lbl[i], NEWFMT_LABELS[i]);
+            lv_obj_set_pos(s_newfmt_opt_lbl[i], 0, row_y + i * (LINE_H + 2));
+        }
+    }
+
     /* ---- Search / Replace overlay (shown on the editor screen) ---- */
     int srch_find_y = search_find_row_y();
     int srch_repl_y = search_repl_row_y();
@@ -8593,6 +8816,8 @@ static void teardown_screens(void)
     s_wifi_pw_panel = s_wifi_pw_hdr_lbl = s_wifi_pw_name_lbl = s_wifi_pw_cur = NULL;
     s_exit_panel = s_exit_hdr_lbl = NULL;
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
+    s_newfmt_panel = NULL;
+    s_newfmt_opt_lbl[0] = s_newfmt_opt_lbl[1] = s_newfmt_opt_lbl[2] = NULL;
     s_search_panel = s_search_hdr_lbl = NULL;
     s_search_find_hdr = s_search_find_lbl = NULL;
     s_search_repl_hdr = s_search_repl_lbl = NULL;
@@ -8615,6 +8840,7 @@ static void teardown_screens(void)
     s_wifi_scan_in_progress   = false;
     s_wifi_pw_open            = false;
     s_exit_open               = false;
+    s_newfmt_open             = false;
     s_search_open             = false;
     s_search_replace_mode     = false;
 
