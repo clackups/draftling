@@ -515,7 +515,7 @@ raised (full-screen browser, split-mode in-pane selector, or editor)
 so `newfmt_prompt_activate()` creates the untitled document in the
 right place and then applies the format.
 
-**Rename.** `Alt+R` in either file browser opens the save-as name
+**Rename.** `F2` or `Alt+R` in either file browser opens the save-as name
 overlay in rename mode (`show_rename_prompt()`, `s_save_is_rename`).
 The overlay (like the format picker) is re-parented with
 `lv_obj_set_parent()` onto the active screen each time it is shown,
@@ -526,6 +526,21 @@ allowed), and re-points any open document with the old path at the
 new one (taking the new extension's format). The UI rejects names
 without a document extension, since the file would vanish from the
 browser. Directories cannot be renamed.
+
+**Delete.** `Del` or `Alt+D` in either file browser deletes the
+selected file, but only when `git_sync_file_status()` reports
+`GIT_SYNC_FILE_PUSHED`: the file's current content hashes to the same
+blob as its entry in the last commit known to be on the server
+(`refs/remotes/origin/<branch>` under the `path=` sub-tree). Any other
+status (Git sync not configured, a sync running, file new or modified
+since the last push) only puts the reason in the status bar, so a
+deleted file can always be recovered from the repository history. A
+safe file gets a Delete / Cancel overlay (`s_del_panel`,
+`show_delete_prompt()` / `handle_delete_prompt_key()`, Cancel
+preselected, re-parented onto the active screen like the rename
+overlay); `editor_delete_file()` then removes the file and its
+`.meta` sidecar, refusing while the file is open in a pane. The next
+sync commits the deletion.
 
 **Settings** is the first item in the F1 menu (moved to the top so it
 is a single Enter away without navigating past the connectivity
@@ -800,9 +815,12 @@ Scope limits: one branch, no tags/submodules/signing, no shallow clone,
 flat `*.md` / `*.fountain` / `*.txt` working tree only, HTTP Basic auth only (no SSH). LCS merge
 falls back to a whole-file conflict above ~1400 lines per side.
 
-Public API (unchanged): `git_sync_init()`, `git_sync_start()`,
+Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_state()`, `git_sync_is_configured()`,
-`git_sync_get_last_error()`, `git_sync_max_file_size()`.
+`git_sync_get_last_error()`, `git_sync_max_file_size()`,
+`git_sync_file_status()` (local-only check whether a file's current
+content is in the last commit known to be on the server; used by the
+file browser's delete command).
 
 ### components/io_expander/
 
@@ -856,7 +874,7 @@ in the F1 -> Settings menu; it defaults to US + UA. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
 Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
-in `editor_ui.cpp`), `Alt+R` and the file browser's unmodified `N`
+in `editor_ui.cpp`), `Alt+R`, `Alt+D` and the file browser's unmodified `N`
 (new file) accelerator resolve their letter via `kb_layout_shortcut_char()`, not
 a raw `kb_layout_translate()` call: under a Latin layout (US/DE/FR) it
 follows the national layout, and is not limited to the classic 26-key

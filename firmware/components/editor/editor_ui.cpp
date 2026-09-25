@@ -193,6 +193,8 @@ static int s_char_w       = 6;
 
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
+static int utf8_chars_in_bytes(const char *text, size_t byte_len);
+static size_t utf8_byte_of_char(const char *s, size_t len, int n);
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
 /* Forward declaration: tear down every screen / overlay and rebuild
@@ -783,6 +785,7 @@ static void save_font_size_to_nvs(void)
  * real global here. */
 static lv_obj_t *s_scr       = NULL;
 static lv_obj_t *s_lbl_title = NULL;
+#define TITLE_W (SCR_W - 4)   /* title label width, set in build_screens() */
 static lv_obj_t *s_lbl_status= NULL;
 static lv_obj_t *s_scr_browser = NULL;
 static lv_obj_t *s_list_files  = NULL;
@@ -930,7 +933,7 @@ static lv_obj_t *s_save_cur      = NULL;   /* blinking cursor in name field */
 static bool      s_save_open     = false;
 static char      s_save_buf[128] = "";     /* editable filename (no directory) */
 static int       s_save_pos      = 0;      /* cursor position in s_save_buf (byte) */
-/* The same overlay renames the file browser's selected file (Alt+R):
+/* The same overlay renames the file browser's selected file (F2 or Alt+R):
  * s_rename_src then holds the full path of the file being renamed and
  * the panel is moved onto whichever screen is showing the browser. */
 static bool      s_save_is_rename = false;
@@ -1056,6 +1059,24 @@ static const char *const NEWFMT_LABELS[NEWFMT_COUNT] = {
     "Fountain screenplay (.fountain)",
     "Plain text (.txt)",
 };
+
+/* ---- Delete-file confirmation ----
+ * Del or Alt+D in the file browser. Only offered for a file whose
+ * current content is already on the Git server (git_sync_file_status()),
+ * so a deletion can always be undone from the repository history. The
+ * overlay is moved onto the active screen when shown, like the format
+ * picker above. */
+#define DELCONF_DELETE 0
+#define DELCONF_CANCEL 1
+#define DELCONF_COUNT  2
+static lv_obj_t *s_del_panel   = NULL;
+static lv_obj_t *s_del_hdr_lbl = NULL;
+static lv_obj_t *s_del_opt_lbl[DELCONF_COUNT] = { NULL, NULL };
+static bool      s_del_open    = false;
+static int       s_del_sel     = DELCONF_CANCEL;
+static char      s_del_path[512] = "";
+/* Row to select after the deletion (the neighbouring file). */
+static char      s_del_next_name[256] = "";
 
 /* ---- Device battery display ----
  *
@@ -1730,7 +1751,18 @@ static void sync_battery_labels(void)
     if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, s_cached_batt);
     if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, s_cached_batt);
 }
+
+/* Paint the current value on every battery label, including ones
+ * created (empty) since the last update -- see build_screens(). */
+static void battery_labels_repaint(void)
+{
+    s_cached_batt[0] = '\0';
+    sync_battery_labels();
+}
 #else
+/* The string the battery labels currently show. */
+static char s_shown_batt[20] = "";
+
 static void batt_timer_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -1748,14 +1780,24 @@ static void batt_timer_cb(lv_timer_t *timer)
      * the background -- visible as the screen continuing to change
      * for tens of seconds after the user stopped interacting with it.
      * Skip the call entirely when the string has not changed. */
-    static char s_prev_batt[20] = { 0 };
-    if (strcmp(s_prev_batt, batt) != 0) {
+    if (strcmp(s_shown_batt, batt) != 0) {
         if (s_lbl_dev_batt)    lv_label_set_text(s_lbl_dev_batt, batt);
         if (s_lbl_br_dev_batt) lv_label_set_text(s_lbl_br_dev_batt, batt);
         if (s_lbl_ble_dev_batt) lv_label_set_text(s_lbl_ble_dev_batt, batt);
-        strncpy(s_prev_batt, batt, sizeof(s_prev_batt) - 1);
-        s_prev_batt[sizeof(s_prev_batt) - 1] = '\0';
+        strncpy(s_shown_batt, batt, sizeof(s_shown_batt) - 1);
+        s_shown_batt[sizeof(s_shown_batt) - 1] = '\0';
     }
+}
+
+/* Paint the current value on every battery label, including ones
+ * created (empty) since the last update. Without this, a label built
+ * after the last change -- the BLE-prompt screen's, which build_screens()
+ * creates after the poll timer's first reading, or all of them after a
+ * color-theme rebuild -- would stay blank until the percentage moved. */
+static void battery_labels_repaint(void)
+{
+    s_shown_batt[0] = '\0';
+    batt_timer_cb(NULL);
 }
 /* No-op on the timer-driven boards: the call sites below are shared,
  * but only the H752 pull model needs an explicit sync. */
@@ -1765,6 +1807,7 @@ static inline void sync_battery_labels(void) {}
 /* No battery indicator on this board: the shared sync_battery_labels()
  * call sites compile to nothing. */
 static inline void sync_battery_labels(void) {}
+static inline void battery_labels_repaint(void) {}
 #endif
 
 /* Update the WiFi connectivity icons in both status bars: shown when
@@ -1814,7 +1857,7 @@ static void update_title_bar(void)
         const char *slash = strrchr(path, '/');
         name = slash ? slash + 1 : path;
     }
-    char buf[128];
+    char buf[384];
     int line, col;
     editor_get_cursor_pos(&line, &col);
     int total_lines = editor_get_line_count();
@@ -1834,14 +1877,34 @@ static void update_title_bar(void)
      * every edit. The line counter ("L %d/%d") only changes when the
      * cursor moves to a different line, so the s_prev_title cache
      * below collapses no-op redraws back to a single update. */
-    snprintf(buf, sizeof(buf), "%s%s  L %d/%d%s",
-             name, editor_is_modified() ? " *" : "",
+    char tail[96];
+    snprintf(tail, sizeof(tail), "%s  L %d/%d%s",
+             editor_is_modified() ? " *" : "",
              line + 1, total_lines, layout_tag);
 #else
-    snprintf(buf, sizeof(buf), "%s%s  L %d/%d C:%d%s",
-             name, editor_is_modified() ? " *" : "",
+    char tail[96];
+    snprintf(tail, sizeof(tail), "%s  L %d/%d C:%d%s",
+             editor_is_modified() ? " *" : "",
              line + 1, total_lines, col + 1, layout_tag);
 #endif
+
+    /* A long file name would push the counters off the line (the label
+     * used to wrap it over the header rule). The title font is
+     * monospace, so cut the name to the characters that fit next to
+     * the counters and end it with "..." (the fonts have no U+2026
+     * glyph). */
+    int avail = TITLE_W / char_width_for_font(FONT_11);
+    int name_max = avail - utf8_chars_in_bytes(tail, strlen(tail));
+    size_t name_len = strlen(name);
+    if (utf8_chars_in_bytes(name, name_len) > name_max) {
+        static const char ellipsis[] = "...";
+        int keep = name_max - (int)(sizeof(ellipsis) - 1);
+        if (keep < 1) keep = 1;
+        size_t keep_bytes = utf8_byte_of_char(name, name_len, keep);
+        snprintf(buf, sizeof(buf), "%.*s%s%s", (int)keep_bytes, name, ellipsis, tail);
+    } else {
+        snprintf(buf, sizeof(buf), "%s%s", name, tail);
+    }
 
     /* lv_label_set_text() in LVGL v9 unconditionally invalidates the
      * label even when the new text is identical to the current one,
@@ -1851,11 +1914,9 @@ static void update_title_bar(void)
      * triggers a full-screen refresh in the e-paper driver's ">75%"
      * huge-area path.  Compare against the last text we pushed and
      * skip the call when unchanged. */
-    static char s_prev_title[128] = { 0 };
+    static char s_prev_title[sizeof(buf)] = { 0 };
     if (strcmp(s_prev_title, buf) != 0) {
         lv_label_set_text(s_lbl_title, buf);
-        /* snprintf truncates to at most sizeof(buf)-1 chars, which
-         * also fits in s_prev_title[128]. */
         strncpy(s_prev_title, buf, sizeof(s_prev_title) - 1);
         s_prev_title[sizeof(s_prev_title) - 1] = '\0';
     }
@@ -3496,7 +3557,7 @@ static void browser_status_hint(char *buf, size_t buf_size)
         return;
     }
 #endif
-    snprintf(buf, buf_size, "F1:Menu  N:New  Alt+R:Rename");
+    snprintf(buf, buf_size, "F1:Menu  N:New  F2:Rename");
 }
 
 static void refresh_file_list(const char *select_name = NULL)
@@ -5358,7 +5419,7 @@ static void show_save_prompt(void)
     refresh_save_prompt();
 }
 
-/* Alt+R in the file browser: ask for a new name for the selected file. */
+/* F2 / Alt+R in the file browser: ask for a new name for the selected file. */
 static void show_rename_prompt(void)
 {
     if (!s_save_panel || !s_browser_list) return;
@@ -5643,6 +5704,130 @@ static void handle_newfmt_prompt_key(const kb_event_t *ev)
     if (pick >= 0) {
         s_newfmt_sel = pick;
         newfmt_prompt_activate();
+    }
+}
+
+/* ---- Delete-file confirmation logic ---- */
+
+static void refresh_delete_prompt(void)
+{
+    if (!s_del_panel) return;
+    for (int i = 0; i < DELCONF_COUNT; i++) {
+        if (!s_del_opt_lbl[i]) continue;
+        bool sel = (i == s_del_sel);
+        lv_obj_set_style_bg_color(s_del_opt_lbl[i], sel ? theme_fg() : theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_del_opt_lbl[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(s_del_opt_lbl[i], sel ? theme_bg() : theme_fg(), 0);
+    }
+}
+
+static void close_delete_prompt(void)
+{
+    s_del_open = false;
+    if (s_del_panel) lv_obj_add_flag(s_del_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Del / Alt+D in the file browser: confirm deleting the selected file,
+ * provided Git sync already holds its current content. */
+static void show_delete_prompt(void)
+{
+    if (!s_del_panel || !s_browser_list) return;
+    lv_obj_t *btn = lv_obj_get_child(s_browser_list, s_browser_sel);
+    if (!btn) return;
+    int idx = (int)(intptr_t)lv_obj_get_user_data(btn);
+    if (idx < 0 || idx >= s_browser_count) return;
+    if (s_browser_entries[idx].is_dir) {
+        editor_ui_set_status("Only files can be deleted");
+        return;
+    }
+    const char *name = s_browser_entries[idx].name;
+
+    switch (git_sync_file_status(name)) {
+    case GIT_SYNC_FILE_PUSHED:
+        break;
+    case GIT_SYNC_FILE_NOT_CONFIGURED:
+        editor_ui_set_status("Delete needs Git sync (git.cfg)");
+        return;
+    case GIT_SYNC_FILE_BUSY:
+        editor_ui_set_status("Delete: wait for Git sync to finish");
+        return;
+    case GIT_SYNC_FILE_NOT_PUSHED:
+        editor_ui_set_status("Not on the Git server yet -- sync first (Ctrl+G)");
+        return;
+    case GIT_SYNC_FILE_MODIFIED:
+        editor_ui_set_status("Changed since last push -- sync first (Ctrl+G)");
+        return;
+    default:
+        editor_ui_set_status("Delete: cannot check Git status");
+        return;
+    }
+
+    snprintf(s_del_path, sizeof(s_del_path), "%s/%s", sd_card_get_mount_point(), name);
+    /* Remember the neighbouring row so the highlight stays in place. */
+    s_del_next_name[0] = '\0';
+    int rows = (int)lv_obj_get_child_count(s_browser_list);
+    int next = (s_browser_sel + 1 < rows) ? s_browser_sel + 1 : s_browser_sel - 1;
+    lv_obj_t *nbtn = (next >= 0) ? lv_obj_get_child(s_browser_list, next) : NULL;
+    if (nbtn) {
+        int nidx = (int)(intptr_t)lv_obj_get_user_data(nbtn);
+        if (nidx >= 0 && nidx < s_browser_count) {
+            strncpy(s_del_next_name, s_browser_entries[nidx].name, sizeof(s_del_next_name) - 1);
+            s_del_next_name[sizeof(s_del_next_name) - 1] = '\0';
+        }
+    }
+
+    char hdr[96];
+    snprintf(hdr, sizeof(hdr), "Delete %.40s? (kept in Git history)", name);
+    lv_label_set_text(s_del_hdr_lbl, hdr);
+    s_del_open = true;
+    s_del_sel = DELCONF_CANCEL;
+    lv_obj_set_parent(s_del_panel, lv_scr_act());
+    lv_obj_remove_flag(s_del_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_del_panel);
+    refresh_delete_prompt();
+}
+
+static void delete_prompt_activate(void)
+{
+    close_delete_prompt();
+    if (s_del_sel != DELCONF_DELETE) {
+        restore_default_status();
+        return;
+    }
+    const char *slash = strrchr(s_del_path, '/');
+    const char *name = slash ? slash + 1 : s_del_path;
+    char msg[80];
+    esp_err_t err = editor_delete_file(s_del_path);
+    if (err == ESP_ERR_INVALID_STATE) {
+        editor_ui_set_status("File is open in a pane -- close it first");
+        return;
+    }
+    if (err != ESP_OK) {
+        editor_ui_set_status("Delete failed!");
+        return;
+    }
+    snprintf(msg, sizeof(msg), "Deleted %.40s", name);
+    refresh_file_list(s_del_next_name[0] ? s_del_next_name : NULL);
+    editor_ui_set_status(msg);
+}
+
+static void handle_delete_prompt_key(const kb_event_t *ev)
+{
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+    case KB_KEY_DOWN:
+        s_del_sel = (s_del_sel == DELCONF_DELETE) ? DELCONF_CANCEL : DELCONF_DELETE;
+        refresh_delete_prompt();
+        return;
+    case KB_KEY_ENTER:
+        delete_prompt_activate();
+        return;
+    case KB_KEY_ESCAPE:
+        s_del_sel = DELCONF_CANCEL;
+        delete_prompt_activate();
+        return;
+    default:
+        return;
     }
 }
 
@@ -6935,7 +7120,7 @@ static void show_inpane_browser(void)
     /* The editor screen stays active (the other pane keeps rendering);
      * keystrokes are rerouted by the s_inpane_browser_open check in
      * process_key_event. */
-    editor_ui_set_status("Open into pane: Enter  N:new  Alt+R:rename  Esc:cancel");
+    editor_ui_set_status("Open into pane: Enter  N:new  F2:rename  Esc:cancel");
 }
 
 /* Dismiss the in-pane file selector and restore the full-screen list
@@ -7206,8 +7391,15 @@ static void handle_browser_key(const kb_event_t *ev)
                                                  : NEWDOC_BROWSER);
         return;
     }
-    if (ch == 'r' && alt && !ctrl) {
-        /* Alt+R: rename the selected file (and its metadata sidecar). */
+    if ((ev->keycode == KB_KEY_DELETE && !ctrl && !alt) || (ch == 'd' && alt && !ctrl)) {
+        /* Del / Alt+D: delete the selected file, only if it is already
+         * committed and pushed to the Git server (asks to confirm). */
+        show_delete_prompt();
+        return;
+    }
+    if (ev->keycode == KB_KEY_F2 || (ch == 'r' && alt && !ctrl)) {
+        /* F2 / Alt+R: rename the selected file (and its metadata
+         * sidecar). */
         show_rename_prompt();
         return;
     }
@@ -7338,6 +7530,8 @@ static void process_key_event(const kb_event_t *ev)
         handle_save_prompt_key(e);
     } else if (s_newfmt_open) {
         handle_newfmt_prompt_key(e);
+    } else if (s_del_open) {
+        handle_delete_prompt_key(e);
     } else if (s_exit_open) {
         handle_exit_prompt_key(e);
     } else if (s_search_open) {
@@ -7660,6 +7854,7 @@ static void apply_pending_connect_state(void)
         s_save_open = false;
         if (s_save_panel) lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
         close_newfmt_prompt();
+        close_delete_prompt();
         s_exit_open = false;
         if (s_exit_panel) lv_obj_add_flag(s_exit_panel, LV_OBJ_FLAG_HIDDEN);
         s_search_open = false;
@@ -8007,9 +8202,13 @@ static void build_screens(void)
     /* Title bar */
     s_lbl_title = lv_label_create(s_scr);
     lv_obj_set_pos(s_lbl_title, 2, 0);
-    lv_obj_set_width(s_lbl_title, SCR_W - 4);
+    lv_obj_set_width(s_lbl_title, TITLE_W);
     lv_obj_set_style_text_font(s_lbl_title, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_title, theme_fg(), 0);
+    /* One line only: update_title_bar() shortens long file names, and
+     * clipping keeps anything it misjudges from wrapping over the
+     * header rule. */
+    lv_label_set_long_mode(s_lbl_title, LV_LABEL_LONG_CLIP);
     lv_label_set_text(s_lbl_title, "Draftling");
 
     /* Header separator line */
@@ -8215,7 +8414,7 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_status, SCR_W - 4);
     lv_obj_set_style_text_font(s_lbl_br_status, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_status, theme_fg(), 0);
-    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  Alt+R:Rename");
+    lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  F2:Rename");
 
 #if defined(CONFIG_DRAFTLING_HAS_BATTERY)
     /* Device battery label (right-aligned in browser status bar) */
@@ -8227,14 +8426,12 @@ static void build_screens(void)
     lv_obj_set_width(s_lbl_br_dev_batt, 78);
     lv_label_set_text(s_lbl_br_dev_batt, "");
 
-#if defined(DRAFTLING_BATT_PULL_MODE)
-    /* H752: no periodic timer (see the declarations above); just paint
-     * the initial value. Subsequent updates ride redraw points. */
-    sync_battery_labels();
-#else
-    /* Battery poll timer + first reading */
+#if !defined(DRAFTLING_BATT_PULL_MODE)
+    /* Battery poll timer. The first reading is painted at the end of
+     * build_screens(), once every battery label exists. The H752 has
+     * no periodic timer (see the declarations above); its updates
+     * ride redraw points. */
     s_batt_timer = lv_timer_create(batt_timer_cb, BATT_POLL_MS, NULL);
-    batt_timer_cb(NULL);  /* show initial value immediately */
 #endif
 #define WIFI_ICON_RIGHT_OFFSET 95
 #else
@@ -8326,8 +8523,9 @@ static void build_screens(void)
 
 #if defined(CONFIG_DRAFTLING_HAS_BATTERY)
     /* Device battery label (right-aligned in BLE prompt status bar).
-     * Populated by batt_timer_cb() which is created further down in
-     * the file-browser init block. */
+     * Painted with the first reading by battery_labels_repaint() at
+     * the end of build_screens(), then kept current by the battery
+     * poll timer. */
     s_lbl_ble_dev_batt = lv_label_create(s_scr_ble_prompt);
     lv_obj_set_style_text_font(s_lbl_ble_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_ble_dev_batt, theme_fg(), 0);
@@ -8662,6 +8860,43 @@ static void build_screens(void)
         }
     }
 
+    /* ---- Delete-file confirmation (moved onto the active screen when
+     * shown) ---- */
+    {
+        static const char *const labels[DELCONF_COUNT] = { "Delete", "Cancel" };
+        int row_y = overlay_row_y();
+        int panel_h = row_y + DELCONF_COUNT * (LINE_H + 2) + 2 * OVERLAY_PAD;
+        s_del_panel = lv_obj_create(s_scr);
+        lv_obj_set_size(s_del_panel, SCR_W - 20, panel_h);
+        lv_obj_set_pos(s_del_panel, 10, (SCR_H - panel_h) / 2);
+        lv_obj_set_style_bg_color(s_del_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_del_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_del_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_del_panel, 2, 0);
+        lv_obj_set_style_radius(s_del_panel, 4, 0);
+        lv_obj_set_style_pad_all(s_del_panel, OVERLAY_PAD, 0);
+        lv_obj_remove_flag(s_del_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_del_panel, LV_OBJ_FLAG_HIDDEN);
+
+        s_del_hdr_lbl = lv_label_create(s_del_panel);
+        lv_obj_set_style_text_font(s_del_hdr_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(s_del_hdr_lbl, theme_fg(), 0);
+        lv_obj_set_width(s_del_hdr_lbl, SCR_W - 20 - 12);
+        lv_label_set_long_mode(s_del_hdr_lbl, LV_LABEL_LONG_CLIP);
+        lv_label_set_text(s_del_hdr_lbl, "");
+        lv_obj_set_pos(s_del_hdr_lbl, 0, 0);
+
+        for (int i = 0; i < DELCONF_COUNT; i++) {
+            s_del_opt_lbl[i] = lv_label_create(s_del_panel);
+            lv_obj_set_style_text_font(s_del_opt_lbl[i], FONT_11, 0);
+            lv_obj_set_style_text_color(s_del_opt_lbl[i], theme_fg(), 0);
+            lv_obj_set_width(s_del_opt_lbl[i], SCR_W - 20 - 12);
+            lv_obj_set_style_pad_hor(s_del_opt_lbl[i], 2, 0);
+            lv_label_set_text(s_del_opt_lbl[i], labels[i]);
+            lv_obj_set_pos(s_del_opt_lbl[i], 0, row_y + i * (LINE_H + 2));
+        }
+    }
+
     /* ---- Search / Replace overlay (shown on the editor screen) ---- */
     int srch_find_y = search_find_row_y();
     int srch_repl_y = search_repl_row_y();
@@ -8745,7 +8980,9 @@ static void build_screens(void)
     wifi_manager_set_callback(wifi_state_cb);
     git_sync_set_callback(git_sync_cb);
 
-    sync_battery_labels();
+    /* Every battery label exists now: show the current level on all of
+     * them, including the BLE prompt screen loaded below. */
+    battery_labels_repaint();
 
     /* Start on BLE prompt screen (transitions to file browser on connect) */
     lv_scr_load(s_scr_ble_prompt);
@@ -8818,6 +9055,8 @@ static void teardown_screens(void)
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
     s_newfmt_opt_lbl[0] = s_newfmt_opt_lbl[1] = s_newfmt_opt_lbl[2] = NULL;
+    s_del_panel = s_del_hdr_lbl = NULL;
+    s_del_opt_lbl[0] = s_del_opt_lbl[1] = NULL;
     s_search_panel = s_search_hdr_lbl = NULL;
     s_search_find_hdr = s_search_find_lbl = NULL;
     s_search_repl_hdr = s_search_repl_lbl = NULL;
@@ -8841,6 +9080,7 @@ static void teardown_screens(void)
     s_wifi_pw_open            = false;
     s_exit_open               = false;
     s_newfmt_open             = false;
+    s_del_open                = false;
     s_search_open             = false;
     s_search_replace_mode     = false;
 

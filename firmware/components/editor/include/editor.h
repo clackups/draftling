@@ -141,6 +141,12 @@ const char *editor_format_ext(editor_doc_format_t f);
  * format of the new extension). Fails with ESP_ERR_INVALID_STATE if
  * new_path already exists. */
 esp_err_t editor_rename_file(const char *old_path, const char *new_path);
+
+/* Delete a file on the SD card together with its metadata sidecar.
+ * Fails with ESP_ERR_INVALID_STATE while a document backed by path is
+ * open. The caller decides whether deleting is safe (the file browser
+ * only allows it for files already pushed to the Git server). */
+esp_err_t editor_delete_file(const char *path);
 /* Persist per-file metadata (cursor, scroll line, ...) to the
  * sidecar next to the currently-open file. No-op if no file is
  * open. Safe to call repeatedly. */

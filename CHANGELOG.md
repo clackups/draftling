@@ -6,6 +6,25 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Delete files from the file browser**: `Del` or `Alt+D` deletes the
+  selected file after a confirmation. To prevent accidental loss this
+  only works for a file whose current content is already committed
+  and pushed to the Git server, so it can always be recovered from the
+  repository history; otherwise the status bar says to sync first.
+- **F2 renames files** in the file browser, the same as `Alt+R`.
+
+### Fixed
+
+- **Battery level missing while waiting for a keyboard**: the battery
+  indicator on the start-up "searching for keyboard" screen stayed
+  empty until the keyboard connected. It now shows the level right
+  away (and no longer goes blank after changing the color theme).
+- **Long file names broke the editor's title bar**: a name too long
+  for the screen wrapped onto a second line. It is now shortened with
+  "..." so the line and column counters stay visible.
+
 ## [1.0.7] - 2026-09-24
 
 ### Added
