@@ -596,6 +596,25 @@ extern "C" void editor_set_format(editor_doc_format_t f)
     if (s_active) s_format = f;
 }
 
+extern "C" esp_err_t editor_delete_file(const char *path)
+{
+    if (!path || !path[0]) return ESP_ERR_INVALID_ARG;
+    /* A document still open (e.g. in the other split pane) would be
+     * written straight back by the next save or auto-save. */
+    for (int i = 0; i < EDITOR_MAX_DOCS; i++) {
+        if (s_docs[i].in_use && strcmp(s_docs[i].path, path) == 0)
+            return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t err = sd_card_delete_file(path);
+    if (err != ESP_OK) return err;
+
+    char meta[320];
+    meta_path_for(path, meta, sizeof(meta));
+    if (meta[0] && sd_card_file_exists(meta)) sd_card_delete_file(meta);
+    ESP_LOGI(TAG, "Deleted: %s", path);
+    return ESP_OK;
+}
+
 extern "C" esp_err_t editor_rename_file(const char *old_path, const char *new_path)
 {
     if (!old_path || !new_path || !old_path[0] || !new_path[0])

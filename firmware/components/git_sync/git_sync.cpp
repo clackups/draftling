@@ -785,6 +785,57 @@ extern "C" esp_err_t git_sync_start(git_sync_direction_t direction)
     return ESP_OK;
 }
 
+extern "C" git_sync_file_status_t git_sync_file_status(const char *name)
+{
+    if (!s_cfg.configured) return GIT_SYNC_FILE_NOT_CONFIGURED;
+    /* The sync task owns the repository while it runs, and it can
+     * rewrite both the file and the refs. Both this check and
+     * git_sync_start() run on the UI task, so the state cannot change
+     * under us. */
+    if (s_state == GIT_SYNC_IN_PROGRESS) return GIT_SYNC_FILE_BUSY;
+    if (!name || !*name || strchr(name, '/') || !is_doc(name)) return GIT_SYNC_FILE_NOT_PUSHED;
+
+    /* Look for the remote-tracking ref first: git_repo_open() would
+     * create an empty repository on a card that was never synced. */
+    char remoteref[96];
+    snprintf(remoteref, sizeof(remoteref), "refs/remotes/origin/%s", s_cfg.branch);
+    char refpath[400];
+    snprintf(refpath, sizeof(refpath), "%s/.git/%s", s_cfg.local_path, remoteref);
+    if (!sd_card_file_exists(refpath)) return GIT_SYNC_FILE_NOT_PUSHED;
+
+    char path[400];
+    joinp(path, sizeof(path), s_cfg.local_path, name);
+    char *data = NULL;
+    size_t len = 0;
+    if (sd_card_read_file(path, &data, &len) != ESP_OK) return GIT_SYNC_FILE_ERROR;
+    git_oid work_blob;
+    git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob);
+    free(data);
+
+    if (git_repo_open(s_cfg.local_path) != ESP_OK) return GIT_SYNC_FILE_ERROR;
+    git_sync_file_status_t result = GIT_SYNC_FILE_ERROR;
+    git_oid pushed, sub;
+    if (git_ref_read(remoteref, &pushed) != ESP_OK) {
+        result = GIT_SYNC_FILE_NOT_PUSHED;
+    } else if (subtree_for_commit(&pushed, &sub) == ESP_OK) {
+        if (git_oid_is_zero(&sub)) {
+            result = GIT_SYNC_FILE_NOT_PUSHED;
+        } else {
+            git_tree t = {};
+            if (git_tree_load(&sub, &t) == ESP_OK) {
+                const git_tree_entry *e = git_tree_get(&t, name);
+                if (!e)                              result = GIT_SYNC_FILE_NOT_PUSHED;
+                else if (git_oid_eq(&e->oid, &work_blob)) result = GIT_SYNC_FILE_PUSHED;
+                else                                 result = GIT_SYNC_FILE_MODIFIED;
+                git_tree_free(&t);
+            }
+        }
+    }
+    git_repo_close();
+    ESP_LOGI(TAG, "file status %s: %d", name, (int)result);
+    return result;
+}
+
 extern "C" git_sync_state_t git_sync_get_state(void) { return s_state; }
 extern "C" void git_sync_set_callback(git_sync_callback_t cb) { s_callback = cb; }
 extern "C" bool git_sync_is_configured(void) { return s_cfg.configured; }
