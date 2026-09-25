@@ -1139,6 +1139,25 @@ lv_font_conv \
   -o greybeard_14.c
 ```
 
+### Reproducing the committed fonts
+
+The committed base fonts (`greybeard_NN.c`, `hack_NN.c`) regenerate
+byte-for-byte -- apart from the fix-ups below -- from the command line
+recorded in each file's header comment, using:
+
+- `lv_font_conv` at commit `1f44ab4` of github.com/lvgl/lv_font_conv.
+  The npm release 1.5.2 predates `--lv-fallback` / `--lv-font-name`,
+  and later commits change the output format (`0x00` instead of `0x0`,
+  an extra `__has_include` block, `stride` / `static_bitmap` fields).
+- Greybeard v1.0.0 (`Greybeard-v1.0.0-ttf.zip` from the
+  flowchartsman/greybeard release) and Hack v3.003
+  (`Hack-v3.003-ttf.zip` from the source-foundry/Hack release).
+
+To add a glyph, regenerate with the new code point appended to `-r`,
+apply the fix-ups below, and diff against the committed file: only the
+new glyph's bitmap, its `glyph_dsc` entry and the cmap tables should
+change. This is how U+2026 was added.
+
 ### Post-generation Fix-up
 
 `lv_font_conv` emits a boilerplate include block at the top of every
@@ -1165,6 +1184,14 @@ any font, replace that whole `#ifdef ... #endif` block with a single line:
 This matches the include style used elsewhere in the component
 (`components/fonts/greybeard.c`, `components/fonts/include/greybeard.h`).
 
+Newer `lv_font_conv` commits wrap that block in an `#ifdef
+__has_include` guard; replace the whole construct the same way. Some
+committed files also declare the fallback router as `extern lv_font_t
+..._ext;` rather than `extern const lv_font_t ..._ext;` (the router is
+mutable, see `greybeard.c`); keep whichever form the file already has.
+The Hack files additionally get the advance-width snapping described
+under "Hack fonts" below.
+
 ### Unicode Ranges
 
 The base `greybeard_NN.c` files cover the always-on core ranges:
@@ -1175,6 +1202,7 @@ The base `greybeard_NN.c` files cover the always-on core ranges:
 | U+00A0 - U+00FF | Latin-1 Supplement (accented Latin characters, symbols) |
 | U+20AC | Euro sign |
 | U+2116 | Numero sign |
+| U+2026 | Horizontal ellipsis (the editor title bar ends a shortened file name with it) |
 
 Additional script coverage is split into separate subset font files
 that are compiled into the firmware only when the corresponding
@@ -1307,7 +1335,7 @@ layout options:
 
 | File pattern | Range | Source | Gated on |
 |--------------|-------|--------|----------|
-| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
+| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
 | `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
 

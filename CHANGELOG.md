@@ -23,7 +23,8 @@ in the git log.
   away (and no longer goes blank after changing the color theme).
 - **Long file names broke the editor's title bar**: a name too long
   for the screen wrapped onto a second line. It is now shortened with
-  "..." so the line and column counters stay visible.
+  an ellipsis so the line and column counters stay visible. The
+  ellipsis character is also displayed properly in documents now.
 
 ## [1.0.7] - 2026-09-24
 

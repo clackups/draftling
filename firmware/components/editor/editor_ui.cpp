@@ -1891,14 +1891,14 @@ static void update_title_bar(void)
     /* A long file name would push the counters off the line (the label
      * used to wrap it over the header rule). The title font is
      * monospace, so cut the name to the characters that fit next to
-     * the counters and end it with "..." (the fonts have no U+2026
-     * glyph). */
+     * the counters and end it with an ellipsis (U+2026, one cell; every
+     * base font carries the glyph). */
     int avail = TITLE_W / char_width_for_font(FONT_11);
     int name_max = avail - utf8_chars_in_bytes(tail, strlen(tail));
     size_t name_len = strlen(name);
     if (utf8_chars_in_bytes(name, name_len) > name_max) {
-        static const char ellipsis[] = "...";
-        int keep = name_max - (int)(sizeof(ellipsis) - 1);
+        static const char ellipsis[] = "\xE2\x80\xA6";   /* U+2026 */
+        int keep = name_max - 1;
         if (keep < 1) keep = 1;
         size_t keep_bytes = utf8_byte_of_char(name, name_len, keep);
         snprintf(buf, sizeof(buf), "%.*s%s%s", (int)keep_bytes, name, ellipsis, tail);
