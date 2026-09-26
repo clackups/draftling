@@ -34,7 +34,7 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
 `xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
 `waveshare_epaper_397`, `seeed_reterminal_e1001`,
-`m5stack_papermono`.
+`seeed_reterminal_sticky`, `m5stack_papermono`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:

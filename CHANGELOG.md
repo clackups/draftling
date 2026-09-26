@@ -8,6 +8,11 @@ in the git log.
 
 ### Added
 
+- **Seeed reTerminal Sticky support**: 3.97-inch
+  800x480 e-paper (SSD1677) with GT911 touch, BQ27220 battery gauge
+  and on-board MicroSD. The Up/Down buttons turn pages; the Power/AI
+  button wakes the device, puts it to sleep on a short press and
+  forgets paired BLE keyboards on a 2-second hold.
 - **M5Stack PaperMono / PaperMono-Lite support**:
   3.97-inch 800x480 e-paper with touch, front-light, battery indicator
   and MicroSD. Button A scrolls up and wakes the device (hold 2 s to

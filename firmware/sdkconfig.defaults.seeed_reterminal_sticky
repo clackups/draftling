@@ -1,0 +1,27 @@
+# CMakePresets.json board defaults: Seeed reTerminal Sticky
+# Sets the hardware model and IDF target used by the "seeed_reterminal_sticky" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY=y
+
+# 32 MB flash (ESP32-S3R8, per Seeed's hardware-overview page), unlike
+# the 16 MB default in sdkconfig.defaults.esp32s3.
+CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+
+# Use a dual-OTA partition table (with an "otadata" partition) instead
+# of the shared single-"factory" partitions.csv, matching the Xteink
+# X4 Pro / Classic rationale: this board also runs the third-party
+# "Crosspoint" firmware (built with PlatformIO/Arduino-esp32, which
+# expects an OTA-capable table), so keeping one here lets the device
+# move to Crosspoint -- or back to it -- without first re-flashing a
+# partition table over the serial port. See
+# partitions_seeed_reterminal_sticky.csv.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_seeed_reterminal_sticky.csv"
+
+# No "SD card via USB" support on this board: per Seeed's hardware
+# overview and the FreeInk SDK, the case's USB-C port is bridged
+# through an on-board WCH USB-to-UART chip onto UART0, not wired to
+# the ESP32-S3's native USB-OTG peripheral (whose D+/D- pins, GPIO19/
+# 20, this board instead uses for its PDM microphone). CONFIG_TINYUSB_
+# MSC_ENABLED is therefore left unset, unlike every other e-paper
+# board's sdkconfig.defaults.<board>.

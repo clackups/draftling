@@ -15,7 +15,9 @@
 #include <esp_sleep.h>
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
+    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || \
+    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -813,6 +815,29 @@ static void pre_sleep_seeed_reterminal_e1001_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+static void pre_sleep_reterminal_sticky_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Seeed reTerminal Sticky peripheral teardown");
+
+    pre_sleep_autosave();
+    touchscreen_sleep();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+
+    /* PWR_HOLD/PWR_LOCK (neither is RTC-capable) and CHARGE_EN must
+     * keep their currently-driven levels through the digital IOMUX
+     * power-down that deep sleep performs, or the board loses power
+     * / stops charging the instant it sleeps -- see the board header
+     * comment. gpio_deep_sleep_hold_en() below arms the holds latched
+     * here. */
+    gpio_hold_en((gpio_num_t)PWR_HOLD_PIN);
+    gpio_hold_en((gpio_num_t)PWR_LOCK_PIN);
+    gpio_hold_en((gpio_num_t)CHARGE_EN_PIN);
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
+
 /* Poll period and long-press threshold shared by the H752 side-key
  * handler and the generic wakeup-GPIO handler below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -1362,6 +1387,73 @@ static void ws_epaper397_nav_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+/* ---- Seeed reTerminal Sticky Up/Down page-turn buttons ----
+ *
+ * Up and Down (active-low, internal pull-ups) scroll the editor a
+ * screen at a time by injecting Page Up / Page Down -- the same
+ * convention as the Xteink X4 Pro's Left/Right buttons. Power
+ * (WAKEUP_GPIO_NUM) keeps using the generic wakeup_btn_init() path
+ * below unchanged (deep-sleep wake source, short press = sleep, 2 s
+ * hold = forget BLE keyboards). */
+
+static void reterminal_sticky_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void reterminal_sticky_btn_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_UP_PIN,   KB_KEY_PAGEUP },
+        { BTN_DOWN_PIN, KB_KEY_PAGEDOWN },
+    };
+    static bool down[2]   = { false, false };
+    static int  stable[2] = { 0, 0 };
+
+    for (int i = 0; i < 2; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            continue;
+        }
+        if (++stable[i] < 2) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i]) {
+            /* Inject on release, matching the Xteink X4 Pro convention. */
+            reterminal_sticky_inject_key(kButtons[i].keycode);
+        }
+    }
+}
+
+static void reterminal_sticky_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << BTN_UP_PIN) | (1ULL << BTN_DOWN_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = reterminal_sticky_btn_poll_cb;
+    targs.name     = "sticky_btn";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Seeed reTerminal Sticky Up/Down button poller started "
+                  "(GPIO%d/GPIO%d)", BTN_UP_PIN, BTN_DOWN_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
+
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
 /* ---- M5Stack PaperMono Button A / Button B ----
  *
@@ -1479,17 +1571,27 @@ static void wakeup_btn_poll_cb(void *arg)
     stable = 0;
     down = raw_down;
     if (!down) {
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO) || \
+    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
         /* Unlike the shared BOOT-as-wake convention on every other
-         * board, this board has a button silkscreened "Power" -- and
-         * there is no hardware latch to physically cut (see
-         * XTEINK_POWER_LATCH_PIN in app_config.h; it only gates the
-         * display/SD/touch peripheral rail, not the ESP32 itself), so
-         * deep sleep IS this board's power-off. A short press (release
-         * before the 2 s hold below) triggers it directly instead of
-         * waiting for the inactivity timeout, matching what a button
-         * labeled Power should do. The 2 s hold still forgets BLE
-         * keyboards; long_press_fired keeps the two mutually exclusive. */
+         * board, this button is silkscreened "Power" (or, on the
+         * Seeed reTerminal Sticky, "Power/AI") -- and there is no
+         * hardware latch this firmware uses to physically cut power
+         * (see XTEINK_POWER_LATCH_PIN / PWR_HOLD_PIN+PWR_LOCK_PIN in
+         * app_config.h; they only gate peripheral rails or keep the
+         * board's own power switch closed, not something Draftling
+         * ever releases), so deep sleep IS this board's power-off. A
+         * short press (release before the 2 s hold below) triggers it
+         * directly instead of waiting for the inactivity timeout,
+         * matching what a button labeled Power should do. The 2 s
+         * hold still forgets BLE keyboards; long_press_fired keeps
+         * the two mutually exclusive.
+         *
+         * On the reTerminal Sticky this deliberately does not match
+         * the vendor firmware's own convention for this button
+         * (FreeInk: "click confirms, hold sleeps") -- see
+         * main/boards/seeed_reterminal_sticky.h for why Draftling
+         * reuses the X4 Pro convention instead. */
         if (!long_press_fired) {
             ESP_LOGI(TAG, "Power button released -- entering deep sleep");
             standby_enter_sleep();
@@ -1792,6 +1894,36 @@ extern "C" void app_main(void)
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
     }
 #endif
+#if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    /* Power-rail latch (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46): must both
+     * be driven HIGH before any SPI/display/SD bring-up, or the
+     * board's own power switch drops the rail as soon as the case
+     * button is released -- see the board header comment. Release any
+     * hold left by pre_sleep_reterminal_sticky_deinit() from before
+     * this wake first (gpio_deep_sleep_hold_dis() above only disarms
+     * the global latch, not each individual pin's hold).
+     *
+     * Charger enable (CHARGE_EN=GPIO39, active-LOW): driven LOW here
+     * so the BQ25616 charges normally while awake, not just once
+     * asleep -- see the board header comment for why the JTAG-group
+     * reset-default pull-up would otherwise leave it effectively
+     * disabled. */
+    {
+        gpio_hold_dis((gpio_num_t)PWR_HOLD_PIN);
+        gpio_hold_dis((gpio_num_t)PWR_LOCK_PIN);
+        gpio_hold_dis((gpio_num_t)CHARGE_EN_PIN);
+
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << PWR_HOLD_PIN) | (1ULL << PWR_LOCK_PIN) |
+                         (1ULL << CHARGE_EN_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 1);
+        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);
+        gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 0);
+    }
+#endif
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
     /* Full GT911 power-cycle + hardware reset with the datasheet
      * address-select timing. Done HERE, before the shared I2C bus is
@@ -1850,6 +1982,24 @@ extern "C" void app_main(void)
 
         ESP_LOGI(TAG, "GT911 power-cycled + reset (RST=%d INT=%d, selecting 0x5D)",
                  TOUCH_RST_PIN, TOUCH_INT_PIN);
+    }
+#elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    /* GT911 power-enable, active-HIGH (opposite polarity from the
+     * Xteink X4 Pro above). Unlike that board, no address-select
+     * reset dance is done here: this port has no hardware to verify
+     * one is needed, and touchscreen_init() further below already
+     * probes both possible GT911 addresses (0x5D / 0x14) and pulses
+     * TOUCH_RST_PIN itself, so a plain power-up is enough for the
+     * driver to find and configure the chip either way. */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        ESP_LOGI(TAG, "GT911 power-enabled (GPIO%d)", TOUCH_POWER_EN_PIN);
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
@@ -2153,6 +2303,14 @@ extern "C" void app_main(void)
     /* Seeed Studio reTerminal E1001 (7.5" 800x480 UC8179 e-paper).
      * Owns all panel GPIOs internally (see display_seeed_e1001.cpp). */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_RETERMINAL_STICKY)
+    /* Seeed reTerminal Sticky SPI e-paper backend. Owns all panel
+     * GPIOs internally (see display_reterminal_sticky.cpp), including
+     * its own plain-GPIO panel power-enable pin (no PMIC on this
+     * board, unlike the Waveshare ESP32-S3-ePaper-3.97 above). Pin
+     * parameters are ignored. This call also stands up the SPI2_HOST
+     * bus that the MicroSD card below shares with the panel. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_AXS15231B)
     /* AXS15231B QSPI color LCD. Needs 9 GPIOs (CS/SCK/D0..D3/RST/TE/BL),
      * which do not fit in display_init()'s 6 pin slots, so the backend
@@ -2226,7 +2384,36 @@ extern "C" void app_main(void)
      * status bar can show the battery level immediately. battery_init
      * is a no-op when BATT_ADC_PIN is < 0 (HAT case). */
     ESP_LOGI(TAG, "Initializing battery monitor...");
-#if defined(CONFIG_DRAFTLING_BATTERY_BQ27220)
+#if defined(CONFIG_DRAFTLING_BATTERY_BQ27220) && \
+    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    /* Seeed reTerminal Sticky: BQ27220 fuel gauge sits on its OWN
+     * dedicated I2C bus (I2C_NUM_1, SDA=GAUGE_I2C_SDA_PIN=1,
+     * SCL=GAUGE_I2C_SCL_PIN=0), physically separate from the GT911
+     * touch bus that touchscreen_init() creates on I2C_NUM_0 further
+     * below -- unlike the LilyGO T5 Pro branch below, there is no
+     * pre-existing "shared_i2c_bus" to reuse, since this board is not
+     * part of the epdiy/H752/xteink/CH422G display group. Create it
+     * here, right before the one component that needs it. */
+    {
+        i2c_master_bus_handle_t gauge_bus = NULL;
+        i2c_master_bus_config_t bus_cfg = {};
+        bus_cfg.i2c_port          = 1;
+        bus_cfg.sda_io_num        = (gpio_num_t)GAUGE_I2C_SDA_PIN;
+        bus_cfg.scl_io_num        = (gpio_num_t)GAUGE_I2C_SCL_PIN;
+        bus_cfg.clk_source        = I2C_CLK_SRC_DEFAULT;
+        bus_cfg.glitch_ignore_cnt = 7;
+        bus_cfg.flags.enable_internal_pullup = true;
+        esp_err_t bus_err = i2c_new_master_bus(&bus_cfg, &gauge_bus);
+        if (bus_err != ESP_OK) {
+            ESP_LOGW(TAG, "Gauge I2C bus init failed: %s; "
+                          "battery indicator disabled",
+                     esp_err_to_name(bus_err));
+        } else if (battery_init_bq27220(gauge_bus) != 0) {
+            ESP_LOGW(TAG, "BQ27220 fuel gauge init failed; "
+                          "battery indicator disabled");
+        }
+    }
+#elif defined(CONFIG_DRAFTLING_BATTERY_BQ27220)
     /* LilyGO T5 E-Paper S3 Pro / Pro Lite: BQ27220YZFR fuel gauge
      * lives on the same I2C bus we already created above for epdiy
      * + GT911. The ADC backend has no pin (BATT_ADC_PIN == -1) on
@@ -2880,6 +3067,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_ws_epaper397_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001)
     standby_set_pre_sleep_cb(pre_sleep_seeed_reterminal_e1001_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    standby_set_pre_sleep_cb(pre_sleep_reterminal_sticky_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
     standby_set_pre_sleep_cb(pre_sleep_papermono_deinit);
 #else
@@ -2924,6 +3113,11 @@ extern "C" void app_main(void)
      * Enter), alongside (not instead of) the generic BOOT/wakeup
      * handler above. */
     ws_epaper397_nav_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    /* Up/Down page-turn buttons scroll the editor (Page Up / Page
+     * Down), alongside (not instead of) the generic Power/wakeup
+     * handler above. */
+    reterminal_sticky_btn_init();
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
     /* Button A / B short presses = Page Up / Page Down, alongside the
      * generic handler above (A held 2 s forgets BLE keyboards) and the

@@ -268,6 +268,27 @@ config DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
         KEY2 (GPIO5) scroll the editor a screen at a time (Page Up /
         Page Down). PCF8563 RTC on I2C.
 
+config DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
+    bool "Seeed reTerminal Sticky (ESP32-S3, SSD1677, 3.97\" e-paper, 800x480, touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Seeed Studio reTerminal Sticky: a battery-powered, magnetically
+        mounted 3.97" 800x480 SSD1677 e-paper badge with a GT911
+        capacitive touchscreen (its own I2C bus), a BQ27220 fuel gauge
+        (a second, separate I2C bus), and a MicroSD slot sharing the
+        e-paper panel's SPI bus. Two page-turn buttons (Up/Down) plus
+        a combined Power/AI button (deep-sleep wake, short press =
+        sleep, 2 s hold = forget BLE keyboards) drive the editor
+        without a keyboard. 32 MB flash.
+
+        Tested on physical hardware. Pin assignments are
+        triple-sourced from Seeed's own
+        hardware-overview documentation and the FreeInk SDK
+        (github.com/Free-Ink/freeink-sdk, MIT licensed), which agree;
+        see main/boards/seeed_reterminal_sticky.h for the full
+        sourcing note. Grayscale /
+        anti-aliasing rendering is not implemented (matches the
+        existing e-paper boards).
 config DRAFTLING_MODEL_M5STACK_PAPERMONO
     bool "M5Stack PaperMono / PaperMono-Lite (SSD1677, 3.97\" e-paper, 800x480)"
     depends on IDF_TARGET_ESP32S3
@@ -449,6 +470,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 
@@ -531,6 +553,16 @@ config DRAFTLING_DISPLAY_WS_EPD397
 config DRAFTLING_DISPLAY_SEEED_E1001
     bool
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+
+# DRAFTLING_DISPLAY_RETERMINAL_STICKY selects the from-scratch SPI
+# e-paper backend for the Seeed reTerminal Sticky
+# (components/display/display_reterminal_sticky.cpp). Same SSD1677-
+# family protocol as DRAFTLING_DISPLAY_WS_EPD397 (single controller,
+# no boot-time detection needed), repinned for this board and with
+# MISO wired since the MicroSD card shares this panel's SPI bus.
+config DRAFTLING_DISPLAY_RETERMINAL_STICKY
+    bool
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default n
 
 # DRAFTLING_DISPLAY_M5_PAPERMONO selects the from-scratch SPI e-paper
@@ -703,6 +735,11 @@ config DRAFTLING_HAS_BATTERY
     # backend's file header comment.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+
+    # Seeed reTerminal Sticky: battery is monitored via a BQ27220 fuel
+    # gauge on its own, dedicated I2C bus (driver in components/battery,
+    # gated on DRAFTLING_BATTERY_BQ27220 below).
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     # M5Stack PaperMono: battery voltage read from the M5PM1
     # power-management chip (DRAFTLING_BATTERY_M5PM1 below).
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
@@ -747,13 +784,18 @@ config DRAFTLING_BATTERY_AXP2101
 
 # Selects the BQ27220 fuel-gauge backend in components/battery/
 # instead of the GPIO ADC backend. main.cpp calls
-# battery_init_bq27220(shared_i2c_bus) when this symbol is set, and
-# the BQ27220 device is added to the shared I2C bus that already
-# carries epdiy's TPS65185 / PCA9535 and the GT911 touch controller.
+# battery_init_bq27220(bus) when this symbol is set. On the LilyGO T5
+# E-Paper S3 Pro / Pro Lite the BQ27220 device is added to the shared
+# I2C bus that already carries epdiy's TPS65185 / PCA9535 and the
+# GT911 touch controller. On the Seeed reTerminal Sticky it instead
+# gets its own dedicated I2C bus (main.cpp creates a second one just
+# for it), since that board's gauge and touch controller sit on two
+# physically separate buses.
 config DRAFTLING_BATTERY_BQ27220
     bool
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default n
 
 # Selects the TI INA226 bus-voltage backend in components/battery/.
@@ -999,6 +1041,10 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     # Seeed Studio reTerminal E1001: KEY0 button on GPIO3 (active-low, RTC-capable).
     default 3  if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+
+    # Seeed reTerminal Sticky: combined Power/AI button on GPIO4
+    # (active-low).
+    default 4  if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     # M5Stack PaperMono: Button A on GPIO2 (active-low, RTC-capable).
     default 2  if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default 0
@@ -1073,6 +1119,11 @@ config DRAFTLING_TOUCHSCREEN
     # block in main.cpp. Default touch on to match the "Touch-LCD"
     # naming and the reliable wiring.
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    # Seeed reTerminal Sticky: GT911 capacitive touch on its own,
+    # dedicated I2C bus -- the board has only two page-turn buttons
+    # plus a combined Power/confirm button, so touch is the primary
+    # way to interact with menus and dialogs without a keyboard.
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
     help
@@ -1110,6 +1161,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default n
     help
         Goodix GT911. Register-addressed protocol: 16-bit register
@@ -1180,6 +1232,8 @@ config DRAFTLING_TOUCH_INT_GPIO
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     # Xteink X4 Pro: GT911 INT.
     default 10 if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Seeed reTerminal Sticky: GT911 INT.
+    default 21 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     # M5Stack PaperMono: FT6336G INT on GPIO4. Its reset line is on
     # the M5IOE1 expander, pulsed from main.cpp.
     default 4  if DRAFTLING_MODEL_M5STACK_PAPERMONO
@@ -1205,6 +1259,8 @@ config DRAFTLING_TOUCH_RST_GPIO
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     # Xteink X4 Pro: GT911 RST.
     default 4  if DRAFTLING_MODEL_XTEINK_X4_PRO
+    # Seeed reTerminal Sticky: GT911 RST.
+    default 41 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default -1
 
 
@@ -1296,6 +1352,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default 800 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     help
         Display width in pixels (derived). Driven by the hardware-model
@@ -1321,6 +1378,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default 480 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     help
         Display height in pixels (derived). Driven by the hardware-model
@@ -1394,6 +1452,10 @@ config DRAFTLING_DISPLAY_HIDPI
     # (~219 DPI) above -- use the same Hack-font HIDPI path.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+
+    # Seeed reTerminal Sticky: same 3.97" 800x480 panel class as the
+    # Waveshare ESP32-S3-ePaper-3.97 above (~235 DPI).
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL

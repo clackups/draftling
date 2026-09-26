@@ -487,6 +487,76 @@ temperature/humidity sensor, a QMI8658 IMU, and an ES8311 audio codec
 + microphone on the same I2C bus as the AXP2101 -- none of these are
 used by Draftling.
 
+## Seeed reTerminal Sticky
+
+[Seeed Studio reTerminal
+Sticky](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
+-- a battery-powered, magnetically mounted ESP32-S3R8 badge driving a
+3.97" 800x480 SSD1677 black/white e-paper panel over SPI, the same
+panel class as the Waveshare ESP32-S3-ePaper-3.97 above. Unlike every
+other SSD1677 board in this repo, the on-board MicroSD card shares the
+panel's SPI bus (same SCLK/MOSI/MISO, separate CS) instead of getting
+its own dedicated bus. A GT911 capacitive touchscreen sits on its own
+I2C bus, and a BQ27220 fuel gauge sits on a second, entirely separate
+I2C bus -- the two do not share a controller the way they do on the
+Xteink X4 Pro or the LilyGO T5 Pro. Two page-turn buttons (Up/Down,
+injecting Page Up / Page Down like the Xteink X4 Pro's Left/Right) plus
+a single combined Power/AI button round out input without a keyboard;
+the Power button is the deep-sleep wake source, a short press enters
+sleep directly (reusing the Xteink X4 Pro's convention for a
+single-button "Power" control -- see `main/main.cpp`'s
+`wakeup_btn_poll_cb()`), and a 2 s hold forgets every stored BLE
+keyboard. 32 MB flash.
+
+The board also has a real software-controllable power latch
+(`PWR_HOLD_PIN`=GPIO45, `PWR_LOCK_PIN`=GPIO46) that this port
+deliberately never releases -- deep sleep is this board's "off" state,
+matching every other board here, even though the hardware could
+technically support a true power-off. A separate GPIO
+(`CHARGE_EN_PIN`=GPIO39, active-low) has to be driven explicitly or
+the BQ25616 charger effectively stops charging while the firmware is
+running (its JTAG-group reset-default pull-up leaves it disabled);
+`main.cpp` drives it low at boot and holds it (alongside the power
+latch) through every deep sleep with `gpio_hold_en()` +
+`gpio_deep_sleep_hold_en()`, since none of these three pins are
+RTC-capable and would otherwise lose their driven level the instant
+deep sleep powers down the digital IOMUX domain.
+
+Tested on physical hardware. Pin
+assignments are triple-sourced: Seeed's own hardware-overview
+documentation (linked above) and the [FreeInk
+SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed)
+`libs/hardware/BoardConfig/include/BoardConfig.h`'s `STICKY`
+BoardProfile, which cross-references a vendor schematic and the
+vendor's own peripheral demo -- the two sources agree on every pin
+used here. No source code was copied from FreeInk, only these factual
+pin assignments, matching the treatment already given the Xteink X4
+Pro / Classic and the Elecrow CrowPanel 5.79". FreeInk's own comment
+for this device lists several items as "pending hardware validation"
+(panel mount orientation, MicroSD bus-sharing behavior, PDM mic
+pins); this port reuses whatever `display_ws_epd397.cpp` settled on
+after real hardware testing instead of FreeInk's documented choice
+for the full-refresh waveform and SPI clock speed -- see
+`components/display/display_reterminal_sticky.cpp`'s file header for
+the specifics. The board also exposes a temperature/humidity sensor
+(SHT40), a 6-axis IMU (LSM6DS3TR-C), a PCF8563 RTC, a PDM microphone
+and an LEDC buzzer, none of which Draftling uses, matching the
+"vendor board carries more than the firmware touches" pattern already
+seen on the Waveshare ESP32-S3-ePaper-3.97 and the Xteink boards.
+
+The GT911 digitizer is mounted in portrait under the landscape panel:
+it reports a 480x800 frame (raw X along the panel's short side), which
+`TOUCH_NATIVE_W`/`TOUCH_NATIVE_H` = 480/800 describe, and swap + mirror
+both axes map it onto the 800x480 panel frame. An earlier revision of
+this port declared the raw frame as 800x480, which squeezed every tap
+into the lower part of the screen and was reported by a user as touch
+not working. The corrected mapping agrees with three
+hardware-verified sources: FreeInk's `STICKY` profile, the
+[sticky-micronotes](https://github.com/LowFlowIO/sticky-micronotes)
+firmware (same SSD1677 RAM addressing as this port) and the ESPHome
+configs for this device (`swap_xy` only, on a display frame rotated
+180 degrees from this one).
+
 
 ## Seeed Studio reTerminal E1001
 

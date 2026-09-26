@@ -1,0 +1,34 @@
+# Seeed reTerminal Sticky -- partition table
+#
+# Every other board uses a single "factory" app partition
+# (partitions.csv / partitions_8mb.csv). This board instead uses the
+# standard ESP-IDF dual-OTA layout: an "otadata" partition plus two
+# app slots (ota_0 / ota_1). Draftling runs from ota_0; ota_1 is left
+# empty.
+#
+# Why this board is different: like the Xteink X4 Pro / Classic (see
+# partitions_xteink_x4_pro.csv), this board also runs the third-party
+# "Crosspoint" firmware, built with PlatformIO/Arduino-esp32, whose
+# OTA-based updaters expect an "otadata" partition to be present.
+# Keeping an OTA layout here means the device can be moved to
+# Crosspoint, or back, without first re-flashing a partition table
+# over the serial port. It also leaves room for a future Draftling
+# build to ship its own OTA update.
+#
+# The app slots (0x7F0000 = ~8.1 MB each) are far larger than
+# Draftling needs (~2.3 MB) but match the Xteink layout for
+# consistency; this board's 32 MB flash leaves the other half
+# entirely unpartitioned/unused, same as every other single-image
+# board leaves unused flash beyond what its own table claims. "nvs"
+# is 0x4000 (16 KB -- the ESP-IDF two-OTA default) so that "otadata"
+# and "phy_init" still fit below the 64 KB-aligned ota_0 offset; the
+# BLE bonds and the handful of Draftling settings keys fit comfortably
+# in that. There is no "nvs_keys" partition (it is only used with NVS
+# encryption, which Draftling does not enable).
+#
+# Name,   Type, SubType,  Offset,    Size,      Flags
+nvs,      data, nvs,      0x9000,    0x4000,
+otadata,  data, ota,      0xd000,    0x2000,
+phy_init, data, phy,      0xf000,    0x1000,
+ota_0,    app,  ota_0,    0x10000,   0x7F0000,
+ota_1,    app,  ota_1,    0x800000,  0x7F0000,
