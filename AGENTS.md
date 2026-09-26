@@ -624,6 +624,18 @@ surrogate pairs into single supplementary-plane codepoints, replaces
 unpaired surrogates with U+FFFD, and silently drops the CR (U+000D)
 half of Windows CRLF line endings.
 
+**Help.** `F10` in the editor, either file browser, or the F1 menu's
+"Help" item opens a scrollable help screen (`s_scr_help`,
+`show_help()` / `handle_help_key()` / `close_help()`). A
+`help_origin_t` records whether it was opened from the editor, the
+full-screen browser or the split-mode in-pane selector, which picks
+the shortcut list and where Esc / Enter return to. In the editor the
+page also lists the focused document's formatting syntax, taken from
+its `editor_format_t` (`help_title` and the `{ NULL, NULL }`-terminated
+`help` rows), so each format keeps its cheat sheet in its own file.
+Rows are word-wrapped by hand (`help_row()`) with a hanging indent so
+the descriptions stay in their column on narrow panels.
+
 Editor shortcuts include `Ctrl+F` (Find) and `Ctrl+H` (Find +
 Replace). Both open a modal overlay; in Find+Replace mode, `Tab`
 switches between the Find and Replace fields, `Enter` jumps to the

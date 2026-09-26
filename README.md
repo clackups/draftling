@@ -129,6 +129,7 @@ load the firmware quickly without having to compile it.
 | Shortcut | Action |
 |----------|--------|
 | F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...) |
+| F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn, Home/End scroll; Esc or Enter closes it |
 | Arrow keys | Move cursor |
 | Home / End | Start / end of line |
 | PgUp / PgDn | Scroll by page |
@@ -168,6 +169,7 @@ In the file browser:
 | F2 or Alt+R | Rename the selected file. The name must end in `.md`, `.fountain` or `.txt`; the saved cursor position (the `.meta` file) moves with it, and changing the extension changes the format |
 | Del or Alt+D | Delete the selected file, after a confirmation. Only allowed when the file is safely on the Git server: its current content must already be committed and pushed (see [Git sync](docs/git-sync.md)), so a deleted file can always be recovered from the repository history. The next sync commits the deletion |
 | F1 / Ctrl+M | Menu |
+| F10 | Help (file browser shortcuts) |
 
 
 ## Writing screenplays (Fountain)

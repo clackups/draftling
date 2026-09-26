@@ -84,6 +84,23 @@ static bool md_tab(bool append_only)
     return false;
 }
 
+static const fmt_help_row_t md_help[] = {
+    { "# Title",      "Heading 1" },
+    { "## .. ####",   "Headings 2 to 4" },
+    { "**bold**",     "Bold (also __bold__)" },
+    { "*italic*",     "Italic (also _italic_)" },
+    { "***both***",   "Bold italic" },
+    { "~~text~~",     "Strikethrough" },
+    { "`code`",       "Inline code" },
+    { "- item",       "Bullet list (also * or +); indent to nest" },
+    { "1. item",      "Numbered list" },
+    { "> text",       "Blockquote" },
+    { "```",          "Start / end a code block" },
+    { "---",          "Horizontal rule" },
+    { "\\*",          "Backslash: type a marker literally" },
+    { NULL, NULL },
+};
+
 extern const editor_format_t md_editor_format = {
     md_scan_init,
     md_parse,
@@ -92,4 +109,6 @@ extern const editor_format_t md_editor_format = {
     md_line_is_plain,
     md_enter,
     md_tab,
+    "Markdown formatting",
+    md_help,
 };

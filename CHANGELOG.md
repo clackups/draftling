@@ -14,6 +14,11 @@ in the git log.
   and pushed to the Git server, so it can always be recovered from the
   repository history; otherwise the status bar says to sync first.
 - **F2 renames files** in the file browser, the same as `Alt+R`.
+- **Built-in help**: `F10` (or the new "Help" item in the `F1` menu)
+  opens a page listing the shortcuts of the current screen -- the
+  editor or the file browser. In the editor it also lists the
+  formatting syntax of the open document: Markdown or Fountain. Scroll
+  with Up/Down, PgUp/PgDn, Home/End; `Esc` or `Enter` closes it.
 
 ### Fixed
 

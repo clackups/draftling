@@ -54,6 +54,13 @@ typedef struct {
     uint8_t  bullet_level;  /* list nesting, picks the bullet shape */
 } fmt_marks_t;
 
+/* One row of a format's cheat sheet on the help screen (Ctrl+H):
+ * what to type and what it produces. */
+typedef struct {
+    const char *syntax;
+    const char *meaning;
+} fmt_help_row_t;
+
 typedef struct {
     void (*scan_init)(fmt_scan_t *sc);
     /* Classify lt[0, ll) -- the next line, lying inside sc->flat --
@@ -74,6 +81,10 @@ typedef struct {
      * handled (the text may have changed). */
     bool (*handle_enter)(bool shift);
     bool (*handle_tab)(bool append_only);
+    /* Help screen: section title and formatting cheat sheet, the rows
+     * terminated by { NULL, NULL }. */
+    const char           *help_title;
+    const fmt_help_row_t *help;
 } editor_format_t;
 
 extern const editor_format_t md_editor_format;
