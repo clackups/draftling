@@ -54,6 +54,11 @@ static bool txt_tab(bool append_only)
     return false;
 }
 
+static const fmt_help_row_t txt_help[] = {
+    { "(none)", "Plain text has no formatting: the text is shown exactly as typed" },
+    { NULL, NULL },
+};
+
 extern const editor_format_t text_editor_format = {
     txt_scan_init,
     txt_parse,
@@ -62,4 +67,6 @@ extern const editor_format_t text_editor_format = {
     txt_line_is_plain,
     txt_enter,
     txt_tab,
+    "Plain text",
+    txt_help,
 };

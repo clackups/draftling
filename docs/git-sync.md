@@ -111,6 +111,17 @@ query on the first sync after boot; if that fails, timestamps are
 floored at 2025-01-01. Git orders history by the commit graph, not by
 timestamp, so an inaccurate clock does not corrupt anything.
 
+## Deleting files
+
+The file browser's `Del` / `Alt+D` command only deletes a file whose
+current content is already on the Git server: it must be identical to
+the file's version in the last commit that a sync pushed to (or
+fetched from) the server. A new file, or one edited since the last
+successful sync, has to be synced first (`Ctrl+G`). The check is made
+on the device, without contacting the server. The next sync then
+commits the deletion, and the file stays available in the repository
+history.
+
 ## Scope and limitations
 
 This is deliberately a minimal client:

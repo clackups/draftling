@@ -8,12 +8,46 @@ in the git log.
 
 ### Added
 
-- **Seeed reTerminal Sticky support (experimental)**: 3.97-inch
+- **Seeed reTerminal Sticky support**: 3.97-inch
   800x480 e-paper (SSD1677) with GT911 touch, BQ27220 battery gauge
   and on-board MicroSD. The Up/Down buttons turn pages; the Power/AI
   button wakes the device, puts it to sleep on a short press and
-  forgets paired BLE keyboards on a 2-second hold. Not yet tested on
-  real hardware.
+  forgets paired BLE keyboards on a 2-second hold.
+- **Delete files from the file browser**: `Del` or `Alt+D` deletes the
+  selected file after a confirmation. To prevent accidental loss this
+  only works for a file whose current content is already committed
+  and pushed to the Git server, so it can always be recovered from the
+  repository history; otherwise the status bar says to sync first.
+- **F2 renames files** in the file browser, the same as `Alt+R`.
+- **Built-in help**: `F10` (or the new "Help" item in the `F1` menu)
+  opens a page listing the shortcuts of the current screen -- the
+  editor or the file browser. In the editor it also lists the
+  formatting syntax of the open document: Markdown or Fountain. Scroll
+  with Up/Down, PgUp/PgDn (or `Ctrl+Up` / `Ctrl+Down`), Home/End;
+  `Esc` or `Enter` closes it.
+- **Letter shortcuts in the `F1` menu**: each item's key letter is
+  drawn bold and picks it directly -- `S` Settings, `B` BLE scan,
+  `W` WiFi connect, `N` new WiFi connection, `D` WiFi disconnect,
+  `G` Git sync, `K` jumps to the keyboard layout row, `U` SD card via
+  USB, `H` Help.
+
+### Changed
+
+- **`Ctrl+Q` is now the Escape substitute** for keyboards without an
+  Esc key, instead of `Ctrl+X`.
+
+### Fixed
+
+- **`Ctrl+X` did not cut**: it acted as Escape everywhere, so the
+  editor's cut command could never run. It now cuts the selection.
+- **Battery level missing while waiting for a keyboard**: the battery
+  indicator on the start-up "searching for keyboard" screen stayed
+  empty until the keyboard connected. It now shows the level right
+  away (and no longer goes blank after changing the color theme).
+- **Long file names broke the editor's title bar**: a name too long
+  for the screen wrapped onto a second line. It is now shortened with
+  an ellipsis so the line and column counters stay visible. The
+  ellipsis character is also displayed properly in documents now.
 
 ## [1.0.7] - 2026-09-24
 

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 18 px
  * Bpp: 1
- * Opts: --font Greybeard-18px.ttf --autohint-off -r 0x20-0x7F,0xA0-0xFF,0x20AC,0x2116 --size 18 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_18_ext --lv-font-name greybeard_18 -o greybeard_18.c
+ * Opts: --font Greybeard-18px.ttf --autohint-off -r 0x20-0x7F,0xA0-0xFF,0x20AC,0x2116,0x2026 --size 18 --bpp 1 --format lvgl --no-compress --lv-fallback greybeard_18_ext --lv-font-name greybeard_18 -o greybeard_18.c
  ******************************************************************************/
 
 #include "lvgl.h"
@@ -710,6 +710,9 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0x49, 0x20, 0x21, 0x86, 0x14, 0x92, 0x28, 0xc1,
     0x8, 0xa1, 0x0,
 
+    /* U+2026 "…" */
+    0xdb, 0xdb,
+
     /* U+20AC "€" */
     0x1c, 0x45, 0x2, 0xf, 0xc8, 0x3e, 0x20, 0x40,
     0x44, 0x70,
@@ -917,8 +920,9 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 1481, .adv_w = 144, .box_w = 6, .box_h = 15, .ofs_x = 1, .ofs_y = -3},
     {.bitmap_index = 1493, .adv_w = 144, .box_w = 6, .box_h = 14, .ofs_x = 1, .ofs_y = -3},
     {.bitmap_index = 1504, .adv_w = 144, .box_w = 6, .box_h = 14, .ofs_x = 1, .ofs_y = -3},
-    {.bitmap_index = 1515, .adv_w = 144, .box_w = 7, .box_h = 11, .ofs_x = 1, .ofs_y = 0},
-    {.bitmap_index = 1525, .adv_w = 144, .box_w = 8, .box_h = 11, .ofs_x = 0, .ofs_y = 0}
+    {.bitmap_index = 1515, .adv_w = 144, .box_w = 8, .box_h = 2, .ofs_x = 0, .ofs_y = 0},
+    {.bitmap_index = 1517, .adv_w = 144, .box_w = 7, .box_h = 11, .ofs_x = 1, .ofs_y = 0},
+    {.bitmap_index = 1527, .adv_w = 144, .box_w = 8, .box_h = 11, .ofs_x = 0, .ofs_y = 0}
 };
 
 /*---------------------
@@ -926,7 +930,7 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
  *--------------------*/
 
 static const uint16_t unicode_list_2[] = {
-    0x0, 0x6a
+    0x0, 0x86, 0xf0
 };
 
 /*Collect the unicode lists and glyph_id offsets*/
@@ -941,8 +945,8 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
         .unicode_list = NULL, .glyph_id_ofs_list = NULL, .list_length = 0, .type = LV_FONT_FMT_TXT_CMAP_FORMAT0_TINY
     },
     {
-        .range_start = 8364, .range_length = 107, .glyph_id_start = 192,
-        .unicode_list = unicode_list_2, .glyph_id_ofs_list = NULL, .list_length = 2, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
+        .range_start = 8230, .range_length = 241, .glyph_id_start = 192,
+        .unicode_list = unicode_list_2, .glyph_id_ofs_list = NULL, .list_length = 3, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
     }
 };
 

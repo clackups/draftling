@@ -22,14 +22,12 @@
  * facts-only treatment already used for the Xteink X4 Pro / Classic
  * and the Elecrow CrowPanel 5.79" board headers).
  *
- * THIS BOARD HAS NOT BEEN TESTED ON PHYSICAL HARDWARE. It is added
- * as an experimental / best-effort port: FreeInk's own comment for
- * this device lists several "pending hardware validation" items
- * (panel mount orientation, MicroSD bus-sharing behavior, PDM mic
- * pins) that its own authors have not confirmed on a unit either.
- * Where FreeInk's driver made a Sticky-specific choice this port
- * could not independently verify (e.g. the full-refresh waveform),
- * this port instead reuses whatever the *Waveshare ESP32-S3-ePaper-3.97*
+ * Tested on physical hardware. FreeInk's own comment for this device
+ * lists several "pending hardware validation" items (panel mount
+ * orientation, MicroSD bus-sharing behavior, PDM mic pins). Where
+ * FreeInk's driver made a Sticky-specific choice this port did not
+ * take over (e.g. the full-refresh waveform), this port instead
+ * reuses whatever the *Waveshare ESP32-S3-ePaper-3.97*
  * backend settled on after real hardware testing, since that board
  * carries the exact same SSD1677-family 800x480 panel class -- see
  * components/display/display_reterminal_sticky.cpp for details.

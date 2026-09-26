@@ -165,7 +165,7 @@
         },
         {
             "name": "seeed_reterminal_sticky",
-            "displayName": "Seeed reTerminal Sticky (SSD1677, 3.97in e-paper, touch) [experimental]",
+            "displayName": "Seeed reTerminal Sticky (SSD1677, 3.97in e-paper, touch)",
             "binaryDir": "build/seeed_reterminal_sticky",
             "cacheVariables": {
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.seeed_reterminal_sticky",

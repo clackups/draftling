@@ -269,7 +269,7 @@ config DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
         Page Down). PCF8563 RTC on I2C.
 
 config DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
-    bool "Seeed reTerminal Sticky (ESP32-S3, SSD1677, 3.97\" e-paper, 800x480, touch) [experimental]"
+    bool "Seeed reTerminal Sticky (ESP32-S3, SSD1677, 3.97\" e-paper, 800x480, touch)"
     depends on IDF_TARGET_ESP32S3
     help
         Seeed Studio reTerminal Sticky: a battery-powered, magnetically
@@ -281,12 +281,12 @@ config DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
         sleep, 2 s hold = forget BLE keyboards) drive the editor
         without a keyboard. 32 MB flash.
 
-        EXPERIMENTAL: this board has NOT been tested on physical
-        hardware. Pin assignments are triple-sourced from Seeed's own
+        Tested on physical hardware. Pin assignments are
+        triple-sourced from Seeed's own
         hardware-overview documentation and the FreeInk SDK
         (github.com/Free-Ink/freeink-sdk, MIT licensed), which agree;
         see main/boards/seeed_reterminal_sticky.h for the full
-        sourcing note and every "not yet verified" caveat. Grayscale /
+        sourcing note. Grayscale /
         anti-aliasing rendering is not implemented (matches the
         existing e-paper boards).
 

@@ -522,7 +522,7 @@ latch) through every deep sleep with `gpio_hold_en()` +
 RTC-capable and would otherwise lose their driven level the instant
 deep sleep powers down the digital IOMUX domain.
 
-**This board has NOT been tested on physical hardware.** Pin
+Tested on physical hardware. Pin
 assignments are triple-sourced: Seeed's own hardware-overview
 documentation (linked above) and the [FreeInk
 SDK](https://github.com/Free-Ink/freeink-sdk) (MIT licensed)
@@ -533,12 +533,10 @@ used here. No source code was copied from FreeInk, only these factual
 pin assignments, matching the treatment already given the Xteink X4
 Pro / Classic and the Elecrow CrowPanel 5.79". FreeInk's own comment
 for this device lists several items as "pending hardware validation"
-that its own authors have not confirmed on a unit either (panel mount
-orientation, MicroSD bus-sharing behavior, PDM mic pins); this port
-inherits the same open questions and additionally reuses whatever
-`display_ws_epd397.cpp` settled on after real hardware testing
-wherever FreeInk's documented choice could not be independently
-verified (full-refresh waveform, SPI clock speed) -- see
+(panel mount orientation, MicroSD bus-sharing behavior, PDM mic
+pins); this port reuses whatever `display_ws_epd397.cpp` settled on
+after real hardware testing instead of FreeInk's documented choice
+for the full-refresh waveform and SPI clock speed -- see
 `components/display/display_reterminal_sticky.cpp`'s file header for
 the specifics. The board also exposes a temperature/humidity sensor
 (SHT40), a 6-axis IMU (LSM6DS3TR-C), a PCF8563 RTC, a PDM microphone

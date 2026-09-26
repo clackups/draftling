@@ -23,8 +23,7 @@
  * Waveshare ESP32-S3-ePaper-3.97's AXP2101-gated rail). No
  * front-light (display_set_backlight() is a no-op).
  *
- * THIS BOARD HAS NOT BEEN TESTED ON PHYSICAL HARDWARE (see the board
- * header for the full caveat). Two choices here specifically deviate
+ * Tested on physical hardware. Two choices here specifically deviate
  * from what FreeInk's own STICKY profile documents, in favor of
  * reusing what display_ws_epd397.cpp already proved on real hardware
  * -- the Waveshare ESP32-S3-ePaper-3.97 carries the exact same

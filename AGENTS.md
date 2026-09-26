@@ -79,7 +79,7 @@ card).
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
-| Seeed reTerminal Sticky (**experimental**, untested on physical hardware) | 3.97-inch e-paper (SSD1677), 800x480, GT911 touch |
+| Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677), 800x480, GT911 touch |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
 monochrome e-paper panel driven by an UltraChip UC8179 controller over
@@ -433,13 +433,12 @@ Per-board display backends behind a single C API:
   single-board SSD1677 backend here, this panel's SPI bus is also
   shared with the on-board MicroSD card (separate `CS`, same
   `SCLK`/`MOSI`/`MISO`). No PMIC: the panel's power-enable pin is a
-  plain GPIO. **Experimental / untested on physical hardware** --
-  reuses `display_ws_epd397.cpp`'s hardware-proven full-refresh
-  waveform and a conservative SPI clock rather than the (here
-  unverified) values documented for this device by the FreeInk SDK;
-  see the file's header comment and
-  `main/boards/seeed_reterminal_sticky.h` for the full sourcing and
-  caveat notes.
+  plain GPIO. Tested on physical hardware. Reuses
+  `display_ws_epd397.cpp`'s hardware-proven full-refresh waveform and
+  a conservative SPI clock rather than the values documented for this
+  device by the FreeInk SDK; see the file's header comment and
+  `main/boards/seeed_reterminal_sticky.h` for the full sourcing
+  notes.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -540,7 +539,7 @@ raised (full-screen browser, split-mode in-pane selector, or editor)
 so `newfmt_prompt_activate()` creates the untitled document in the
 right place and then applies the format.
 
-**Rename.** `Alt+R` in either file browser opens the save-as name
+**Rename.** `F2` or `Alt+R` in either file browser opens the save-as name
 overlay in rename mode (`show_rename_prompt()`, `s_save_is_rename`).
 The overlay (like the format picker) is re-parented with
 `lv_obj_set_parent()` onto the active screen each time it is shown,
@@ -551,6 +550,31 @@ allowed), and re-points any open document with the old path at the
 new one (taking the new extension's format). The UI rejects names
 without a document extension, since the file would vanish from the
 browser. Directories cannot be renamed.
+
+**Delete.** `Del` or `Alt+D` in either file browser deletes the
+selected file, but only when `git_sync_file_status()` reports
+`GIT_SYNC_FILE_PUSHED`: the file's current content hashes to the same
+blob as its entry in the last commit known to be on the server
+(`refs/remotes/origin/<branch>` under the `path=` sub-tree). Any other
+status (Git sync not configured, a sync running, file new or modified
+since the last push) only puts the reason in the status bar, so a
+deleted file can always be recovered from the repository history. A
+safe file gets a Delete / Cancel overlay (`s_del_panel`,
+`show_delete_prompt()` / `handle_delete_prompt_key()`, Cancel
+preselected, re-parented onto the active screen like the rename
+overlay); `editor_delete_file()` then removes the file and its
+`.meta` sidecar, refusing while the file is open in a pane. The next
+sync commits the deletion.
+
+**F1 menu letter keys.** `s_menu_hotkeys[]` in `editor_ui.cpp` maps
+a letter (resolved with `kb_layout_shortcut_char()`, no Ctrl / Alt /
+Win) to a menu row and the character index of that letter in the
+row's label; `handle_menu_key()` activates the row (`K` only moves the
+highlight to the keyboard-layout row). There is no bold font, so
+`menu_hotkey_draw_cb()` (`LV_EVENT_DRAW_MAIN_END` on the row label)
+redraws the letter 1 px to the right, following the circular-scroll
+offset of an overflowing `lv_list` label (read from
+`lv_label_private.h`). Keep the index in sync when a label changes.
 
 **Settings** is the first item in the F1 menu (moved to the top so it
 is a single Enter away without navigating past the connectivity
@@ -633,6 +657,18 @@ would render as random Latin-1 glyphs. The transcoder decodes UTF-16
 surrogate pairs into single supplementary-plane codepoints, replaces
 unpaired surrogates with U+FFFD, and silently drops the CR (U+000D)
 half of Windows CRLF line endings.
+
+**Help.** `F10` in the editor, either file browser, or the F1 menu's
+"Help" item opens a scrollable help screen (`s_scr_help`,
+`show_help()` / `handle_help_key()` / `close_help()`). A
+`help_origin_t` records whether it was opened from the editor, the
+full-screen browser or the split-mode in-pane selector, which picks
+the shortcut list and where Esc / Enter return to. In the editor the
+page also lists the focused document's formatting syntax, taken from
+its `editor_format_t` (`help_title` and the `{ NULL, NULL }`-terminated
+`help` rows), so each format keeps its cheat sheet in its own file.
+Rows are word-wrapped by hand (`help_row()`) with a hanging indent so
+the descriptions stay in their column on narrow panels.
 
 Editor shortcuts include `Ctrl+F` (Find) and `Ctrl+H` (Find +
 Replace). Both open a modal overlay; in Find+Replace mode, `Tab`
@@ -825,9 +861,12 @@ Scope limits: one branch, no tags/submodules/signing, no shallow clone,
 flat `*.md` / `*.fountain` / `*.txt` working tree only, HTTP Basic auth only (no SSH). LCS merge
 falls back to a whole-file conflict above ~1400 lines per side.
 
-Public API (unchanged): `git_sync_init()`, `git_sync_start()`,
+Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_state()`, `git_sync_is_configured()`,
-`git_sync_get_last_error()`, `git_sync_max_file_size()`.
+`git_sync_get_last_error()`, `git_sync_max_file_size()`,
+`git_sync_file_status()` (local-only check whether a file's current
+content is in the last commit known to be on the server; used by the
+file browser's delete command).
 
 ### components/io_expander/
 
@@ -881,7 +920,7 @@ in the F1 -> Settings menu; it defaults to US + UA. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
 Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
-in `editor_ui.cpp`), `Alt+R` and the file browser's unmodified `N`
+in `editor_ui.cpp`), `Alt+R`, `Alt+D` and the file browser's unmodified `N`
 (new file) accelerator resolve their letter via `kb_layout_shortcut_char()`, not
 a raw `kb_layout_translate()` call: under a Latin layout (US/DE/FR) it
 follows the national layout, and is not limited to the classic 26-key
@@ -1146,6 +1185,25 @@ lv_font_conv \
   -o greybeard_14.c
 ```
 
+### Reproducing the committed fonts
+
+The committed base fonts (`greybeard_NN.c`, `hack_NN.c`) regenerate
+byte-for-byte -- apart from the fix-ups below -- from the command line
+recorded in each file's header comment, using:
+
+- `lv_font_conv` at commit `1f44ab4` of github.com/lvgl/lv_font_conv.
+  The npm release 1.5.2 predates `--lv-fallback` / `--lv-font-name`,
+  and later commits change the output format (`0x00` instead of `0x0`,
+  an extra `__has_include` block, `stride` / `static_bitmap` fields).
+- Greybeard v1.0.0 (`Greybeard-v1.0.0-ttf.zip` from the
+  flowchartsman/greybeard release) and Hack v3.003
+  (`Hack-v3.003-ttf.zip` from the source-foundry/Hack release).
+
+To add a glyph, regenerate with the new code point appended to `-r`,
+apply the fix-ups below, and diff against the committed file: only the
+new glyph's bitmap, its `glyph_dsc` entry and the cmap tables should
+change. This is how U+2026 was added.
+
 ### Post-generation Fix-up
 
 `lv_font_conv` emits a boilerplate include block at the top of every
@@ -1172,6 +1230,14 @@ any font, replace that whole `#ifdef ... #endif` block with a single line:
 This matches the include style used elsewhere in the component
 (`components/fonts/greybeard.c`, `components/fonts/include/greybeard.h`).
 
+Newer `lv_font_conv` commits wrap that block in an `#ifdef
+__has_include` guard; replace the whole construct the same way. Some
+committed files also declare the fallback router as `extern lv_font_t
+..._ext;` rather than `extern const lv_font_t ..._ext;` (the router is
+mutable, see `greybeard.c`); keep whichever form the file already has.
+The Hack files additionally get the advance-width snapping described
+under "Hack fonts" below.
+
 ### Unicode Ranges
 
 The base `greybeard_NN.c` files cover the always-on core ranges:
@@ -1182,6 +1248,7 @@ The base `greybeard_NN.c` files cover the always-on core ranges:
 | U+00A0 - U+00FF | Latin-1 Supplement (accented Latin characters, symbols) |
 | U+20AC | Euro sign |
 | U+2116 | Numero sign |
+| U+2026 | Horizontal ellipsis (the editor title bar ends a shortened file name with it) |
 
 Additional script coverage is split into separate subset font files
 that are compiled into the firmware only when the corresponding
@@ -1314,7 +1381,7 @@ layout options:
 
 | File pattern | Range | Source | Gated on |
 |--------------|-------|--------|----------|
-| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
+| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
 | `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
 
@@ -1448,12 +1515,11 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   short press = sleep; 2 s hold = forget BLE keyboards) drive the
   editor without a keyboard. 32 MB flash; dual-OTA partition table
   (`partitions_seeed_reterminal_sticky.csv`) so the third-party
-  Crosspoint firmware can still be installed later. **Experimental --
-  added without on-hardware testing**; pin assignments are
-  triple-sourced from Seeed's own documentation and the FreeInk SDK
-  (MIT licensed), which agree; see
-  `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md for every
-  "pending hardware validation" caveat. *Requires ESP32-S3.*
+  Crosspoint firmware can still be installed later. Tested on
+  physical hardware; pin assignments are triple-sourced from Seeed's
+  own documentation and the FreeInk SDK (MIT licensed), which agree;
+  see `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md.
+  *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
@@ -1776,8 +1842,7 @@ the web flasher (see below) -- currently `m5stack_papers3`,
 `waveshare_touch_lcd_349`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `elecrow_crowpanel_579`, and
-`seeed_reterminal_sticky` (experimental -- untested on physical
-hardware, same as `xteink_x4_classic`). Extend the list there
+`seeed_reterminal_sticky`. Extend the list there
 as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
