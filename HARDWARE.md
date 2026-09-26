@@ -518,7 +518,7 @@ driven by an UltraChip UC8179 controller over SPI.
 
 ## M5Stack PaperMono / PaperMono-Lite
 
-**Experimental -- not yet tested on physical hardware.**
+Tested on physical hardware.
 
 The [M5Stack PaperMono-Lite](https://docs.m5stack.com/en/core/PaperMono-Lite)
 and [PaperMono](https://docs.m5stack.com/en/core/PaperMono) are a

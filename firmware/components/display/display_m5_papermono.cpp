@@ -14,8 +14,6 @@
  * so no mirroring is applied. The controller init uses M5GFX's
  * booster soft-start and border values for this panel.
  *
- * EXPERIMENTAL: not yet tested on physical hardware.
- *
  * Panel: 800x480. SPI: SCLK=15, MOSI=14, CS=16, DC=17, BUSY=18, no
  * MISO. The panel's RST line and its 3.3 V supply are not GPIOs but
  * M5IOE1 IO-expander outputs; main.cpp switches the supply on and

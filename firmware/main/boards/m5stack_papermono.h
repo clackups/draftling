@@ -10,10 +10,10 @@
  * unpowered behind the M5PM1's LoRa_EN output, which is never
  * enabled).
  *
- * EXPERIMENTAL: added without on-hardware testing. Pin numbers come
- * from M5Stack's pin map for both boards; the power-up sequence and
- * the M5PM1 / M5IOE1 register maps come from M5Stack's MIT-licensed
- * M5GFX (board autodetect for board_M5PaperMono), M5PM1, M5IOE1 and
+ * Tested on physical hardware. Pin numbers come from M5Stack's pin
+ * map for both boards; the power-up sequence and the M5PM1 / M5IOE1
+ * register maps come from M5Stack's MIT-licensed M5GFX (board
+ * autodetect for board_M5PaperMono), M5PM1, M5IOE1 and
  * M5PaperMono-PowerDemo sources.
  *
  * E-paper panel SPI bus (SCLK=15, MOSI=14, CS=16, DC=17, BUSY=18) is

@@ -114,10 +114,11 @@ and DE (QWERTZ) layouts (cycle with `Ctrl+L` or `Win+Space`) and
 disables the Ukrainian, French and Hebrew layouts that the common
 Kconfig would otherwise pull in.
 
-The author's keyboard has no dedicated ESC key, so `Ctrl+X` is wired as an
+The author's keyboard has no dedicated ESC key, so `Ctrl+Q` is wired as an
 Escape substitute. `process_key_event()` in
-`components/editor/editor_ui.cpp` translates `Ctrl+X` (HID usage 0x1B
-with either Control modifier) into a synthetic `KB_KEY_ESCAPE` event,
+`components/editor/editor_ui.cpp` translates `Ctrl+Q` (the Q key as
+resolved by `kb_layout_shortcut_char()`, with either Control modifier)
+into a synthetic `KB_KEY_ESCAPE` event,
 so every screen handler that already keys off Escape (leaving the
 editor, closing the file browser / settings / menus / dialogs) reacts
 identically. This substitution is global, so it works on every board.
@@ -172,7 +173,7 @@ enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
 - `main/app_config.h` -- `CONFIG_DRAFTLING_MODEL_SUNTON_8048S043` block (SD / touch / wakeup pins).
 - `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` + `DRAFTLING_RGB_BOARD_S043` derived flags, width/height (800x480), `DRAFTLING_DISPLAY_HIDPI` (Hack fonts), GT911 / touch-RST defaults.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
-- `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+X -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
+- `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+Q -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
 - `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` / `draftling_lvgl_port_get_flip180()` runtime 180-degree flip.
 - `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable + US/DE keyboard layouts.
 - `docs/sunton-esp32-8048S070c.md` -- the 7" sibling board.

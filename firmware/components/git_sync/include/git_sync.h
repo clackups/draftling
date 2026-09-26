@@ -46,6 +46,25 @@ bool git_sync_is_configured(void);
 const char *git_sync_get_last_error(void);
 const char *git_sync_get_last_sync_time(void);
 
+/* Whether a file in the sync directory is safely stored on the Git
+ * server, i.e. could be deleted locally without losing anything.
+ * GIT_SYNC_FILE_PUSHED means its current content on the SD card is
+ * byte-identical to the version in the last commit known to be on the
+ * server (refs/remotes/origin/<branch>, updated by a successful push
+ * or by fetching the remote tip). The check is local only; it never
+ * touches the network. */
+typedef enum {
+    GIT_SYNC_FILE_PUSHED,        /* identical to the server's copy */
+    GIT_SYNC_FILE_NOT_CONFIGURED,/* no git.cfg / repo_url */
+    GIT_SYNC_FILE_BUSY,          /* a sync is running */
+    GIT_SYNC_FILE_NOT_PUSHED,    /* not in the last pushed commit (new, or never synced) */
+    GIT_SYNC_FILE_MODIFIED,      /* changed since the last push */
+    GIT_SYNC_FILE_ERROR,         /* unreadable file or repository */
+} git_sync_file_status_t;
+
+/* name is a bare file name in the sync directory (the SD card root). */
+git_sync_file_status_t git_sync_file_status(const char *name);
+
 #ifdef __cplusplus
 }
 #endif

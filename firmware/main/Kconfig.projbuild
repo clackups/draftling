@@ -286,10 +286,10 @@ config DRAFTLING_MODEL_M5STACK_PAPERMONO
         wakes the device from deep sleep; see main/boards/
         m5stack_papermono.h for the button mapping.
 
-        EXPERIMENTAL: added without on-hardware testing. Pin numbers
-        and the M5PM1 / M5IOE1 register maps come from M5Stack's
-        documentation and its MIT-licensed M5GFX, M5PM1, M5IOE1 and
-        M5PaperMono-PowerDemo sources.
+        Tested on physical hardware. Pin numbers and the M5PM1 /
+        M5IOE1 register maps come from M5Stack's documentation and its
+        MIT-licensed M5GFX, M5PM1, M5IOE1 and M5PaperMono-PowerDemo
+        sources.
 
 endchoice
 
