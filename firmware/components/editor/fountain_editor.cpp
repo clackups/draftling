@@ -305,6 +305,30 @@ static bool ftn_tab(bool append_only)
     return true;
 }
 
+static const fmt_help_row_t ftn_help[] = {
+    { "INT. / EXT.",  "Scene heading after a blank line; force with a leading ." },
+    { "NAME",         "Character: all caps after a blank line; force with @" },
+    { "(line below)", "Dialogue follows the character" },
+    { "(beat)",       "Parenthetical inside dialogue" },
+    { "NAME ^",       "Dual dialogue" },
+    { "CUT TO:",      "Transition; force with >" },
+    { ">text<",       "Centered text" },
+    { "!text",        "Force action" },
+    { "~text",        "Lyrics" },
+    { "= text",       "Synopsis" },
+    { "# Act",        "Section (## and ### nest)" },
+    { "===",          "Page break" },
+    { "Title:",       "Title page key at the top of the script" },
+    { "*i* **b**",    "Italic, bold (***both***)" },
+    { "_text_",       "Underline" },
+    { "[[note]]",     "Note" },
+    { "/* .. */",     "Boneyard: text left out of the script" },
+    { "Tab",          "Complete a character name or scene heading" },
+    { "Enter",        "After a scene heading or transition, also adds the blank line" },
+    { "Shift+Enter",  "Single new line" },
+    { NULL, NULL },
+};
+
 extern const editor_format_t fountain_editor_format = {
     ftn_scan_init,
     ftn_parse,
@@ -313,4 +337,6 @@ extern const editor_format_t fountain_editor_format = {
     ftn_line_is_plain,
     ftn_enter,
     ftn_tab,
+    "Fountain formatting",
+    ftn_help,
 };

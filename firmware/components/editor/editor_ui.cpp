@@ -10,6 +10,7 @@
 #include <nvs.h>
 #include "sdkconfig.h"
 #include "lvgl.h"
+#include "widgets/label/lv_label_private.h"  /* offset / text_size of scrolling menu labels */
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -818,7 +819,8 @@ static bool      s_menu_open    = false;
 
 /* F1 menu item indices. Fixed 0-7 for every board; "SD card via USB"
  * (8) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
- * "Sleep now" / "Close menu" shift down by one on every other board.
+ * "Help" / "Sleep now" / "Close menu" shift down by one on every other
+ * board.
  * Use the MENU_IDX_* constants instead of bare integers everywhere
  * downstream so the two layouts stay in lock-step (mirrors the
  * SETTINGS_IDX_* convention used by the Settings submenu below). */
@@ -836,11 +838,12 @@ static bool      s_menu_open    = false;
 #else
 #define _MENU_NEXT_AFTER_USB_MSC 8
 #endif
-#define MENU_IDX_SLEEP        _MENU_NEXT_AFTER_USB_MSC
-#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 1)
+#define MENU_IDX_HELP         _MENU_NEXT_AFTER_USB_MSC
+#define MENU_IDX_SLEEP        (_MENU_NEXT_AFTER_USB_MSC + 1)
+#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 2)
 
 /* Number of menu items */
-#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_USB_MSC + 2)
+#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_USB_MSC + 3)
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 /* "SD card via USB" picker + deferred-apply state. Selecting the item
@@ -1077,6 +1080,25 @@ static int       s_del_sel     = DELCONF_CANCEL;
 static char      s_del_path[512] = "";
 /* Row to select after the deletion (the neighbouring file). */
 static char      s_del_next_name[256] = "";
+
+/* ---- Help screen ----
+ * F10 (or F1 -> Help) shows a scrollable page with the shortcuts of the
+ * current mode -- the editor or the file browser -- and, in the editor,
+ * the formatting cheat sheet of the focused document's format (see
+ * editor_format_t::help). Up/Down/PgUp/PgDn/Home/End scroll; Esc or
+ * Enter return to where the help was opened from. */
+typedef enum {
+    HELP_FROM_EDITOR,
+    HELP_FROM_BROWSER,   /* full-screen file browser */
+    HELP_FROM_INPANE,    /* split-mode in-pane file selector */
+} help_origin_t;
+
+static lv_obj_t *s_scr_help      = NULL;
+static lv_obj_t *s_lbl_help_hdr  = NULL;
+static lv_obj_t *s_help_cont     = NULL;   /* scrollable body */
+static lv_obj_t *s_help_lbl      = NULL;
+static bool      s_help_open     = false;
+static help_origin_t s_help_origin = HELP_FROM_EDITOR;
 
 /* ---- Device battery display ----
  *
@@ -3140,6 +3162,7 @@ static void settings_activate_item(int idx);
 /* Defined with the exit/sleep overlay code further down; the F1 menu's
  * "Sleep now" item (menu_activate_item) needs it before that point. */
 static void show_sleep_prompt(void);
+static void show_help(help_origin_t origin);
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 /* Defined with the split-layout code further down (editor_ui_apply_split_mode);
@@ -3952,6 +3975,105 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel)
     }
 }
 
+/* F1 menu letter accelerators. Each entry names the menu row, the
+ * letter that picks it (resolved with kb_layout_shortcut_char(), like
+ * the file browser's N) and the character index of that letter in the
+ * row's label, which menu_hotkey_draw_cb() paints bold. Every label
+ * text before the marked letter is ASCII, so the index is also a byte
+ * offset. */
+struct menu_hotkey_t {
+    int  idx;
+    char key;
+    int  pos;
+};
+
+static const menu_hotkey_t s_menu_hotkeys[] = {
+    { MENU_IDX_SETTINGS,        's', 0  },  /* "Settings..." */
+    { MENU_IDX_BLE_SCAN,        'b', 0  },  /* "BLE: Start scan" */
+    { MENU_IDX_WIFI_CONNECT,    'w', 0  },  /* "WiFi: ..." */
+    { MENU_IDX_WIFI_NEW,        'n', 6  },  /* "WiFi: New connection..." */
+    { MENU_IDX_WIFI_DISCONNECT, 'd', 6  },  /* "WiFi: Disconnect" */
+    { MENU_IDX_GIT_SYNC,        'g', 0  },  /* "Git Sync" */
+    { MENU_IDX_KB_LAYOUT,       'k', 0  },  /* "Keyboard: ..." */
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    { MENU_IDX_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
+#endif
+    { MENU_IDX_HELP,            'h', 0  },  /* "Help (F10)" */
+};
+
+/* Faux-bold spills a pixel or two past the label box. */
+static void menu_hotkey_ext_size_cb(lv_event_t *e)
+{
+    lv_event_set_ext_draw_size(e, 2);
+}
+
+/* LV_EVENT_DRAW_MAIN_END handler of a menu row label: redraws the
+ * accelerator letter one pixel to the right (the editor's faux-bold,
+ * see line_deco_draw_cb()). lv_list labels scroll circularly when the
+ * text does not fit, so follow the label's scroll offset and its
+ * second, wrapped-around copy the same way lv_label draws them. */
+static void menu_hotkey_draw_cb(lv_event_t *e)
+{
+    uint32_t ci = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+    lv_obj_t *label = lv_event_get_target_obj(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    const char *txt = lv_label_get_text(label);
+    if (!txt || strlen(txt) <= ci) return;
+
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    int32_t bdx = lv_font_get_line_height(font) >= 40 ? 2 : 1;
+    lv_area_t ca;
+    lv_obj_get_content_coords(label, &ca);
+    lv_point_t pos;
+    lv_label_get_letter_pos(label, ci, &pos);
+
+    lv_draw_label_dsc_t ld;
+    lv_draw_label_dsc_init(&ld);
+    ld.font  = font;
+    ld.opa   = LV_OPA_COVER;
+    ld.color = lv_obj_get_style_text_color(label, LV_PART_MAIN);
+
+    const lv_label_t *lb = (const lv_label_t *)label;
+    int32_t x = ca.x1 + pos.x + lb->offset.x + bdx;
+    int32_t y = ca.y1 + pos.y + lb->offset.y;
+    int32_t wrap = 0;
+    if (lb->long_mode == LV_LABEL_LONG_MODE_SCROLL_CIRCULAR &&
+        lb->text_size.x > lv_area_get_width(&ca)) {
+        wrap = lb->text_size.x +
+               lv_font_get_glyph_width(font, ' ', ' ') * LV_LABEL_WAIT_CHAR_COUNT;
+    }
+
+    lv_area_t orig = layer->_clip_area;
+    lv_area_t clip = {
+        LV_MAX(orig.x1, ca.x1), LV_MAX(orig.y1, ca.y1),
+        LV_MIN(orig.x2, ca.x2 + bdx), LV_MIN(orig.y2, ca.y2)
+    };
+    if (clip.x1 > clip.x2 || clip.y1 > clip.y2) return;
+    layer->_clip_area = clip;
+    lv_point_t pt = { x, y };
+    lv_draw_character(layer, &ld, &pt, (uint8_t)txt[ci]);
+    if (wrap) {
+        pt.x = x + wrap;
+        lv_draw_character(layer, &ld, &pt, (uint8_t)txt[ci]);
+    }
+    layer->_clip_area = orig;
+}
+
+/* Mark the accelerator letters of the freshly built menu rows. */
+static void menu_mark_hotkeys(void)
+{
+    for (const menu_hotkey_t &h : s_menu_hotkeys) {
+        lv_obj_t *btn = lv_obj_get_child(s_menu_list, h.idx);
+        lv_obj_t *lbl = btn ? lv_obj_get_child(btn, 0) : NULL;
+        if (!lbl) continue;
+        lv_obj_add_event_cb(lbl, menu_hotkey_ext_size_cb,
+                            LV_EVENT_REFR_EXT_DRAW_SIZE, NULL);
+        lv_obj_add_event_cb(lbl, menu_hotkey_draw_cb, LV_EVENT_DRAW_MAIN_END,
+                            (void *)(uintptr_t)h.pos);
+        lv_obj_refresh_ext_draw_size(lbl);
+    }
+}
+
 static void refresh_menu_items(void)
 {
     lv_obj_clean(s_menu_list);
@@ -4016,11 +4138,16 @@ static void refresh_menu_items(void)
     lv_list_add_btn(s_menu_list, NULL, buf);
 #endif
 
+    /* Help */
+    lv_list_add_btn(s_menu_list, NULL, "Help (F10)");
+
     /* Sleep now */
     lv_list_add_btn(s_menu_list, NULL, "Sleep now");
 
     /* Close menu */
     lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
+
+    menu_mark_hotkeys();
 
     /* Highlight selection */
     apply_list_selection_styles(s_menu_list, s_menu_sel);
@@ -5248,6 +5375,11 @@ static void menu_activate_item(int idx)
         refresh_usbmsc_picker_items();
         break;
 #endif
+    case MENU_IDX_HELP:
+        /* The help describes the screen the menu was opened from. */
+        s_menu_open = false;
+        show_help(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER);
+        break;
     case MENU_IDX_SLEEP:
         /* Leave the menu first so, if we prompt about unsaved changes,
          * the dialog is drawn on the editor screen it lives on. With no
@@ -5343,9 +5475,240 @@ static void handle_menu_key(const kb_event_t *ev)
         close_menu();
         break;
     default:
+        /* Letter accelerators (drawn bold in the menu). K only moves
+         * the highlight to the keyboard row, where Enter cycles the
+         * layout; the others activate their row. */
+        if (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL | KB_MOD_LALT |
+                            KB_MOD_RALT | KB_MOD_LGUI | KB_MOD_RGUI))
+            break;
+        {
+            char ch = kb_layout_shortcut_char(ev->keycode);
+            for (const menu_hotkey_t &h : s_menu_hotkeys) {
+                if (ch != h.key) continue;
+                s_menu_sel = h.idx;
+                update_menu_highlight();
+                if (h.idx != MENU_IDX_KB_LAYOUT) menu_activate_item(h.idx);
+                break;
+            }
+        }
         break;
     }
 }
+
+/* ---- Help screen ---- */
+
+/* Append one "key  description" row to the help text. The description
+ * is word-wrapped by hand to the text width (cols characters) with a
+ * hanging indent at keycol, so it stays in its column; a key too long
+ * for the key column gets a line of its own. */
+static void help_row(std::string &out, int cols, int keycol,
+                     const char *key, const char *desc)
+{
+    int klen = (int)strlen(key);
+    out += key;
+    if (klen >= keycol) {
+        out += '\n';
+        out.append(keycol, ' ');
+    } else {
+        out.append(keycol - klen, ' ');
+    }
+    int dw = cols - keycol;
+    if (dw < 8) dw = 8;
+    int col = 0;
+    const char *p = desc;
+    while (*p) {
+        const char *w = p;
+        while (*w && *w != ' ') w++;
+        int wl = (int)(w - p);
+        if (col > 0 && col + 1 + wl > dw) {
+            out += '\n';
+            out.append(keycol, ' ');
+            col = 0;
+        } else if (col > 0) {
+            out += ' ';
+            col++;
+        }
+        out.append(p, wl);
+        col += wl;
+        while (*w == ' ') w++;
+        p = w;
+    }
+    out += '\n';
+}
+
+static void help_heading(std::string &out, const char *title)
+{
+    if (!out.empty()) out += '\n';
+    out += title;
+    out += '\n';
+    out.append(strlen(title), '-');
+    out += '\n';
+}
+
+/* Shortcuts that work both in the editor and in the file browser. */
+static void help_common_rows(std::string &out, int cols, int kc)
+{
+    help_row(out, cols, kc, "F1, Ctrl+M", "Menu");
+    help_row(out, cols, kc, "F10", "This help");
+    help_row(out, cols, kc, "Ctrl+1", "Single pane");
+    help_row(out, cols, kc, "Ctrl+2", "Split into two equal panes");
+    help_row(out, cols, kc, "Ctrl+3", "Split with a wide first pane; again to make it narrow");
+    help_row(out, cols, kc, "Ctrl+G", "Git sync");
+    help_row(out, cols, kc, "Ctrl+W", "WiFi connect / disconnect");
+    help_row(out, cols, kc, "Ctrl+P", "Sleep");
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+    help_row(out, cols, kc, "Ctrl+B", "Backlight brightness");
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    help_row(out, cols, kc, "Ctrl+R", "Full screen refresh (clears ghosting)");
+#endif
+    help_row(out, cols, kc, "Ctrl+Q", "Same as Esc, for keyboards without one");
+}
+
+static void build_help_text(std::string &out, help_origin_t origin, int cols)
+{
+    int kc = cols / 3;
+    if (kc < 11) kc = 11;
+    if (kc > 16) kc = 16;
+
+    if (origin == HELP_FROM_EDITOR) {
+        help_heading(out, "Editor");
+        help_row(out, cols, kc, "Esc", "Back to the file browser (asks to save changes)");
+        help_row(out, cols, kc, "Ctrl+S", "Save / save as");
+        help_row(out, cols, kc, "Ctrl+O", "Open another file");
+        help_row(out, cols, kc, "Ctrl+N", "New file");
+        help_row(out, cols, kc, "Ctrl+F", "Find");
+        help_row(out, cols, kc, "Ctrl+H", "Find and replace (Tab: switch field, Ctrl+Enter: replace)");
+        help_row(out, cols, kc, "Shift+arrows", "Select text");
+        help_row(out, cols, kc, "Ctrl+A", "Select all");
+        help_row(out, cols, kc, "Ctrl+C / X / V", "Copy / cut / paste");
+        help_row(out, cols, kc, "Ctrl+Left/Right", "Previous / next word");
+        help_row(out, cols, kc, "Home / End", "Start / end of line");
+        help_row(out, cols, kc, "Ctrl+Home/End", "Start / end of document");
+        help_row(out, cols, kc, "PgUp / PgDn", "Page up / down");
+        help_row(out, cols, kc, "Ctrl+Up/Down", "Page up / down, same as PgUp / PgDn");
+        help_row(out, cols, kc, "Ctrl+Tab", "Switch pane (when split)");
+        help_row(out, cols, kc, "Ctrl+L", "Next keyboard layout (also Win+Space)");
+        help_common_rows(out, cols, kc);
+
+        pane_bind_focus();
+        const editor_format_t *fmt = editor_format_active();
+        help_heading(out, fmt->help_title);
+        for (const fmt_help_row_t *r = fmt->help; r->syntax; r++)
+            help_row(out, cols, kc, r->syntax, r->meaning);
+    } else {
+        help_heading(out, "File browser");
+        help_row(out, cols, kc, "Up / Down", "Select a file");
+        help_row(out, cols, kc, "Enter", "Open the file or folder");
+        if (origin == HELP_FROM_INPANE)
+            help_row(out, cols, kc, "Esc", "Back to the editor");
+        help_row(out, cols, kc, "N, Ctrl+N", "New file: Markdown, Fountain or plain text");
+        help_row(out, cols, kc, "F2, Alt+R", "Rename the file");
+        help_row(out, cols, kc, "Del, Alt+D", "Delete the file (only once it is pushed with Git sync)");
+        if (origin == HELP_FROM_INPANE)
+            help_row(out, cols, kc, "Ctrl+Tab", "Switch to the other pane");
+        help_common_rows(out, cols, kc);
+    }
+}
+
+static void show_help(help_origin_t origin)
+{
+    if (!s_scr_help) return;
+    if (origin == HELP_FROM_INPANE) close_inpane_browser();
+    s_help_origin = origin;
+    s_help_open = true;
+
+    /* Text width in characters: the body width minus its 4 px side
+     * padding and room for the scrollbar, over the monospace cell. */
+    int cols = (SCR_W - 16) / char_width_for_font(FONT_14);
+    if (cols < 20) cols = 20;
+
+    std::string text;
+    build_help_text(text, origin, cols);
+    lv_label_set_text(s_help_lbl, text.c_str());
+    lv_obj_scroll_to_y(s_help_cont, 0, LV_ANIM_OFF);
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* Same missing-repaint issue as show_menu(). */
+    display_clear(0xFF);
+    lv_obj_invalidate(s_scr_help);
+#endif
+    lv_scr_load(s_scr_help);
+}
+
+static void close_help(void)
+{
+    s_help_open = false;
+    switch (s_help_origin) {
+    case HELP_FROM_EDITOR:
+        editor_ui_show_editor();
+        break;
+    case HELP_FROM_INPANE:
+        editor_ui_show_editor();
+        show_inpane_browser();
+        break;
+    default:
+        editor_ui_show_file_browser();
+        break;
+    }
+}
+
+static void handle_help_key(const kb_event_t *ev)
+{
+    int32_t line = lv_font_get_line_height(FONT_14);
+    int32_t page = LIST_PANEL_H - line;
+    if (page < line) page = line;
+
+    /* Ctrl+Up / Ctrl+Down page, as in the editor. */
+    bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
+    if (ctrl && ev->keycode == KB_KEY_UP) {
+        lv_obj_scroll_by_bounded(s_help_cont, 0, page, LV_ANIM_OFF);
+        return;
+    }
+    if (ctrl && ev->keycode == KB_KEY_DOWN) {
+        lv_obj_scroll_by_bounded(s_help_cont, 0, -page, LV_ANIM_OFF);
+        return;
+    }
+
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        lv_obj_scroll_by_bounded(s_help_cont, 0, line, LV_ANIM_OFF);
+        break;
+    case KB_KEY_DOWN:
+        lv_obj_scroll_by_bounded(s_help_cont, 0, -line, LV_ANIM_OFF);
+        break;
+    case KB_KEY_PAGEUP:
+        lv_obj_scroll_by_bounded(s_help_cont, 0, page, LV_ANIM_OFF);
+        break;
+    case KB_KEY_PAGEDOWN:
+    case KB_KEY_SPACE:
+        lv_obj_scroll_by_bounded(s_help_cont, 0, -page, LV_ANIM_OFF);
+        break;
+    case KB_KEY_HOME:
+        lv_obj_scroll_to_y(s_help_cont, 0, LV_ANIM_OFF);
+        break;
+    case KB_KEY_END:
+        lv_obj_scroll_by_bounded(s_help_cont, 0, -LV_COORD_MAX / 2, LV_ANIM_OFF);
+        break;
+    case KB_KEY_ENTER:
+    case KB_KEY_ESCAPE:
+    case KB_KEY_F10:
+        close_help();
+        break;
+    default:
+        break;
+    }
+}
+
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+/* A tap on the help page closes it; a drag scrolls it (LVGL does not
+ * report a click at the end of a scroll). */
+static void help_touch_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_help_open) close_help();
+}
+#endif
 
 /* ---- Save-prompt overlay ---- */
 
@@ -6634,6 +6997,10 @@ static void handle_editor_key(const kb_event_t *ev)
         show_menu();
         return;
     }
+    if (ev->keycode == KB_KEY_F10) {
+        show_help(HELP_FROM_EDITOR);
+        return;
+    }
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Defense-in-depth, not the primary guard: commit_usb_msc_pending_mode()
@@ -7258,6 +7625,10 @@ static void handle_browser_key(const kb_event_t *ev)
         show_menu();
         return;
     }
+    if (ev->keycode == KB_KEY_F10) {
+        show_help(HELP_FROM_BROWSER);
+        return;
+    }
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* While the SD card is handed to a USB host, refuse anything that
@@ -7457,6 +7828,10 @@ static void handle_inpane_browser_key(const kb_event_t *ev)
         show_menu();
         return;
     }
+    if (ev->keycode == KB_KEY_F10) {
+        show_help(HELP_FROM_INPANE);
+        return;
+    }
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Defense-in-depth, not the primary guard: split mode cannot be
@@ -7510,14 +7885,16 @@ static void process_key_event(const kb_event_t *ev)
         norm.keycode = KB_KEY_ENTER;
     }
 
-    /* Ctrl+X is a substitute for Escape on keyboards that have no
+    /* Ctrl+Q is a substitute for Escape on keyboards that have no
      * dedicated ESC key (e.g. some compact BLE keyboards). Translate
      * it into a synthetic Escape event so every screen handler that
-     * already keys off KB_KEY_ESCAPE picks it up unchanged. The 'x'
-     * HID usage id is 0x1B; match it with either Control modifier. */
+     * already keys off KB_KEY_ESCAPE picks it up unchanged. The letter
+     * is resolved like the other Ctrl shortcuts (see
+     * kb_layout_shortcut_char()), so on AZERTY it is the key printed Q
+     * and Ctrl+A there still selects all. */
     {
         bool ctrl = (norm.modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl && norm.keycode == 0x1B) {
+        if (ctrl && kb_layout_shortcut_char(norm.keycode) == 'q') {
             norm.keycode  = KB_KEY_ESCAPE;
             norm.modifier = 0;
             norm.character = 0;
@@ -7543,6 +7920,8 @@ static void process_key_event(const kb_event_t *ev)
          * still true underneath), so it must take priority over
          * handle_menu_key. */
         handle_wifi_pw_prompt_key(e);
+    } else if (s_help_open) {
+        handle_help_key(e);
     } else if (s_menu_open) {
         handle_menu_key(e);
     } else if (s_inpane_browser_open) {
@@ -7845,6 +8224,7 @@ static void apply_pending_connect_state(void)
          * UI is in a clean state when we reconnect.  Do NOT call
          * editor_close_file() -- preserve the user's work. */
         s_menu_open = false;
+        s_help_open = false;
         s_settings_open = false;
         s_restart_confirm_open = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
@@ -8658,6 +9038,39 @@ static void build_screens(void)
         lv_label_set_text(menu_version_lbl, ver_buf);
     }
 
+    /* ---- Help screen (F10) ---- */
+    s_scr_help = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(s_scr_help, theme_bg(), 0);
+
+    s_lbl_help_hdr = lv_label_create(s_scr_help);
+    lv_obj_set_pos(s_lbl_help_hdr, 2, 0);
+    lv_obj_set_width(s_lbl_help_hdr, SCR_W - 4);
+    lv_label_set_long_mode(s_lbl_help_hdr, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_font(s_lbl_help_hdr, FONT_11, 0);
+    lv_obj_set_style_text_color(s_lbl_help_hdr, theme_fg(), 0);
+    lv_label_set_text(s_lbl_help_hdr,
+                      "Help - Up/Down/PgUp/PgDn to scroll, Esc or Enter to close");
+
+    s_help_cont = lv_obj_create(s_scr_help);
+    lv_obj_set_pos(s_help_cont, 0, HEADER_H);
+    lv_obj_set_size(s_help_cont, SCR_W, LIST_PANEL_H);
+    lv_obj_set_style_border_width(s_help_cont, 0, 0);
+    lv_obj_set_style_radius(s_help_cont, 0, 0);
+    lv_obj_set_style_pad_all(s_help_cont, 0, 0);
+    lv_obj_set_style_pad_left(s_help_cont, 4, 0);
+    lv_obj_set_style_pad_right(s_help_cont, 4, 0);
+    lv_obj_set_style_bg_color(s_help_cont, theme_bg(), 0);
+    lv_obj_set_scroll_dir(s_help_cont, LV_DIR_VER);
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    lv_obj_add_event_cb(s_help_cont, help_touch_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+    s_help_lbl = lv_label_create(s_help_cont);
+    lv_obj_set_width(s_help_lbl, LV_PCT(100));
+    lv_label_set_long_mode(s_help_lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_font(s_help_lbl, FONT_14, 0);
+    lv_obj_set_style_text_color(s_help_lbl, theme_fg(), 0);
+
     /* ---- WiFi password-entry overlay (shown on the menu screen) ----
      * Structurally a copy of the save-as prompt below (header / value
      * label / cursor bar), but parented to s_scr_menu since that is
@@ -9015,6 +9428,7 @@ static void teardown_screens(void)
      * automatically with their parent. */
     if (s_scr_browser)    { lv_obj_delete(s_scr_browser);    s_scr_browser    = NULL; }
     if (s_scr_menu)       { lv_obj_delete(s_scr_menu);       s_scr_menu       = NULL; }
+    if (s_scr_help)       { lv_obj_delete(s_scr_help);       s_scr_help       = NULL; }
     if (s_scr_settings)   { lv_obj_delete(s_scr_settings);   s_scr_settings   = NULL; }
     if (s_scr_ble_prompt) { lv_obj_delete(s_scr_ble_prompt); s_scr_ble_prompt = NULL; }
     if (s_scr)            { lv_obj_delete(s_scr);            s_scr            = NULL; }
@@ -9046,6 +9460,7 @@ static void teardown_screens(void)
     s_lbl_ble_dev_batt = NULL;
 #endif
     s_menu_list = s_lbl_menu_hdr = NULL;
+    s_lbl_help_hdr = s_help_cont = s_help_lbl = NULL;
     s_settings_list = NULL;
     s_ble_prompt_lbl = NULL;
     s_passkey_panel = s_passkey_label = NULL;
@@ -9066,6 +9481,7 @@ static void teardown_screens(void)
      * from a clean state. The persistent document, NVS-backed font
      * size / theme / backlight / standby timeout are NOT touched. */
     s_menu_open               = false;
+    s_help_open               = false;
     s_settings_open           = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
     s_theme_picker_open       = false;

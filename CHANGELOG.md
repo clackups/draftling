@@ -14,9 +14,27 @@ in the git log.
   and pushed to the Git server, so it can always be recovered from the
   repository history; otherwise the status bar says to sync first.
 - **F2 renames files** in the file browser, the same as `Alt+R`.
+- **Built-in help**: `F10` (or the new "Help" item in the `F1` menu)
+  opens a page listing the shortcuts of the current screen -- the
+  editor or the file browser. In the editor it also lists the
+  formatting syntax of the open document: Markdown or Fountain. Scroll
+  with Up/Down, PgUp/PgDn (or `Ctrl+Up` / `Ctrl+Down`), Home/End;
+  `Esc` or `Enter` closes it.
+- **Letter shortcuts in the `F1` menu**: each item's key letter is
+  drawn bold and picks it directly -- `S` Settings, `B` BLE scan,
+  `W` WiFi connect, `N` new WiFi connection, `D` WiFi disconnect,
+  `G` Git sync, `K` jumps to the keyboard layout row, `U` SD card via
+  USB, `H` Help.
+
+### Changed
+
+- **`Ctrl+Q` is now the Escape substitute** for keyboards without an
+  Esc key, instead of `Ctrl+X`.
 
 ### Fixed
 
+- **`Ctrl+X` did not cut**: it acted as Escape everywhere, so the
+  editor's cut command could never run. It now cuts the selection.
 - **Battery level missing while waiting for a keyboard**: the battery
   indicator on the start-up "searching for keyboard" screen stayed
   empty until the keyboard connected. It now shows the level right
