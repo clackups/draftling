@@ -23,13 +23,12 @@ load the firmware quickly without having to compile it.
 * Ready-made consumer grade hardware
   * Xteink X4 Pro (**unlocked devices only!**), so far the best value for money amongst e-paper devices.
   * Xteink X4 Classic (**unlocked devices only!**) -- the buttons-only, no-front-light X4 (untested on physical hardware).
-  * LilyGO T5 E-Paper S3 Pro / Pro Lite
-  * M5Stack PaperS3 (discontinued)
+  * Seeed reTerminal Sticky
   * M5Stack PaperMono / PaperMono-Lite
+  * LilyGO T5 E-Paper S3 Pro / Pro Lite
   * Waveshare ESP32-S3-Touch-LCD-3.49
   * Seeed Studio reTerminal E1001 (7.5" e-paper)
-  * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
-  * Seeed reTerminal Sticky (see [HARDWARE.md](HARDWARE.md))
+  * M5Stack PaperS3 (discontinued)
 
 * DIY boards
   * Waveshare ESP32-S3-ePaper-3.97 ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-ePaper-3.97/))
@@ -39,6 +38,7 @@ load the firmware quickly without having to compile it.
   * 7" and 4.3" Sunton boards
   * 2.8" and 4" Freenove boards
   * Waveshare ESP32-S3-Touch-LCD-7 
+  * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 
 ## Features
