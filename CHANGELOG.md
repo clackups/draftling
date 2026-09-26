@@ -18,7 +18,13 @@ in the git log.
   opens a page listing the shortcuts of the current screen -- the
   editor or the file browser. In the editor it also lists the
   formatting syntax of the open document: Markdown or Fountain. Scroll
-  with Up/Down, PgUp/PgDn, Home/End; `Esc` or `Enter` closes it.
+  with Up/Down, PgUp/PgDn (or `Ctrl+Up` / `Ctrl+Down`), Home/End;
+  `Esc` or `Enter` closes it.
+- **Letter shortcuts in the `F1` menu**: each item's key letter is
+  drawn bold and picks it directly -- `S` Settings, `B` BLE scan,
+  `W` WiFi connect, `N` new WiFi connection, `D` WiFi disconnect,
+  `G` Git sync, `K` jumps to the keyboard layout row, `U` SD card via
+  USB, `H` Help.
 
 ### Changed
 

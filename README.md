@@ -128,8 +128,8 @@ load the firmware quickly without having to compile it.
 
 | Shortcut | Action |
 |----------|--------|
-| F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...) |
-| F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn, Home/End scroll; Esc or Enter closes it |
+| F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...). Inside the menu, the letter drawn bold picks its item: S Settings, B BLE scan, W WiFi connect, N new WiFi connection, D WiFi disconnect, G Git sync, K keyboard layout, U SD card via USB, H Help |
+| F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn (or Ctrl+Up/Down), Home/End scroll; Esc or Enter closes it |
 | Arrow keys | Move cursor |
 | Home / End | Start / end of line |
 | PgUp / PgDn | Scroll by page |

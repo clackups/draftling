@@ -542,6 +542,16 @@ overlay); `editor_delete_file()` then removes the file and its
 `.meta` sidecar, refusing while the file is open in a pane. The next
 sync commits the deletion.
 
+**F1 menu letter keys.** `s_menu_hotkeys[]` in `editor_ui.cpp` maps
+a letter (resolved with `kb_layout_shortcut_char()`, no Ctrl / Alt /
+Win) to a menu row and the character index of that letter in the
+row's label; `handle_menu_key()` activates the row (`K` only moves the
+highlight to the keyboard-layout row). There is no bold font, so
+`menu_hotkey_draw_cb()` (`LV_EVENT_DRAW_MAIN_END` on the row label)
+redraws the letter 1 px to the right, following the circular-scroll
+offset of an overflowing `lv_list` label (read from
+`lv_label_private.h`). Keep the index in sync when a label changes.
+
 **Settings** is the first item in the F1 menu (moved to the top so it
 is a single Enter away without navigating past the connectivity
 items). It opens an in-line list with: standby timeout, base font

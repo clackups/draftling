@@ -10,6 +10,7 @@
 #include <nvs.h>
 #include "sdkconfig.h"
 #include "lvgl.h"
+#include "widgets/label/lv_label_private.h"  /* offset / text_size of scrolling menu labels */
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
@@ -3974,6 +3975,105 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel)
     }
 }
 
+/* F1 menu letter accelerators. Each entry names the menu row, the
+ * letter that picks it (resolved with kb_layout_shortcut_char(), like
+ * the file browser's N) and the character index of that letter in the
+ * row's label, which menu_hotkey_draw_cb() paints bold. Every label
+ * text before the marked letter is ASCII, so the index is also a byte
+ * offset. */
+struct menu_hotkey_t {
+    int  idx;
+    char key;
+    int  pos;
+};
+
+static const menu_hotkey_t s_menu_hotkeys[] = {
+    { MENU_IDX_SETTINGS,        's', 0  },  /* "Settings..." */
+    { MENU_IDX_BLE_SCAN,        'b', 0  },  /* "BLE: Start scan" */
+    { MENU_IDX_WIFI_CONNECT,    'w', 0  },  /* "WiFi: ..." */
+    { MENU_IDX_WIFI_NEW,        'n', 6  },  /* "WiFi: New connection..." */
+    { MENU_IDX_WIFI_DISCONNECT, 'd', 6  },  /* "WiFi: Disconnect" */
+    { MENU_IDX_GIT_SYNC,        'g', 0  },  /* "Git Sync" */
+    { MENU_IDX_KB_LAYOUT,       'k', 0  },  /* "Keyboard: ..." */
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    { MENU_IDX_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
+#endif
+    { MENU_IDX_HELP,            'h', 0  },  /* "Help (F10)" */
+};
+
+/* Faux-bold spills a pixel or two past the label box. */
+static void menu_hotkey_ext_size_cb(lv_event_t *e)
+{
+    lv_event_set_ext_draw_size(e, 2);
+}
+
+/* LV_EVENT_DRAW_MAIN_END handler of a menu row label: redraws the
+ * accelerator letter one pixel to the right (the editor's faux-bold,
+ * see line_deco_draw_cb()). lv_list labels scroll circularly when the
+ * text does not fit, so follow the label's scroll offset and its
+ * second, wrapped-around copy the same way lv_label draws them. */
+static void menu_hotkey_draw_cb(lv_event_t *e)
+{
+    uint32_t ci = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+    lv_obj_t *label = lv_event_get_target_obj(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    const char *txt = lv_label_get_text(label);
+    if (!txt || strlen(txt) <= ci) return;
+
+    const lv_font_t *font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    int32_t bdx = lv_font_get_line_height(font) >= 40 ? 2 : 1;
+    lv_area_t ca;
+    lv_obj_get_content_coords(label, &ca);
+    lv_point_t pos;
+    lv_label_get_letter_pos(label, ci, &pos);
+
+    lv_draw_label_dsc_t ld;
+    lv_draw_label_dsc_init(&ld);
+    ld.font  = font;
+    ld.opa   = LV_OPA_COVER;
+    ld.color = lv_obj_get_style_text_color(label, LV_PART_MAIN);
+
+    const lv_label_t *lb = (const lv_label_t *)label;
+    int32_t x = ca.x1 + pos.x + lb->offset.x + bdx;
+    int32_t y = ca.y1 + pos.y + lb->offset.y;
+    int32_t wrap = 0;
+    if (lb->long_mode == LV_LABEL_LONG_MODE_SCROLL_CIRCULAR &&
+        lb->text_size.x > lv_area_get_width(&ca)) {
+        wrap = lb->text_size.x +
+               lv_font_get_glyph_width(font, ' ', ' ') * LV_LABEL_WAIT_CHAR_COUNT;
+    }
+
+    lv_area_t orig = layer->_clip_area;
+    lv_area_t clip = {
+        LV_MAX(orig.x1, ca.x1), LV_MAX(orig.y1, ca.y1),
+        LV_MIN(orig.x2, ca.x2 + bdx), LV_MIN(orig.y2, ca.y2)
+    };
+    if (clip.x1 > clip.x2 || clip.y1 > clip.y2) return;
+    layer->_clip_area = clip;
+    lv_point_t pt = { x, y };
+    lv_draw_character(layer, &ld, &pt, (uint8_t)txt[ci]);
+    if (wrap) {
+        pt.x = x + wrap;
+        lv_draw_character(layer, &ld, &pt, (uint8_t)txt[ci]);
+    }
+    layer->_clip_area = orig;
+}
+
+/* Mark the accelerator letters of the freshly built menu rows. */
+static void menu_mark_hotkeys(void)
+{
+    for (const menu_hotkey_t &h : s_menu_hotkeys) {
+        lv_obj_t *btn = lv_obj_get_child(s_menu_list, h.idx);
+        lv_obj_t *lbl = btn ? lv_obj_get_child(btn, 0) : NULL;
+        if (!lbl) continue;
+        lv_obj_add_event_cb(lbl, menu_hotkey_ext_size_cb,
+                            LV_EVENT_REFR_EXT_DRAW_SIZE, NULL);
+        lv_obj_add_event_cb(lbl, menu_hotkey_draw_cb, LV_EVENT_DRAW_MAIN_END,
+                            (void *)(uintptr_t)h.pos);
+        lv_obj_refresh_ext_draw_size(lbl);
+    }
+}
+
 static void refresh_menu_items(void)
 {
     lv_obj_clean(s_menu_list);
@@ -4046,6 +4146,8 @@ static void refresh_menu_items(void)
 
     /* Close menu */
     lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
+
+    menu_mark_hotkeys();
 
     /* Highlight selection */
     apply_list_selection_styles(s_menu_list, s_menu_sel);
@@ -5373,6 +5475,22 @@ static void handle_menu_key(const kb_event_t *ev)
         close_menu();
         break;
     default:
+        /* Letter accelerators (drawn bold in the menu). K only moves
+         * the highlight to the keyboard row, where Enter cycles the
+         * layout; the others activate their row. */
+        if (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL | KB_MOD_LALT |
+                            KB_MOD_RALT | KB_MOD_LGUI | KB_MOD_RGUI))
+            break;
+        {
+            char ch = kb_layout_shortcut_char(ev->keycode);
+            for (const menu_hotkey_t &h : s_menu_hotkeys) {
+                if (ch != h.key) continue;
+                s_menu_sel = h.idx;
+                update_menu_highlight();
+                if (h.idx != MENU_IDX_KB_LAYOUT) menu_activate_item(h.idx);
+                break;
+            }
+        }
         break;
     }
 }
@@ -5467,7 +5585,8 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Ctrl+Left/Right", "Previous / next word");
         help_row(out, cols, kc, "Home / End", "Start / end of line");
         help_row(out, cols, kc, "Ctrl+Home/End", "Start / end of document");
-        help_row(out, cols, kc, "PgUp / PgDn", "Page up / down (also Ctrl+Up/Down)");
+        help_row(out, cols, kc, "PgUp / PgDn", "Page up / down");
+        help_row(out, cols, kc, "Ctrl+Up/Down", "Page up / down, same as PgUp / PgDn");
         help_row(out, cols, kc, "Ctrl+Tab", "Switch pane (when split)");
         help_row(out, cols, kc, "Ctrl+L", "Next keyboard layout (also Win+Space)");
         help_common_rows(out, cols, kc);
@@ -5539,6 +5658,17 @@ static void handle_help_key(const kb_event_t *ev)
     int32_t line = lv_font_get_line_height(FONT_14);
     int32_t page = LIST_PANEL_H - line;
     if (page < line) page = line;
+
+    /* Ctrl+Up / Ctrl+Down page, as in the editor. */
+    bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
+    if (ctrl && ev->keycode == KB_KEY_UP) {
+        lv_obj_scroll_by_bounded(s_help_cont, 0, page, LV_ANIM_OFF);
+        return;
+    }
+    if (ctrl && ev->keycode == KB_KEY_DOWN) {
+        lv_obj_scroll_by_bounded(s_help_cont, 0, -page, LV_ANIM_OFF);
+        return;
+    }
 
     switch (ev->keycode) {
     case KB_KEY_UP:
