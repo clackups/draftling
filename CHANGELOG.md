@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-26
+
 ### Added
 
 - **Seeed reTerminal Sticky support**: 3.97-inch
