@@ -54,6 +54,7 @@ enum batt_backend {
     BATT_BACKEND_INA226,
     BATT_BACKEND_CW2017,
     BATT_BACKEND_AXP2101,
+    BATT_BACKEND_M5PM1,
 };
 static enum batt_backend s_backend = BATT_BACKEND_NONE;
 
@@ -141,6 +142,36 @@ static i2c_master_dev_handle_t   s_cw2017_dev = NULL;
 #define AXP2101_STATE_DISCHARGING        2
 
 static i2c_master_dev_handle_t   s_axp2101_dev = NULL;
+
+/* ---- M5PM1 backend state ----
+ * M5Stack M5PM1 power-management chip, used on the M5Stack PaperMono
+ * (I2C address 0x6E). Register map from M5Stack's MIT-licensed M5PM1
+ * library; the start-up writes mirror M5GFX's board_M5PaperMono
+ * bring-up. The chip reports the battery voltage directly (no fuel
+ * gauge: percentage comes from the LiPo LUT below) and which input
+ * is powering the board, and its GPIO3 doubles as PWM0, which drives
+ * the PaperMono's front-light (battery_m5pm1_set_frontlight()). */
+#define M5PM1_I2C_ADDR           0x6E
+#define M5PM1_REG_DEVICE_ID      0x00
+#define M5PM1_REG_PWR_SRC        0x04  /* [2:0] 0=5VIN (USB) 1=5VINOUT 2=battery */
+#define M5PM1_REG_PWR_CFG        0x06  /* [4] LED_EN level [2] LDO [1] DCDC [0] CHG */
+#define M5PM1_REG_I2C_CFG        0x09  /* [3:0] idle-sleep timeout, 0 = never */
+#define M5PM1_REG_WDT_CNT        0x0A  /* 0 = watchdog disabled */
+#define M5PM1_REG_GPIO_MODE      0x10  /* 1 = output */
+#define M5PM1_REG_GPIO_DRV       0x13  /* 1 = open-drain */
+#define M5PM1_REG_GPIO_FUNC0     0x16  /* 2 bits per GPIO0-3; GPIO3 11 = PWM0 */
+#define M5PM1_REG_VBAT_L         0x22  /* 12-bit mV over 0x22/0x23 */
+#define M5PM1_REG_PWM0_L         0x30  /* 12-bit duty, 0x31 [4] = enable */
+#define M5PM1_REG_PWM_FREQ_L     0x34  /* Hz, 16-bit over 0x34/0x35 */
+
+#define M5PM1_PWR_CFG_ON         0x17  /* LED_EN level, LDO, DCDC, charging */
+#define M5PM1_PWR_SRC_5VIN       0
+#define M5PM1_FRONTLIGHT_GPIO    3
+#define M5PM1_FRONTLIGHT_PWM_HZ  5000
+/* Below this the battery is taken to be absent. */
+#define M5PM1_VBAT_MIN_MV        2500
+
+static i2c_master_dev_handle_t   s_m5pm1_dev = NULL;
 
 /* ---- INA226 backend state ----
  * Only the bus-voltage and shunt-voltage registers are used.
@@ -689,6 +720,123 @@ extern "C" int battery_init_axp2101(void *i2c_master_bus)
     return 0;
 }
 
+/* ---- M5PM1 backend ---- */
+
+static int m5pm1_write(const uint8_t *buf, size_t len)
+{
+    if (!s_m5pm1_dev) return -1;
+    return (i2c_master_transmit(s_m5pm1_dev, buf, len, 100 /* ms */) == ESP_OK) ? 0 : -1;
+}
+
+static int m5pm1_write_u8(uint8_t reg, uint8_t val)
+{
+    uint8_t wr[2] = { reg, val };
+    return m5pm1_write(wr, sizeof(wr));
+}
+
+static int m5pm1_read(uint8_t reg, uint8_t *out, size_t len)
+{
+    if (!s_m5pm1_dev) return -1;
+    return (i2c_master_transmit_receive(s_m5pm1_dev, &reg, 1, out, len,
+                                        100 /* ms */) == ESP_OK) ? 0 : -1;
+}
+
+static int m5pm1_rmw_u8(uint8_t reg, uint8_t mask, uint8_t val)
+{
+    uint8_t cur = 0;
+    if (m5pm1_read(reg, &cur, 1) != 0) return -1;
+    uint8_t next = (uint8_t)((cur & ~mask) | (val & mask));
+    if (next == cur) return 0;
+    return m5pm1_write_u8(reg, next);
+}
+
+extern "C" int battery_init_m5pm1(void *i2c_master_bus)
+{
+    if (s_backend != BATT_BACKEND_NONE) return 0;
+    if (i2c_master_bus == NULL) {
+        ESP_LOGW(TAG, "M5PM1 init: NULL I2C bus handle");
+        return -1;
+    }
+    i2c_master_bus_handle_t bus = (i2c_master_bus_handle_t)i2c_master_bus;
+
+    /* The chip keeps its registers across ESP32 resets and may have
+     * been left in I2C idle sleep by other firmware; a START condition
+     * wakes it, but the first transaction after waking can be lost,
+     * so probe until it answers (M5Stack's library does the same). */
+    esp_err_t err = ESP_FAIL;
+    for (int i = 0; i < 10 && err != ESP_OK; i++) {
+        err = i2c_master_probe(bus, M5PM1_I2C_ADDR, 20 /* ms */);
+        if (err != ESP_OK) vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "M5PM1 not responding at 0x%02X", M5PM1_I2C_ADDR);
+        return -1;
+    }
+
+    i2c_device_config_t dev_cfg = {};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.device_address  = M5PM1_I2C_ADDR;
+    dev_cfg.scl_speed_hz    = 100000;
+    err = i2c_master_bus_add_device(bus, &dev_cfg, &s_m5pm1_dev);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "M5PM1 bus_add_device failed: %s", esp_err_to_name(err));
+        s_m5pm1_dev = NULL;
+        return -1;
+    }
+
+    /* Disable I2C idle sleep (written twice: the first write may be
+     * consumed waking the chip), then the watchdog, then make sure the
+     * 3.3 V / 5 V rails and charging are on. */
+    m5pm1_write_u8(M5PM1_REG_I2C_CFG, 0x00);
+    if (m5pm1_write_u8(M5PM1_REG_I2C_CFG, 0x00) != 0) {
+        ESP_LOGW(TAG, "M5PM1: failed to disable I2C idle sleep");
+    }
+    if (m5pm1_write_u8(M5PM1_REG_WDT_CNT, 0x00) != 0) {
+        ESP_LOGW(TAG, "M5PM1: failed to disable watchdog");
+    }
+    if (m5pm1_rmw_u8(M5PM1_REG_PWR_CFG, M5PM1_PWR_CFG_ON, M5PM1_PWR_CFG_ON) != 0) {
+        ESP_LOGW(TAG, "M5PM1: failed to enable power rails");
+    }
+
+    s_backend = BATT_BACKEND_M5PM1;
+
+    uint8_t id = 0;
+    m5pm1_read(M5PM1_REG_DEVICE_ID, &id, 1);
+    ESP_LOGI(TAG, "M5PM1 initialized at 0x%02X (id 0x%02X, battery %d mV)",
+             M5PM1_I2C_ADDR, id, battery_read_mv());
+    return 0;
+}
+
+extern "C" int battery_m5pm1_set_frontlight(int percent)
+{
+    if (!s_m5pm1_dev) return -1;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+
+    static bool s_pwm_configured = false;
+    if (!s_pwm_configured) {
+        const uint8_t bit = 1u << M5PM1_FRONTLIGHT_GPIO;
+        /* GPIO3: PWM0 function, push-pull output. */
+        if (m5pm1_rmw_u8(M5PM1_REG_GPIO_FUNC0, 0xC0, 0xC0) != 0 ||
+            m5pm1_rmw_u8(M5PM1_REG_GPIO_DRV, bit, 0) != 0 ||
+            m5pm1_rmw_u8(M5PM1_REG_GPIO_MODE, bit, bit) != 0) {
+            ESP_LOGW(TAG, "M5PM1: front-light PWM pin setup failed");
+            return -1;
+        }
+        uint8_t freq[3] = { M5PM1_REG_PWM_FREQ_L,
+                            (uint8_t)(M5PM1_FRONTLIGHT_PWM_HZ & 0xFF),
+                            (uint8_t)(M5PM1_FRONTLIGHT_PWM_HZ >> 8) };
+        if (m5pm1_write(freq, sizeof(freq)) != 0) return -1;
+        s_pwm_configured = true;
+    }
+
+    /* 12-bit duty; 0x31 bit 4 enables the channel. */
+    uint16_t duty = (uint16_t)((percent * 4095 + 50) / 100);
+    uint8_t pwm[3] = { M5PM1_REG_PWM0_L, (uint8_t)(duty & 0xFF),
+                       (uint8_t)((percent ? 0x10 : 0x00) | ((duty >> 8) & 0x0F)) };
+    return m5pm1_write(pwm, sizeof(pwm));
+}
+
 /* ---- INA226 backend ---- */
 
 extern "C" int battery_init_ina226(void *i2c_master_bus, int i2c_addr,
@@ -1086,6 +1234,12 @@ extern "C" int battery_read_mv(void)
         if (axp2101_read_u8(AXP2101_REG_VBAT_L, &lo) != 0) return 0;
         return (int)(((uint16_t)(hi & 0x1F) << 8) | lo);
     }
+    if (s_backend == BATT_BACKEND_M5PM1) {
+        uint8_t v[2] = { 0, 0 };
+        if (m5pm1_read(M5PM1_REG_VBAT_L, v, sizeof(v)) != 0) return 0;
+        int mv = v[0] | ((v[1] & 0x0F) << 8);
+        return (mv < M5PM1_VBAT_MIN_MV) ? 0 : mv;
+    }
     if (s_backend != BATT_BACKEND_ADC) return 0;
 
     bool en = enable_divider();
@@ -1216,6 +1370,11 @@ extern "C" int battery_read_percent(void)
         if (axp2101_read_u8(AXP2101_REG_BAT_PERCENT, &pct) != 0) return -1;
         return (pct > 100) ? 100 : (int)pct;
     }
+    if (s_backend == BATT_BACKEND_M5PM1) {
+        /* The M5PM1 measures voltage only; no fuel gauge. */
+        int mv = battery_read_mv();
+        return (mv > 0) ? mv_to_percent(mv) : -1;
+    }
     if (s_backend != BATT_BACKEND_ADC) return -1;
 
     int mv = battery_read_mv();
@@ -1276,6 +1435,15 @@ extern "C" int battery_read_charging(void)
         if (axp2101_read_u8(AXP2101_REG_STATUS2, &status2) != 0) return -1;
         unsigned state = (status2 & AXP2101_STATUS2_STATE_MASK) >> AXP2101_STATUS2_STATE_SHIFT;
         return (state == AXP2101_STATE_CHARGING) ? 1 : 0;
+    }
+    if (s_backend == BATT_BACKEND_M5PM1) {
+        /* The M5PM1 cannot see the IP2315 charger's state, only which
+         * input powers the board: report "charging" while USB is
+         * plugged in and a battery is present. */
+        uint8_t src = 0;
+        if (m5pm1_read(M5PM1_REG_PWR_SRC, &src, 1) != 0) return -1;
+        if (battery_read_mv() <= 0) return -1;
+        return ((src & 0x07) == M5PM1_PWR_SRC_5VIN) ? 1 : 0;
     }
     /* ADC backend, CW2017 (no charger IC on its bus, no current
      * register) and "no backend" cannot tell. */

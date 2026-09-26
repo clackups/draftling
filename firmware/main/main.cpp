@@ -16,7 +16,8 @@
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
     defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || \
-    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -45,6 +46,7 @@
 #include "touchscreen.h"
 #include "power.h"
 #include "io_expander_ch422g.h"
+#include "io_expander_m5ioe1.h"
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
 #include "usb_kbd.h"
 #endif
@@ -780,6 +782,28 @@ static void pre_sleep_ws_epaper397_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+static void pre_sleep_papermono_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: M5Stack PaperMono peripheral teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+    display_set_backlight(0);
+
+    /* The M5IOE1 keeps its outputs through the ESP32's deep sleep:
+     * switch off the MicroSD, touch and e-paper supplies (the panel
+     * keeps its image unpowered) and hold both reset lines low. */
+    m5ioe1_set_pin(SD_EN_IOE_PIN, false);
+    m5ioe1_set_pin(TOUCH_EN_IOE_PIN, false);
+    m5ioe1_set_pin(TOUCH_RST_IOE_PIN, false);
+    m5ioe1_set_pin(EPD_RST_IOE_PIN, false);
+    m5ioe1_set_pin(EPD_EN_IOE_PIN, false);
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO */
+
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001)
 static void pre_sleep_seeed_reterminal_e1001_deinit(void)
 {
@@ -1430,6 +1454,75 @@ static void reterminal_sticky_btn_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
 
+#if defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+/* ---- M5Stack PaperMono Button A / Button B ----
+ *
+ * Short presses scroll the editor: A = Page Up, B = Page Down,
+ * injected on release. A press held for the 2 s long-press time
+ * injects nothing, since those holds already mean something else:
+ * A (the wake button) forgets all BLE keyboards through the generic
+ * wakeup_btn_poll_cb(), and B enters deep sleep through
+ * sleep_button_poll_cb() (CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO). */
+
+static void papermono_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+static void papermono_btn_poll_cb(void *arg)
+{
+    (void)arg;
+    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+        { BTN_A_PIN, KB_KEY_PAGEUP },
+        { BTN_B_PIN, KB_KEY_PAGEDOWN },
+    };
+    static bool down[2]       = { false, false };
+    static int  stable[2]     = { 0, 0 };
+    static int  hold_ticks[2] = { 0, 0 };
+
+    for (int i = 0; i < 2; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
+        if (raw_down == down[i]) {
+            stable[i] = 0;
+            if (down[i] && hold_ticks[i] < BTN_LONG_PRESS_TICKS) hold_ticks[i]++;
+            continue;
+        }
+        if (++stable[i] < 2) continue;
+        stable[i] = 0;
+        down[i] = raw_down;
+        if (!down[i] && hold_ticks[i] < BTN_LONG_PRESS_TICKS) {
+            papermono_inject_key(kButtons[i].keycode);
+        }
+        hold_ticks[i] = 0;
+    }
+}
+
+static void papermono_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << BTN_A_PIN) | (1ULL << BTN_B_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = papermono_btn_poll_cb;
+    targs.name     = "papermono_btn";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "PaperMono button poller started (A=GPIO%d PgUp, B=GPIO%d PgDn)",
+             BTN_A_PIN, BTN_B_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO */
+
 /* ---- Generic wakeup-GPIO long-press handler ----
  *
  * On boards other than the H752 (which has its own key handler above)
@@ -1911,7 +2004,7 @@ extern "C" void app_main(void)
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397)
+    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
@@ -1955,6 +2048,35 @@ extern "C" void app_main(void)
         }
     }
     display_set_shared_i2c_bus(shared_i2c_bus);
+#if defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+    /* M5Stack PaperMono: the M5PM1 power-management chip must be
+     * awake (I2C idle sleep and watchdog off, rails on) before
+     * anything else, then the M5IOE1 expander powers the e-paper
+     * panel, the touch controller and the MicroSD card and pulses the
+     * panel and touch reset lines -- the same order and timing as
+     * M5GFX's board_M5PaperMono bring-up. The display backend and the
+     * touchscreen component have no reset GPIO of their own here. */
+    if (battery_init_m5pm1((void *)shared_i2c_bus) != 0) {
+        ESP_LOGE(TAG, "M5PM1 init failed");
+    }
+    if (m5ioe1_init((void *)shared_i2c_bus) == ESP_OK) {
+        m5ioe1_set_pin(EPD_EN_IOE_PIN, true);
+        m5ioe1_set_pin(TOUCH_EN_IOE_PIN, true);
+        m5ioe1_set_pin(SD_EN_IOE_PIN, true);
+        m5ioe1_set_pin(EPD_RST_IOE_PIN, false);
+        m5ioe1_set_pin(TOUCH_RST_IOE_PIN, false);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        m5ioe1_set_pin(EPD_RST_IOE_PIN, true);
+        m5ioe1_set_pin(TOUCH_RST_IOE_PIN, true);
+        /* FT6336 needs ~300 ms after reset before it answers on I2C
+         * (M5PaperMono-PowerDemo); touchscreen_init() runs much later
+         * in boot, so only the panel's short settle is waited here. */
+        vTaskDelay(pdMS_TO_TICKS(10));
+    } else {
+        ESP_LOGE(TAG, "M5IOE1 init failed -- display, touch and SD card "
+                      "stay unpowered");
+    }
+#endif
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     /* Bring up the CH422G before display_init() -- the RGB backend
      * pulses the LCD reset line (EXIO3) and drives the backlight
@@ -2171,6 +2293,12 @@ extern "C" void app_main(void)
      * needed. Pin parameters are ignored. The AXP2101 ALDO3 panel
      * rail was already enabled above via display_set_shared_i2c_bus(). */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
+    /* M5Stack PaperMono SPI e-paper backend. Owns all panel GPIOs
+     * internally (see display_m5_papermono.cpp); the panel supply and
+     * reset were handled through the M5IOE1 above. Pin parameters
+     * are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SEEED_E1001)
     /* Seeed Studio reTerminal E1001 (7.5" 800x480 UC8179 e-paper).
      * Owns all panel GPIOs internally (see display_seeed_e1001.cpp). */
@@ -2324,6 +2452,13 @@ extern "C" void app_main(void)
      * up battery-voltage/percent/charging reporting on top of it. */
     if (battery_init_axp2101(shared_i2c_bus) != 0) {
         ESP_LOGW(TAG, "AXP2101 init failed; battery indicator disabled");
+    }
+#elif defined(CONFIG_DRAFTLING_BATTERY_M5PM1)
+    /* M5Stack PaperMono: already brought up before display_init()
+     * (the chip also gates the board's power rails); a second call is
+     * a no-op that just reports whether it succeeded. */
+    if (battery_init_m5pm1(shared_i2c_bus) != 0) {
+        ESP_LOGW(TAG, "M5PM1 init failed; battery indicator disabled");
     }
 #else
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
@@ -2884,7 +3019,8 @@ extern "C" void app_main(void)
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;
         tcfg.user_rotate_deg = 0;
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G)
+    defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
         tcfg.i2c_bus = (void *)shared_i2c_bus;
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* The m5stack_tab5 BSP owns the I2C master bus (created
@@ -2933,6 +3069,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_seeed_reterminal_e1001_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
     standby_set_pre_sleep_cb(pre_sleep_reterminal_sticky_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+    standby_set_pre_sleep_cb(pre_sleep_papermono_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif
@@ -2980,6 +3118,11 @@ extern "C" void app_main(void)
      * Down), alongside (not instead of) the generic Power/wakeup
      * handler above. */
     reterminal_sticky_btn_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+    /* Button A / B short presses = Page Up / Page Down, alongside the
+     * generic handler above (A held 2 s forgets BLE keyboards) and the
+     * sleep-button handler below (B held 2 s sleeps). */
+    papermono_btn_init();
 #endif
 #endif
 

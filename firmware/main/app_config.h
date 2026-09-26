@@ -89,6 +89,8 @@
 #include "boards/seeed_reterminal_e1001.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
 #include "boards/seeed_reterminal_sticky.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
+#include "boards/m5stack_papermono.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

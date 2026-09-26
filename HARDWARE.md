@@ -586,6 +586,61 @@ driven by an UltraChip UC8179 controller over SPI.
   SHT40 sensor, user LED on GPIO6, buzzer on GPIO45. No touchscreen.
 
 
+## M5Stack PaperMono / PaperMono-Lite
+
+Tested on physical hardware.
+
+The [M5Stack PaperMono-Lite](https://docs.m5stack.com/en/core/PaperMono-Lite)
+and [PaperMono](https://docs.m5stack.com/en/core/PaperMono) are a
+pocket e-paper device built around an ESP32-S3R8 (8 MB octal PSRAM,
+16 MB flash) with a 3.97" 800x480 black/white e-paper panel (SSD1677),
+a front-light, FT6336G capacitive touch, a MicroSD slot and a 1150 mAh
+battery. The full PaperMono adds an NFC reader and a LoRa module;
+Draftling uses neither, so the same firmware (`m5stack_papermono`
+preset) runs on both.
+
+- **Display**: `components/display/display_m5_papermono.cpp`, the same
+  single-SSD1677 differential-refresh protocol as the Waveshare
+  ESP32-S3-ePaper-3.97, on SPI2 (SCLK=15, MOSI=14, CS=16, DC=17,
+  BUSY=18). The device is natively portrait; Draftling starts in
+  landscape, and F1 -> Settings -> Display orientation switches to
+  portrait.
+- **Power chips**: two M5Stack chips on the system I2C bus (SDA=47,
+  SCL=48) switch most of the board's peripherals. The M5IOE1 IO
+  expander (`components/io_expander/io_expander_m5ioe1.cpp`) powers
+  the e-paper panel, the touch controller and the MicroSD card and
+  drives the panel and touch reset lines; `main/main.cpp` sets these
+  up before the display is initialized, in the same order as M5Stack's
+  own M5GFX library. The M5PM1 power-management chip (in
+  `components/battery/battery.cpp`) is woken and has its I2C idle
+  sleep and watchdog disabled first thing in boot.
+- **Battery**: voltage read from the M5PM1; the percentage comes from
+  the LiPo discharge table. The charging mark shows while USB powers
+  the device.
+- **Front-light**: M5PM1 PWM output, set from F1 -> Settings ->
+  Backlight or with Ctrl+B.
+- **Touch**: FT6336G on the system I2C bus, INT on GPIO4.
+- **MicroSD**: SDMMC, used in 1-bit mode (CLK=13, CMD=12, D0=11).
+- **Buttons**: Button A (GPIO2) = Page Up, and it wakes the device from
+  deep sleep; hold it 2 s to forget all paired BLE keyboards. Button B
+  (GPIO3) = Page Down; hold it 2 s to go to sleep. The power button is
+  handled by the M5PM1 itself.
+- **Sleep**: before deep sleep the MicroSD, touch and panel supplies
+  are switched off through the M5IOE1 and the front-light is turned
+  off.
+
+Pin numbers come from M5Stack's pin maps for both boards. The power-up
+sequence and the M5PM1 / M5IOE1 register maps come from M5Stack's
+MIT-licensed [M5GFX](https://github.com/m5stack/M5GFX),
+[M5PM1](https://github.com/m5stack/M5PM1),
+[M5IOE1](https://github.com/m5stack/M5IOE1) and
+[M5PaperMono-PowerDemo](https://github.com/m5stack/M5PaperMono-PowerDemo)
+sources. The touch mapping follows from M5Stack's demos, which compare
+raw touch points directly with their portrait UI, together with M5GFX's
+portrait-to-panel rotation for this board; it is the part most likely
+to need a fix on real hardware.
+
+
 ## Other hardware
 
 Code contributions for supporting other types of hardware are very much welcome.

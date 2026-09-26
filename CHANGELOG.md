@@ -13,6 +13,11 @@ in the git log.
   and on-board MicroSD. The Up/Down buttons turn pages; the Power/AI
   button wakes the device, puts it to sleep on a short press and
   forgets paired BLE keyboards on a 2-second hold.
+- **M5Stack PaperMono / PaperMono-Lite support**:
+  3.97-inch 800x480 e-paper with touch, front-light, battery indicator
+  and MicroSD. Button A scrolls up and wakes the device (hold 2 s to
+  forget paired BLE keyboards), Button B scrolls down (hold 2 s to
+  sleep).
 - **Delete files from the file browser**: `Del` or `Alt+D` deletes the
   selected file after a confirmation. To prevent accidental loss this
   only works for a file whose current content is already committed
