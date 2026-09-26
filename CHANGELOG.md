@@ -20,8 +20,15 @@ in the git log.
   formatting syntax of the open document: Markdown or Fountain. Scroll
   with Up/Down, PgUp/PgDn, Home/End; `Esc` or `Enter` closes it.
 
+### Changed
+
+- **`Ctrl+Q` is now the Escape substitute** for keyboards without an
+  Esc key, instead of `Ctrl+X`.
+
 ### Fixed
 
+- **`Ctrl+X` did not cut**: it acted as Escape everywhere, so the
+  editor's cut command could never run. It now cuts the selection.
 - **Battery level missing while waiting for a keyboard**: the battery
   indicator on the start-up "searching for keyboard" screen stayed
   empty until the keyboard connected. It now shows the level right

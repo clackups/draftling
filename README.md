@@ -146,6 +146,7 @@ load the firmware quickly without having to compile it.
 | Ctrl+F | Find |
 | Ctrl+H | Find + Replace (Tab switches field, Enter = next match, Ctrl+Enter = replace + next) |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / Cut / Paste the current selection |
+| Ctrl+Q | Same as Escape, for keyboards without an Esc key (works on every screen) |
 | Ctrl+A | Select all |
 | Ctrl+R | Force full e-paper refresh (clears ghosting; e-paper boards only) |
 | Ctrl+B | Cycle backlight / front-light brightness (boards with a controllable backlight) |

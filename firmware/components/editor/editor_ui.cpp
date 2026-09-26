@@ -5444,7 +5444,7 @@ static void help_common_rows(std::string &out, int cols, int kc)
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     help_row(out, cols, kc, "Ctrl+R", "Full screen refresh (clears ghosting)");
 #endif
-    help_row(out, cols, kc, "Ctrl+X", "Same as Esc, for keyboards without one");
+    help_row(out, cols, kc, "Ctrl+Q", "Same as Esc, for keyboards without one");
 }
 
 static void build_help_text(std::string &out, help_origin_t origin, int cols)
@@ -5463,7 +5463,7 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Ctrl+H", "Find and replace (Tab: switch field, Ctrl+Enter: replace)");
         help_row(out, cols, kc, "Shift+arrows", "Select text");
         help_row(out, cols, kc, "Ctrl+A", "Select all");
-        help_row(out, cols, kc, "Ctrl+C / V", "Copy / paste");
+        help_row(out, cols, kc, "Ctrl+C / X / V", "Copy / cut / paste");
         help_row(out, cols, kc, "Ctrl+Left/Right", "Previous / next word");
         help_row(out, cols, kc, "Home / End", "Start / end of line");
         help_row(out, cols, kc, "Ctrl+Home/End", "Start / end of document");
@@ -7755,14 +7755,16 @@ static void process_key_event(const kb_event_t *ev)
         norm.keycode = KB_KEY_ENTER;
     }
 
-    /* Ctrl+X is a substitute for Escape on keyboards that have no
+    /* Ctrl+Q is a substitute for Escape on keyboards that have no
      * dedicated ESC key (e.g. some compact BLE keyboards). Translate
      * it into a synthetic Escape event so every screen handler that
-     * already keys off KB_KEY_ESCAPE picks it up unchanged. The 'x'
-     * HID usage id is 0x1B; match it with either Control modifier. */
+     * already keys off KB_KEY_ESCAPE picks it up unchanged. The letter
+     * is resolved like the other Ctrl shortcuts (see
+     * kb_layout_shortcut_char()), so on AZERTY it is the key printed Q
+     * and Ctrl+A there still selects all. */
     {
         bool ctrl = (norm.modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl && norm.keycode == 0x1B) {
+        if (ctrl && kb_layout_shortcut_char(norm.keycode) == 'q') {
             norm.keycode  = KB_KEY_ESCAPE;
             norm.modifier = 0;
             norm.character = 0;
