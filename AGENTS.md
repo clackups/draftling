@@ -79,6 +79,7 @@ card).
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
+| Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677), 800x480, GT911 touch |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
 monochrome e-paper panel driven by an UltraChip UC8179 controller over
@@ -113,13 +114,15 @@ CMakeLists.txt              Top-level CMake project file
 CMakePresets.json           Per-board build presets (idf.py --preset <board>)
 partitions.csv              Custom partition table (16 MB flash, single
                             "factory" app) -- used by every board except
-                            the three below
+                            the four below
 partitions_8mb.csv          8 MB-flash variant (Elecrow CrowPanel 5.79")
 partitions_xteink_x4_pro.csv Dual-OTA layout (otadata + ota_0/ota_1) so
                             the Xteink X4 Pro can be re-flashed with the
                             stock or Crosspoint firmware afterwards
 partitions_xteink_x4_classic.csv  Same dual-OTA layout for the Xteink
                             X4 Classic (X4 v2)
+partitions_seeed_reterminal_sticky.csv  Same dual-OTA layout for the
+                            Seeed reTerminal Sticky (32 MB flash)
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
@@ -201,7 +204,13 @@ Two backends:
   its Impedance-Track SoC stays pinned around 50 % even after
   several full discharge/charge cycles. Charge state is
   derived from the Flags register (0x06): bit 0 (`DSG`) is 0 while
-  charging or full and 1 while discharging.
+  charging or full and 1 while discharging. Also used on the Seeed
+  reTerminal Sticky, but on its own dedicated I2C bus (main.cpp
+  creates a second bus for it) rather than a bus shared with epdiy or
+  touch -- see `main/boards/seeed_reterminal_sticky.h`. There is no
+  I2C charger on that bus (the reTerminal Sticky's BQ25616 charger is
+  enabled purely through a GPIO, `CHARGE_EN_PIN`), so
+  `battery_read_charging()` always returns -1 (unknown) there.
 * **TI INA226 power monitor** over I2C
   (`battery_init_ina226(bus, addr, cells)`): used on the M5Stack
   Tab5. Bus voltage (register 0x02) is divided by the cell count
@@ -415,6 +424,21 @@ Per-board display backends behind a single C API:
   MicroSD slot) using the UltraChip UC8179 controller and OTP waveforms.
   Supports full refresh (~1.2 s, TSSET 0x5A) and fast partial windowed
   updates (~450 ms, TSSET 0x6E, PARTIAL_IN/WINDOW/OUT). No backlight.
+- **display_reterminal_sticky.cpp** -- from-scratch SPI e-paper
+  backend for the Seeed reTerminal Sticky, gated on
+  `CONFIG_DRAFTLING_DISPLAY_RETERMINAL_STICKY`. Same 3.97" 800x480
+  SSD1677-family protocol as `display_ws_epd397.cpp` above (dual-RAM
+  differential refresh, single controller, no boot-time detection),
+  repinned for this board and with `MISO` wired -- unlike every other
+  single-board SSD1677 backend here, this panel's SPI bus is also
+  shared with the on-board MicroSD card (separate `CS`, same
+  `SCLK`/`MOSI`/`MISO`). No PMIC: the panel's power-enable pin is a
+  plain GPIO. Tested on physical hardware. Reuses
+  `display_ws_epd397.cpp`'s hardware-proven full-refresh waveform and
+  a conservative SPI clock rather than the values documented for this
+  device by the FreeInk SDK; see the file's header comment and
+  `main/boards/seeed_reterminal_sticky.h` for the full sourcing
+  notes.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -1471,16 +1495,43 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   switch (Up/Down/OK) provide full menu navigation without a
   keyboard. No on-board battery monitor. Extensively tested on
   physical hardware; see HARDWARE.md. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_WAVESHARE_EPAPER_397** -- Waveshare
+  ESP32-S3-ePaper-3.97: 3.97" 800x480 black/white e-paper panel driven
+  over plain SPI by `components/display/display_ws_epd397.cpp`, using
+  the same SSD1677-family differential-refresh protocol as the Xteink
+  X4 Pro's SSD1677 path. No touch controller; four discrete
+  active-low buttons (Up/Function/Down plus BOOT) stand in for it.
+  Battery and the e-paper panel's own supply rail are both managed by
+  an on-board AXP2101 PMIC on I2C. On-board MicroSD on SDMMC 1-bit.
+  Tested on physical hardware. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY** -- Seeed reTerminal
+  Sticky: the same 3.97" 800x480 SSD1677 panel class as the Waveshare
+  ESP32-S3-ePaper-3.97 above, driven by
+  `components/display/display_reterminal_sticky.cpp`, but with the
+  on-board MicroSD sharing the panel's SPI bus instead of a dedicated
+  one, a GT911 capacitive touchscreen on its own I2C bus, and a
+  BQ27220 fuel gauge on a second, separate I2C bus. Two page-turn
+  buttons (Up/Down) plus a combined Power/AI button (deep-sleep wake;
+  short press = sleep; 2 s hold = forget BLE keyboards) drive the
+  editor without a keyboard. 32 MB flash; dual-OTA partition table
+  (`partitions_seeed_reterminal_sticky.csv`) so the third-party
+  Crosspoint firmware can still be installed later. Tested on
+  physical hardware; pin assignments are triple-sourced from Seeed's
+  own documentation and the FreeInk SDK (MIT licensed), which agree;
+  see `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md.
+  *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic), 792
-  (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
+  Waveshare ePaper-3.97, Seeed reTerminal Sticky), 792 (Elecrow
+  CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
-  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic), 272
-  (Elecrow CrowPanel 5.79").
+  (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
+  Waveshare ePaper-3.97, Seeed reTerminal Sticky), 272 (Elecrow
+  CrowPanel 5.79").
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -1631,12 +1682,13 @@ in C / C++ code:
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
 | DRAFTLING_MODEL_XTEINK_X4         | Common to the Xteink X4 Pro and X4 Classic (shared `display_xteink_epd.cpp` backend, CW2017 gauge, SDMMC slot, OTA partition table, GPIO1 peripheral-rail latch, GPIO3 Power/wake) | Xteink X4 Pro, Xteink X4 Classic |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_WS_EPD397       | Selects `display_ws_epd397.cpp` (plain SPI, single SSD1677-family controller, no boot-time detection) | Waveshare ESP32-S3-ePaper-3.97 |
+| DRAFTLING_DISPLAY_RETERMINAL_STICKY | Selects `display_reterminal_sticky.cpp` (plain SPI, single SSD1677-family controller, MISO wired since the MicroSD card shares this panel's bus) | Seeed reTerminal Sticky |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
@@ -1646,9 +1698,9 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97 |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97 |
-| DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(shared_i2c_bus)`) instead of the GPIO ADC backend | T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky |
+| DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
@@ -1752,7 +1804,8 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `xteink_x4_pro`, `xteink_x4_classic`,
-`elecrow_crowpanel_579`, `waveshare_epaper_397`). Each
+`elecrow_crowpanel_579`, `waveshare_epaper_397`,
+`seeed_reterminal_sticky`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
 `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
@@ -1788,11 +1841,16 @@ the web flasher (see below) -- currently `m5stack_papers3`,
 `xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
 `waveshare_touch_lcd_349`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, and `elecrow_crowpanel_579`. Extend the list there
+`freenove_fnk0104s`, `elecrow_crowpanel_579`, and
+`seeed_reterminal_sticky`. Extend the list there
 as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
-keep pointing at an older tag until it is next rebuilt.
+keep pointing at an older tag until it is next rebuilt. An
+experimental / untested board's manifest entry marks itself with a
+`" -- UNTESTED on physical hardware"` (or similar) suffix on its
+`description` field, matching the convention already used for
+`xteink_x4_classic`; there is no separate schema flag for this.
 
 Note: step 5 below refers to `firmware/` on the *`_flasher`* branch --
 its own binary-staging directory, named the same as (but unrelated to)
@@ -1828,12 +1886,13 @@ tree referenced in steps 1-4.
    gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
        draftling-<board>-partition-table.bin draftling-<board>.bin
    ```
-   `xteink_x4_pro` and `xteink_x4_classic` each also need a fourth
-   image, `draftling-<board>-otadata.bin` (from
-   `firmware/build/<board>/ota_data_initial.bin`): their partition
-   tables are dual-OTA (`partitions_xteink_x4_pro.csv` /
-   `partitions_xteink_x4_classic.csv`), so a clean flash must also
-   (re)initialise the `otadata` partition at `0xd000` -- an 8 KB
+   `xteink_x4_pro`, `xteink_x4_classic` and `seeed_reterminal_sticky`
+   each also need a fourth image, `draftling-<board>-otadata.bin`
+   (from `firmware/build/<board>/ota_data_initial.bin`): their
+   partition tables are dual-OTA (`partitions_xteink_x4_pro.csv` /
+   `partitions_xteink_x4_classic.csv` /
+   `partitions_seeed_reterminal_sticky.csv`), so a clean flash must
+   also (re)initialise the `otadata` partition at `0xd000` -- an 8 KB
    all-`0xFF` blob that makes the bootloader pick `ota_0`. Otherwise a
    stale `otadata` left by the stock firmware could point the
    bootloader at the empty `ota_1`. `waveshare_epaper_397` uses the
@@ -1847,15 +1906,17 @@ tree referenced in steps 1-4.
    - Add `firmware/vX.Y.Z/` (on `_flasher`) with the same binaries
      uploaded to the release, named identically, for each board
      included in this release (including
-     `draftling-xteink_x4_pro-otadata.bin` and
-     `draftling-xteink_x4_classic-otadata.bin` for those two boards).
+     `draftling-xteink_x4_pro-otadata.bin`,
+     `draftling-xteink_x4_classic-otadata.bin` and
+     `draftling-seeed_reterminal_sticky-otadata.bin` for those three
+     boards).
    - In `manifest.json`, each board has its own `releases` array
      (newest first). For each board this release covers, prepend a new
      entry with its `tag`, flash mode/freq/size, and `parts[].path`
      pointing at `firmware/vX.Y.Z/...`. Leave other boards' `releases`
      untouched -- they keep pointing at whatever tag they last shipped
-     under. `xteink_x4_pro` and `xteink_x4_classic` each have a fourth
-     `parts` entry:
+     under. `xteink_x4_pro`, `xteink_x4_classic` and
+     `seeed_reterminal_sticky` each have a fourth `parts` entry:
      `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
      "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
