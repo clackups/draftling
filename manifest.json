@@ -43,7 +43,7 @@
     {
       "id": "xteink_x4_classic",
       "name": "Xteink X4 Classic (X4 v2)",
-      "description": "ESP32-S3, 800x480 e-paper (SSD1677/UC8179/UC8279), buttons only -- UNTESTED on physical hardware",
+      "description": "ESP32-S3, 800x480 e-paper (SSD1677/UC8179/UC8279), buttons only",
       "chipFamily": "ESP32-S3",
       "releases": [
         {
