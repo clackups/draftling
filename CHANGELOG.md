@@ -290,8 +290,7 @@ in the git log.
   auto-detected), CW2017 fuel gauge and SDMMC card slot. Eight buttons
   drive the whole editor without a keyboard: Power = F1 / hold to
   forget keyboards, two side keys = Up/Down, four bottom keys =
-  Left/Right/Enter/Esc. Added without on-hardware testing (pin map
-  from the FreeInk SDK); build it with `idf.py --preset
+  Left/Right/Enter/Esc. Build it with `idf.py --preset
   xteink_x4_classic`.
 - **Ctrl+ArrowDown / Ctrl+ArrowUp** as equivalents to Page Down / Page
   Up.

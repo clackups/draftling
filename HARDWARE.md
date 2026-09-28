@@ -341,8 +341,8 @@ Partition table: `firmware/partitions_xteink_x4_classic.csv`, identical
 in layout to the X4 Pro's (dual-OTA, so the stock / Crosspoint OTA
 updaters can reinstall).
 
-**This board has been added without on-hardware testing.** Pin
-assignments come from the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
+Pin assignments come from the [FreeInk
+SDK](https://github.com/Free-Ink/freeink-sdk)
 (`docs/xteink-x4c-support.md`, MIT licensed), which reverse-engineered
 the OEM firmware. The screen-margin, portrait-rotation and
 grayscale-not-implemented caveats are all as for the X4 Pro.

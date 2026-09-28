@@ -1530,8 +1530,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   (GPIO3) = F1 / forget-keyboards, side keys = Up/Down, bottom keys =
   Left/Right/Enter/Esc. The derived symbol `DRAFTLING_MODEL_XTEINK_X4`
   is set for both this and the X4 Pro and gates the code common to
-  the two. Added without on-hardware testing (pin map from the FreeInk
-  SDK); see HARDWARE.md. *Requires ESP32-S3.*
+  the two. See HARDWARE.md. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_ELECROW_CROWPANEL_579** -- Elecrow CrowPanel
   ESP32-S3 5.79" E-Paper HMI Display: 792x272 black/white e-paper
   panel built from two SSD1683 controllers over plain SPI, driven by
