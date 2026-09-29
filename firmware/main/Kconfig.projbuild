@@ -157,6 +157,26 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104S
         deep-sleep wakeup source.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
 
+config DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    bool "Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 3.5\" transflective display (ESP32-S3, ST7365, 480x320, touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        VIEWE UEDX24320028E-WB-A ESP32-S3 board with the VIEWE
+        UEED035HV-RX40-L001 display attached in place of its stock 2.8"
+        panel: 3.5" 320x480 sunlight-readable transflective color LCD
+        (readable with the backlight off), ST7365 controller
+        (ST7796-compatible), rendered landscape at 480x320 over 4-wire
+        SPI. Both interface-mode straps are driven HIGH and display
+        inversion is on, as in Viewe's UEDX32480035E-WB-A
+        configuration. Capacitive touch at I2C 0x2E (CHSC6540-
+        compatible, FocalTech register map), MicroSD on SDMMC 1-bit,
+        PWM backlight through the board's LP3310 boost driver. No
+        battery. The BOOT button (GPIO0) is the deep-sleep wakeup
+        source. The board with its stock 2.8" GC9307 panel is not
+        supported by this option. Tested on physical hardware.
+        Board: https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display
+        Display: https://viewedisplay.com/product/3-5-inch-320x480-sunlight-readable-transflective-with-super-low-power-tft-lcd-module/
+
 config DRAFTLING_MODEL_XTEINK_X4_PRO
     bool "Xteink X4 Pro (ESP32-S3, SSD1677/UC8179/UC8279, 4.26\" e-paper, 800x480)"
     depends on IDF_TARGET_ESP32S3
@@ -331,6 +351,18 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    default n
+
+# DRAFTLING_DISPLAY_TRANSFLECTIVE is set automatically when the
+# selected board has a transflective color panel. Such panels render
+# colors noticeably differently from transmissive IPS/TFT LCDs, so the
+# editor offers a separate color-theme table tuned for them (see
+# COLOR_THEMES in components/editor/editor_ui.cpp).
+config DRAFTLING_DISPLAY_TRANSFLECTIVE
+    bool
+    depends on DRAFTLING_DISPLAY_COLOR
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
 
 # DRAFTLING_DISPLAY_AXS15231B is set automatically when the selected
@@ -425,6 +457,18 @@ config DRAFTLING_DISPLAY_ILI9341
 config DRAFTLING_DISPLAY_ST7796
     bool
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default n
+
+# DRAFTLING_DISPLAY_ST7365 is set automatically when the selected
+# board drives Viewe's UEED035HV-RX40-L001 3.5" 320x480 transflective
+# display (ST7365 controller, ST7796-compatible command set). Same
+# MIPI-DCS SPI protocol and pixel pipeline as
+# DRAFTLING_DISPLAY_ST7796; handled by
+# components/display/display_ili9341.cpp with its own pins, RST and
+# interface-mode straps, and Viewe's init table.
+config DRAFTLING_DISPLAY_ST7365
+    bool
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
 
 # DRAFTLING_DISPLAY_CAN_ROTATE enables a runtime "Rotate 180" entry in
@@ -606,6 +650,7 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_RGB
     default y if DRAFTLING_DISPLAY_ILI9341
     default y if DRAFTLING_DISPLAY_ST7796
+    default y if DRAFTLING_DISPLAY_ST7365
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
     # front-light edge-lit LED on GPIO 11 (BOARD_BL_EN in the LilyGO
     # factory firmware). The EPDIY display backend drives it with
@@ -663,6 +708,9 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 0 if DRAFTLING_MODEL_XTEINK_X4_PRO
     default 0 if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # Viewe UEDX24320028E-WB-A + UEED035HV: transflective LCD,
+    # readable in ambient light with the backlight fully off.
+    default 0 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # X4 Classic has no front-light, so DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # is off there and this value is never consulted.
     default 10
@@ -906,6 +954,7 @@ config DRAFTLING_HAS_USB_MSC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
@@ -986,6 +1035,9 @@ config DRAFTLING_SD_SDMMC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Viewe UEDX24320028E-WB-A: MicroSD wired for 4-bit SD (CLK=14,
+    # CMD=17, D0..D3=16/18/15/21); Draftling uses 1-bit mode.
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro / X4 Classic: on-board MicroSD wired to SDMMC 1-bit.
     default y if DRAFTLING_MODEL_XTEINK_X4
     # Waveshare ESP32-S3-ePaper-3.97: on-board MicroSD wired to SDMMC.
@@ -1031,6 +1083,9 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Viewe UEDX24320028E-WB-A: BOOT button on GPIO0 (shared with
+    # the WS2812B RGB LED data line, which Draftling leaves unused).
+    default 0  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro / X4 Classic: Power button on GPIO3 (active-low,
     # RTC-capable).
     default 3  if DRAFTLING_MODEL_XTEINK_X4
@@ -1111,6 +1166,7 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Waveshare ESP32-S3-Touch-LCD-7: unlike the Sunton RGB boards
     # (touch left opt-in there because their GT911 INT is unwired, so
     # bring-up falls back to a dual-address probe), this board wires
@@ -1175,6 +1231,10 @@ config DRAFTLING_TOUCH_FT6336U
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     # M5Stack PaperMono: FT6336G (same register protocol) at 0x38.
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # Viewe UEDX24320028E-WB-A + UEED035HV: CHSC6540-compatible touch
+    # at 0x2E, whose touch-point registers (0x02..0x06) follow the same
+    # FocalTech layout (read from 0x00, see touchscreen.cpp).
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
     help
         FocalTech FT6336U. Register-addressed protocol: 8-bit
@@ -1230,6 +1290,8 @@ config DRAFTLING_TOUCH_INT_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U INT_N_PIN.
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Viewe UEDX24320028E-WB-A: CHSC6540 INT.
+    default 4  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro: GT911 INT.
     default 10 if DRAFTLING_MODEL_XTEINK_X4_PRO
     # Seeed reTerminal Sticky: GT911 INT.
@@ -1257,6 +1319,8 @@ config DRAFTLING_TOUCH_RST_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Viewe UEDX24320028E-WB-A: CHSC6540 RST.
+    default 2  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro: GT911 RST.
     default 4  if DRAFTLING_MODEL_XTEINK_X4_PRO
     # Seeed reTerminal Sticky: GT911 RST.
@@ -1348,6 +1412,9 @@ config DRAFTLING_DISPLAY_WIDTH
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Viewe UEDX24320028E-WB-A + UEED035HV: 320x480 portrait panel,
+    # rendered landscape by the display backend (MADCTL MV).
+    default 480 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default 800 if DRAFTLING_MODEL_XTEINK_X4
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
@@ -1374,6 +1441,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 320 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default 480 if DRAFTLING_MODEL_XTEINK_X4
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
