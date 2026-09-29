@@ -224,6 +224,32 @@ FT6336U capacitive touch controller, so touch works alongside the BLE
 keyboard.
 
 
+## Viewe UEDX24320028E-WB-A with UEED035HV-RX40-L001 display
+
+A combination of two Viewe parts: the [UEDX24320028E-WB-A
+board](https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display)
+(ESP32-S3, 16 MB flash, 8 MB PSRAM, MicroSD, USB-C) with the
+[UEED035HV-RX40-L001](https://viewedisplay.com/product/3-5-inch-320x480-sunlight-readable-transflective-with-super-low-power-tft-lcd-module/)
+3.5" 320x480 sunlight-readable transflective display attached to its
+display connector in place of the board's stock 2.8" IPS panel. The
+board with its stock 2.8" GC9307 panel is not supported.
+
+The display's ST7365 controller (ST7796-compatible) is driven over
+4-wire SPI and rendered landscape at 480x320. It only responds with
+both interface-mode straps (IM0/IM1, GPIO47/48) HIGH and needs display
+inversion on -- the same configuration as Viewe's UEDX32480035E-WB-A.
+Capacitive touch (CHSC6540-compatible, I2C address 0x2E), MicroSD on
+the SDMMC 1-bit peripheral. No battery. BOOT (GPIO0) wakes from deep
+sleep. Tested on physical hardware.
+
+The transflective panel stays readable in daylight without the
+backlight, so the backlight setting (F1 -> Settings, or `Ctrl+B`)
+cycles all the way down to 0 %, which switches the backlight off --
+the same as the e-paper front-lights. The USB-C port is wired to the
+ESP32-S3's native USB, so F1 -> "SD card via USB" works on this board.
+
+Build with the `viewe_uedx24320028_ueed035hv` preset.
+
 ## Xteink X4 Pro
 
 Xteink X4 Pro -- ESP32-S3 e-reader with a 4.26" 800x480 e-paper panel

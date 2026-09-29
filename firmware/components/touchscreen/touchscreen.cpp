@@ -444,13 +444,19 @@ static bool poll_ft6336u(int *out_x, int *out_y)
 {
     if (!s_dev) return false;
 
-    uint8_t pt[5] = { 0 };
-    /* Read TD_STATUS through P1_YL in one burst -- registers are
-     * contiguous (0x02..0x06). */
-    if (ft6336u_read_reg(FT6336U_REG_TD_STATUS, pt, sizeof(pt)) != ESP_OK) {
+    uint8_t buf[FT6336U_REG_P1_YL + 1] = { 0 };
+    /* Read from register 0x00 through P1_YL in one burst. Starting at
+     * 0x00 rather than at TD_STATUS is deliberate: the Chipsemi
+     * CHSC6540 (Viewe boards), which otherwise shares this register
+     * layout, ignores the register address and always returns data
+     * from 0x00 -- a read "at 0x02" would report 0x00's contents as
+     * the point count and never see a touch. FocalTech parts return
+     * the same bytes either way. */
+    if (ft6336u_read_reg(0x00, buf, sizeof(buf)) != ESP_OK) {
         ESP_LOGD(TAG, "ft6336u read failed");
         return false;
     }
+    const uint8_t *pt = buf + FT6336U_REG_TD_STATUS;
 
     uint8_t points = pt[0] & 0x0F;
     if (points < 1 || points > 2) return false;
@@ -460,6 +466,12 @@ static bool poll_ft6336u(int *out_x, int *out_y)
 
     int lx, ly;
     native_to_logical(nx, ny, &lx, &ly);
+#if defined(CONFIG_DRAFTLING_TOUCH_DEBUG_LOG)
+    /* Same diagnostic as the GT911 path: raw native coordinates and
+     * the logical coordinates handed to LVGL. */
+    ESP_LOGI(TAG, "ft6336u raw=(%d,%d) points=%u -> logical=(%d,%d)",
+             nx, ny, (unsigned)points, lx, ly);
+#endif
     if (out_x) *out_x = lx;
     if (out_y) *out_y = ly;
     return true;

@@ -1,5 +1,6 @@
 #include "sdkconfig.h"
-#if defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
+#if defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796) || \
+    defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
 
 /*
  * Shared 4-wire SPI TFT backend for the Freenove FNK0104 family's
@@ -24,6 +25,21 @@
  * See https://github.com/Freenove/Freenove_ESP32_S3_Display for the
  * reference TFT_eSPI setup headers and Arduino sketches this backend
  * is derived from.
+ *
+ * The same file also drives the Viewe UEED035HV-RX40-L001 3.5"
+ * 320x480 transflective display (ST7365 controller, ST7796-compatible
+ * command set) attached to a Viewe UEDX24320028E-WB-A board
+ * (CONFIG_DRAFTLING_DISPLAY_ST7365): same MIPI-DCS command set
+ * (CASET/RASET/RAMWR/MADCTL) and RGB565 pipeline, but its own pins, a
+ * real RST line (GPIO39), two interface-mode straps (IM0=GPIO47,
+ * IM1=GPIO48; IM2 is tied HIGH on the board) and Viewe's own init
+ * table. The board's stock 2.8" GC9307 panel uses IM2..0 = 110; this
+ * display only answers with IM2..0 = 111 and needs display inversion
+ * ON -- the same configuration as Viewe's UEDX32480035E-WB-A
+ * (ESP32_Display_Panel board file BOARD_VIEWE_UEDX32480035E_WB_A.h in
+ * https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display),
+ * which the pins, straps and init table here follow. The RST pin
+ * comes from the board's V1.1 schematic. Tested on hardware.
  */
 
 #include <cstdio>
@@ -42,17 +58,34 @@
 
 static const char *TAG = "DisplayILI9341";
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+/* Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 display. */
+#define FNK_LCD_MOSI_PIN   45
+#define FNK_LCD_SCK_PIN    40
+#define FNK_LCD_DC_PIN     41
+#define FNK_LCD_CS_PIN     42
+#define FNK_LCD_BL_PIN     13
+#define FNK_LCD_RST_PIN    39
+#define FNK_LCD_IM0_PIN    47
+#define FNK_LCD_IM1_PIN    48
+#else
 /* Pins shared by every FNK0104 SPI-TFT SKU (A/B/S). */
 #define FNK_LCD_MOSI_PIN   11
 #define FNK_LCD_SCK_PIN    12
 #define FNK_LCD_DC_PIN     46
 #define FNK_LCD_CS_PIN     10
 #define FNK_LCD_BL_PIN     45
+#endif
 
 #define FNK_SPI_HOST       SPI2_HOST
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
 #define FNK_SPI_CLOCK_HZ   (80 * 1000 * 1000)
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+/* The vendor runs this panel at 80 MHz, but these pins are not the
+ * SPI2 IOMUX pins and go through the GPIO matrix; 40 MHz leaves
+ * timing margin and still pushes a full 480x320 frame in ~60 ms. */
+#define FNK_SPI_CLOCK_HZ   (40 * 1000 * 1000)
 #else
 #define FNK_SPI_CLOCK_HZ   (40 * 1000 * 1000)
 #endif
@@ -65,7 +98,16 @@ static const char *TAG = "DisplayILI9341";
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_1
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_8_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 8) - 1)
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+/* The Viewe board's backlight is an LP3310 boost LED driver with the
+ * PWM on its dimming input rather than on the LED string itself; stay
+ * at a conventional LED-driver dimming frequency (above the audible
+ * range, well below what an internal soft-start filter could
+ * smooth into a DC level). */
+#define BL_LEDC_FREQ_HZ     20000
+#else
 #define BL_LEDC_FREQ_HZ     50000
+#endif
 
 static esp_lcd_panel_io_handle_t s_io_handle = NULL;
 
@@ -203,9 +245,13 @@ extern "C" void display_set_backlight(int percent)
  * logical (already-landscape) coordinates with no host-side pixel
  * transpose needed. This orientation could not be verified against
  * physical hardware; if the image appears upside-down or mirrored
- * on a real board, try MADCTL 0xE8 (MY|MX|MV|BGR) instead. */
+ * on a real board, try MADCTL 0xE8 (MY|MX|MV|BGR) instead.
+ * The Viewe panel's vendor portrait orientation is MADCTL 0x48
+ * (MX|BGR), the same as ILI9341 rotation 0, so the same landscape
+ * value applies there. */
 #define FNK_MADCTL_LANDSCAPE  0x28
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_ILI9341)
 static void ili9341_init_sequence(void)
 {
     send_command(0x01); /* SWRESET */
@@ -262,7 +308,9 @@ static void ili9341_init_sequence(void)
     vTaskDelay(pdMS_TO_TICKS(150));
     send_command(0x29); /* DISPON */
 }
+#endif
 
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
 static void st7796_init_sequence(void)
 {
     send_command(0x01); /* SWRESET */
@@ -312,6 +360,70 @@ static void st7796_init_sequence(void)
 
     send_command(0x29); /* DISPON */
 }
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+static void st7365_init_sequence(void)
+{
+    /* Hardware reset. The IM0/IM1 straps were set in display_init()
+     * before this runs, so the panel samples 4-wire SPI mode here. */
+    gpio_set_level((gpio_num_t)FNK_LCD_RST_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level((gpio_num_t)FNK_LCD_RST_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(120));
+
+    send_command(0x11); /* SLPOUT */
+    vTaskDelay(pdMS_TO_TICKS(120));
+
+    /* Viewe's init table for this panel (BOARD_VIEWE_UEDX32480035E_WB_A),
+     * with MADCTL / COLMOD added in place of the ones its driver sends
+     * itself. The repeated 0xC5 write is copied as-is from the vendor
+     * table (the second value wins). */
+    static const uint8_t cmd_lock_en1[]  = {0xC3};
+    static const uint8_t cmd_lock_en2[]  = {0x96};
+    static const uint8_t madctl[]        = {FNK_MADCTL_LANDSCAPE};
+    static const uint8_t colmod[]        = {0x55};
+    static const uint8_t b4[]            = {0x01};
+    static const uint8_t b7[]            = {0xC6};
+    static const uint8_t c0[]            = {0x80, 0x04};
+    static const uint8_t c1[]            = {0x13};
+    static const uint8_t c5a[]           = {0xA7};
+    static const uint8_t c5b[]           = {0x16};
+    static const uint8_t e8[]            = {0x40, 0x8A, 0x00, 0x00, 0x29,
+                                            0x19, 0xA5, 0x33};
+    static const uint8_t e0[]            = {0xF0, 0x19, 0x20, 0x10, 0x11, 0x0A,
+                                            0x46, 0x44, 0x57, 0x09, 0x1A, 0x1B,
+                                            0x2A, 0x2D};
+    static const uint8_t e1[]            = {0xF0, 0x12, 0x1A, 0x0A, 0x0C, 0x18,
+                                            0x45, 0x44, 0x56, 0x3F, 0x15, 0x11,
+                                            0x24, 0x26};
+    static const uint8_t cmd_lock_dis1[] = {0x3C};
+    static const uint8_t cmd_lock_dis2[] = {0x69};
+
+    send_cmd_data(0xF0, cmd_lock_en1, sizeof(cmd_lock_en1));
+    send_cmd_data(0xF0, cmd_lock_en2, sizeof(cmd_lock_en2));
+    send_cmd_data(0x36, madctl, sizeof(madctl));
+    send_cmd_data(0x3A, colmod, sizeof(colmod));
+    send_cmd_data(0xB4, b4, sizeof(b4));
+    send_cmd_data(0xB7, b7, sizeof(b7));
+    send_cmd_data(0xC0, c0, sizeof(c0));
+    send_cmd_data(0xC1, c1, sizeof(c1));
+    send_cmd_data(0xC5, c5a, sizeof(c5a));
+    send_cmd_data(0xC5, c5b, sizeof(c5b));
+    send_cmd_data(0xE8, e8, sizeof(e8));
+    send_cmd_data(0xE0, e0, sizeof(e0));
+    send_cmd_data(0xE1, e1, sizeof(e1));
+    send_cmd_data(0xF0, cmd_lock_dis1, sizeof(cmd_lock_dis1));
+    send_cmd_data(0xF0, cmd_lock_dis2, sizeof(cmd_lock_dis2));
+
+    /* Inversion ON, as in the vendor configuration -- without it the
+     * panel shows inverted colours (e.g. green-on-black as pink on
+     * white). */
+    send_command(0x21); /* INVON */
+    send_command(0x29); /* DISPON */
+    vTaskDelay(pdMS_TO_TICKS(50));
+}
+#endif
 
 static void set_addr_window(int x, int y, int w, int h)
 {
@@ -335,6 +447,25 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 {
     s_width  = width;
     s_height = height;
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+    /* Interface-mode straps (IM2 is tied HIGH on the board):
+     * IM2..0 = 111 selects 4-wire 8-bit SPI on the ST7365 (it does
+     * not respond at all with the stock GC9307 panel's setting 110). They must be settled before the RST pulse in
+     * st7365_init_sequence(). RST is held high (inactive) until
+     * then. */
+    {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << FNK_LCD_IM0_PIN) | (1ULL << FNK_LCD_IM1_PIN) |
+                         (1ULL << FNK_LCD_RST_PIN);
+        ESP_ERROR_CHECK(gpio_config(&g));
+        gpio_set_level((gpio_num_t)FNK_LCD_IM0_PIN, 1);
+        gpio_set_level((gpio_num_t)FNK_LCD_IM1_PIN, 1);
+        gpio_set_level((gpio_num_t)FNK_LCD_RST_PIN, 1);
+    }
+#endif
 
     spi_bus_config_t bus_cfg = {};
     bus_cfg.miso_io_num   = -1;
@@ -376,7 +507,9 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 
     backlight_pwm_init();
 
-#if defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+    st7365_init_sequence();
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
     st7796_init_sequence();
 #else
     ili9341_init_sequence();
@@ -385,7 +518,7 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     display_clear(0x00);
     display_full_refresh();
 
-    ESP_LOGI(TAG, "FNK0104 SPI-TFT %dx%d initialized", width, height);
+    ESP_LOGI(TAG, "SPI-TFT %dx%d initialized", width, height);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -566,4 +699,4 @@ extern "C" void display_set_shared_i2c_bus(void * /*bus_handle*/)
     /* This backend does not use I2C. No-op. */
 }
 
-#endif /* CONFIG_DRAFTLING_DISPLAY_ILI9341 || CONFIG_DRAFTLING_DISPLAY_ST7796 */
+#endif /* CONFIG_DRAFTLING_DISPLAY_ILI9341 || CONFIG_DRAFTLING_DISPLAY_ST7796 || CONFIG_DRAFTLING_DISPLAY_ST7365 */

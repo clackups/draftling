@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Viewe UEDX24320028E-WB-A board with the UEED035HV-RX40-L001
+  display**: 3.5-inch 480x320 sunlight-readable transflective color LCD
+  with touch and MicroSD. Because the screen is readable in daylight
+  without the backlight, the backlight setting (`Ctrl+B` or F1 ->
+  Settings) goes down to 0 %, switching the backlight off.
+
 ## [1.0.8] - 2026-09-26
 
 ### Added

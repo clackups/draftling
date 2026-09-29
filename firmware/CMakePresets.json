@@ -119,6 +119,15 @@
             }
         },
         {
+            "name": "viewe_uedx24320028_ueed035hv",
+            "displayName": "Viewe UEDX24320028E-WB-A + UEED035HV (3.5in ST7365 transflective, touch)",
+            "binaryDir": "build/viewe_uedx24320028_ueed035hv",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.viewe_uedx24320028_ueed035hv",
+                "SDKCONFIG": "build/viewe_uedx24320028_ueed035hv/sdkconfig"
+            }
+        },
+        {
             "name": "xteink_x4_pro",
             "displayName": "Xteink X4 Pro (SSD1677/UC8179/UC8279, 800x480 e-paper)",
             "binaryDir": "build/xteink_x4_pro",
