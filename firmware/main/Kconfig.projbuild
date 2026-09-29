@@ -354,6 +354,17 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
 
+# DRAFTLING_DISPLAY_TRANSFLECTIVE is set automatically when the
+# selected board has a transflective color panel. Such panels render
+# colors noticeably differently from transmissive IPS/TFT LCDs, so the
+# editor offers a separate color-theme table tuned for them (see
+# COLOR_THEMES in components/editor/editor_ui.cpp).
+config DRAFTLING_DISPLAY_TRANSFLECTIVE
+    bool
+    depends on DRAFTLING_DISPLAY_COLOR
+    default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    default n
+
 # DRAFTLING_DISPLAY_AXS15231B is set automatically when the selected
 # board uses an AXS15231B QSPI controller. The display backend
 # (components/display/display_axs15231b.cpp) is compiled in only for
