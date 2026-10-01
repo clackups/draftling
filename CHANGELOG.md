@@ -14,6 +14,14 @@ in the git log.
   without the backlight, the backlight setting (`Ctrl+B` or F1 ->
   Settings) goes down to 0 %, switching the backlight off.
 
+### Fixed
+
+- **Screen now scrolls inside paragraphs taller than the screen**: when
+  typing (or moving the cursor) through one long paragraph without line
+  breaks, the view used to stop scrolling once the paragraph reached the
+  top, and the cursor disappeared below the bottom edge. The view now
+  scrolls within the paragraph, by keyboard and by touch drag.
+
 ## [1.0.8] - 2026-09-26
 
 ### Added

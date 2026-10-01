@@ -1320,6 +1320,18 @@ typedef struct {
      * screen instead of overshooting past the end of a short,
      * long-line document. */
     int    visible_line_count;
+
+    /* Pixels of the first rendered line (the scroll line) hidden above
+     * the pane's top edge. Scrolling is otherwise by whole logical
+     * lines, which cannot follow the cursor through a single paragraph
+     * taller than the pane: once that paragraph is the top line there
+     * is no further line to scroll to. top_px only applies while the
+     * pane still shows the same document from the same scroll line it
+     * was set for (top_px_doc / top_px_line), so any line-granular
+     * scroll implicitly resets it to 0. See pane_top_px(). */
+    int           top_px;
+    int           top_px_line;
+    editor_doc_t *top_px_doc;
 } pane_t;
 
 static pane_t  s_panes[EDITOR_MAX_PANES];
@@ -1333,6 +1345,28 @@ static inline int scroll_jump_step(void)
 {
     int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
     return step > 0 ? step : 1;
+}
+
+/* Current pane's in-line pixel offset of the scroll line (see
+ * pane_t::top_px); 0 once the scroll line or document has changed. */
+static int pane_top_px(void)
+{
+    if (s_rp->top_px <= 0) return 0;
+    if (s_rp->top_px_doc != s_rp->doc ||
+        s_rp->top_px_line != editor_get_scroll_line()) return 0;
+    return s_rp->top_px;
+}
+
+/* Set while a touch drag pans a pane: refresh_active_pane() then leaves
+ * top_px where the drag put it instead of pulling the cursor row back
+ * into view. */
+static bool s_touch_panning = false;
+
+static void pane_set_top_px(int px)
+{
+    s_rp->top_px      = px > 0 ? px : 0;
+    s_rp->top_px_line = editor_get_scroll_line();
+    s_rp->top_px_doc  = s_rp->doc;
 }
 
 /* Split layout: single pane, or a two-pane split along the display's
@@ -2505,6 +2539,7 @@ static void refresh_active_pane(bool draw_cursor)
     int cur_y = -1;      /* cursor y position (set when cursor line is rendered) */
     int cur_x = -1;      /* cursor x position */
     int cur_h = LINE_H;  /* cursor height (matches font of cursor line) */
+    bool cur_rendered = false;  /* cursor line was laid out this pass */
 
     /* Render visible lines.  Wrapped lines consume more vertical space
      * than a single LINE_H row, so the cursor may be pushed off-screen
@@ -2527,10 +2562,16 @@ static void refresh_active_pane(bool draw_cursor)
 
         std::string tmp;        /* final rendered text for the current slot */
         line_view_t view_tmp;   /* its display <-> raw mapping + styling */
-        int y_pos = 0;       /* running y position in editor content area */
+        /* running y position in editor content area; the scroll line
+         * may start above the pane top (see pane_t::top_px) */
+        int top_px = pane_top_px();
+        int y_pos = -top_px;
+        int first_h = 0;     /* rendered height of the scroll line */
+        int first_pitch = LINE_H; /* its visual row pitch */
         cur_y = -1;
         cur_x = -1;
         cur_h = LINE_H;
+        cur_rendered = false;
         bool counted_visible = false; /* first hidden slot -> s_visible_line_count */
 
         for (int i = 0; i < MAX_LINE_LABELS; i++) {
@@ -2784,6 +2825,7 @@ static void refresh_active_pane(bool draw_cursor)
                 cur_x = 2 + cofs.x + lpos.x;
                 cur_y = y_pos + cofs.y + lpos.y;
                 cur_h = line_h;
+                cur_rendered = true;
 
                 /* A line with no strong directional character (empty
                  * or whitespace-only) detects as LTR and parks the
@@ -2798,6 +2840,12 @@ static void refresh_active_pane(bool draw_cursor)
                 }
             }
 
+            if (i == 0) {
+                first_h = rendered_h;
+                first_pitch = line_h + lv_obj_get_style_text_line_space(
+                                  s_line_labels[i], LV_PART_MAIN);
+                if (first_pitch <= 0) first_pitch = LINE_H;
+            }
             y_pos += rendered_h;
         }
         /* Every slot fit on screen without tripping the count above
@@ -2817,11 +2865,41 @@ static void refresh_active_pane(bool draw_cursor)
          * Clamped to cur_line so the jump cannot scroll past the very
          * line it is trying to bring into view. Use cur_y + cur_h to
          * ensure the full cursor row is visible. */
-        if (cur_line >= scroll && scroll < cur_line &&
-            (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
+        if (scroll < cur_line &&
+            (!cur_rendered || cur_y + cur_h > s_rp->h)) {
             int new_scroll = scroll + scroll_jump_step();
             if (new_scroll > cur_line) new_scroll = cur_line;
             editor_set_scroll_line(new_scroll);
+            continue;
+        }
+
+        /* The cursor is inside the scroll line itself: a paragraph
+         * taller than the pane (or one partly hidden above the top
+         * edge) has no further whole line to scroll to, so shift the
+         * line within the pane instead (pane_t::top_px). The cursor
+         * row lands about SCROLL_JUMP_FRACTION of a screen away from
+         * the edge it crossed, like the line-granular jumps above,
+         * and top_px is kept a whole number of visual rows so no row
+         * is cut at the top edge. */
+        if (cur_line == scroll && cur_rendered && !s_touch_panning &&
+            (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
+            int step_px = scroll_jump_step() * first_pitch;
+            int tgt = (cur_y < 0) ? step_px - cur_h
+                                  : s_rp->h - step_px;
+            if (tgt < 0) tgt = 0;
+            if (tgt > s_rp->h - cur_h) tgt = s_rp->h - cur_h;
+            int new_top = top_px + cur_y - tgt;
+            new_top = (new_top / first_pitch) * first_pitch;
+            if (new_top > first_h - first_pitch) new_top = first_h - first_pitch;
+            if (new_top < 0) new_top = 0;
+            if (new_top != top_px) {
+                pane_set_top_px(new_top);
+                continue;
+            }
+        } else if (top_px > 0 && top_px > first_h - first_pitch) {
+            /* The scroll line shrank (text deleted) below the hidden
+             * part: keep at least its last row on screen. */
+            pane_set_top_px(first_h - first_pitch);
             continue;
         }
         break;
@@ -2951,8 +3029,9 @@ static bool ui_point_to_offset(int x, int y, size_t *out_off)
      * s_prev_line_h[i] describe the layout the user actually sees. */
     int slot = -1;
     for (int i = 0; i < MAX_LINE_LABELS; i++) {
+        /* The first slot may start above the pane top (pane_t::top_px),
+         * so a negative y is valid for a visible slot. */
         if (!s_prev_line_visible[i]) continue;
-        if (s_prev_line_y[i] < 0)    continue;
         int y1 = s_prev_line_y[i];
         int y2 = y1 + s_prev_line_h[i];
         if (y >= y1 && y < y2) { slot = i; break; }
@@ -3080,15 +3159,23 @@ static void editor_ui_move_visual(int direction)
              * within the current label below the cursor. If not,
              * stay put. */
             if (target_y >= s_rp->h) {
-                /* Conservative: at-or-past viewport bottom on the
-                 * last line -> nothing more to move to. */
-                return;
+                /* At-or-past viewport bottom on the last line: only a
+                 * label running past the bottom edge (a paragraph
+                 * taller than what is left of the pane) still has
+                 * rows below. */
+                int slot = cur_line - editor_get_scroll_line();
+                if (slot < 0 || slot >= MAX_LINE_LABELS ||
+                    !s_prev_line_visible[slot] ||
+                    s_prev_line_y[slot] + s_prev_line_h[slot] <= s_rp->h) {
+                    return;
+                }
             }
         }
         if (direction < 0 && cur_line == 0) {
             /* First logical line: if the cursor is already on the
-             * first visual row (cy <= 0), there is no row above. */
-            if (cy <= 0) return;
+             * first visual row (cy <= 0, nothing of the line hidden
+             * above the top edge), there is no row above. */
+            if (cy <= 0 && pane_top_px() == 0) return;
         }
     }
 
@@ -3105,7 +3192,24 @@ static void editor_ui_move_visual(int direction)
     for (int attempt = 0; attempt < 2; attempt++) {
         if (target_y >= 0 && target_y < s_rp->h) break;
         int sc = editor_get_scroll_line();
-        if (direction < 0) {
+        int cur_line, cur_col;
+        editor_get_cursor_pos(&cur_line, &cur_col);
+        (void)cur_col;
+        if (cur_line == sc &&
+            ((direction < 0 && pane_top_px() > 0) ||
+             (direction > 0 && s_prev_line_visible[0] &&
+              s_prev_line_y[0] + s_prev_line_h[0] > s_rp->h))) {
+            /* The cursor is inside a paragraph taller than the pane
+             * and the target row is part of it: shift the paragraph
+             * within the pane (pane_t::top_px) instead of jumping
+             * whole lines, which would skip the rest of it. */
+            int step_px = scroll_jump_step() * ch;
+            int top = pane_top_px() + (direction < 0 ? -step_px : step_px);
+            int max_top = s_prev_line_y[0] + pane_top_px() +
+                          s_prev_line_h[0] - ch;
+            if (top > max_top) top = max_top;
+            pane_set_top_px(top);
+        } else if (direction < 0) {
             if (sc <= 0) {
                 editor_move_up();
                 s_visual_goal_x = gx;
@@ -3123,6 +3227,9 @@ static void editor_ui_move_visual(int direction)
             }
             int new_sc = sc + scroll_jump_step();
             if (new_sc > total - 1) new_sc = total - 1;
+            /* Never scroll past the cursor's own line: its remaining
+             * rows (a tall paragraph) would be skipped. */
+            if (new_sc > cur_line) new_sc = cur_line;
             editor_set_scroll_line(new_sc);
         }
         refresh_focused_pane();
@@ -3304,13 +3411,31 @@ static void touch_scroll_pane_by(int pane_idx, int delta_lines)
 
     int total      = editor_get_line_count();
     int scroll     = editor_get_scroll_line();
-    int new_scroll = scroll + delta_lines;
-    if (new_scroll > total - 1) new_scroll = total - 1;
-    if (new_scroll < 0) new_scroll = 0;
-    if (new_scroll != scroll) {
-        editor_set_scroll_line(new_scroll);
+    int top        = pane_top_px();
+    /* Within a paragraph taller than the pane, pan by rows inside it
+     * (pane_t::top_px) before moving on to whole lines. */
+    int first_bottom = s_prev_line_visible[0]
+                     ? s_prev_line_y[0] + s_prev_line_h[0] : 0;
+    if ((delta_lines < 0 && top > 0) ||
+        (delta_lines > 0 && first_bottom > s_rp->h)) {
+        int new_top = top + delta_lines * LINE_H;
+        int max_top = top + first_bottom - LINE_H;
+        if (new_top > max_top) new_top = max_top;
+        if (new_top < 0) new_top = 0;
+        pane_set_top_px(new_top);
+        s_touch_panning = true;
         refresh_active_pane(pane_idx == s_focus);
+        s_touch_panning = false;
         standby_reset_timer();
+    } else {
+        int new_scroll = scroll + delta_lines;
+        if (new_scroll > total - 1) new_scroll = total - 1;
+        if (new_scroll < 0) new_scroll = 0;
+        if (new_scroll != scroll) {
+            editor_set_scroll_line(new_scroll);
+            refresh_active_pane(pane_idx == s_focus);
+            standby_reset_timer();
+        }
     }
 
     if (refocus) pane_bind_focus();
