@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-10-01
+
 ### Added
 
 - **Viewe UEDX24320028E-WB-A board with the UEED035HV-RX40-L001
