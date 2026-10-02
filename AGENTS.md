@@ -74,6 +74,7 @@ card).
 | Waveshare ESP32-S3-LCD-3.16 | 3.16-inch ST7701 RGB color LCD, 320x820 portrait rendered landscape at 820x320, no touch |
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
+| Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
@@ -93,19 +94,18 @@ Driver HAT remains unsupported. The Xteink X4 Pro's UC8179 / UC8279 panel
 variants use their own reverse-engineered OEM waveforms and are also
 supported.
 
-The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was previously
-supported but has been removed: despite an exhaustive series of fixes
-(matching the confirmed-working espressif/esp_lcd_st77922-based
-xiaozhi-esp32 reference board byte-for-byte -- vendor init table,
-landscape transpose math, RGB565 byte order, RAMWR opcode, 4-pixel
-window alignment, manual CS handling, QSPI clock rate, and a proper
-panel reset), the display could never be made to show anything on
-real hardware; every software-visible signal (SPI/DMA calls, LVGL
-flush rectangles, panel init sequence) looked correct, yet the screen
-stayed persistently blank. Reproducing the issue would require
-hardware-level debugging (backlight / power-rail verification, a
-logic analyzer on the QSPI lines) that is outside the scope of this
-project, so this board is not supported.
+The Freenove FNK0104N (3.5-inch ST77922 QSPI color LCD) was dropped
+once (commit 7412216) because its screen stayed black, and was later
+re-added. The cause was an ESP-IDF bug, not the panel protocol:
+`spicommon_bus_initialize_io()` tests `flags & SPICOMMON_BUSFLAG_OCTAL`,
+which is also true for `SPICOMMON_BUSFLAG_QUAD` (OCTAL = QUAD |
+IO4_IO7). On a bus whose pins are the SPI2 IOMUX pins (GPIO9-14 on the
+ESP32-S3, as on this board) it then calls `bus_iomux_pins_set_oct()`
+and moves the clock and data pins to the octal IOMUX function, so no
+signal reaches the device. Never pass `SPICOMMON_BUSFLAG_QUAD` (or
+`_OCTAL`) to `spi_bus_initialize()` on SPI2 IOMUX pins: quad
+transfers work without it, the flag only adds pin checks. See
+`components/display/display_st77922.cpp`.
 
 ## Repository Layout
 
@@ -385,6 +385,19 @@ Per-board display backends behind a single C API:
   row-by-row across multiple queued `tx_color()` calls previously
   raced with the async DMA hardware, corrupting the lower portion of
   the screen once the transaction queue filled up.
+- **display_st77922.cpp** -- QSPI backend for the Freenove FNK0104N's
+  3.5" 320x480 ST77922 panel, gated on `CONFIG_DRAFTLING_DISPLAY_ST77922`.
+  A port of Freenove's own Arduino driver onto the raw `spi_master`
+  API: register writes are opcode 0x02 + 24-bit address on one lane,
+  pixel writes opcode 0x32 + RAMWR / RAMWRC with 4-lane RGB565 data
+  (COLMOD 0x01), sent in 8K-pixel chunks from internal DMA memory at
+  40 MHz. SWRESET then the vendor init table (the panel's RESET pin is
+  tied to CHIP_PU, which a software reset does not toggle). Works in
+  the native portrait frame; the LVGL port's 90-degree base rotation
+  turns it landscape. Flush windows are widened to 4-column
+  boundaries. Logs RDDPM after init as a health check (0x9C = on,
+  0xFF = no reply). See the ESP-IDF QUAD-flag bug noted under
+  "Supported Hardware".
 - **display_xteink_epd.cpp** -- from-scratch SPI e-paper backend for
   the Xteink X4 Pro and X4 Classic, gated on
   `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`. The two boards share the
@@ -1508,6 +1521,13 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 - **DRAFTLING_MODEL_FREENOVE_FNK0104S** -- Freenove FNK0104S: 4.0"
   ST7796 color SPI LCD, 480x320, with an on-board FT6336U I2C touch
   controller. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_FREENOVE_FNK0104N** -- Freenove FNK0104N: 3.5"
+  320x480 ST77922 QSPI color LCD (`display_st77922.cpp`), rendered
+  landscape at 480x320 via a 90-degree base rotation. MicroSD on
+  SDMMC 1-bit (CLK=5, CMD=4, D0=6), battery on GPIO8 (1:2 divider),
+  BOOT (GPIO0) wake. The unused on-board WS2812 LED (GPIO40,
+  `BOARD_WS2812_PIN`) is switched off at boot by `ws2812_off()` in
+  main.cpp. Tested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
   e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
   UC8279) auto-detected at boot by
@@ -1608,11 +1628,11 @@ The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B, Waveshare LCD-3.16), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
+  (FNK0104A/B, FNK0104N, Waveshare LCD-3.16), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
   792 (Elecrow CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
-  (Waveshare LCD-3.16), 240
+  (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
   272 (Elecrow CrowPanel 5.79").
@@ -1777,6 +1797,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
+| DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (ST77922 QSPI panel, native portrait, LVGL port rotates) | Freenove FNK0104N |
 | DRAFTLING_DISPLAY_ST7365          | Selects `display_ili9341.cpp` with the Viewe UEED035HV-RX40-L001 pins (incl. RST and the IM0/IM1 interface-mode straps) and Viewe's ST7365 init table | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
@@ -1893,7 +1914,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
+`freenove_fnk0104s`, `freenove_fnk0104n`, `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
 `m5stack_papermono`). Each

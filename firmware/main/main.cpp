@@ -13,6 +13,7 @@
 #include <driver/rtc_io.h>
 #include <driver/uart.h>
 #include <esp_sleep.h>
+#include <driver/rmt_tx.h>
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
     defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || \
@@ -248,6 +249,58 @@ static void pre_sleep_autosave(void)
     }
 #endif
 }
+
+#if defined(BOARD_WS2812_PIN)
+/* Switch off an on-board WS2812 RGB LED that Draftling does not use.
+ * With its data line undriven the LED latches noise as colour data and
+ * lights up, so send it one all-zero GRB pixel (WS2812 timing through
+ * the RMT peripheral at 10 MHz: a 0 bit is 0.3 us high + 0.9 us low)
+ * and then hold the line low. The hold also keeps the LED dark
+ * through deep sleep (the display backend's
+ * display_deep_sleep_prepare() enables deep-sleep pad holds); it is
+ * released here first because it survives the wake reset. */
+static void ws2812_off(void)
+{
+    gpio_hold_dis((gpio_num_t)BOARD_WS2812_PIN);
+
+    rmt_channel_handle_t chan = NULL;
+    rmt_tx_channel_config_t ccfg = {};
+    ccfg.gpio_num          = (gpio_num_t)BOARD_WS2812_PIN;
+    ccfg.clk_src           = RMT_CLK_SRC_DEFAULT;
+    ccfg.resolution_hz     = 10 * 1000 * 1000;
+    ccfg.mem_block_symbols = 64;
+    ccfg.trans_queue_depth = 1;
+    rmt_encoder_handle_t enc = NULL;
+    rmt_bytes_encoder_config_t ecfg = {};
+    ecfg.bit0.level0 = 1; ecfg.bit0.duration0 = 3;
+    ecfg.bit0.level1 = 0; ecfg.bit0.duration1 = 9;
+    ecfg.bit1.level0 = 1; ecfg.bit1.duration0 = 9;
+    ecfg.bit1.level1 = 0; ecfg.bit1.duration1 = 3;
+    ecfg.flags.msb_first = 1;
+
+    if (rmt_new_tx_channel(&ccfg, &chan) == ESP_OK &&
+        rmt_new_bytes_encoder(&ecfg, &enc) == ESP_OK &&
+        rmt_enable(chan) == ESP_OK) {
+        static const uint8_t off[3] = { 0, 0, 0 };
+        rmt_transmit_config_t tcfg = {};
+        if (rmt_transmit(chan, enc, off, sizeof(off), &tcfg) == ESP_OK) {
+            rmt_tx_wait_all_done(chan, 100);
+        }
+        rmt_disable(chan);
+    } else {
+        ESP_LOGW(TAG, "WS2812 LED: RMT setup failed; LED left as is");
+    }
+    if (enc) rmt_del_encoder(enc);
+    if (chan) rmt_del_channel(chan);
+
+    gpio_config_t g = {};
+    g.pin_bit_mask = 1ULL << BOARD_WS2812_PIN;
+    g.mode         = GPIO_MODE_OUTPUT;
+    gpio_config(&g);
+    gpio_set_level((gpio_num_t)BOARD_WS2812_PIN, 0);
+    gpio_hold_en((gpio_num_t)BOARD_WS2812_PIN);
+}
+#endif
 
 #if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)
 /* Waveshare ESP32-S3-LCD-3.16: put the unused I2C chips in their
@@ -1902,6 +1955,10 @@ extern "C" void app_main(void)
      * above just produced. */
     display_flip_init();
 
+#if defined(BOARD_WS2812_PIN)
+    ws2812_off();
+#endif
+
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
     /* Close the hardware power latch first thing after NVS so the
      * battery rail stays alive when the user releases the boot-time
@@ -2353,6 +2410,12 @@ extern "C" void app_main(void)
      * GPIOs (MOSI/SCK/DC/CS/BL, plus RST and the IM straps on the
      * Viewe panel) are hard-coded inside display_ili9341.cpp per
      * controller. Pin parameters are ignored. */
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST77922)
+    /* Freenove FNK0104N. ST77922 QSPI color LCD; all panel GPIOs are
+     * hard-coded in display_st77922.cpp. Works in the panel's native
+     * portrait frame; the LVGL port rotates it landscape. Pin
+     * parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1683)
     /* Elecrow CrowPanel 5.79in E-Paper HMI. Dual-SSD1683 SPI panel;

@@ -173,6 +173,18 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104S
         deep-sleep wakeup source.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
 
+config DRAFTLING_MODEL_FREENOVE_FNK0104N
+    bool "Freenove FNK0104N (ESP32-S3, ST77922, 3.5\" color LCD, 480x320, touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Freenove FNK0104N development board: 3.5" IPS color LCD with a
+        Sitronix ST77922 TDDI controller (display and touch in one
+        chip), 320x480 native panel rendered landscape at 480x320,
+        driven over a 4-lane QSPI bus. MicroSD slot (SDMMC 1-bit),
+        battery ADC input, PWM backlight. The BOOT button (GPIO0) is
+        the deep-sleep wakeup source. Tested on physical hardware.
+        See https://github.com/Freenove/Freenove_ESP32_S3_Display
+
 config DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     bool "Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 3.5\" transflective display (ESP32-S3, ST7365, 480x320, touch)"
     depends on IDF_TARGET_ESP32S3
@@ -368,6 +380,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
 
@@ -486,6 +499,16 @@ config DRAFTLING_DISPLAY_ILI9341
 config DRAFTLING_DISPLAY_ST7796
     bool
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default n
+
+# DRAFTLING_DISPLAY_ST77922 is set automatically when the selected
+# board uses a Sitronix ST77922 QSPI color LCD (Freenove FNK0104N,
+# 3.5" 320x480 panel). The display backend
+# (components/display/display_st77922.cpp) is compiled in only for
+# this board.
+config DRAFTLING_DISPLAY_ST77922
+    bool
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default n
 
 # DRAFTLING_DISPLAY_ST7365 is set automatically when the selected
@@ -680,6 +703,7 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_ILI9341
     default y if DRAFTLING_DISPLAY_ST7796
     default y if DRAFTLING_DISPLAY_ST7365
+    default y if DRAFTLING_DISPLAY_ST77922
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
     # front-light edge-lit LED on GPIO 11 (BOARD_BL_EN in the LilyGO
     # factory firmware). The EPDIY display backend drives it with
@@ -804,6 +828,7 @@ config DRAFTLING_HAS_BATTERY
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Waveshare ESP32-S3-LCD-3.16: LiPo cell through a 1:2 divider on
     # GPIO4.
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
@@ -988,6 +1013,7 @@ config DRAFTLING_HAS_USB_MSC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1071,6 +1097,7 @@ config DRAFTLING_SD_SDMMC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Viewe UEDX24320028E-WB-A: MicroSD wired for 4-bit SD (CLK=14,
     # CMD=17, D0..D3=16/18/15/21); Draftling uses 1-bit mode.
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1127,6 +1154,7 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Viewe UEDX24320028E-WB-A: BOOT button on GPIO0 (shared with
     # the WS2812B RGB LED data line, which Draftling leaves unused).
     default 0  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1460,6 +1488,10 @@ config DRAFTLING_DISPLAY_WIDTH
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Freenove FNK0104N: native 320x480 portrait panel; the
+    # 90-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
+    # editor landscape at 480x320.
+    default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Viewe UEDX24320028E-WB-A + UEED035HV: 320x480 portrait panel,
     # rendered landscape by the display backend (MADCTL MV).
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1490,6 +1522,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default 320 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default 480 if DRAFTLING_MODEL_XTEINK_X4
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
@@ -1505,6 +1538,7 @@ choice DRAFTLING_DISPLAY_ROTATE
     prompt "Display rotation angle"
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_M5STACK_TAB5
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_WAVESHARE_LCD_316
+    default DRAFTLING_DISPLAY_ROTATE_90 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default DRAFTLING_DISPLAY_ROTATE_0
     help
         Rotation angle for the display in degrees.
