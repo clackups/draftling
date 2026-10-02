@@ -156,6 +156,25 @@
       ]
     },
     {
+      "id": "waveshare_lcd_316",
+      "name": "Waveshare ESP32-S3-LCD-3.16",
+      "description": "ESP32-S3, 3.16\" 820x320 color LCD (ST7701)",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.9",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            { "path": "firmware/v1.0.9/draftling-waveshare_lcd_316-bootloader.bin", "offset": "0x0" },
+            { "path": "firmware/v1.0.9/draftling-waveshare_lcd_316-partition-table.bin", "offset": "0x8000" },
+            { "path": "firmware/v1.0.9/draftling-waveshare_lcd_316.bin", "offset": "0x10000" }
+          ]
+        }
+      ]
+    },
+    {
       "id": "waveshare_epaper_397",
       "name": "Waveshare ESP32-S3-ePaper-3.97",
       "description": "ESP32-S3, 3.97\" 800x480 e-paper (SSD1677)",
