@@ -13,6 +13,10 @@ in the git log.
   adjustable backlight. The BOOT button wakes the device and forgets
   paired BLE keyboards on a 2-second hold. The unused motion sensor
   and the clock chip's clock output are switched off to save power.
+- **Freenove FNK0104N support**: 3.5-inch 480x320 color LCD with
+  touch, MicroSD, battery indicator and adjustable backlight. The on-board RGB
+  LED is kept off. An earlier attempt at this board left the screen
+  black; that is fixed.
 
 ## [1.0.9] - 2026-10-01
 

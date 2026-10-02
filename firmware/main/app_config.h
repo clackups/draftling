@@ -79,6 +79,8 @@
 #include "boards/freenove_fnk0104b.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S)
 #include "boards/freenove_fnk0104s.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N)
+#include "boards/freenove_fnk0104n.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV)
 #include "boards/viewe_uedx24320028_ueed035hv.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)

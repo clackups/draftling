@@ -1,0 +1,9 @@
+# CMakePresets.json board defaults: Freenove FNK0104N
+# Sets the hardware model and IDF target used by the "freenove_fnk0104n" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N=y
+
+# "SD card via USB" (F1 menu): the board's USB-C connector is wired to
+# the ESP32-S3's native USB (GPIO19/20). See components/usb_msc.
+CONFIG_TINYUSB_MSC_ENABLED=y

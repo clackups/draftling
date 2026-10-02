@@ -128,6 +128,15 @@
             }
         },
         {
+            "name": "freenove_fnk0104n",
+            "displayName": "Freenove FNK0104N (3.5in ST77922 QSPI)",
+            "binaryDir": "build/freenove_fnk0104n",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104n",
+                "SDKCONFIG": "build/freenove_fnk0104n/sdkconfig"
+            }
+        },
+        {
             "name": "viewe_uedx24320028_ueed035hv",
             "displayName": "Viewe UEDX24320028E-WB-A + UEED035HV (3.5in ST7365 transflective, touch)",
             "binaryDir": "build/viewe_uedx24320028_ueed035hv",
