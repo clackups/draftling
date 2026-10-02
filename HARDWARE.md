@@ -193,6 +193,41 @@ full CH422G EXIO pin map.
 
  
 
+## Waveshare ESP32-S3-LCD-3.16
+
+[Waveshare ESP32-S3-LCD-3.16](https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16):
+ESP32-S3 (16 MB flash, 8 MB PSRAM) with a long, narrow 3.16" 320x820
+IPS color LCD, MicroSD slot, LiPo battery connector with charging,
+power slide switch and USB-C. No touch. Tested on physical hardware.
+
+The panel is mounted portrait; Draftling turns it landscape and renders
+at 820x320 with the larger high-density font. Its ST7701 controller
+takes pixels over the 16-bit parallel RGB interface, but first needs a
+setup sequence over a 3-wire SPI bus whose lines double as the BOOT
+button and two of the MicroSD lines. Draftling sends that sequence at
+power-up and then hands the pins back, so the SD card and BOOT work as
+usual afterwards. Waveshare's demo package was not downloadable when
+this board was added; the pins, panel timings and setup sequence come
+from community projects for this board (see
+`firmware/main/boards/waveshare_lcd_316.h`).
+
+- **Backlight**: dimmable from F1 -> Settings or `Ctrl+B`, from 25 % to
+  100 %.
+- **Battery**: the cell voltage is read through a divider on GPIO4 and
+  shown as a percentage; charging state is not detectable.
+- **BOOT button** (GPIO0): wakes the device from deep sleep; hold for
+  2 seconds to forget paired BLE keyboards.
+- **SD card via USB**: the USB-C port is wired to the ESP32-S3's
+  native USB, so F1 -> "SD card via USB" is offered.
+- The on-board QMI8658 motion sensor and PCF85063 real-time clock are
+  not used. To save power, Draftling puts the motion sensor into its
+  power-down mode at every boot and switches off the clock chip's
+  32 kHz clock output, which is not connected to anything on this
+  board (that output would otherwise also run from the clock's coin
+  cell while the board is switched off).
+
+Build with the `waveshare_lcd_316` preset.
+
 ## Freenove FNK0104A, FNK0104B, FNK0104S
 
 [Freenove

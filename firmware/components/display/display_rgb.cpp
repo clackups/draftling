@@ -11,6 +11,10 @@
  *     RGB; LCD reset and backlight sit behind a CH422G I2C
  *     IO-expander instead of direct GPIOs -- see
  *     CONFIG_DRAFTLING_HAS_CH422G below)
+ *   - Waveshare ESP32-S3-LCD-3.16 (3.16", 320x820 portrait, ST7701,
+ *     16-bit RGB; the controller needs a vendor init sequence over a
+ *     bit-banged 3-wire SPI bus before it shows anything -- see
+ *     CONFIG_DRAFTLING_RGB_PANEL_ST7701 below)
  *
  * The ESP32-S3 LCD peripheral drives a "dumb" RGB TFT directly:
  * a continuously-scanned-out framebuffer in PSRAM is shifted out
@@ -68,6 +72,7 @@
 #include <driver/ledc.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_rgb.h>
+#include <esp_rom_sys.h>
 
 #include "display.h"
 #include "display_margins.h"
@@ -88,7 +93,53 @@ static const char *TAG = "DisplayRGB";
  * the correct color lines. */
 #define RGB_DISP_GPIO       -1
 
-#if defined(CONFIG_DRAFTLING_HAS_CH422G)
+#if defined(CONFIG_DRAFTLING_RGB_PANEL_ST7701)
+/* ---- Waveshare ESP32-S3-LCD-3.16 (3.16", ST7701, 320x820) ----
+ * Unlike the ST7262 panels below, the ST7701 is a full controller
+ * that stays blank until it gets the vendor's register sequence
+ * (st7701_init_cmds[] below) over a 3-wire, 9-bit SPI bus. That bus
+ * shares its pins with other functions: CS is GPIO0 (the BOOT
+ * button), SCK is GPIO2 and SDA is GPIO1 (the MicroSD slot's SDMMC
+ * CMD and CLK). The sequence is sent once from display_init(), then
+ * the three pins are released for the BOOT button and the SD card --
+ * the same "IO multiplex" mode as the vendor's esp_lcd_st7701 setup.
+ * The panel ignores the SD traffic because its CS (BOOT, pulled up)
+ * stays high.
+ *
+ * Pins, timings and the init table come from the community ESP-IDF
+ * projects for this board (fabian-bxr/ESP32-S3-LCD-3.16,
+ * thelastoutpostworkshop/ESP32-S3_3_16_ST7701_movie_player), which
+ * agree with each other and carry the manufacturer's demo values.
+ * The 16 data lines are listed B0-4, G0-5, R0-4, as in those
+ * projects -- data_gpio_nums[0] is the RGB565 LSB. Backlight is
+ * LEDC PWM on GPIO6, active low (duty 0 = full brightness). */
+#define RGB_BL_GPIO         6
+#define RGB_BL_ACTIVE_LOW   1
+#define RGB_RST_GPIO        16
+#define ST7701_SPI_CS_GPIO  0
+#define ST7701_SPI_SCK_GPIO 2
+#define ST7701_SPI_SDA_GPIO 1
+#define RGB_PCLK_HZ         (16 * 1000 * 1000)   /* 16 MHz */
+#define RGB_HSYNC_GPIO      38
+#define RGB_VSYNC_GPIO      39
+#define RGB_DE_GPIO         40
+#define RGB_PCLK_GPIO       41
+#define RGB_HSYNC_PULSE     6
+#define RGB_HSYNC_BACK      30
+#define RGB_HSYNC_FRONT     30
+#define RGB_VSYNC_PULSE     40
+#define RGB_VSYNC_BACK      20
+#define RGB_VSYNC_FRONT     20
+#define RGB_PCLK_ACTIVE_NEG 0
+#define RGB_PCLK_IDLE_HIGH  0
+
+static const int kDataGpios[16] = {
+    21, 5, 45, 48, 47,          /* B0-B4 */
+    14, 13, 12, 11, 10, 9,      /* G0-G5 */
+    17, 46, 3, 8, 18            /* R0-R4 */
+};
+
+#elif defined(CONFIG_DRAFTLING_HAS_CH422G)
 /* ---- Waveshare ESP32-S3-Touch-LCD-7 (7", ST7262, CH422G) ----
  * Backlight (EXIO2) and LCD reset (EXIO3) are on the CH422G, not a
  * direct GPIO -- see backlight_ch422g_set() / display_init() below.
@@ -175,8 +226,12 @@ static const int kDataGpios[16] = {
 };
 #endif
 
+#ifndef RGB_BL_ACTIVE_LOW
+#define RGB_BL_ACTIVE_LOW   0
+#endif
+
 #if !defined(CONFIG_DRAFTLING_HAS_CH422G)
-/* ---- Backlight LEDC (Sunton boards: direct GPIO) ---- */
+/* ---- Backlight LEDC (direct GPIO) ---- */
 #define BL_LEDC_TIMER       LEDC_TIMER_0
 #define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_0
@@ -219,9 +274,21 @@ static void backlight_ch422g_set(int percent)
     ch422g_set_pin(RGB_CH422G_BL_EXIO, percent > 0);
 }
 #else
+/* LEDC duty for a brightness percentage, honouring the pin's
+ * polarity (RGB_BL_ACTIVE_LOW: duty 0 = full brightness). */
+static uint32_t backlight_duty(int percent)
+{
+    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
+    return RGB_BL_ACTIVE_LOW ? BL_LEDC_DUTY_MAX - duty : duty;
+}
+
 static void backlight_pwm_init(int bl_pin)
 {
     if (bl_pin < 0) return;
+
+    /* display_deep_sleep_prepare() may have latched the pin at its
+     * "off" level for deep sleep; release it so LEDC can drive it. */
+    gpio_hold_dis((gpio_num_t)bl_pin);
 
     ledc_timer_config_t t = {};
     t.speed_mode      = BL_LEDC_MODE;
@@ -237,7 +304,7 @@ static void backlight_pwm_init(int bl_pin)
     c.channel    = BL_LEDC_CHANNEL;
     c.timer_sel  = BL_LEDC_TIMER;
     c.intr_type  = LEDC_INTR_DISABLE;
-    c.duty       = BL_LEDC_DUTY_MAX;  /* full brightness at boot */
+    c.duty       = backlight_duty(100);  /* full brightness at boot */
     c.hpoint     = 0;
     ESP_ERROR_CHECK(ledc_channel_config(&c));
 }
@@ -252,11 +319,134 @@ extern "C" void display_set_backlight(int percent)
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     backlight_ch422g_set(percent);
 #else
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL,
+                                  backlight_duty(percent)));
     ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
 #endif
 }
+
+#if defined(CONFIG_DRAFTLING_RGB_PANEL_ST7701)
+/* ---- ST7701 3-wire SPI init ----
+ *
+ * Each 9-bit word is a D/C bit (0 = command, 1 = parameter) followed
+ * by the byte MSB first, sampled on the rising SCK edge (SPI mode 0).
+ * The bus only carries a few hundred words once at boot, so it is
+ * bit-banged rather than set up on an SPI peripheral. */
+struct st7701_cmd_t {
+    uint8_t  cmd;
+    uint8_t  len;
+    uint16_t delay_ms;
+    uint8_t  data[16];
+};
+
+/* Manufacturer init sequence for this 320x820 panel (Waveshare demo,
+ * via the projects named at the pin map above). 0xFF selects the
+ * command bank (BK0 = 0x10, BK1 = 0x11, BK3 = 0x13, 0x00 = normal
+ * command set). Ends with COLMOD = RGB565, MADCTL = 0, TE on and
+ * DISPON. */
+static const st7701_cmd_t st7701_init_cmds[] = {
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x13}},
+    {0xEF, 1, 0, {0x08}},
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x10}},
+    {0xC0, 2, 0, {0xE5, 0x02}},
+    {0xC1, 2, 0, {0x15, 0x0A}},
+    {0xC2, 2, 0, {0x07, 0x02}},
+    {0xCC, 1, 0, {0x10}},
+    {0xB0, 16, 0, {0x00, 0x08, 0x51, 0x0D, 0xCE, 0x06, 0x00, 0x08,
+                   0x08, 0x24, 0x05, 0xD0, 0x0F, 0x6F, 0x36, 0x1F}},
+    {0xB1, 16, 0, {0x00, 0x10, 0x4F, 0x0C, 0x11, 0x05, 0x00, 0x07,
+                   0x07, 0x18, 0x02, 0xD3, 0x11, 0x6E, 0x34, 0x1F}},
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x11}},
+    {0xB0, 1, 0, {0x4D}},
+    {0xB1, 1, 0, {0x37}},
+    {0xB2, 1, 0, {0x87}},
+    {0xB3, 1, 0, {0x80}},
+    {0xB5, 1, 0, {0x4A}},
+    {0xB7, 1, 0, {0x85}},
+    {0xB8, 1, 0, {0x21}},
+    {0xB9, 2, 0, {0x00, 0x13}},
+    {0xC0, 1, 0, {0x09}},
+    {0xC1, 1, 0, {0x78}},
+    {0xC2, 1, 0, {0x78}},
+    {0xD0, 1, 0, {0x88}},
+    {0xE0, 3, 100, {0x80, 0x00, 0x02}},
+    {0xE1, 11, 0, {0x0F, 0xA0, 0x00, 0x00, 0x10, 0xA0, 0x00, 0x00,
+                   0x00, 0x60, 0x60}},
+    {0xE2, 13, 0, {0x30, 0x30, 0x60, 0x60, 0x45, 0xA0, 0x00, 0x00,
+                   0x46, 0xA0, 0x00, 0x00, 0x00}},
+    {0xE3, 4, 0, {0x00, 0x00, 0x33, 0x33}},
+    {0xE4, 2, 0, {0x44, 0x44}},
+    {0xE5, 16, 0, {0x0F, 0x4A, 0xA0, 0xA0, 0x11, 0x4A, 0xA0, 0xA0,
+                   0x13, 0x4A, 0xA0, 0xA0, 0x15, 0x4A, 0xA0, 0xA0}},
+    {0xE6, 4, 0, {0x00, 0x00, 0x33, 0x33}},
+    {0xE7, 2, 0, {0x44, 0x44}},
+    {0xE8, 16, 0, {0x10, 0x4A, 0xA0, 0xA0, 0x12, 0x4A, 0xA0, 0xA0,
+                   0x14, 0x4A, 0xA0, 0xA0, 0x16, 0x4A, 0xA0, 0xA0}},
+    {0xEB, 7, 0, {0x02, 0x00, 0x4E, 0x4E, 0xEE, 0x44, 0x00}},
+    {0xED, 16, 0, {0xFF, 0xFF, 0x04, 0x56, 0x72, 0xFF, 0xFF, 0xFF,
+                   0xFF, 0xFF, 0xFF, 0x27, 0x65, 0x40, 0xFF, 0xFF}},
+    {0xEF, 6, 0, {0x08, 0x08, 0x08, 0x40, 0x3F, 0x64}},
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x13}},
+    {0xE8, 2, 0, {0x00, 0x0E}},
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x00}},
+    {0x11, 0, 120, {0}},                        /* SLPOUT */
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x13}},
+    {0xE8, 2, 10, {0x00, 0x0C}},
+    {0xE8, 2, 0, {0x00, 0x00}},
+    {0xFF, 5, 0, {0x77, 0x01, 0x00, 0x00, 0x00}},
+    {0x3A, 1, 0, {0x55}},                       /* COLMOD: RGB565 */
+    {0x36, 1, 0, {0x00}},                       /* MADCTL */
+    {0x35, 1, 0, {0x00}},                       /* TEON */
+    {0x29, 0, 20, {0}},                         /* DISPON */
+};
+
+static void st7701_write9(bool is_data, uint8_t byte)
+{
+    uint16_t word = (uint16_t)((is_data ? 0x100 : 0) | byte);
+    for (int bit = 8; bit >= 0; bit--) {
+        gpio_set_level((gpio_num_t)ST7701_SPI_SCK_GPIO, 0);
+        gpio_set_level((gpio_num_t)ST7701_SPI_SDA_GPIO, (word >> bit) & 1);
+        esp_rom_delay_us(1);
+        gpio_set_level((gpio_num_t)ST7701_SPI_SCK_GPIO, 1);
+        esp_rom_delay_us(1);
+    }
+}
+
+static void st7701_send_init(void)
+{
+    gpio_config_t io = {};
+    io.pin_bit_mask = (1ULL << ST7701_SPI_CS_GPIO) |
+                      (1ULL << ST7701_SPI_SCK_GPIO) |
+                      (1ULL << ST7701_SPI_SDA_GPIO) |
+                      (1ULL << RGB_RST_GPIO);
+    io.mode = GPIO_MODE_OUTPUT;
+    ESP_ERROR_CHECK(gpio_config(&io));
+    gpio_set_level((gpio_num_t)ST7701_SPI_CS_GPIO, 1);
+    gpio_set_level((gpio_num_t)ST7701_SPI_SCK_GPIO, 0);
+
+    /* Hardware reset (the RGB panel API has no reset line). */
+    gpio_set_level((gpio_num_t)RGB_RST_GPIO, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level((gpio_num_t)RGB_RST_GPIO, 1);
+    vTaskDelay(pdMS_TO_TICKS(120));
+
+    for (size_t i = 0; i < sizeof(st7701_init_cmds) / sizeof(st7701_init_cmds[0]); i++) {
+        const st7701_cmd_t *c = &st7701_init_cmds[i];
+        gpio_set_level((gpio_num_t)ST7701_SPI_CS_GPIO, 0);
+        st7701_write9(false, c->cmd);
+        for (int k = 0; k < c->len; k++) st7701_write9(true, c->data[k]);
+        gpio_set_level((gpio_num_t)ST7701_SPI_CS_GPIO, 1);
+        if (c->delay_ms) vTaskDelay(pdMS_TO_TICKS(c->delay_ms));
+    }
+
+    /* Hand CS (BOOT button), SCK and SDA (SD card CMD / CLK) back.
+     * gpio_reset_pin() leaves each as an input with its pull-up on,
+     * which keeps the panel's CS deasserted. */
+    gpio_reset_pin((gpio_num_t)ST7701_SPI_CS_GPIO);
+    gpio_reset_pin((gpio_num_t)ST7701_SPI_SCK_GPIO);
+    gpio_reset_pin((gpio_num_t)ST7701_SPI_SDA_GPIO);
+}
+#endif
 
 /* ---------------- Public API ---------------- */
 
@@ -283,6 +473,9 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     s_bl_pin = RGB_BL_GPIO;
     backlight_pwm_init(s_bl_pin);
 #endif
+#if defined(CONFIG_DRAFTLING_RGB_PANEL_ST7701)
+    st7701_send_init();
+#endif
 
     esp_lcd_rgb_panel_config_t cfg = {};
     cfg.clk_src   = LCD_CLK_SRC_DEFAULT;
@@ -303,7 +496,13 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
      * defaults to in_color_format when left at 0). */
     cfg.in_color_format = LCD_COLOR_FMT_RGB565;
     cfg.num_fbs      = 1;
-    cfg.bounce_buffer_size_px = s_width * 16;  /* 16 lines */
+    /* Bounce buffer of up to 16 lines. esp_lcd_new_rgb_panel() requires
+     * the frame buffer to be a whole multiple of it, so use the largest
+     * line count that divides the panel height (16 on the 480-line
+     * panels, 10 on the 820-line ST7701 panel). */
+    int bounce_lines = 16;
+    while (s_height % bounce_lines != 0) bounce_lines--;
+    cfg.bounce_buffer_size_px = s_width * bounce_lines;
     cfg.flags.fb_in_psram = 1;
     cfg.hsync_gpio_num = (gpio_num_t)RGB_HSYNC_GPIO;
     cfg.vsync_gpio_num = (gpio_num_t)RGB_VSYNC_GPIO;
@@ -520,6 +719,15 @@ extern "C" void display_deep_sleep_prepare(void)
     if (s_bl_pin < 0) return;
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     backlight_ch422g_set(0);
+#elif RGB_BL_ACTIVE_LOW
+    /* LEDC is powered down in deep sleep, and an undriven active-low
+     * backlight pin would light the panel. Park it high and latch it
+     * there (backlight_pwm_init() releases the hold on the next boot). */
+    ledc_stop(BL_LEDC_MODE, BL_LEDC_CHANNEL, 1);
+    gpio_set_direction((gpio_num_t)s_bl_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)s_bl_pin, 1);
+    gpio_hold_en((gpio_num_t)s_bl_pin);
+    gpio_deep_sleep_hold_en();
 #else
     ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
     ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);

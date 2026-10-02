@@ -126,6 +126,22 @@ config DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
         capacitive touchscreen's I2C bus. 16 MB flash, 8 MB PSRAM
         (ESP32-S3N16R8 module).
 
+config DRAFTLING_MODEL_WAVESHARE_LCD_316
+    bool "Waveshare ESP32-S3-LCD-3.16 (ESP32-S3, 3.16\" RGB color LCD, 320x820, no touch)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        Waveshare ESP32-S3-LCD-3.16 development board: 3.16" IPS color
+        LCD, 320x820 native portrait, ST7701 controller on a 16-bit
+        parallel RGB565 interface driven by the ESP32-S3 LCD RGB
+        peripheral, rendered landscape at 820x320. The ST7701 is set up
+        once at boot over a 3-wire SPI bus that shares its pins with
+        the BOOT button and the MicroSD slot (SDMMC 1-bit). PWM
+        backlight (active low) on GPIO6, LiPo cell monitored through a
+        1:2 divider on GPIO4. No touch. The BOOT button (GPIO0) is the
+        deep-sleep wakeup source. ESP32-S3R8: 16 MB flash, 8 MB PSRAM.
+        Tested on physical hardware.
+        See https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16
+
 config DRAFTLING_MODEL_FREENOVE_FNK0104A
     bool "Freenove FNK0104A (ESP32-S3, ILI9341, 2.8\" color LCD, 320x240, no touch)"
     depends on IDF_TARGET_ESP32S3
@@ -348,6 +364,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -407,6 +424,18 @@ config DRAFTLING_DISPLAY_RGB
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
+    default n
+
+# DRAFTLING_RGB_PANEL_ST7701 switches components/display/display_rgb.cpp
+# to the ST7701 panel definition of the Waveshare ESP32-S3-LCD-3.16:
+# its own pin map and timings, a direct-GPIO panel reset, an active-low
+# PWM backlight and the vendor init sequence sent once at boot over a
+# bit-banged 3-wire SPI bus (CS=GPIO0, SCK=GPIO2, SDA=GPIO1), whose
+# pins are then released to the BOOT button and the SDMMC slot.
+config DRAFTLING_RGB_PANEL_ST7701
+    bool
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default n
 
 # DRAFTLING_RGB_BOARD_S043 switches components/display/display_rgb.cpp
@@ -711,6 +740,9 @@ config DRAFTLING_BACKLIGHT_MIN_PCT
     # Viewe UEDX24320028E-WB-A + UEED035HV: transflective LCD,
     # readable in ambient light with the backlight fully off.
     default 0 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    # Waveshare ESP32-S3-LCD-3.16: transmissive IPS panel that is too
+    # dark to read at 10 %.
+    default 25 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # X4 Classic has no front-light, so DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # is off there and this value is never consulted.
     default 10
@@ -772,6 +804,9 @@ config DRAFTLING_HAS_BATTERY
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Waveshare ESP32-S3-LCD-3.16: LiPo cell through a 1:2 divider on
+    # GPIO4.
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # Xteink X4 Pro / X4 Classic: battery is monitored via a CW2017
     # fuel gauge on the shared I2C bus (driver in components/battery,
     # gated on DRAFTLING_BATTERY_CW2017 below).
@@ -954,6 +989,7 @@ config DRAFTLING_HAS_USB_MSC
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
@@ -1038,6 +1074,11 @@ config DRAFTLING_SD_SDMMC
     # Viewe UEDX24320028E-WB-A: MicroSD wired for 4-bit SD (CLK=14,
     # CMD=17, D0..D3=16/18/15/21); Draftling uses 1-bit mode.
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    # Waveshare ESP32-S3-LCD-3.16: MicroSD on SDMMC 1-bit (CLK=1,
+    # CMD=2, D0=42). CLK and CMD double as the ST7701's 3-wire SPI
+    # init bus, which display_init() releases before the SD card is
+    # mounted.
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # Xteink X4 Pro / X4 Classic: on-board MicroSD wired to SDMMC 1-bit.
     default y if DRAFTLING_MODEL_XTEINK_X4
     # Waveshare ESP32-S3-ePaper-3.97: on-board MicroSD wired to SDMMC.
@@ -1078,6 +1119,9 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_SUNTON_8048S070
     default 0  if DRAFTLING_MODEL_SUNTON_8048S043
     default 0  if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    # Waveshare ESP32-S3-LCD-3.16: BOOT button on GPIO0 (also the
+    # ST7701's SPI chip-select during display init).
+    default 0  if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # Freenove FNK0104 family: BOOT button on GPIO0 (KEY_PIN in the
     # Freenove reference sketches).
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -1406,6 +1450,10 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_SUNTON_8048S070
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
     default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    # Waveshare ESP32-S3-LCD-3.16: native 320x820 portrait panel; the
+    # 270-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
+    # editor landscape at 820x320.
+    default 320 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # Freenove FNK0104 family: native panel is portrait (240x320 on
     # the 2.8" ILI9341 boards, 320x480 on the 4.0" board); the
     # display backend rotates 90 deg so the editor renders landscape.
@@ -1438,6 +1486,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_SUNTON_8048S070
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
     default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -1455,6 +1504,7 @@ config DRAFTLING_DISPLAY_HEIGHT
 choice DRAFTLING_DISPLAY_ROTATE
     prompt "Display rotation angle"
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_M5STACK_TAB5
+    default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default DRAFTLING_DISPLAY_ROTATE_0
     help
         Rotation angle for the display in degrees.
@@ -1515,6 +1565,9 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_XTEINK_X4
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
+    # Waveshare ESP32-S3-LCD-3.16: 320x820 on a 3.16" panel is ~280
+    # DPI, denser than any other board here.
+    default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     # Waveshare ESP32-S3-ePaper-3.97: 800x480 on a 3.97" panel is
     # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"
     # (~219 DPI) above -- use the same Hack-font HIDPI path.

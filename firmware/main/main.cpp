@@ -17,7 +17,8 @@
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
     defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || \
     defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
+    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO) || \
+    defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -247,6 +248,70 @@ static void pre_sleep_autosave(void)
     }
 #endif
 }
+
+#if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)
+/* Waveshare ESP32-S3-LCD-3.16: put the unused I2C chips in their
+ * lowest-power state. Both stay powered from the 3V3 rail (the RTC
+ * also from its coin cell) for as long as the board is on, including
+ * deep sleep, so this runs once per boot:
+ *
+ *   * QMI8658 IMU: comes up in "Power-On Default" with its 2 MHz
+ *     oscillator running (~50 uA). Setting CTRL1 (0x02) bit 0,
+ *     sensorDisable, enters Power-Down (~20 uA); accelerometer and
+ *     gyroscope are already off (CTRL7 = 0 at power-on). Bits 7:1 are
+ *     written with their power-on defaults (big-endian reads, 0x20).
+ *
+ *   * PCF85063AT RTC: its CLKOUT pin drives a 32.768 kHz square wave
+ *     from power-on, but is unconnected on this board. COF[2:0] = 111
+ *     in Control_2 (0x01) turns it off. The other Control_2 bits
+ *     (alarm / timer flags and enables) are written back unchanged;
+ *     time and date are not touched.
+ *
+ * The bus is created only for these writes and deleted again. A chip
+ * that does not answer is skipped. */
+static void ws_lcd316_quiet_i2c_peripherals(void)
+{
+    i2c_master_bus_handle_t bus = NULL;
+    i2c_master_bus_config_t bus_cfg = {};
+    bus_cfg.i2c_port          = -1;
+    bus_cfg.sda_io_num        = (gpio_num_t)IMU_RTC_I2C_SDA_PIN;
+    bus_cfg.scl_io_num        = (gpio_num_t)IMU_RTC_I2C_SCL_PIN;
+    bus_cfg.clk_source        = I2C_CLK_SRC_DEFAULT;
+    bus_cfg.glitch_ignore_cnt = 7;
+    bus_cfg.flags.enable_internal_pullup = true;
+    if (i2c_new_master_bus(&bus_cfg, &bus) != ESP_OK) {
+        ESP_LOGW(TAG, "IMU/RTC I2C bus init failed; left as powered up");
+        return;
+    }
+
+    i2c_device_config_t dev_cfg = {};
+    dev_cfg.dev_addr_length = I2C_ADDR_BIT_LEN_7;
+    dev_cfg.scl_speed_hz    = 100000;
+    i2c_master_dev_handle_t dev = NULL;
+
+    dev_cfg.device_address = QMI8658_I2C_ADDR;
+    if (i2c_master_bus_add_device(bus, &dev_cfg, &dev) == ESP_OK) {
+        const uint8_t ctrl1[2] = { 0x02, 0x21 };
+        esp_err_t err = i2c_master_transmit(dev, ctrl1, sizeof(ctrl1), 50);
+        ESP_LOGI(TAG, "QMI8658 power-down: %s", esp_err_to_name(err));
+        i2c_master_bus_rm_device(dev);
+    }
+
+    dev_cfg.device_address = PCF85063_I2C_ADDR;
+    if (i2c_master_bus_add_device(bus, &dev_cfg, &dev) == ESP_OK) {
+        uint8_t reg = 0x01, ctrl2 = 0;
+        esp_err_t err = i2c_master_transmit_receive(dev, &reg, 1, &ctrl2, 1, 50);
+        if (err == ESP_OK && (ctrl2 & 0x07) != 0x07) {
+            const uint8_t w[2] = { 0x01, (uint8_t)(ctrl2 | 0x07) };
+            err = i2c_master_transmit(dev, w, sizeof(w), 50);
+        }
+        ESP_LOGI(TAG, "PCF85063 CLKOUT off: %s", esp_err_to_name(err));
+        i2c_master_bus_rm_device(dev);
+    }
+
+    i2c_del_master_bus(bus);
+}
+#endif
 
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
     defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
@@ -2269,11 +2334,18 @@ extern "C" void app_main(void)
      * by this backend. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_RGB)
-    /* Parallel RGB565 color LCD (Sunton ESP32-8048S070C). All panel
-     * data / control / backlight GPIOs are owned by the RGB backend
+    /* Parallel RGB565 color LCD (Sunton ESP32-8048S0xx, Waveshare
+     * Touch-LCD-7 / LCD-3.16). All panel data / control / backlight
+     * GPIOs are owned by the RGB backend
      * (components/display/display_rgb.cpp); pin parameters are
-     * ignored, only width/height are used. */
+     * ignored, only width/height are used. On the LCD-3.16 this also
+     * sends the ST7701 init sequence and then releases the shared
+     * BOOT / SD pins, so it must stay ahead of the SD mount and the
+     * BOOT-button poller. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)
+    ws_lcd316_quiet_i2c_peripherals();
+#endif
 #elif defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796) || \
       defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
     /* Freenove FNK0104A/B (ILI9341) / FNK0104S (ST7796) / Viewe

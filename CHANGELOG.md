@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Waveshare ESP32-S3-LCD-3.16 support**: 3.16-inch 320x820 color LCD
+  used in landscape (820x320), with MicroSD, battery indicator and
+  adjustable backlight. The BOOT button wakes the device and forgets
+  paired BLE keyboards on a 2-second hold. The unused motion sensor
+  and the clock chip's clock output are switched off to save power.
+
 ## [1.0.9] - 2026-10-01
 
 ### Added

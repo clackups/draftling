@@ -71,6 +71,8 @@
 #include "boards/sunton_8048s043.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7)
 #include "boards/waveshare_touch_lcd_7.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)
+#include "boards/waveshare_lcd_316.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A)
 #include "boards/freenove_fnk0104a.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B)

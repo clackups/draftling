@@ -39,6 +39,7 @@ load the firmware quickly without having to compile it.
   * 2.8" and 4" Freenove boards
   * Viewe UEDX24320028E-WB-A board with the UEED035HV-RX40-L001 3.5" transflective display
   * Waveshare ESP32-S3-Touch-LCD-7 
+  * Waveshare ESP32-S3-LCD-3.16
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 
@@ -111,7 +112,7 @@ load the firmware quickly without having to compile it.
   native USB controller straight to the connector (Xteink X4 Pro /
   Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite / H752, M5Stack
   PaperS3 and PaperMono, Waveshare ESP32-S3-ePaper-3.97, ESP32-S3-RLCD-4.2,
-  ESP32-S3-Touch-LCD-7 and ESP32-S3-Touch-LCD-3.49, all three
+  ESP32-S3-Touch-LCD-7, ESP32-S3-Touch-LCD-3.49 and ESP32-S3-LCD-3.16, all three
   Freenove FNK0104 boards, and the Viewe UEDX24320028E-WB-A), F1 -> "SD card via USB" opens a picker
   for Off / Read-only / Read-write; the choice applies as soon as you
   leave that picker (Enter to confirm, or Esc to back out unchanged),

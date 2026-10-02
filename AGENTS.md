@@ -71,6 +71,7 @@ card).
 |-------|---------|
 | Waveshare ESP32-S3-RLCD-4.2 | 4.2-inch reflective LCD, 400x300 |
 | M5Stack PaperS3 | 4.7-inch e-paper (ED047TC1), 540x960 |
+| Waveshare ESP32-S3-LCD-3.16 | 3.16-inch ST7701 RGB color LCD, 320x820 portrait rendered landscape at 820x320, no touch |
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
@@ -361,7 +362,13 @@ Per-board display backends behind a single C API:
   line) and the Waveshare ESP32-S3-Touch-LCD-7
   (`CONFIG_DRAFTLING_HAS_CH422G`: backlight and LCD reset instead
   routed through a CH422G I2C IO-expander -- see
-  `components/io_expander/`). Each board selects its own pin/timing
+  `components/io_expander/`) and the Waveshare ESP32-S3-LCD-3.16
+  (`CONFIG_DRAFTLING_RGB_PANEL_ST7701`: an ST7701 controller that is
+  first configured over a bit-banged 3-wire SPI bus -- CS=GPIO0 (BOOT),
+  SCK=GPIO2, SDA=GPIO1, which are the SDMMC CMD / CLK lines -- inside
+  `display_init()`, after which the pins are released; direct-GPIO
+  reset, active-low LEDC backlight that is latched off for deep
+  sleep). Each board selects its own pin/timing
   branch and data-line order at build time; keeps its own RGB565
   framebuffer in PSRAM with the same dirty-bbox
   `display_push_rgb565()` / `display_flush()` pattern as the epdiy
@@ -1584,15 +1591,28 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   main.cpp suppresses the Page Up/Down on a long hold. Tested on
   physical hardware; see HARDWARE.md.
   *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_WAVESHARE_LCD_316** -- Waveshare ESP32-S3-LCD-3.16:
+  3.16" 320x820 portrait ST7701 color LCD on the 16-bit RGB
+  interface (`display_rgb.cpp`, `CONFIG_DRAFTLING_RGB_PANEL_ST7701`),
+  rendered landscape at 820x320 via a 270-degree base rotation, Hack
+  fonts (HIDPI). MicroSD on SDMMC 1-bit (CLK=1, CMD=2, D0=42; CLK/CMD
+  shared with the panel's init bus), battery through a 1:2 divider on
+  GPIO4, BOOT (GPIO0) as the wake source. No touch. The unused
+  QMI8658 IMU (0x6B) and PCF85063 RTC (0x51) on I2C SDA=15/SCL=7 are
+  quieted once per boot by `ws_lcd316_quiet_i2c_peripherals()` in
+  main.cpp (IMU CTRL1 sensorDisable = Power-Down; RTC Control_2
+  COF = 111 = CLKOUT off), right after `display_init()`. Tested on
+  physical hardware. *Requires ESP32-S3.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
-  (FNK0104A/B), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
+  (FNK0104A/B, Waveshare LCD-3.16), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
   792 (Elecrow CrowPanel 5.79").
-- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 240
+- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
+  (Waveshare LCD-3.16), 240
   (FNK0104A/B), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
   272 (Elecrow CrowPanel 5.79").
@@ -1759,21 +1779,22 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_ST7365          | Selects `display_ili9341.cpp` with the Viewe UEED035HV-RX40-L001 pins (incl. RST and the IM0/IM1 interface-mode straps) and Viewe's ST7365 init table | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7 |
+| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
+| DRAFTLING_RGB_PANEL_ST7701        | Switches `display_rgb.cpp` to the ST7701 branch: own pins / timings, direct-GPIO reset, active-low PWM backlight, and the vendor init sequence over a bit-banged 3-wire SPI bus (CS=0/BOOT, SCK=2, SDA=1) that is released afterwards for the BOOT button and the SDMMC slot | Waveshare LCD-3.16 |
 | DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S, M5Stack PaperMono (FT6336G) |
 
@@ -1791,7 +1812,7 @@ init branch in `main/main.cpp`.
 A `choice` that sets the **build-time base** display rotation angle.
 Options are 0, 90, 180, and 270 degrees. The default is 0 (no
 rotation); the natively-portrait Freenove panels default to 90 and the
-Tab5 to 270 so the editor renders landscape. The selected angle is
+Tab5 and the Waveshare LCD-3.16 to 270 so the editor renders landscape. The selected angle is
 exposed as the hidden `int` symbol **DRAFTLING_DISPLAY_ROTATE_ANGLE**,
 consumed in `app_config.h` as `DISPLAY_ROTATE`.
 
@@ -1871,7 +1892,7 @@ PSRAM) are not supported.
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
-`waveshare_touch_lcd_7`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`waveshare_touch_lcd_7`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
