@@ -1930,7 +1930,7 @@ first step of every release.
 A release also publishes prebuilt binaries for the boards covered by
 the web flasher (see below) -- currently `m5stack_papers3`,
 `xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
-`waveshare_touch_lcd_349`, `waveshare_epaper_397`,
+`waveshare_touch_lcd_349`, `waveshare_lcd_316`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `elecrow_crowpanel_579`,
 `seeed_reterminal_sticky`, and `m5stack_papermono`. Extend the list
