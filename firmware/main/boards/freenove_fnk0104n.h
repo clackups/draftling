@@ -18,9 +18,8 @@
  * backend. The panel's RESET pin is wired to the ESP32-S3's CHIP_PU
  * (EN), so there is no LCD reset GPIO.
  *
- * Not used by Draftling yet: the ST77922's touch interface (I2C 0x55
- * on SDA=38 / SCL=39, INT=47, RST=48) and the ES8311 audio codec on
- * the same I2C bus (amplifier enable GPIO1).
+ * Not used by Draftling: the ES8311 audio codec on the touch I2C bus
+ * (amplifier enable GPIO1).
  *
  * Included by main/app_config.h when
  * CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N is selected.
@@ -33,6 +32,27 @@
 #define SD_CLK_PIN          5
 #define SD_CMD_PIN          4
 #define SD_D0_PIN           6
+
+/* I2C bus carrying the ST77922's touch interface (and the unused
+ * ES8311 audio codec). */
+#define I2C_SDA_PIN         38
+#define I2C_SCL_PIN         39
+
+/* Touch half of the ST77922 TDDI controller (DRAFTLING_TOUCH_ST77922
+ * in components/touchscreen). It reports points in the panel's native
+ * 320x480 portrait frame, the same frame the display backend draws in
+ * (MADCTL 0), so no swap or mirror: the LVGL port's rotation turns
+ * the point landscape along with the picture. Pins and register map
+ * agree between Freenove's ST77922_Touch.cpp and XiaoZhi's
+ * lcdwiki-es3c35p board. */
+#define TOUCH_I2C_ADDR      0x55
+#define TOUCH_INT_PIN       CONFIG_DRAFTLING_TOUCH_INT_GPIO
+#define TOUCH_RST_PIN       CONFIG_DRAFTLING_TOUCH_RST_GPIO
+#define TOUCH_NATIVE_W      320
+#define TOUCH_NATIVE_H      480
+#define TOUCH_SWAP_XY       0
+#define TOUCH_MIRROR_X      0
+#define TOUCH_MIRROR_Y      0
 
 /* LiPo cell through a 1:2 divider on GPIO8 (BAT_ADC). */
 #define BATT_ADC_PIN        8

@@ -14,7 +14,7 @@ in the git log.
   paired BLE keyboards on a 2-second hold. The unused motion sensor
   and the clock chip's clock output are switched off to save power.
 - **Freenove FNK0104N support**: 3.5-inch 480x320 color LCD with
-  MicroSD, battery indicator and adjustable backlight. The on-board RGB
+  touch, MicroSD, battery indicator and adjustable backlight. The on-board RGB
   LED is kept off. An earlier attempt at this board left the screen
   black; that is fixed.
 

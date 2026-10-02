@@ -1525,7 +1525,10 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   320x480 ST77922 QSPI color LCD (`display_st77922.cpp`), rendered
   landscape at 480x320 via a 90-degree base rotation. MicroSD on
   SDMMC 1-bit (CLK=5, CMD=4, D0=6), battery on GPIO8 (1:2 divider),
-  BOOT (GPIO0) wake. The unused on-board WS2812 LED (GPIO40,
+  BOOT (GPIO0) wake. Touch is the ST77922's own touch interface
+  (`DRAFTLING_TOUCH_ST77922`, I2C 0x55 on SDA=38/SCL=39, INT=47,
+  RST=48), reported in the panel's native frame (no swap/mirror). The
+  unused on-board WS2812 LED (GPIO40,
   `BOARD_WS2812_PIN`) is switched off at boot by `ws2812_off()` in
   main.cpp. Tested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
@@ -1817,6 +1820,7 @@ in C / C++ code:
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
 | DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
+| DRAFTLING_TOUCH_ST77922           | Adds the ST77922 TDDI touch poll routine to `components/touchscreen/touchscreen.cpp` (16-bit register addresses, info at 0x0010, point 0 at 0x0014) | Freenove FNK0104N |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S, M5Stack PaperMono (FT6336G) |
 
 Components MUST key off these derived symbols; they MUST NOT

@@ -4,7 +4,7 @@
 /*
  * I2C touchscreen driver + LVGL pointer input device.
  *
- * Supports three controllers, picked at build time via
+ * Supports these controllers, picked at build time via
  * CONFIG_DRAFTLING_TOUCH_CONTROLLER:
  *
  *   * AXS5106L (Allystar, e.g. Guition JC3248W535):
@@ -32,6 +32,11 @@
  *     count at 0x02 (TD_STATUS), first point's X/Y at 0x03..0x06
  *     (top nibble of each 16-bit value is an event/id code, low 12
  *     bits are the coordinate).
+ *
+ *   * ST77922 TDDI touch (Sitronix, Freenove FNK0104N): 16-bit
+ *     register address sent MSB-first; info byte at 0x0010 (bit 3 =
+ *     new data), first point at 0x0014 (7 bytes, bit 7 of byte 0 =
+ *     touching, 14-bit X / Y big-endian in bytes 0-1 / 2-3).
  *
  * In all cases the driver registers an LVGL pointer indev which
  * feeds touch coordinates to the LVGL event system, so widgets
@@ -479,6 +484,82 @@ static bool poll_ft6336u(int *out_x, int *out_y)
 
 #endif /* CONFIG_DRAFTLING_TOUCH_FT6336U */
 
+/* ---- Sitronix ST77922 TDDI touch driver ---- */
+#if defined(CONFIG_DRAFTLING_TOUCH_ST77922)
+
+/* Register map from Freenove's ST77922_Touch.cpp (FNK0104N vendor
+ * library) and XiaoZhi's lcdwiki-es3c35p board, which agree. 16-bit
+ * register address MSB-first, then a plain read. */
+#define ST77922T_REG_STATUS      0x0001  /* low nibble busy after reset */
+#define ST77922T_REG_MAX_TOUCHES 0x0009
+#define ST77922T_REG_TOUCH_INFO  0x0010  /* bit 3: new touch data */
+#define ST77922T_REG_POINT0      0x0014  /* 7 bytes per point */
+#define ST77922T_MAX_POINTS      10
+
+/* Points the controller reports (register 0x0009, read at init). */
+static uint8_t s_st77922t_points = 1;
+
+static esp_err_t st77922t_read_reg(uint16_t reg, uint8_t *buf, size_t len)
+{
+    uint8_t addr[2] = { (uint8_t)(reg >> 8), (uint8_t)(reg & 0xFF) };
+    return i2c_master_transmit_receive(s_dev, addr, sizeof(addr), buf, len, 50 /* ms */);
+}
+
+/* After the reset pulse in touchscreen_init(), wait for the busy bits
+ * to clear, as ST77922_TOUCH::init() does. */
+static void st77922t_wait_ready(void)
+{
+    uint8_t status = 0xFF;
+    for (int tries = 0; tries < 100; tries++) {
+        if (st77922t_read_reg(ST77922T_REG_STATUS, &status, 1) == ESP_OK &&
+            (status & 0x0F) == 0) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    uint8_t max_points = 0;
+    if (st77922t_read_reg(ST77922T_REG_MAX_TOUCHES, &max_points, 1) == ESP_OK &&
+        max_points >= 1 && max_points <= ST77922T_MAX_POINTS) {
+        s_st77922t_points = max_points;
+    }
+    ESP_LOGI(TAG, "ST77922 touch: status=0x%02X max_points=%u",
+             status, (unsigned)max_points);
+}
+
+static bool poll_st77922_touch(int *out_x, int *out_y)
+{
+    if (!s_dev) return false;
+
+    uint8_t info = 0;
+    if (st77922t_read_reg(ST77922T_REG_TOUCH_INFO, &info, 1) != ESP_OK) return false;
+    if ((info & 0x08) == 0) return false;
+
+    /* Read the whole point block (7 bytes per reported point), as both
+     * references do, even though only point 0 is used: reading just
+     * point 0 left the controller stuck on its first report, with the
+     * new-data bit and the coordinates never changing again. */
+    uint8_t pt[7 * ST77922T_MAX_POINTS] = { 0 };
+    if (st77922t_read_reg(ST77922T_REG_POINT0, pt, 7 * (size_t)s_st77922t_points) != ESP_OK) {
+        return false;
+    }
+    if ((pt[0] & 0x80) == 0) return false;
+
+    int nx = ((int)(pt[0] & 0x3F) << 8) | pt[1];
+    int ny = ((int)(pt[2] & 0x3F) << 8) | pt[3];
+
+    int lx, ly;
+    native_to_logical(nx, ny, &lx, &ly);
+#if defined(CONFIG_DRAFTLING_TOUCH_DEBUG_LOG)
+    ESP_LOGI(TAG, "st77922 raw=(%d,%d) info=0x%02X -> logical=(%d,%d)",
+             nx, ny, info, lx, ly);
+#endif
+    if (out_x) *out_x = lx;
+    if (out_y) *out_y = ly;
+    return true;
+}
+
+#endif /* CONFIG_DRAFTLING_TOUCH_ST77922 */
+
 /* ---- M5Stack Tab5 (BSP-delegated) driver ---- */
 #if defined(DRAFTLING_TOUCH_BSP_M5STACK_TAB5)
 
@@ -536,6 +617,8 @@ static bool poll_controller(int *out_x, int *out_y)
     return poll_axs5106l(out_x, out_y);
 #elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
     return poll_ft6336u(out_x, out_y);
+#elif defined(CONFIG_DRAFTLING_TOUCH_ST77922)
+    return poll_st77922_touch(out_x, out_y);
 #else
 #  error "No touch controller driver selected (CONFIG_DRAFTLING_TOUCH_*)"
 #endif
@@ -780,6 +863,8 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
      *     chip remains unresponsive. */
     (void)gt911_write_reg(GT911_REG_COMMAND, 0x00);
     (void)gt911_write_reg(GT911_REG_STATUS,  0x00);
+#elif defined(CONFIG_DRAFTLING_TOUCH_ST77922)
+    st77922t_wait_ready();
 #endif
 
     /* Register LVGL pointer indev. lv_init() was already called by
@@ -801,6 +886,8 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     const char *ctrl = "AXS5106L";
 #elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
     const char *ctrl = "FT6336U";
+#elif defined(CONFIG_DRAFTLING_TOUCH_ST77922)
+    const char *ctrl = "ST77922";
 #else
     const char *ctrl = "?";
 #endif

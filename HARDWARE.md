@@ -255,7 +255,8 @@ panel "ST7789", but the vendor init sequence is unambiguously ST7796.
 FNK0104N](https://github.com/Freenove/Freenove_ESP32_S3_Display) --
 3.5" IPS color LCD (320x480 native panel, rendered landscape at
 480x320) with a Sitronix ST77922 controller on a 4-lane QSPI bus.
-Battery on GPIO8 ADC (1:2 divider). On-board MicroSD on the SDMMC
+Capacitive touch is built into the same ST77922 chip (I2C address
+0x55). Battery on GPIO8 ADC (1:2 divider). On-board MicroSD on the SDMMC
 1-bit peripheral. BOOT (GPIO0) wakes from deep sleep. The on-board
 RGB LED is switched off at boot. "SD card via USB" is available.
 Tested on physical hardware.
@@ -264,7 +265,8 @@ The Freenove FNK0104A/B/S boards are small, inexpensive color-LCD
 kits (2.8" for the A/B, 4.0" for the S) that ship with a MicroSD slot
 and a battery ADC input out of the box. The FNK0104A has no touch
 controller and is keyboard-only; the FNK0104B and FNK0104S add an
-FT6336U capacitive touch controller, so touch works alongside the BLE
+FT6336U capacitive touch controller, and the FNK0104N has touch built
+into its display controller, so touch works alongside the BLE
 keyboard.
 
 

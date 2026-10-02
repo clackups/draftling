@@ -180,7 +180,8 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104N
         Freenove FNK0104N development board: 3.5" IPS color LCD with a
         Sitronix ST77922 TDDI controller (display and touch in one
         chip), 320x480 native panel rendered landscape at 480x320,
-        driven over a 4-lane QSPI bus. MicroSD slot (SDMMC 1-bit),
+        driven over a 4-lane QSPI bus, with the ST77922's built-in
+        capacitive touch on I2C. MicroSD slot (SDMMC 1-bit),
         battery ADC input, PWM backlight. The BOOT button (GPIO0) is
         the deep-sleep wakeup source. Tested on physical hardware.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
@@ -1233,7 +1234,9 @@ config DRAFTLING_TOUCHSCREEN
     # so default touch on for both SKUs.
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
-    # Freenove FNK0104 touch variants (FNK0104B / FNK0104S).
+    # Freenove FNK0104 touch variants (FNK0104B / FNK0104S, and the
+    # FNK0104N's ST77922 built-in touch).
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # FNK0104A has no touch controller wired and is left off.
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -1316,6 +1319,20 @@ config DRAFTLING_TOUCH_FT6336U
         the coordinate). Default I2C address 0x38. Used by the
         Freenove FNK0104B / FNK0104S.
 
+config DRAFTLING_TOUCH_ST77922
+    bool
+    depends on DRAFTLING_TOUCHSCREEN
+    default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
+    default n
+    help
+        Touch half of the Sitronix ST77922 TDDI controller (Freenove
+        FNK0104N). I2C address 0x55, 16-bit register addresses sent
+        MSB-first: status at 0x0001 (low nibble busy after reset),
+        max touch points at 0x0009, touch info at 0x0010 (bit 3 = new
+        data), first point at 0x0014 (7 bytes: bit 7 of byte 0 =
+        touching, 14-bit X in bytes 0-1, 14-bit Y in bytes 2-3, in the
+        panel's native 320x480 portrait frame).
+
 # Touchscreen INT GPIO. The touch controller pulses this line low
 # on touch. Used by the LVGL pointer indev (the read_cb only polls
 # I2C when INT is low to avoid bus noise on every LVGL tick) and,
@@ -1362,6 +1379,8 @@ config DRAFTLING_TOUCH_INT_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U INT_N_PIN.
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 17 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Freenove FNK0104N: ST77922 TP_INT.
+    default 47 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Viewe UEDX24320028E-WB-A: CHSC6540 INT.
     default 4  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro: GT911 INT.
@@ -1391,6 +1410,9 @@ config DRAFTLING_TOUCH_RST_GPIO
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
+    # Freenove FNK0104N: ST77922 TP_RESXP (touch reset only; the
+    # display half is reset through CHIP_PU).
+    default 48 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     # Viewe UEDX24320028E-WB-A: CHSC6540 RST.
     default 2  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     # Xteink X4 Pro: GT911 RST.
