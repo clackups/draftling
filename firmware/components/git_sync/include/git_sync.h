@@ -65,6 +65,24 @@ typedef enum {
 /* name is a bare file name in the sync directory (the SD card root). */
 git_sync_file_status_t git_sync_file_status(const char *name);
 
+/* Connect to a Draftbox repository (github.com/clackups/draftbox):
+ * exchange the 8-digit one-time password for an access token via
+ * https://<site>/api/v1/token-exchange, then write the returned clone
+ * URL and token into /sdcard/git.cfg and reload the configuration.
+ *
+ * site is a host name such as "draftbox.art" (a leading "https://" and
+ * trailing '/' are accepted and stripped). Blocks while the HTTPS
+ * request runs, so call it off the UI task; WiFi must be connected.
+ *
+ * On success msg holds a short report ("connected to user/repo"). On
+ * any failure git.cfg is left untouched and msg says why. repo_url,
+ * token, username and branch are set from the server's cloneUrl,
+ * token, user and branch (username / branch only when the server sends
+ * them); path is removed; author_name / author_email and any other
+ * lines are kept. */
+esp_err_t git_sync_draftbox_connect(const char *site, const char *otp,
+                                    char *msg, size_t msg_len);
+
 #ifdef __cplusplus
 }
 #endif

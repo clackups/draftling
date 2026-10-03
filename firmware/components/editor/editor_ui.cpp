@@ -823,8 +823,8 @@ static int       s_menu_sel     = 0;
 static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
-/* F1 menu item indices. Fixed 0-7 for every board; "SD card via USB"
- * (8) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
+/* F1 menu item indices. Fixed 0-8 for every board; "SD card via USB"
+ * (9) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
  * "Help" / "Sleep now" / "Close menu" shift down by one on every other
  * board.
  * Use the MENU_IDX_* constants instead of bare integers everywhere
@@ -837,12 +837,13 @@ static bool      s_menu_open    = false;
 #define MENU_IDX_WIFI_NEW        4
 #define MENU_IDX_WIFI_DISCONNECT 5
 #define MENU_IDX_GIT_SYNC        6
-#define MENU_IDX_KB_LAYOUT       7
+#define MENU_IDX_DRAFTBOX        7
+#define MENU_IDX_KB_LAYOUT       8
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-#define MENU_IDX_USB_MSC         8
-#define _MENU_NEXT_AFTER_USB_MSC 9
+#define MENU_IDX_USB_MSC         9
+#define _MENU_NEXT_AFTER_USB_MSC 10
 #else
-#define _MENU_NEXT_AFTER_USB_MSC 8
+#define _MENU_NEXT_AFTER_USB_MSC 9
 #endif
 #define MENU_IDX_HELP         _MENU_NEXT_AFTER_USB_MSC
 #define MENU_IDX_SLEEP        (_MENU_NEXT_AFTER_USB_MSC + 1)
@@ -977,6 +978,44 @@ static bool      s_wifi_pw_open     = false;
 static char      s_wifi_pw_ssid[33] = "";     /* SSID this password is for */
 static char      s_wifi_pw_buf[65]  = "";     /* matches wifi_config_t.sta.password size */
 static int       s_wifi_pw_pos      = 0;      /* byte cursor into s_wifi_pw_buf */
+
+/* ---- "Connect a Draftbox repository" prompt ----
+ * F1 menu row MENU_IDX_DRAFTBOX. A two-step single-line prompt on the
+ * menu screen, laid out like the WiFi password overlay. If WiFi is not
+ * connected yet, the panel first connects it (DBX_STEP_WIFI, like
+ * Ctrl+W) and moves on once wifi_state_cb() reports the result. Then
+ * the Draftbox site name (pre-filled with draftbox.art, or whatever was
+ * typed last time), then the 8-digit one-time password. Enter on the
+ * password runs git_sync_draftbox_connect() on a background task,
+ * which exchanges the password for an access token and writes the
+ * clone URL and token into git.cfg; the result goes to the status bar. */
+#define DBX_STEP_SITE 0
+#define DBX_STEP_OTP  1
+#define DBX_STEP_WIFI 2   /* waiting for the WiFi connection */
+static lv_obj_t *s_dbx_panel    = NULL;
+static lv_obj_t *s_dbx_hdr_lbl  = NULL;
+static lv_obj_t *s_dbx_val_lbl  = NULL;
+static lv_obj_t *s_dbx_cur      = NULL;
+static bool      s_dbx_open     = false;
+static int       s_dbx_step     = DBX_STEP_SITE;
+static char      s_dbx_site[128] = "draftbox.art";
+static int       s_dbx_site_pos = 0;
+static char      s_dbx_otp[10]  = "";        /* 8 digits; see text_field_key() */
+static int       s_dbx_otp_pos  = 0;
+
+/* ---- Message pop-up ----
+ * A modal panel with a title, a word-wrapped message and a "close" hint,
+ * moved onto the active screen when shown (like the delete prompt).
+ * Used for results that are too important for the status bar, e.g. the
+ * Draftbox connection. While s_msg_busy is set (an operation is still
+ * running) the hint is hidden and every key is ignored; the operation
+ * replaces the text with its result and clears the flag. */
+static lv_obj_t *s_msg_panel     = NULL;
+static lv_obj_t *s_msg_title_lbl = NULL;
+static lv_obj_t *s_msg_text_lbl  = NULL;
+static lv_obj_t *s_msg_hint_lbl  = NULL;
+static bool      s_msg_open      = false;
+static bool      s_msg_busy      = false;
 
 /* ---- Search / Replace overlay ----
  * A single panel handles both Ctrl+F (find) and Ctrl+H (find +
@@ -4125,6 +4164,7 @@ static const menu_hotkey_t s_menu_hotkeys[] = {
     { MENU_IDX_WIFI_NEW,        'n', 6  },  /* "WiFi: New connection..." */
     { MENU_IDX_WIFI_DISCONNECT, 'd', 6  },  /* "WiFi: Disconnect" */
     { MENU_IDX_GIT_SYNC,        'g', 0  },  /* "Git Sync" */
+    { MENU_IDX_DRAFTBOX,        'c', 0  },  /* "Connect a Draftbox repository..." */
     { MENU_IDX_KB_LAYOUT,       'k', 0  },  /* "Keyboard: ..." */
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     { MENU_IDX_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
@@ -4249,13 +4289,16 @@ static void refresh_menu_items(void)
              git_sync_is_configured() ? "" : " (not configured)");
     lv_list_add_btn(s_menu_list, NULL, buf);
 
-    /* 7: Keyboard layout */
+    /* 7: Draftbox one-time password -> git.cfg */
+    lv_list_add_btn(s_menu_list, NULL, "Connect a Draftbox repository...");
+
+    /* 8: Keyboard layout */
     snprintf(buf, sizeof(buf), "Keyboard: %s  (Enter to cycle)",
              kb_layout_name(kb_layout_get()));
     lv_list_add_btn(s_menu_list, NULL, buf);
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    /* 8: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
+    /* 9: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
      * not necessarily what usb_msc is doing right now -- see the
      * picker opened from menu_activate_item() and applied by
      * commit_usb_msc_pending_mode(). See usbmsc_item_disabled() for
@@ -4315,6 +4358,8 @@ static void show_menu(void)
     s_wifi_scan_picker_open = false;
     s_wifi_pw_open = false;
     if (s_wifi_pw_panel) lv_obj_add_flag(s_wifi_pw_panel, LV_OBJ_FLAG_HIDDEN);
+    s_dbx_open = false;
+    if (s_dbx_panel) lv_obj_add_flag(s_dbx_panel, LV_OBJ_FLAG_HIDDEN);
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Sync the staged choice to whatever usb_msc is actually doing
      * right now -- picks up an auto-off that happened while the menu
@@ -5146,6 +5191,7 @@ static void wifi_scan_task(void *arg);
 static void wifi_scan_async(void);
 static void wifi_connect_picked_task(void *arg);
 static void wifi_connect_picked_async(const char *ssid, const char *password);
+static void draftbox_connect_async(const char *site, const char *otp);
 /* Forward declaration: the password prompt's Esc handler returns to
  * the picker list defined further down. */
 static void refresh_wifi_scan_picker_items(void);
@@ -5206,6 +5252,70 @@ static void wifi_pw_prompt_confirm(void)
     wifi_connect_picked_async(ssid, s_wifi_pw_buf);
 }
 
+/* Line-editing keys shared by the single-line text prompts on the menu
+ * screen (WiFi password, Draftbox site / password): cursor movement,
+ * Backspace / Delete and printable text in the active keyboard layout.
+ * buf is UTF-8, pos a byte offset kept on a character boundary. Enter
+ * and Esc are the caller's. */
+static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t *ev)
+{
+    switch (ev->keycode) {
+    case KB_KEY_LEFT:
+        if (*pos > 0) {
+            do { (*pos)--; }
+            while (*pos > 0 && (buf[*pos] & 0xC0) == 0x80);
+        }
+        break;
+    case KB_KEY_RIGHT:
+        if (*pos < (int)strlen(buf)) {
+            (*pos)++;
+            while (*pos < (int)strlen(buf) && (buf[*pos] & 0xC0) == 0x80)
+                (*pos)++;
+        }
+        break;
+    case KB_KEY_HOME:
+        *pos = 0;
+        break;
+    case KB_KEY_END:
+        *pos = (int)strlen(buf);
+        break;
+    case KB_KEY_BACKSPACE:
+        if (*pos > 0) {
+            int prev = *pos - 1;
+            while (prev > 0 && (buf[prev] & 0xC0) == 0x80) prev--;
+            int len = (int)strlen(buf);
+            memmove(buf + prev, buf + *pos, (size_t)(len - *pos + 1));
+            *pos = prev;
+        }
+        break;
+    case KB_KEY_DELETE: {
+        int len = (int)strlen(buf);
+        if (*pos < len) {
+            int next = *pos + 1;
+            while (next < len && (buf[next] & 0xC0) == 0x80) next++;
+            memmove(buf + *pos, buf + next, (size_t)(len - next + 1));
+        }
+        break;
+    }
+    default: {
+        bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
+        if (ctrl) break; /* swallow ctrl combos */
+        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
+        if (text && text[0]) {
+            if ((unsigned char)text[0] < 0x20) break; /* reject control chars */
+            size_t tlen = strlen(text);
+            size_t cur_len = strlen(buf);
+            if (cur_len + tlen < buf_sz - 1) {
+                memmove(buf + *pos + tlen, buf + *pos, cur_len - (size_t)*pos + 1);
+                memcpy(buf + *pos, text, tlen);
+                *pos += (int)tlen;
+            }
+        }
+        break;
+    }
+    }
+}
+
 static void handle_wifi_pw_prompt_key(const kb_event_t *ev)
 {
     switch (ev->keycode) {
@@ -5217,66 +5327,179 @@ static void handle_wifi_pw_prompt_key(const kb_event_t *ev)
         close_wifi_pw_prompt();
         refresh_wifi_scan_picker_items();
         return;
-    case KB_KEY_LEFT:
-        if (s_wifi_pw_pos > 0) {
-            do { s_wifi_pw_pos--; }
-            while (s_wifi_pw_pos > 0 && (s_wifi_pw_buf[s_wifi_pw_pos] & 0xC0) == 0x80);
-        }
+    default:
+        text_field_key(s_wifi_pw_buf, sizeof(s_wifi_pw_buf), &s_wifi_pw_pos, ev);
         break;
-    case KB_KEY_RIGHT:
-        if (s_wifi_pw_pos < (int)strlen(s_wifi_pw_buf)) {
-            s_wifi_pw_pos++;
-            while (s_wifi_pw_pos < (int)strlen(s_wifi_pw_buf) &&
-                   (s_wifi_pw_buf[s_wifi_pw_pos] & 0xC0) == 0x80)
-                s_wifi_pw_pos++;
-        }
-        break;
-    case KB_KEY_HOME:
-        s_wifi_pw_pos = 0;
-        break;
-    case KB_KEY_END:
-        s_wifi_pw_pos = (int)strlen(s_wifi_pw_buf);
-        break;
-    case KB_KEY_BACKSPACE:
-        if (s_wifi_pw_pos > 0) {
-            int prev = s_wifi_pw_pos - 1;
-            while (prev > 0 && (s_wifi_pw_buf[prev] & 0xC0) == 0x80) prev--;
-            int len = (int)strlen(s_wifi_pw_buf);
-            memmove(s_wifi_pw_buf + prev, s_wifi_pw_buf + s_wifi_pw_pos,
-                    (size_t)(len - s_wifi_pw_pos + 1));
-            s_wifi_pw_pos = prev;
-        }
-        break;
-    case KB_KEY_DELETE: {
-        int len = (int)strlen(s_wifi_pw_buf);
-        if (s_wifi_pw_pos < len) {
-            int next = s_wifi_pw_pos + 1;
-            while (next < len && (s_wifi_pw_buf[next] & 0xC0) == 0x80) next++;
-            memmove(s_wifi_pw_buf + s_wifi_pw_pos, s_wifi_pw_buf + next,
-                    (size_t)(len - next + 1));
-        }
-        break;
-    }
-    default: {
-        bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl) break; /* swallow ctrl combos */
-        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            if ((unsigned char)text[0] < 0x20) break; /* reject control chars */
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(s_wifi_pw_buf);
-            if (cur_len + tlen < sizeof(s_wifi_pw_buf) - 1) {
-                memmove(s_wifi_pw_buf + s_wifi_pw_pos + tlen,
-                        s_wifi_pw_buf + s_wifi_pw_pos,
-                        cur_len - (size_t)s_wifi_pw_pos + 1);
-                memcpy(s_wifi_pw_buf + s_wifi_pw_pos, text, tlen);
-                s_wifi_pw_pos += (int)tlen;
-            }
-        }
-        break;
-    }
     }
     refresh_wifi_pw_prompt();
+}
+
+/* ---- Message pop-up (see s_msg_panel) ---- */
+static void show_msg_popup(const char *title, const char *text, bool busy)
+{
+    if (!s_msg_panel) return;
+    lv_label_set_text(s_msg_title_lbl, title);
+    lv_label_set_text(s_msg_text_lbl, text);
+    if (busy) lv_obj_add_flag(s_msg_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+    else      lv_obj_remove_flag(s_msg_hint_lbl, LV_OBJ_FLAG_HIDDEN);
+    s_msg_busy = busy;
+    s_msg_open = true;
+    lv_obj_set_parent(s_msg_panel, lv_scr_act());
+    lv_obj_remove_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_msg_panel);
+    lv_obj_update_layout(s_msg_panel);
+    lv_obj_align(s_msg_panel, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void close_msg_popup(void)
+{
+    s_msg_open = false;
+    s_msg_busy = false;
+    if (s_msg_panel) lv_obj_add_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void handle_msg_popup_key(const kb_event_t *ev)
+{
+    if (s_msg_busy) return;
+    if (ev->keycode == KB_KEY_ENTER || ev->keycode == KB_KEY_ESCAPE)
+        close_msg_popup();
+}
+
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static void msg_popup_touch_cb(lv_event_t *e)
+{
+    (void)e;
+    if (!s_msg_busy) close_msg_popup();
+}
+#endif
+
+/* ---- Draftbox prompt (see s_dbx_panel) ---- */
+static void refresh_dbx_prompt(void)
+{
+    if (!s_dbx_panel) return;
+
+    if (s_dbx_step == DBX_STEP_WIFI) {
+        char cfg_ssid[33];
+        char hdr[80];
+        if (wifi_manager_get_configured_ssid(cfg_ssid, sizeof(cfg_ssid)))
+            snprintf(hdr, sizeof(hdr), "Connecting WiFi to %s... (Esc: cancel)", cfg_ssid);
+        else
+            snprintf(hdr, sizeof(hdr), "Connecting WiFi... (Esc: cancel)");
+        lv_label_set_text(s_dbx_hdr_lbl, hdr);
+        lv_label_set_text(s_dbx_val_lbl, "");
+        lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    bool site = (s_dbx_step == DBX_STEP_SITE);
+    const char *buf = site ? s_dbx_site : s_dbx_otp;
+    int pos = site ? s_dbx_site_pos : s_dbx_otp_pos;
+
+    lv_label_set_text(s_dbx_hdr_lbl, site
+        ? "Draftbox site (Enter: next, Esc: cancel):"
+        : "8-digit one-time password (Enter/Esc):");
+    lv_label_set_text(s_dbx_val_lbl, buf);
+
+    int cw = char_width_for_font(FONT_11);
+    int chars = 0;
+    for (int i = 0; i < pos; i++) {
+        if ((buf[i] & 0xC0) != 0x80) chars++;
+    }
+    lv_obj_set_pos(s_dbx_cur, chars * cw, overlay_row_y());
+    lv_obj_remove_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void show_dbx_prompt(bool wait_wifi)
+{
+    s_dbx_step = wait_wifi ? DBX_STEP_WIFI : DBX_STEP_SITE;
+    s_dbx_site_pos = (int)strlen(s_dbx_site);
+    memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
+    s_dbx_otp_pos = 0;
+    s_dbx_open = true;
+    lv_obj_remove_flag(s_dbx_panel, LV_OBJ_FLAG_HIDDEN);
+    refresh_dbx_prompt();
+}
+
+static void close_dbx_prompt(void)
+{
+    s_dbx_open = false;
+    memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
+    s_dbx_otp_pos = 0;
+    lv_obj_add_flag(s_dbx_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* Outcome of the WiFi connection started for the prompt (from
+ * wifi_state_cb() or wifi_connect_task(), LVGL lock held). On success
+ * go on to the site name; on failure close the prompt and explain why
+ * in a pop-up (reason is a full sentence; unused on success). */
+static void dbx_wifi_done(bool connected, const char *reason)
+{
+    if (!s_dbx_open || s_dbx_step != DBX_STEP_WIFI) return;
+    if (connected) {
+        s_dbx_step = DBX_STEP_SITE;
+        refresh_dbx_prompt();
+    } else {
+        close_dbx_prompt();
+        char text[200];
+        snprintf(text, sizeof(text), "Could not connect to WiFi.\n%s",
+                 reason ? reason : "");
+        show_msg_popup("Draftbox", text, false);
+    }
+}
+
+static void handle_dbx_prompt_key(const kb_event_t *ev)
+{
+    if (s_dbx_step == DBX_STEP_WIFI) {
+        /* Only Esc while connecting; the connection attempt itself
+         * carries on in the background. */
+        if (ev->keycode == KB_KEY_ESCAPE) close_dbx_prompt();
+        return;
+    }
+    switch (ev->keycode) {
+    case KB_KEY_ENTER:
+        if (s_dbx_step == DBX_STEP_SITE) {
+            if (s_dbx_site[0] == '\0') return; /* keep editing */
+            s_dbx_step = DBX_STEP_OTP;
+        } else {
+            if (strlen(s_dbx_otp) != 8) return; /* keep editing */
+            char site[sizeof(s_dbx_site)];
+            char otp[sizeof(s_dbx_otp)];
+            strlcpy(site, s_dbx_site, sizeof(site));
+            strlcpy(otp, s_dbx_otp, sizeof(otp));
+            close_dbx_prompt();
+            /* The menu stays open underneath; the pop-up shows the
+             * progress and then the result. */
+            char text[192];
+            snprintf(text, sizeof(text), "Connecting to %s...", site);
+            show_msg_popup("Draftbox", text, true);
+            draftbox_connect_async(site, otp);
+            memset(otp, 0, sizeof(otp));
+            return;
+        }
+        break;
+    case KB_KEY_ESCAPE:
+        if (s_dbx_step == DBX_STEP_OTP) {
+            /* Back to the site name, e.g. to fix a typo. */
+            memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
+            s_dbx_otp_pos = 0;
+            s_dbx_step = DBX_STEP_SITE;
+            break;
+        }
+        close_dbx_prompt();
+        return;
+    default:
+        if (s_dbx_step == DBX_STEP_SITE) {
+            text_field_key(s_dbx_site, sizeof(s_dbx_site), &s_dbx_site_pos, ev);
+        } else {
+            /* Digits only; editing keys pass through. */
+            const char *text = kb_layout_translate(ev->keycode, ev->modifier);
+            bool printable = text && (unsigned char)text[0] >= 0x20;
+            if (!printable || (text[0] >= '0' && text[0] <= '9' && !text[1]))
+                text_field_key(s_dbx_otp, sizeof(s_dbx_otp), &s_dbx_otp_pos, ev);
+        }
+        break;
+    }
+    refresh_dbx_prompt();
 }
 
 /* ---- WiFi scan/connect picker ----
@@ -5483,6 +5706,24 @@ static void menu_activate_item(int idx)
             editor_ui_set_status("Git: connect WiFi first");
         } else {
             editor_ui_set_status("Git: not configured");
+        }
+        break;
+    case MENU_IDX_DRAFTBOX:
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+        /* Writes git.cfg on the SD card -- same guard as Git Sync. */
+        if (usb_msc_get_mode() != USB_MSC_MODE_OFF) {
+            editor_ui_set_status("SD card via USB active -- disable it first");
+            break;
+        }
+#endif
+        if (wifi_manager_is_connected()) {
+            show_dbx_prompt(false);
+        } else {
+            /* Connect first, the same way as Ctrl+W, unless an attempt
+             * is already running -- then just wait for its outcome. */
+            show_dbx_prompt(true);
+            if (wifi_manager_get_state() != WIFI_STATE_CONNECTING)
+                wifi_connect_async();
         }
         break;
     case MENU_IDX_KB_LAYOUT:
@@ -8034,7 +8275,10 @@ static void process_key_event(const kb_event_t *ev)
 
     const kb_event_t *e = &norm;
 
-    if (s_save_open) {
+    if (s_msg_open) {
+        /* Modal over whatever screen it was raised on. */
+        handle_msg_popup_key(e);
+    } else if (s_save_open) {
         handle_save_prompt_key(e);
     } else if (s_newfmt_open) {
         handle_newfmt_prompt_key(e);
@@ -8051,6 +8295,9 @@ static void process_key_event(const kb_event_t *ev)
          * still true underneath), so it must take priority over
          * handle_menu_key. */
         handle_wifi_pw_prompt_key(e);
+    } else if (s_dbx_open) {
+        /* Raised from the F1 menu, like the WiFi password prompt. */
+        handle_dbx_prompt_key(e);
     } else if (s_help_open) {
         handle_help_key(e);
     } else if (s_menu_open) {
@@ -8442,6 +8689,10 @@ static void wifi_connect_task(void *arg)
             editor_ui_set_status(ret == ESP_ERR_NOT_FOUND
                                      ? "WiFi: no credentials found"
                                      : "WiFi: busy, try again");
+            dbx_wifi_done(false, ret == ESP_ERR_NOT_FOUND
+                ? "No WiFi network is configured. Use F1 -> "
+                  "\"WiFi: New connection...\" first."
+                : "WiFi is busy, try again.");
             draftling_lvgl_port_unlock();
         }
     }
@@ -8455,6 +8706,7 @@ static void wifi_connect_async(void)
                                             4 * 1024, NULL, 3, NULL, 0);
     if (rc != pdPASS) {
         editor_ui_set_status("WiFi: failed to start task");
+        dbx_wifi_done(false, "Failed to start the WiFi task.");
     }
 }
 
@@ -8549,6 +8801,65 @@ static void wifi_connect_picked_async(const char *ssid, const char *password)
     }
 }
 
+/* ---- Draftbox connect task ----
+ * git_sync_draftbox_connect() makes an HTTPS request (TLS handshake
+ * included), so it runs off the LVGL task like the WiFi tasks above.
+ * The result -- success or the reason for failure -- goes to the
+ * status bar. */
+typedef struct {
+    char site[128];
+    char otp[10];
+} draftbox_connect_args_t;
+
+static void draftbox_connect_task(void *arg)
+{
+    draftbox_connect_args_t *args = (draftbox_connect_args_t *)arg;
+    char msg[128];
+    esp_err_t ret = git_sync_draftbox_connect(args->site, args->otp, msg, sizeof(msg));
+    memset(args, 0, sizeof(*args));
+    free(args);
+
+    char text[256];
+    if (ret == ESP_OK) {
+        if (msg[0] >= 'a' && msg[0] <= 'z') msg[0] = (char)(msg[0] - 'a' + 'A');
+        snprintf(text, sizeof(text),
+                 "%s.\nThe repository URL and token are saved in git.cfg.", msg);
+    } else {
+        snprintf(text, sizeof(text),
+                 "Could not connect: %s.\ngit.cfg was not changed.", msg);
+    }
+    /* Wait for the lock without a timeout: the pop-up ignores keys
+     * until this result replaces its "Connecting..." text. */
+    draftling_lvgl_port_lock(-1);
+    show_msg_popup("Draftbox", text, false);
+    /* "Git Sync (not configured)" may have just become configured. */
+    if (ret == ESP_OK && s_menu_open) refresh_menu_items();
+    draftling_lvgl_port_unlock();
+    vTaskDelete(NULL);
+}
+
+static void draftbox_connect_async(const char *site, const char *otp)
+{
+    draftbox_connect_args_t *args =
+        (draftbox_connect_args_t *)calloc(1, sizeof(draftbox_connect_args_t));
+    if (!args) {
+        show_msg_popup("Draftbox", "Could not connect: out of memory.", false);
+        return;
+    }
+    strlcpy(args->site, site, sizeof(args->site));
+    strlcpy(args->otp, otp, sizeof(args->otp));
+
+    /* esp_http_client + mbedTLS handshake need more stack than the
+     * WiFi tasks. */
+    BaseType_t rc = xTaskCreatePinnedToCore(draftbox_connect_task, "draftbox",
+                                            8 * 1024, args, 3, NULL, 0);
+    if (rc != pdPASS) {
+        memset(args, 0, sizeof(*args));
+        free(args);
+        show_msg_popup("Draftbox", "Could not connect: failed to start task.", false);
+    }
+}
+
 /* ---- WiFi state callback ----
  * Called from the WiFi manager (event handler context) when the
  * connection state changes.  Must take the LVGL lock before touching
@@ -8618,6 +8929,22 @@ static void wifi_state_cb(wifi_state_t state)
         default:
             break;
         }
+    }
+
+    /* A Draftbox prompt waiting for this connection (independent of the
+     * Git-sync status suppression above). DISCONNECTED is not a failure
+     * here: a new attempt drops the old association first. */
+    if (state == WIFI_STATE_CONNECTED) {
+        dbx_wifi_done(true, NULL);
+    } else if (state == WIFI_STATE_ERROR) {
+        char reason[96];
+        const char *ssid = wifi_manager_get_ssid();
+        bool auth = wifi_manager_last_failure_was_auth();
+        snprintf(reason, sizeof(reason), "%s%s%s.",
+                 auth ? "Wrong password" : "Connection failed",
+                 (ssid && ssid[0]) ? " for " : "",
+                 (ssid && ssid[0]) ? ssid : "");
+        dbx_wifi_done(false, reason);
     }
 
     update_wifi_icons();
@@ -9247,6 +9574,49 @@ static void build_screens(void)
         lv_obj_add_flag(s_wifi_pw_cur, LV_OBJ_FLAG_HIDDEN);
     }
 
+    /* ---- Draftbox site / password overlay (menu screen) ----
+     * Same layout as the WiFi password overlay above. */
+    {
+        int dbx_row_y   = overlay_row_y();
+        int dbx_line_h  = lv_font_get_line_height(FONT_11);
+        int dbx_panel_h = dbx_row_y + dbx_line_h + 2 * OVERLAY_PAD;
+        s_dbx_panel = lv_obj_create(s_scr_menu);
+        lv_obj_set_size(s_dbx_panel, SCR_W - 20, dbx_panel_h);
+        lv_obj_set_pos(s_dbx_panel, 10, (SCR_H - dbx_panel_h) / 2);
+        lv_obj_set_style_bg_color(s_dbx_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_dbx_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_dbx_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_dbx_panel, 2, 0);
+        lv_obj_set_style_radius(s_dbx_panel, 4, 0);
+        lv_obj_set_style_pad_all(s_dbx_panel, OVERLAY_PAD, 0);
+        lv_obj_remove_flag(s_dbx_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_dbx_panel, LV_OBJ_FLAG_HIDDEN);
+
+        s_dbx_hdr_lbl = lv_label_create(s_dbx_panel);
+        lv_obj_set_style_text_font(s_dbx_hdr_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(s_dbx_hdr_lbl, theme_fg(), 0);
+        lv_label_set_long_mode(s_dbx_hdr_lbl, LV_LABEL_LONG_CLIP);
+        lv_obj_set_width(s_dbx_hdr_lbl, SCR_W - 20 - 12);
+        lv_label_set_text(s_dbx_hdr_lbl, "");
+        lv_obj_set_pos(s_dbx_hdr_lbl, 0, 0);
+
+        s_dbx_val_lbl = lv_label_create(s_dbx_panel);
+        lv_obj_set_style_text_font(s_dbx_val_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(s_dbx_val_lbl, theme_fg(), 0);
+        lv_obj_set_width(s_dbx_val_lbl, SCR_W - 20 - 12);
+        lv_label_set_text(s_dbx_val_lbl, "");
+        lv_obj_set_pos(s_dbx_val_lbl, 0, dbx_row_y);
+
+        s_dbx_cur = lv_obj_create(s_dbx_panel);
+        lv_obj_set_size(s_dbx_cur, 2, dbx_line_h);
+        lv_obj_set_style_bg_color(s_dbx_cur, theme_fg(), 0);
+        lv_obj_set_style_bg_opa(s_dbx_cur, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(s_dbx_cur, 0, 0);
+        lv_obj_set_style_radius(s_dbx_cur, 0, 0);
+        lv_obj_set_style_pad_all(s_dbx_cur, 0, 0);
+        lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+    }
+
     /* ---- Settings screen ---- */
     s_scr_settings = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(s_scr_settings, theme_bg(), 0);
@@ -9402,6 +9772,45 @@ static void build_screens(void)
             lv_label_set_text(s_newfmt_opt_lbl[i], NEWFMT_LABELS[i]);
             lv_obj_set_pos(s_newfmt_opt_lbl[i], 0, row_y + i * (LINE_H + 2));
         }
+    }
+
+    /* ---- Message pop-up (moved onto the active screen when shown) ---- */
+    {
+        s_msg_panel = lv_obj_create(s_scr);
+        lv_obj_set_width(s_msg_panel, SCR_W - 20);
+        lv_obj_set_height(s_msg_panel, LV_SIZE_CONTENT);
+        lv_obj_set_style_bg_color(s_msg_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_msg_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_msg_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_msg_panel, 2, 0);
+        lv_obj_set_style_radius(s_msg_panel, 4, 0);
+        lv_obj_set_style_pad_all(s_msg_panel, OVERLAY_PAD, 0);
+        lv_obj_set_style_pad_row(s_msg_panel, OVERLAY_PAD, 0);
+        lv_obj_set_flex_flow(s_msg_panel, LV_FLEX_FLOW_COLUMN);
+        lv_obj_remove_flag(s_msg_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        lv_obj_add_event_cb(s_msg_panel, msg_popup_touch_cb, LV_EVENT_CLICKED, NULL);
+#endif
+
+        s_msg_title_lbl = lv_label_create(s_msg_panel);
+        lv_obj_set_style_text_font(s_msg_title_lbl, FONT_14, 0);
+        lv_obj_set_style_text_color(s_msg_title_lbl, theme_fg(), 0);
+        lv_obj_set_width(s_msg_title_lbl, LV_PCT(100));
+        lv_label_set_text(s_msg_title_lbl, "");
+
+        s_msg_text_lbl = lv_label_create(s_msg_panel);
+        lv_obj_set_style_text_font(s_msg_text_lbl, FONT_14, 0);
+        lv_obj_set_style_text_color(s_msg_text_lbl, theme_fg(), 0);
+        lv_obj_set_width(s_msg_text_lbl, LV_PCT(100));
+        lv_label_set_long_mode(s_msg_text_lbl, LV_LABEL_LONG_WRAP);
+        lv_label_set_text(s_msg_text_lbl, "");
+
+        s_msg_hint_lbl = lv_label_create(s_msg_panel);
+        lv_obj_set_style_text_font(s_msg_hint_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(s_msg_hint_lbl, theme_fg(), 0);
+        lv_obj_set_width(s_msg_hint_lbl, LV_PCT(100));
+        lv_label_set_text(s_msg_hint_lbl, "Enter / Esc: close");
     }
 
     /* ---- Delete-file confirmation (moved onto the active screen when
@@ -9597,6 +10006,8 @@ static void teardown_screens(void)
     s_passkey_panel = s_passkey_label = NULL;
     s_save_panel = s_save_hdr_lbl = s_save_name_lbl = s_save_cur = NULL;
     s_wifi_pw_panel = s_wifi_pw_hdr_lbl = s_wifi_pw_name_lbl = s_wifi_pw_cur = NULL;
+    s_dbx_panel = s_dbx_hdr_lbl = s_dbx_val_lbl = s_dbx_cur = NULL;
+    s_msg_panel = s_msg_title_lbl = s_msg_text_lbl = s_msg_hint_lbl = NULL;
     s_exit_panel = s_exit_hdr_lbl = NULL;
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
@@ -9625,6 +10036,9 @@ static void teardown_screens(void)
     s_wifi_scan_picker_open   = false;
     s_wifi_scan_in_progress   = false;
     s_wifi_pw_open            = false;
+    s_dbx_open                = false;
+    s_msg_open                = false;
+    s_msg_busy                = false;
     s_exit_open               = false;
     s_newfmt_open             = false;
     s_del_open                = false;

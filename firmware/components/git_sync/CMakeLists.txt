@@ -14,6 +14,7 @@ idf_component_register(
         "git_pack.c"
         "git_net.c"
         "git_merge.c"
+        "draftbox.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
     PRIV_REQUIRES esp_http_client esp-tls mbedtls esp_rom esp_netif

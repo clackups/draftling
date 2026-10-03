@@ -28,6 +28,9 @@
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>
+#include <string>
+#include <strings.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -38,6 +41,7 @@
 
 #include "git_sync.h"
 #include "git_core.h"
+#include "draftbox.h"
 #include "sd_card.h"
 #include "wifi_manager.h"
 
@@ -766,10 +770,174 @@ extern "C" esp_err_t git_sync_init(void)
     return ESP_OK;
 }
 
+/* ---- Draftbox --------------------------------------------- */
+
+/* Set while git_sync_draftbox_connect() runs (on a worker task), so a
+ * sync cannot start with a configuration that is being replaced. */
+static volatile bool s_draftbox_busy = false;
+
+/* Keys that describe the remote repository. Connecting to a Draftbox
+ * repository replaces all of them with what the server returned:
+ * repo_url, token, username and branch (when sent). path is dropped --
+ * a sub-directory chosen for the previous repository would not exist
+ * on the new one -- so the whole repository is synced. */
+static bool is_repo_key(const char *line)
+{
+    static const char *const keys[] = { "repo_url", "token", "username", "branch", "path" };
+    while (*line == ' ' || *line == '\t') line++;
+    for (const char *k : keys) {
+        size_t n = strlen(k);
+        if (strncmp(line, k, n) != 0) continue;
+        const char *p = line + n;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '=') return true;
+    }
+    return false;
+}
+
+/* Normalise the user's site entry into a bare "host[:port][/prefix]". */
+static bool normalise_site(const char *in, char *out, size_t out_sz)
+{
+    while (*in == ' ' || *in == '\t') in++;
+    if (!strncasecmp(in, "https://", 8)) in += 8;
+    else if (!strncasecmp(in, "http://", 7)) in += 7;
+    strlcpy(out, in, out_sz);
+    size_t n = strlen(out);
+    while (n && (out[n - 1] == '/' || out[n - 1] == ' ' || out[n - 1] == '\t'))
+        out[--n] = '\0';
+    if (n == 0 || out[0] == '/') return false;
+    for (const char *p = out; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c <= 0x20 || c >= 0x7f || c == '"' || c == '\\' || c == '?' || c == '#' || c == '@')
+            return false;
+    }
+    return true;
+}
+
+static esp_err_t draftbox_connect(const char *site, const char *otp,
+                                  char *msg, size_t msg_len)
+{
+    char host[128];
+    if (!normalise_site(site ? site : "", host, sizeof(host))) {
+        snprintf(msg, msg_len, "invalid site name");
+        return ESP_ERR_INVALID_ARG;
+    }
+    char pw[9];
+    size_t n = 0;
+    for (const char *p = otp ? otp : ""; *p; p++) {
+        if (*p == ' ' || *p == '-') continue;
+        if (*p < '0' || *p > '9' || n >= 8) { n = 0; break; }
+        pw[n++] = *p;
+    }
+    if (n != 8) {
+        snprintf(msg, msg_len, "password must be 8 digits");
+        return ESP_ERR_INVALID_ARG;
+    }
+    pw[8] = '\0';
+
+    if (!wifi_manager_is_connected()) {
+        snprintf(msg, msg_len, "connect WiFi first");
+        return ESP_ERR_INVALID_STATE;
+    }
+    /* The password works only once: make sure the result can be stored
+     * before spending it. */
+    if (!sd_card_is_ready()) {
+        snprintf(msg, msg_len, "no SD card");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    draftbox_result_t *res = (draftbox_result_t *)calloc(1, sizeof(*res));
+    if (!res) {
+        snprintf(msg, msg_len, "out of memory");
+        return ESP_ERR_NO_MEM;
+    }
+    esp_err_t err = draftbox_token_exchange(host, pw, res);
+    if (err != ESP_OK) {
+        snprintf(msg, msg_len, "%s", res->error);
+        free(res);
+        return err;
+    }
+
+    /* Keep every line of the old git.cfg that does not describe the
+     * remote repository (author_name, author_email, comments...). */
+    std::string cfg;
+    char *old = NULL;
+    size_t old_len = 0;
+    if (sd_card_read_file("/sdcard/git.cfg", &old, &old_len) == ESP_OK && old) {
+        const char *p = old;
+        const char *end = old + old_len;
+        while (p < end) {
+            const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+            size_t len = nl ? (size_t)(nl - p) : (size_t)(end - p);
+            std::string line(p, len);
+            p += len + (nl ? 1 : 0);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty() || is_repo_key(line.c_str())) continue;
+            cfg += line;
+            cfg += '\n';
+        }
+    }
+    free(old);
+    cfg += "repo_url=";
+    cfg += res->clone_url;
+    cfg += "\ntoken=";
+    cfg += res->token;
+    cfg += '\n';
+    if (res->user[0]) {
+        cfg += "username=";
+        cfg += res->user;
+        cfg += '\n';
+    }
+    if (res->branch[0]) {
+        cfg += "branch=";
+        cfg += res->branch;
+        cfg += '\n';
+    }
+
+    err = sd_card_write_file("/sdcard/git.cfg", cfg.data(), cfg.size());
+    if (err != ESP_OK) {
+        snprintf(msg, msg_len, "cannot write git.cfg");
+    } else {
+        /* The remote-tracking ref describes what is on the *previous*
+         * server; git_sync_file_status() must not take it as proof that
+         * a file is stored on the new one. The next sync recreates it. */
+        if (s_cfg.repo_url[0] && strcmp(s_cfg.repo_url, res->clone_url) != 0) {
+            char refpath[400];
+            snprintf(refpath, sizeof(refpath), "%s/.git/refs/remotes/origin/%s",
+                     s_cfg.local_path, s_cfg.branch);
+            if (sd_card_file_exists(refpath)) sd_card_delete_file(refpath);
+        }
+        parse_config(cfg.c_str());
+        ESP_LOGI(TAG, "Draftbox: git.cfg now points at %s", s_cfg.repo_url);
+        snprintf(msg, msg_len, "connected to %.80s%s",
+                 res->repository[0] ? res->repository : res->clone_url,
+                 res->read_only ? " (read-only)" : "");
+    }
+    /* Do not leave the secret lying around in freed heap. */
+    memset(res->token, 0, sizeof(res->token));
+    std::fill(cfg.begin(), cfg.end(), '\0');
+    free(res);
+    return err;
+}
+
+extern "C" esp_err_t git_sync_draftbox_connect(const char *site, const char *otp,
+                                               char *msg, size_t msg_len)
+{
+    if (s_state == GIT_SYNC_IN_PROGRESS || s_draftbox_busy) {
+        snprintf(msg, msg_len, "sync in progress, try later");
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_draftbox_busy = true;
+    esp_err_t err = draftbox_connect(site, otp, msg, msg_len);
+    s_draftbox_busy = false;
+    return err;
+}
+
 extern "C" esp_err_t git_sync_start(git_sync_direction_t direction)
 {
     if (!s_cfg.configured) { set_error("Not configured"); return ESP_ERR_INVALID_STATE; }
     if (s_state == GIT_SYNC_IN_PROGRESS) { set_error("Sync already in progress"); return ESP_ERR_INVALID_STATE; }
+    if (s_draftbox_busy) { set_error("Draftbox connection in progress"); return ESP_ERR_INVALID_STATE; }
 
     s_state = GIT_SYNC_IN_PROGRESS;
 

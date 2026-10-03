@@ -915,7 +915,48 @@ Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_last_error()`, `git_sync_max_file_size()`,
 `git_sync_file_status()` (local-only check whether a file's current
 content is in the last commit known to be on the server; used by the
-file browser's delete command).
+file browser's delete command), `git_sync_draftbox_connect()`.
+
+**Draftbox.** `draftbox.c` is a client for the token-exchange API of
+Draftbox (github.com/clackups/draftbox): `POST
+https://<site>/api/v1/token-exchange` with `{"password":"<8 digits>"}`
+returns `token`, `name`, `access`, `user`, `repository`, `cloneUrl`,
+`branch` and `expiresAt` (404 `invalid_password`, 429
+`rate_limited`). A null `cloneUrl` or `branch` means a global token
+(not bound to one repository); it is rejected with "global token, use a
+repository-specific one". A *missing* `branch` key (a server that
+predates the field) is accepted and just writes no `branch=` line. It carries its own tiny
+flat-object JSON reader -- ESP-IDF v6 no longer bundles cJSON.
+`git_sync_draftbox_connect()` (blocking; the editor calls it from a
+worker task) validates the input, makes the request, and only on
+success rewrites `/sdcard/git.cfg`: `repo_url`, `token`, `username`
+and `branch` come from `cloneUrl`, `token`, `user` and `branch`
+(`username=` / `branch=` are written only when the server sends a
+non-null value -- `branch` is a newer field that older servers omit);
+any old `path` line is dropped; every other line is kept; values with
+control characters are rejected so they cannot inject extra keys; and
+the config is re-parsed in memory. When the repository URL
+changes it also deletes `refs/remotes/origin/<branch>`, which
+described the previous server, so `git_sync_file_status()` does not
+report files as safely pushed to the new one. `git_sync_start()`
+refuses to run while a connect is in progress. The UI is the F1 menu
+row "Connect a Draftbox repository..." (`MENU_IDX_DRAFTBOX`, letter
+`C`): a two-step prompt on the menu screen (`s_dbx_panel`, site name
+then digits-only password). When WiFi is down it first shows
+`DBX_STEP_WIFI` and starts `wifi_connect_async()` (unless an attempt is
+already running); `wifi_state_cb()` calls `dbx_wifi_done()`, which
+advances to the site on CONNECTED and on ERROR (or when
+`wifi_connect_task()` finds no credentials / is busy) closes the prompt
+and explains the failure in the message pop-up. The Draftbox progress
+("Connecting to <site>...") and result are shown in the generic
+message pop-up (`s_msg_panel`, `show_msg_popup()` /
+`close_msg_popup()`): a modal moved onto the active screen, first in
+the key routing chain; while `s_msg_busy` it ignores all keys, and the
+worker task replaces the text with the result (taking the LVGL lock
+without a timeout so the pop-up can never stay stuck), otherwise Enter
+/ Esc (or a tap) closes it.
+The prompt shares the line-editing helper `text_field_key()` with the
+WiFi password prompt.
 
 ### components/io_expander/
 

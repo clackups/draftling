@@ -393,6 +393,26 @@ author_email=jane@example.com
 | `username` | no | HTTP Basic user (default `x-access-token`, which works for GitHub). |
 | `author_name` / `author_email` | no | Identity stamped on commits Draftling creates. |
 
+#### Connecting a Draftbox repository
+
+With a [Draftbox](https://github.com/clackups/draftbox) server (such as
+`draftbox.art`) you do not have to write `git.cfg` yourself. On the
+Draftbox website, create an access token for your repository with a
+one-time password. Then choose F1 -> "Connect a Draftbox
+repository..." (if WiFi is not connected yet, the device first
+connects to the network from `wifi.cfg`, as `Ctrl+W` does): confirm or change the site name,
+press Enter, type the 8-digit password and press Enter again. The
+device exchanges the password for the token over HTTPS and writes the
+repository URL, token, user name and branch it receives into `git.cfg`
+(`repo_url`, `token`, `username`, `branch`). Any previous `path` line
+is removed, so the whole repository is synced; other lines (e.g.
+`author_name`) are kept. Each password works only once. The token
+must be bound to one repository: a global token is refused with
+"global token, use a repository-specific one". On any error `git.cfg`
+is not modified. The progress and the result -- success or the
+reason for a failure -- are shown in a pop-up; close it with Enter or
+Esc.
+
 The full protocol, history layout and conflict behaviour are described
 in [docs/git-sync.md](docs/git-sync.md).
 

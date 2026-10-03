@@ -8,6 +8,18 @@ in the git log.
 
 ### Added
 
+- **Connect a Draftbox repository from the F1 menu**: F1 -> "Connect a
+  Draftbox repository..." (or `C` in the menu) asks for the Draftbox
+  site (`draftbox.art` by default) and the 8-digit one-time password
+  shown when you create an access token there. The device fetches the
+  repository address, token, user name and branch over HTTPS and
+  writes them into `git.cfg`, so Git sync works without editing the
+  file by hand. Your
+  `author_name` / `author_email` lines are kept. If anything goes wrong
+  (wrong or expired password, no network), `git.cfg` is left unchanged
+  and a pop-up says why; success is confirmed in a pop-up too. If WiFi is not connected yet, it
+  connects to your saved network first.
+
 - **Waveshare ESP32-S3-LCD-3.16 support**: 3.16-inch 320x820 color LCD
   used in landscape (820x320), with MicroSD, battery indicator and
   adjustable backlight. The BOOT button wakes the device and forgets
