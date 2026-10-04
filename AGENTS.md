@@ -2001,7 +2001,7 @@ the web flasher (see below) -- currently `m5stack_papers3`,
 `xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
 `waveshare_touch_lcd_349`, `waveshare_lcd_316`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, `elecrow_crowpanel_579`,
+`freenove_fnk0104s`, `freenove_fnk0104n`, `elecrow_crowpanel_579`,
 `seeed_reterminal_sticky`, and `m5stack_papermono`. Extend the list
 there
 as more boards get a web-flasher entry. A release does not need to

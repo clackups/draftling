@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-10-04
+
 ### Added
 
 - **Connect a Draftbox repository from the F1 menu**: F1 -> "Connect a
