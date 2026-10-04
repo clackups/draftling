@@ -30,6 +30,16 @@ in the git log.
   LED is kept off. An earlier attempt at this board left the screen
   black; that is fixed.
 
+### Fixed
+
+- **Markdown line breaks are shown**: a line ending with a backslash
+  (`\`) or with two or more spaces -- the Markdown ways to force a line
+  break inside a paragraph -- now shows a small return arrow at its
+  end. The backslash itself is replaced by the arrow, and the
+  otherwise invisible trailing spaces become visible, so you can tell
+  which lines will stay separate in other Markdown viewers and which
+  will be joined into one paragraph.
+
 ## [1.0.9] - 2026-10-01
 
 ### Added

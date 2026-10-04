@@ -23,8 +23,33 @@ static void hide_range(fmt_marks_t *m, size_t from, size_t to)
     if (to > from) memset(m->hide + from, 1, to - from);
 }
 
+/* Raw byte offset, within the line, of the cell that shows a hard line
+ * break at the end of content [off, end): an unescaped trailing
+ * backslash, or the last of two or more trailing spaces after some
+ * text. -1 if the content does not end with one. */
+static long hard_break_cell(const char *lt, size_t off, size_t end)
+{
+    size_t bs = 0;
+    while (end - bs > off && lt[end - 1 - bs] == '\\') bs++;
+    if (bs & 1) return (long)end - 1;
+    size_t sp = 0;
+    while (end - sp > off && lt[end - 1 - sp] == ' ') sp++;
+    if (sp >= 2 && end - sp > off) return (long)end - 1;
+    return -1;
+}
+
 static void md_mark(const md_line_info_t *mi, bool reveal, fmt_marks_t *m)
 {
+    /* A hard line break -- the next line continues the same paragraph
+     * on a new row -- is shown as a return arrow in place of its
+     * marker, even on the cursor line (1:1, like the bullet). */
+    if (mi->type == MD_LINE_PARAGRAPH || mi->type == MD_LINE_BLOCKQUOTE ||
+        mi->type == MD_LINE_BULLET || mi->type == MD_LINE_NUMBERED) {
+        const char *lt = mi->content - m->content_off;
+        long cell = hard_break_cell(lt, m->content_off, m->content_end);
+        if (cell >= 0) m->rflags[cell] |= DECO_BREAK;
+    }
+
     switch (mi->type) {
     case MD_LINE_H1: case MD_LINE_H2: case MD_LINE_H3: case MD_LINE_H4:
         if (!reveal) hide_range(m, 0, m->content_off);
@@ -61,14 +86,16 @@ static void md_layout(lv_obj_t *label, md_line_type_t type, int32_t w)
 }
 
 /* Single-line classification (no surrounding code-fence context):
- * only plain paragraphs and empty lines without inline spans or tabs
- * display their raw text verbatim. */
+ * only plain paragraphs and empty lines without inline spans, tabs or
+ * a hard line break display their raw text verbatim. */
 static bool md_line_is_plain(const char *lt, size_t ll)
 {
     md_line_info_t mi;
     md_parse_line(lt, ll, &mi, false);
     if (mi.type != MD_LINE_PARAGRAPH && mi.type != MD_LINE_EMPTY) return false;
     if (mi.span_count > 0) return false;
+    if (mi.type == MD_LINE_PARAGRAPH &&
+        hard_break_cell(lt, (size_t)(mi.content - lt), ll) >= 0) return false;
     return memchr(lt, '\t', ll) == NULL;
 }
 
@@ -98,6 +125,7 @@ static const fmt_help_row_t md_help[] = {
     { "```",          "Start / end a code block" },
     { "---",          "Horizontal rule" },
     { "\\*",          "Backslash: type a marker literally" },
+    { "text\\",       "Line break (also two spaces at the end)" },
     { NULL, NULL },
 };
 

@@ -663,7 +663,10 @@ each raw line into the label's display text plus a `line_view_t`:
 heading / blockquote / code-fence markers, the markers around inline
 spans and a `---` rule are hidden, the bullet marker is replaced by a
 drawn dot (filled circle / hollow circle / square by nesting level),
-and tabs expand to four spaces. The line holding the focused pane's
+a hard line break (an unescaped trailing `\`, or the last of two or
+more trailing spaces, on a paragraph / blockquote / list line) is
+replaced by a drawn return arrow (`DECO_BREAK`, also on the cursor
+line, 1:1 like the bullet), and tabs expand to four spaces. The line holding the focused pane's
 cursor is built with `reveal = true`: its markers stay visible so they
 can be edited (live preview), but its styling is still drawn. The
 per-line `lv_label` is kept -- its letter-position / hit-test and

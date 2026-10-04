@@ -2212,7 +2212,7 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
             }
             continue;
         }
-        if (rflags[start] & DECO_BULLET) text.push_back(' ');
+        if (rflags[start] & (DECO_BULLET | DECO_BREAK)) text.push_back(' ');
         else text.append(lt + start, b - start);
         v->d2r.push_back((uint32_t)start);
         v->flags.push_back(rflags[start]);
@@ -2505,6 +2505,23 @@ static void line_deco_draw_cb(lv_event_t *e)
                     }
                     lv_area_t a = { x1, y1, x1 + d - 1, y1 + d - 1 };
                     lv_draw_rect(layer, &rd, &a);
+                    continue;
+                }
+
+                if (f & DECO_BREAK) {
+                    /* A return arrow: a stem down the right of the cell
+                     * at x-height, a bar along the bottom and a solid
+                     * arrowhead at its left end. */
+                    int32_t a  = gw / 3 < 2 ? 2 : gw / 3;
+                    int32_t xl = gx + 1;
+                    int32_t xr = gx + gw - 1 - th;
+                    int32_t yb = top + asc - a;
+                    int32_t yt = top + asc - (asc * 6) / 10;
+                    if (yt > yb - a) yt = yb - a;
+                    deco_fill(layer, xl, yb, xr + th - 1, yb + th - 1, cfg);
+                    deco_fill(layer, xr, yt, xr + th - 1, yb + th - 1, cfg);
+                    for (int32_t i = 1; i <= a; i++)
+                        deco_fill(layer, xl + i, yb - i, xl + i, yb + th - 1 + i, cfg);
                     continue;
                 }
 

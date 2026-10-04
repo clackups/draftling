@@ -30,6 +30,7 @@ enum {
     DECO_CODE   = 0x08,
     DECO_BULLET = 0x10,   /* list-marker cell: draw a bullet dot */
     DECO_UNDER  = 0x20,   /* Fountain _underline_ */
+    DECO_BREAK  = 0x40,   /* hard line-break marker cell: draw a return arrow */
 };
 
 /* State threaded through a document's lines from the top. */
