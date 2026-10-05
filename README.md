@@ -4,6 +4,8 @@ This is a project aiming to build a writerdeck that can use a variety
 of pre-made or DIY hardware. The minimalist GUI lets you edit Markdown
 files in a distraction-free manner.
 
+[Project homepage](https://draftling.art/)
+
 A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
 and [images](images/) demonstrate the firmware use.
