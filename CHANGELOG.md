@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-10-06
+
 ### Fixed
 
 - **Faster, more reliable Bluetooth keyboard pairing and reconnection**:
