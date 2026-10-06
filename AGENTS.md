@@ -2011,7 +2011,8 @@ shows it in the F1 menu's bottom status row. Bump this string as the
 first step of every release.
 
 A release also publishes prebuilt binaries for the boards covered by
-the web flasher (see below) -- currently `m5stack_papers3`,
+the web flasher (see below), on the `_flasher` branch only -- never as
+GitHub release assets. Currently: `m5stack_papers3`,
 `xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
 `waveshare_touch_lcd_349`, `waveshare_lcd_316`, `waveshare_epaper_397`,
 `lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
@@ -2052,16 +2053,20 @@ tree referenced in steps 1-4.
    git tag -a vX.Y.Z -m "Release X.Y.Z"
    git push origin vX.Y.Z
    ```
-4. Create the GitHub release and upload each board's three images,
-   named `draftling-<board>[-bootloader|-partition-table].bin` (from
+4. Create the GitHub release with the `[X.Y.Z]` changelog section as
+   its notes. **Do NOT attach firmware binaries (or any other files)
+   to the GitHub release** -- no `gh release upload`, no file
+   arguments to `gh release create`. Prebuilt images are published
+   only through the web flasher (step 5).
+   ```bash
+   gh release create vX.Y.Z --title "Release X.Y.Z" --notes-file notes.md
+   ```
+5. Update the web flasher on the `_flasher` branch (see below). Each
+   board gets three images, named
+   `draftling-<board>[-bootloader|-partition-table].bin` (from
    `firmware/build/<board>/bootloader/bootloader.bin`,
    `firmware/build/<board>/partition_table/partition-table.bin`, and
-   `firmware/build/<board>/draftling.bin`):
-   ```bash
-   gh release create vX.Y.Z --title "Release X.Y.Z" --notes "..."
-   gh release upload vX.Y.Z draftling-<board>-bootloader.bin \
-       draftling-<board>-partition-table.bin draftling-<board>.bin
-   ```
+   `firmware/build/<board>/draftling.bin`).
    `xteink_x4_pro`, `xteink_x4_classic` and `seeed_reterminal_sticky`
    each also need a fourth image, `draftling-<board>-otadata.bin`
    (from `firmware/build/<board>/ota_data_initial.bin`): their
@@ -2074,14 +2079,13 @@ tree referenced in steps 1-4.
    bootloader at the empty `ota_1`. `waveshare_epaper_397` uses the
    default single-"factory"-app partition table like most other boards,
    so it needs only the usual three images.
-5. Update the web flasher on the `_flasher` branch (see its own
-   `README.md` for the full layout and rationale -- it is an orphan
-   branch with no shared history with `main`, published via GitHub
-   Pages, so check it out in a separate `git worktree` rather than
-   switching your main checkout to it):
-   - Add `firmware/vX.Y.Z/` (on `_flasher`) with the same binaries
-     uploaded to the release, named identically, for each board
-     included in this release (including
+
+   The `_flasher` branch has its own `README.md` with the full layout
+   and rationale -- it is an orphan branch with no shared history with
+   `main`, published via GitHub Pages, so check it out in a separate
+   `git worktree` rather than switching your main checkout to it:
+   - Add `firmware/vX.Y.Z/` (on `_flasher`) with those images, named
+     as above, for each board included in this release (including
      `draftling-xteink_x4_pro-otadata.bin`,
      `draftling-xteink_x4_classic-otadata.bin` and
      `draftling-seeed_reterminal_sticky-otadata.bin` for those three
