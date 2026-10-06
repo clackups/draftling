@@ -29,7 +29,7 @@ load the firmware quickly without having to compile it.
   * M5Stack PaperMono / PaperMono-Lite
   * LilyGO T5 E-Paper S3 Pro / Pro Lite
   * Waveshare ESP32-S3-Touch-LCD-3.49
-  * Seeed Studio reTerminal E1001 (7.5" e-paper)
+  * Seeed Studio reTerminal E1001 (7.5" e-paper, metal body)
   * M5Stack PaperS3 (discontinued)
 
 * DIY boards
