@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-10-06
+
 ### Fixed
 
 - **Git sync status no longer gets stuck on "Committing local
