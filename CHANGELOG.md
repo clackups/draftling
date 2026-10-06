@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Git sync status no longer gets stuck on "Committing local
+  changes..."**: when nothing had changed on either side, a sync on a
+  slow e-paper screen (e.g. the Seeed reTerminal E1001) could finish
+  before the screen had redrawn, and the final "Sync complete" message
+  was lost. The status bar now always shows the result of the sync.
+
 ## [1.0.10] - 2026-10-04
 
 ### Added

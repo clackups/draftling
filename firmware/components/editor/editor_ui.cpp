@@ -8973,7 +8973,16 @@ static void wifi_state_cb(wifi_state_t state)
  * Must take the LVGL lock before touching any UI objects. */
 static void git_sync_cb(git_sync_state_t state, const char *message)
 {
-    if (!draftling_lvgl_port_lock(200)) return;
+    /* A dropped progress message is harmless (the next one replaces
+     * it), but the final SUCCESS / ERROR must never be dropped: the
+     * progress messages have no auto-clear, so the last one would stay
+     * on screen forever. On a slow e-paper panel (Seeed reTerminal
+     * E1001: ~450 ms partial refresh) the flush of "Committing local
+     * changes..." still holds the lock when a no-op sync finishes, so
+     * wait for it unconditionally. This runs on the sync task (or with
+     * the recursive lock already held), so blocking is safe. */
+    bool final = (state == GIT_SYNC_SUCCESS || state == GIT_SYNC_ERROR);
+    if (!draftling_lvgl_port_lock(final ? -1 : 200)) return;
 
     switch (state) {
     case GIT_SYNC_IN_PROGRESS:
