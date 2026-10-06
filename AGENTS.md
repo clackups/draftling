@@ -301,6 +301,17 @@ Public API: `ble_keyboard_init()`, `ble_keyboard_start_scan()`,
 `ble_keyboard_forget_all()`, and several other callback registration
 functions.
 
+(Re)connection is scan-driven: the host scans continuously and connects
+to the first advertiser that is either bonded (by Draftling's own NVS
+list or by Bluedroid's bond list, any advertisement type -- directed
+advertising carries no HID data) or a new HID keyboard. There are no
+blocking direct connects to individual bonded addresses: each one costs
+`CONFIG_BLE_ESTABLISH_LINK_CONNECTION_TIMEOUT` (30 s) when that keyboard
+is off. `esp_hidh_dev_open()` blocks through connect, service discovery
+and pairing (including the user typing the passkey), so its watchdog
+measures time without progress: `open_watchdog_progress()` re-arms it on
+every security milestone, and a late but successful open is kept.
+
 `ble_keyboard_forget_all()` erases every stored keyboard bond (both from
 the Bluedroid stack and from NVS), disconnects any currently-connected
 keyboard, resets the reconnection state machine, and immediately starts a
@@ -1114,7 +1125,10 @@ In addition to the inactivity timer, `standby_init()` also arms a
 "no keyboard connected" countdown of `CONFIG_DRAFTLING_NO_KEYBOARD_SLEEP_SEC`
 seconds (default 180, 0 = disabled). When the timer fires it polls
 `ble_keyboard_is_connected()` and only enters deep sleep if no
-Bluetooth keyboard has paired by then. This conserves battery when
+Bluetooth keyboard has paired by then. If any pairing activity
+happened (`ble_keyboard_last_pairing_activity_us()`), it instead waits
+until twice that many seconds after the last pairing event, so a user
+retrying a failed passkey entry is not put to sleep mid-attempt. This conserves battery when
 the device is powered on accidentally or no paired keyboard is in
 range. The countdown is only armed on boards with
 `CONFIG_DRAFTLING_HAS_BATTERY` -- the USB-only Guition JC3248W535

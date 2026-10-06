@@ -107,6 +107,11 @@ bool ble_keyboard_is_connected(void);
 void ble_keyboard_start_scan(void);
 const char *ble_keyboard_get_device_name(void);
 int ble_keyboard_get_battery_level(void);
+/* esp_timer_get_time() of the most recent pairing event (security
+ * request, passkey / numeric comparison shown, authentication success
+ * or failure), or 0 if there has been none since boot. Lets the
+ * no-keyboard sleep timer give a user who is pairing extra time. */
+int64_t ble_keyboard_last_pairing_activity_us(void);
 
 #ifdef __cplusplus
 }

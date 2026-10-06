@@ -261,9 +261,20 @@ static void uc8179_display_full(const uint8_t *fb)
     ESP_LOGI(TAG, "Full e-paper refresh finished");
 
     /* Sync OLD plane (0x10) with the just-shown frame so subsequent
-     * partial updates calculate accurate deltas. */
+     * partial updates calculate accurate deltas.
+     *
+     * Send a snapshot, not fb itself: epd_data() only queues the DMA
+     * (esp_lcd_panel_io_tx_color() is asynchronous, reading straight
+     * from PSRAM at 2 MHz for ~190 ms), and nothing after this point
+     * waits for it -- only the next epd_cmd() drains the queue. LVGL
+     * keeps rendering into fb as soon as display_flush() returns, so
+     * sending fb let the next frame's pixels leak into the OLD plane;
+     * the following partial refresh then saw old == new for them and
+     * left the previous text on the panel. s_scratch is safe: every
+     * later write to it is preceded by an epd_cmd(). */
+    memcpy(s_scratch, fb, FRAMEBUFFER_BYTES);
     epd_cmd(0x10);
-    epd_data(fb, FRAMEBUFFER_BYTES);
+    epd_data(s_scratch, FRAMEBUFFER_BYTES);
 }
 
 static void uc8179_display_fast(const uint8_t *fb, int x, int y, int w, int h)

@@ -6,6 +6,25 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Faster, more reliable Bluetooth keyboard pairing and reconnection**:
+  the device now watches for all of your paired keyboards at once and
+  connects as soon as one of them wakes up, instead of trying them one
+  by one with a 30-second wait for each keyboard that is switched off.
+  Pairing a new keyboard no longer fails with "Pairing stuck,
+  retrying..." while you are still typing the passkey, and a pairing
+  that finishes late is kept instead of being thrown away and started
+  over.
+- **More time to retry after a failed keyboard pairing**: after any
+  pairing attempt the device now stays awake for 6 minutes from the
+  last pairing step before going to sleep for lack of a keyboard,
+  instead of possibly sleeping right after a failed attempt.
+- **Seeed reTerminal E1001: keyboard connection messages no longer
+  overlap**: a new status message could be drawn on top of the
+  previous one without erasing it. Connection progress messages are
+  also no longer skipped while the screen is busy redrawing.
+
 ## [1.0.11] - 2026-10-06
 
 ### Fixed

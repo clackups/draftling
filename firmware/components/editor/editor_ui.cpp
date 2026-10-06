@@ -8333,6 +8333,7 @@ static void process_key_event(const kb_event_t *ev)
 
 /* Forward declaration -- defined later in the BLE callback section. */
 static void apply_pending_connect_state(void);
+static void apply_pending_ble_status_text(void);
 
 /* LVGL timer callback: drains the key-event queue in a batch.
  * This runs inside lv_timer_handler() which already holds the LVGL
@@ -8382,7 +8383,10 @@ static void key_drain_cb(lv_timer_t *timer)
      * hold the mutex for several seconds during a panel refresh,
      * which would time out the BLE callback and leave the user
      * stuck on the "Reconnecting..." prompt screen even after
-     * the keyboard has connected). See apply_pending_connect_state(). */
+     * the keyboard has connected). See apply_pending_connect_state().
+     * Progress text first, so a connect / disconnect arriving in the
+     * same tick has the last word on the prompt label. */
+    apply_pending_ble_status_text();
     apply_pending_connect_state();
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     poll_usb_msc_auto_off();
@@ -8526,6 +8530,30 @@ static void passkey_display_cb(uint32_t passkey)
  * the consumer always observes the latest state, which matches
  * what `ble_keyboard_is_connected()` would report. */
 static volatile int8_t s_pending_conn_state = -1;
+
+/* Latest BLE progress message waiting for the LVGL task (see
+ * ble_status_text_cb()); intermediate ones are superseded. */
+static portMUX_TYPE s_ble_status_mux = portMUX_INITIALIZER_UNLOCKED;
+static char         s_ble_status_pending[128];
+static bool         s_ble_status_has_pending = false;
+
+/* Run on the LVGL task (from key_drain_cb), mutex already held. */
+static void apply_pending_ble_status_text(void)
+{
+    char text[sizeof(s_ble_status_pending)];
+    taskENTER_CRITICAL(&s_ble_status_mux);
+    bool has = s_ble_status_has_pending;
+    if (has) {
+        memcpy(text, s_ble_status_pending, sizeof(text));
+        s_ble_status_has_pending = false;
+    }
+    taskEXIT_CRITICAL(&s_ble_status_mux);
+    if (!has || !s_ble_prompt_lbl) return;
+    /* Only update when the BLE prompt screen is active */
+    if (lv_scr_act() == s_scr_ble_prompt) {
+        lv_label_set_text(s_ble_prompt_lbl, text);
+    }
+}
 
 /* Run on the LVGL task (from key_drain_cb). At this point the LVGL
  * mutex is already held by the LVGL task, so we must NOT call
@@ -8675,19 +8703,20 @@ static void ble_connect_status_cb(bool connected)
     s_pending_conn_state = connected ? 1 : 0;
 }
 
-/* BLE status text callback -- update the BLE prompt label with
- * connection progress messages from the BLE keyboard component. */
+/* BLE status text callback -- hand the BLE prompt label a connection
+ * progress message from the BLE keyboard component. Runs in the
+ * BLE/Bluedroid host task, so like ble_connect_status_cb() it only
+ * stores the text: waiting for the LVGL mutex here either stalls the
+ * BLE host for the length of an e-paper refresh or, with a short
+ * timeout, silently drops the message and leaves a stale one on
+ * screen. apply_pending_ble_status_text() shows the latest one. */
 static void ble_status_text_cb(const char *text)
 {
-    if (!s_ble_prompt_lbl) return;
-    if (!draftling_lvgl_port_lock(200)) return;
-
-    /* Only update when the BLE prompt screen is active */
-    if (lv_scr_act() == s_scr_ble_prompt) {
-        lv_label_set_text(s_ble_prompt_lbl, text);
-    }
-
-    draftling_lvgl_port_unlock();
+    if (!text) return;
+    taskENTER_CRITICAL(&s_ble_status_mux);
+    snprintf(s_ble_status_pending, sizeof(s_ble_status_pending), "%s", text);
+    s_ble_status_has_pending = true;
+    taskEXIT_CRITICAL(&s_ble_status_mux);
 }
 
 /* ---- WiFi connect task ----

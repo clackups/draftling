@@ -103,9 +103,27 @@ static void inactivity_cb(void *arg)
 }
 
 #if CONFIG_DRAFTLING_NO_KEYBOARD_SLEEP_SEC > 0 && defined(CONFIG_DRAFTLING_HAS_BATTERY)
+/* After a pairing attempt (successful or not) the user gets twice the
+ * normal no-keyboard budget, counted from the last pairing event, to
+ * retry: a failed passkey entry late in the boot-time countdown would
+ * otherwise put the device to sleep almost immediately. */
+#define KB_WAIT_AFTER_PAIRING_US \
+    (2LL * CONFIG_DRAFTLING_NO_KEYBOARD_SLEEP_SEC * 1000000LL)
+
 static void kb_wait_cb(void *arg)
 {
     (void)arg;
+    int64_t last_pair = ble_keyboard_last_pairing_activity_us();
+    if (last_pair > 0 && !ble_keyboard_is_connected()) {
+        int64_t remaining = last_pair + KB_WAIT_AFTER_PAIRING_US
+                            - esp_timer_get_time();
+        if (remaining > 0) {
+            ESP_LOGI(TAG, "No-keyboard timer fired during pairing -- "
+                          "extending by %lld s", (long long)(remaining / 1000000));
+            esp_timer_start_once(s_kb_wait_timer, (uint64_t)remaining);
+            return;
+        }
+    }
     if (ble_keyboard_is_connected()) {
         ESP_LOGI(TAG, "No-keyboard timer fired but a BLE keyboard is connected -- staying awake");
         return;
