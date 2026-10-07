@@ -5,53 +5,37 @@
  * Seeed Studio reTerminal Sticky SPI e-paper backend.
  *
  * https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/
- * -- a 3.97" 800x480 black/white e-paper panel, SSD1677 controller,
- * driven directly over SPI (no manufacturing-run variance to probe
- * for at boot, unlike the Xteink X4 Pro). Pin numbers come from
- * Seeed's own hardware-overview page and the FreeInk SDK's `STICKY`
- * BoardProfile (https://github.com/Free-Ink/freeink-sdk, MIT
- * licensed), which agree; see main/boards/seeed_reterminal_sticky.h
- * for the full sourcing note. No source was copied from FreeInk --
- * the register sequence implemented here is this repo's own code,
- * following the standard SSD1677-family differential-refresh
- * protocol already used by display_xteink_epd.cpp's ssd1677_*
- * functions and display_ws_epd397.cpp.
+ * -- a 3.97" 800x480 black/white e-paper panel driven directly over
+ * SPI. Pin numbers come from Seeed's own hardware-overview page and
+ * the FreeInk SDK's `STICKY` BoardProfile
+ * (https://github.com/Free-Ink/freeink-sdk, MIT licensed), which
+ * agree; see main/boards/seeed_reterminal_sticky.h.
  *
  * Panel: 800x480, no mirror. SPI: SCLK=13, MOSI=14, MISO=12, CS=15,
  * DC=16, RST=17, BUSY=18, panel power-enable EP_PWR_EN=47
- * (active-high, no PMIC involved -- a plain GPIO, unlike the
- * Waveshare ESP32-S3-ePaper-3.97's AXP2101-gated rail). No
- * front-light (display_set_backlight() is a no-op).
+ * (active-high plain GPIO, no PMIC). The bus is shared with the
+ * MicroSD card (CS=8), which main.cpp powers and deselects before
+ * display_init() runs: with the card unpowered, the panel never
+ * received a usable image. No front-light.
  *
- * Tested on physical hardware. Two choices here specifically deviate
- * from what FreeInk's own STICKY profile documents, in favor of
- * reusing what display_ws_epd397.cpp already proved on real hardware
- * -- the Waveshare ESP32-S3-ePaper-3.97 carries the exact same
- * SSD1677-family 800x480 panel class, and FreeInk's own comment for
- * this device states its WsEpaper397 profile's bring-up is
- * "byte-identical to Sticky's":
+ * Controller: Sticky units ship with either an SSD1677 or an SSD2677
+ * (Seeed_GFX2's Driver_Sticky_Auto); sticky_detect_controller() tells
+ * them apart by BUSY polarity after reset.
  *
- *   1. Full-refresh waveform: FreeInk's own comment for this device
- *      describes a flood-fill Mode 1/2 waveform (DISPLAY_UPDATE_CTRL2
- *      = 0xF7 full / 0xFF partial). display_ws_epd397.cpp used to do
- *      the same thing and found, on real hardware, that it left black
- *      text visibly faded even after three passes; it now reuses the
- *      differential 0xFC waveform for both full and partial updates
- *      (loading RAM_RED with the bitwise complement of the new frame
- *      for a full refresh, so every pixel reads as "changed"). This
- *      backend does the same from the start rather than risk shipping
- *      the already-disproven 0xF7 path.
- *   2. SPI clock: FreeInk notes its own default is 40 MHz (0 = driver
- *      default) but the vendor's peripheral demo runs a conservative
- *      10 MHz. Since this bus is *also* shared with the MicroSD card
- *      on this board (unlike the Waveshare ESP32-S3-ePaper-3.97 or
- *      the Xteink X4 Pro, where the panel has a dedicated bus), this
- *      backend starts at the vendor demo's conservative 10 MHz rather
- *      than gambling on 40 MHz over an unverified shared-bus wiring.
+ *   - SSD1677 (tested on physical hardware): reset timing, booster
+ *     soft-start, RAM addressing and the refresh sequences (full:
+ *     CTRL1 0x40 + CTRL2 0xF7, border 0x01; fast: CTRL1 0x00 + CTRL2
+ *     0xFF, border 0x80) follow the sticky-micronotes firmware
+ *     (github.com/LowFlowIO/sticky-micronotes), which is known to work
+ *     on this board. The 0xFC-only sequence this backend used before,
+ *     borrowed from display_ws_epd397.cpp, never changed the glass on
+ *     this panel. A fast refresh also re-drives every pixel inside the
+ *     changed rectangle (see sticky_display()) to avoid residue.
+ *   - SSD2677 (untested, no such unit available): ported from
+ *     Seeed_GFX2's Driver_SSD2677.cpp; see the section below.
  *
- * Everything else (register sequence, RAM addressing, busy-wait
- * convention) matches display_ws_epd397.cpp's ssd1677-family
- * implementation, repinned for this board.
+ * SPI clock: a conservative 10 MHz (the vendor peripheral demo's
+ * value) because the bus is shared with the SD card.
  */
 
 #include <algorithm>
@@ -115,10 +99,32 @@ static const char *TAG = "DisplayReterminalSticky";
 
 static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
-/* Bitwise-complement scratch copy of s_fb, used only by
- * sticky_display_full() -- see its comment. */
+/* SSD1677: inverted copy of the fast-refresh rectangle, see
+ * sticky_display(). SSD2677: the previous frame (s_prev). */
 static uint8_t  *s_fb_inv = NULL;
 static bool      s_initialized = false;
+
+/* Sticky units ship with one of two panel controllers, mixed in
+ * production (Seeed_GFX2's Driver_Sticky_Auto): an SSD1677, or an
+ * SSD2677 -- an UltraChip-style command set with 2-bit pixel data and
+ * no RAM windows. Both sit on identical wiring but drive BUSY with
+ * opposite polarity (SSD1677 busy HIGH, SSD2677 busy LOW), which is
+ * also how sticky_detect_controller() tells them apart. */
+typedef enum {
+    STICKY_CTRL_SSD1677,
+    STICKY_CTRL_SSD2677,
+} sticky_ctrl_t;
+static sticky_ctrl_t s_ctrl = STICKY_CTRL_SSD1677;
+
+/* SSD2677 only: the frame currently on the glass (the "old" half of
+ * each fast-refresh transition pair), the 2bpp transfer buffer, the
+ * waveform currently latched (0 = none) and whether the panel's
+ * driving voltages are on (fast refreshes leave them on). */
+#define SSD2677_TX_BYTES     (FRAMEBUFFER_BYTES * 2)
+static uint8_t  *s_prev = NULL;
+static uint8_t  *s_tx = NULL;
+static uint8_t   s_ssd2677_latched = 0;
+static bool      s_ssd2677_powered = false;
 static bool      s_needs_initial_full = true;
 static bool      s_force_full = true;
 static int       s_partial_count = 0;
@@ -209,11 +215,12 @@ static inline void epd_data(const uint8_t *d, size_t n)
     esp_lcd_panel_io_tx_color(s_io, -1, d, n);
 }
 
-/* Busy while HIGH (SSD1677-family convention). */
+/* Busy while HIGH on the SSD1677, while LOW on the SSD2677. */
 static void epd_wait_busy(void)
 {
+    int busy_level = (s_ctrl == STICKY_CTRL_SSD2677) ? 0 : 1;
     int64_t start = esp_timer_get_time();
-    while (gpio_get_level((gpio_num_t)EPD_BUSY_PIN) == 1) {
+    while (gpio_get_level((gpio_num_t)EPD_BUSY_PIN) == busy_level) {
         vTaskDelay(pdMS_TO_TICKS(1));
         if (esp_timer_get_time() - start > 30 * 1000 * 1000) break;
     }
@@ -222,50 +229,53 @@ static void epd_wait_busy(void)
 static void epd_reset_pulse(void)
 {
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(20));
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(2));
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(20));
 }
 
 /* ============================================================
- * SSD1677-family register sequence -- same protocol as
- * display_xteink_epd.cpp's ssd1677_* functions and
- * display_ws_epd397.cpp (dual-RAM BW=0x24 / RED=0x26 differential
- * refresh, no mirror), reimplemented here for this board's own pins.
- * See the file header comment for why this reuses
- * display_ws_epd397.cpp's proven-on-hardware 0xFC waveform instead of
- * FreeInk's documented (but here unverified) 0xF7/0xFF sequence.
+ * SSD1677 register sequence (dual-RAM BW=0x24 / RED=0x26 differential
+ * refresh) -- see the file header comment for its source.
  * ============================================================ */
 
-static void sticky_set_ram_area_full(void)
+/* RAM window in panel pixels; x and w must be multiples of 8. */
+static void sticky_set_ram_area(int x, int y, int w, int h)
 {
     /* Data-entry: X increment, Y decrement (no mirror). Gates are
      * addressed from the bottom, so the Y window is computed from
-     * the bottom -- y_win is 0 for the full-frame window. */
-    int y = 0, h = PANEL_HEIGHT, w = PANEL_WIDTH;
+     * the bottom. */
     int y_win = PANEL_HEIGHT - y - h;
+    int x_end = x + w - 1;
+    int y_end = y_win + h - 1;
 
     epd_cmd(0x11); epd_data1(0x01); /* DATA_ENTRY_MODE */
 
     epd_cmd(0x44); /* SET_RAM_X_RANGE */
-    epd_data1(0x00); epd_data1(0x00);
-    epd_data1((uint8_t)(((w - 1)) & 0xFF)); epd_data1((uint8_t)(((w - 1) >> 8) & 0xFF));
+    epd_data1((uint8_t)(x & 0xFF)); epd_data1((uint8_t)(x >> 8));
+    epd_data1((uint8_t)(x_end & 0xFF)); epd_data1((uint8_t)(x_end >> 8));
 
     epd_cmd(0x45); /* SET_RAM_Y_RANGE */
-    epd_data1((uint8_t)((y_win + h - 1) & 0xFF)); epd_data1((uint8_t)(((y_win + h - 1) >> 8) & 0xFF));
-    epd_data1((uint8_t)(y_win & 0xFF)); epd_data1((uint8_t)((y_win >> 8) & 0xFF));
+    epd_data1((uint8_t)(y_end & 0xFF)); epd_data1((uint8_t)(y_end >> 8));
+    epd_data1((uint8_t)(y_win & 0xFF)); epd_data1((uint8_t)(y_win >> 8));
 
-    epd_cmd(0x4E); epd_data1(0x00); epd_data1(0x00); /* SET_RAM_X_COUNTER */
+    epd_cmd(0x4E); /* SET_RAM_X_COUNTER */
+    epd_data1((uint8_t)(x & 0xFF)); epd_data1((uint8_t)(x >> 8));
 
     epd_cmd(0x4F); /* SET_RAM_Y_COUNTER */
-    epd_data1((uint8_t)((y_win + h - 1) & 0xFF)); epd_data1((uint8_t)(((y_win + h - 1) >> 8) & 0xFF));
+    epd_data1((uint8_t)(y_end & 0xFF)); epd_data1((uint8_t)(y_end >> 8));
+}
+
+static void sticky_set_ram_area_full(void)
+{
+    sticky_set_ram_area(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
 }
 
 static void sticky_ctrl_init(void)
 {
-    static const uint8_t booster[5] = { 0xAE, 0xC7, 0xC3, 0xC0, 0x80 };
+    static const uint8_t booster[5] = { 0xAE, 0xC7, 0xC3, 0xC0, 0x40 };
 
     epd_cmd(0x12); /* SOFT_RESET */
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -281,7 +291,7 @@ static void sticky_ctrl_init(void)
     epd_data1((uint8_t)(((PANEL_HEIGHT - 1) >> 8) & 0xFF));
     epd_data1(0x02);
 
-    epd_cmd(0x3C); epd_data1(0x80); /* BORDER_WAVEFORM init value */
+    epd_cmd(0x3C); epd_data1(0x01); /* BORDER_WAVEFORM */
 
     sticky_set_ram_area_full();
 
@@ -289,63 +299,235 @@ static void sticky_ctrl_init(void)
     epd_cmd(0x47); epd_data1(0xF7); epd_wait_busy(); /* AUTO_WRITE_RED_RAM */
 }
 
-static void sticky_refresh(uint8_t ctrl1, uint8_t seq)
+/* Full refresh: CTRL1 0x40 makes the controller treat RED RAM as 0,
+ * so the 0xF7 sequence (clock + analog on, load temperature and the
+ * Mode 1 waveform, display, power off) re-drives every pixel. Fast
+ * refresh: CTRL1 normal (RED = previous frame), border 0x80 (avoids a
+ * dark ring), and 0xFF (the same with the Mode 2 differential
+ * waveform). These are the values the sticky-micronotes firmware uses
+ * on this board. */
+static void sticky_refresh(bool full)
 {
-    epd_cmd(0x21); epd_data1(ctrl1);  /* DISPLAY_UPDATE_CTRL1 */
-    epd_cmd(0x3C); epd_data1(0xC0);   /* BORDER_WAVEFORM, all modes */
-    epd_cmd(0x22); epd_data1(seq);    /* DISPLAY_UPDATE_CTRL2 */
-    epd_cmd(0x20);                    /* MASTER_ACTIVATION */
+    epd_cmd(0x21); epd_data1(full ? 0x40 : 0x00); /* DISPLAY_UPDATE_CTRL1 */
+    epd_cmd(0x3C); epd_data1(full ? 0x01 : 0x80); /* BORDER_WAVEFORM */
+    epd_cmd(0x22); epd_data1(full ? 0xF7 : 0xFF); /* DISPLAY_UPDATE_CTRL2 */
+    epd_cmd(0x20);                                /* MASTER_ACTIVATION */
+    vTaskDelay(pdMS_TO_TICKS(2));
     epd_wait_busy();
 }
 
-static void sticky_display_full(const uint8_t *fb)
-{
-    /* Force every pixel to be re-driven by loading RAM_RED with the
-     * bitwise complement of the new frame -- see
-     * display_ws_epd397.cpp's sibling function for the full
-     * rationale (avoids the visibly-faded black text the flood-fill
-     * 0xF7 waveform produced on that board's real hardware). */
-    for (size_t i = 0; i < FRAMEBUFFER_BYTES; ++i) {
-        s_fb_inv[i] = (uint8_t)~fb[i];
-    }
-
-    sticky_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);      /* WRITE_RAM_BW = new frame */
-    epd_cmd(0x26); epd_data(s_fb_inv, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED = forced-different baseline */
-
-    sticky_refresh(0x00 /* CTRL1_NORMAL, same differential mode as fast */, 0xFC);
-
-    /* Re-sync both planes to the just-shown frame so the next fast
-     * refresh diffs against a clean baseline. */
-    sticky_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);
-    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES);
-}
-
-static void sticky_display_fast(const uint8_t *fb)
+/* A fast refresh only drives the pixels whose BW and RED bits differ,
+ * and on this panel that leaves faint residue of earlier content
+ * (e.g. the keyboard-search status messages). So for a fast refresh,
+ * RED is loaded with the inverse of the new frame inside the changed
+ * rectangle: every pixel there is re-driven to its target colour,
+ * while the rest of the panel keeps RED = previous frame and is left
+ * alone, so nothing outside the rectangle flashes. x0..x1 / y0..y1
+ * are inclusive panel coordinates. */
+static void sticky_display(const uint8_t *fb, bool full,
+                           int x0, int y0, int x1, int y1)
 {
     sticky_set_ram_area_full();
     epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW = new frame */
-    /* Single-buffer mode: RED already holds the previous frame from
-     * the last refresh's post-sync below, so no pre-write here. */
-    sticky_refresh(0x00 /* CTRL1_NORMAL */, 0xFC);
+    if (full) {
+        epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
+    } else {
+        int bx0 = x0 >> 3, bx1 = x1 >> 3;
+        int wb = bx1 - bx0 + 1;
+        int h = y1 - y0 + 1;
+        uint8_t *dst = s_fb_inv;
+        for (int y = y0; y <= y1; ++y) {
+            const uint8_t *src = fb + (size_t)y * PANEL_WIDTH_BYTES + bx0;
+            for (int b = 0; b < wb; ++b) *dst++ = (uint8_t)~src[b];
+        }
+        sticky_set_ram_area(bx0 * 8, y0, wb * 8, h);
+        epd_cmd(0x26); epd_data(s_fb_inv, (size_t)wb * h);
+    }
+    sticky_refresh(full);
 
-    /* Re-sync both planes to the just-shown frame so the next fast
-     * refresh diffs against a clean baseline. */
+    /* Re-sync RED to the just-shown frame so the next fast refresh
+     * diffs against it. */
     sticky_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES);
     epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES);
+}
+
+/* ============================================================
+ * SSD2677 register sequence, ported from Seeed_GFX2's
+ * Driver_SSD2677.cpp (aligned with the Sticky product firmware's
+ * seeed_epaper/driver/ssd2677.c). Pixels are sent through DTM1 (0x10)
+ * as 2-bit codes, 0b00 = black, 0b11 = white. A full refresh sends the
+ * new frame; a fast refresh sends (old << 1 | new) transition pairs
+ * under the partial waveform, so unchanged pixels are not driven. The
+ * controller has no window registers: every refresh sends the whole
+ * frame. Each row is sent mirrored, as Seeed's SSD2677 config does.
+ * ============================================================ */
+
+/* Seeed falls back to 25 C whenever the panel's temperature cannot be
+ * read back (MISO is shared with the SD card and not wired to the
+ * panel SDO on every unit); this driver never reads it. */
+#define SSD2677_WAVEFORM_FULL     0xEE  /* 21-30 C full-refresh bucket */
+#define SSD2677_WAVEFORM_PARTIAL  0x19  /* 21-30 C partial bucket */
+
+static inline uint8_t reverse_bits8(uint8_t b)
+{
+    b = (uint8_t)(((b & 0xF0) >> 4) | ((b & 0x0F) << 4));
+    b = (uint8_t)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
+    b = (uint8_t)(((b & 0xAA) >> 1) | ((b & 0x55) << 1));
+    return b;
+}
+
+/* Expand 8 mono pixels (bit 1 = white, MSB leftmost) into two bytes of
+ * 2-bit pairs; with `prev` set, each pair is (old << 1 | new). */
+static inline void ssd2677_pack(uint8_t prev, uint8_t cur, bool diff,
+                                uint8_t *o0, uint8_t *o1)
+{
+    uint16_t out = 0;
+    for (int bit = 0; bit < 8; ++bit) {
+        uint8_t n = (uint8_t)((cur >> (7 - bit)) & 1);
+        uint8_t pair = diff ? (uint8_t)((((prev >> (7 - bit)) & 1) << 1) | n)
+                            : (uint8_t)(n ? 0x03 : 0x00);
+        out |= (uint16_t)pair << (14 - bit * 2);
+    }
+    *o0 = (uint8_t)(out >> 8);
+    *o1 = (uint8_t)(out & 0xFF);
+}
+
+static void ssd2677_send_frame(const uint8_t *fb, const uint8_t *prev)
+{
+    uint8_t *o = s_tx;
+    for (int row = 0; row < PANEL_HEIGHT; ++row) {
+        const uint8_t *cur_row  = fb + (size_t)row * PANEL_WIDTH_BYTES;
+        const uint8_t *prev_row = prev ? prev + (size_t)row * PANEL_WIDTH_BYTES : NULL;
+        for (int i = PANEL_WIDTH_BYTES - 1; i >= 0; --i) {
+            uint8_t c = reverse_bits8(cur_row[i]);
+            uint8_t p = prev_row ? reverse_bits8(prev_row[i]) : 0;
+            ssd2677_pack(p, c, prev_row != NULL, &o[0], &o[1]);
+            o += 2;
+        }
+    }
+    epd_cmd(0x10); /* DTM1 */
+    epd_data(s_tx, SSD2677_TX_BYTES);
+}
+
+static void ssd2677_latch_waveform(uint8_t waveform)
+{
+    if (s_ssd2677_latched == waveform) return;
+    epd_cmd(0xE0); epd_data1(0x12);
+    epd_cmd(0xE6); epd_data1(waveform);
+    epd_cmd(0xA5);
+    epd_wait_busy();
+    vTaskDelay(pdMS_TO_TICKS(10));
+    s_ssd2677_latched = waveform;
+}
+
+static void ssd2677_power_on(void)
+{
+    if (s_ssd2677_powered) return;
+    epd_cmd(0x04); /* PON */
+    epd_wait_busy();
+    s_ssd2677_powered = true;
+}
+
+static void ssd2677_power_off(void)
+{
+    if (!s_ssd2677_powered) return;
+    epd_cmd(0x02); epd_data1(0x00); /* POF */
+    epd_wait_busy();
+    s_ssd2677_powered = false;
+}
+
+static void ssd2677_ctrl_init(void)
+{
+    static const uint8_t timing[8] = { 0x76, 0x76, 0x76, 0x5A, 0x9D, 0x8A, 0x76, 0x62 };
+
+    epd_wait_busy();
+    epd_cmd(0x00); epd_data1(0x2F); epd_data1(0x0E); /* PSR */
+    epd_wait_busy();
+    epd_cmd(0x06); /* booster */
+    epd_data1(0x0F); epd_data1(0x8B); epd_data1(0x93); epd_data1(0xC1);
+    epd_cmd(0xE7); epd_data1(0xC1);
+    epd_cmd(0x30); epd_data1(0x08); /* PLL */
+    epd_cmd(0x50); epd_data1(0x77); /* CDI */
+    epd_cmd(0x62); /* timing */
+    for (uint8_t b : timing) epd_data1(b);
+    epd_cmd(0x61); /* RES = 800x680 (680 gate lines scanned, 480 visible) */
+    epd_data1(0x03); epd_data1(0x20); epd_data1(0x02); epd_data1(0xA8);
+    epd_cmd(0xE0); epd_data1(0x10);
+    epd_cmd(0x65); /* GSST */
+    epd_data1(0x00); epd_data1(0x00); epd_data1(0x00); epd_data1(0x00);
+    epd_cmd(0xE9); epd_data1(0x01);
+    epd_wait_busy();
+
+    s_ssd2677_latched = 0;
+    s_ssd2677_powered = false;
+}
+
+static void ssd2677_display_full(const uint8_t *fb)
+{
+    ssd2677_latch_waveform(SSD2677_WAVEFORM_FULL);
+    ssd2677_send_frame(fb, NULL);
+    ssd2677_power_on();
+    epd_cmd(0x12); epd_data1(0x00); /* DRF */
+    epd_wait_busy();
+    ssd2677_power_off();
+    memcpy(s_prev, fb, FRAMEBUFFER_BYTES);
+}
+
+static void ssd2677_display_fast(const uint8_t *fb)
+{
+    ssd2677_latch_waveform(SSD2677_WAVEFORM_PARTIAL);
+    ssd2677_send_frame(fb, s_prev);
+    /* The firmware keeps the panel powered across consecutive partial
+     * refreshes; the next full refresh or deep sleep powers it off. */
+    ssd2677_power_on();
+    epd_cmd(0x12); epd_data1(0x00); /* DRF */
+    epd_wait_busy();
+    memcpy(s_prev, fb, FRAMEBUFFER_BYTES);
+}
+
+static void ssd2677_deep_sleep(void)
+{
+    ssd2677_power_off();
+    epd_cmd(0x07); epd_data1(0xA5); /* DSLP */
+}
+
+/* Seeed_GFX2 Driver_Sticky_Auto::probeByBusyPolarity(): after a reset
+ * each controller is busy in its own polarity and then settles at its
+ * ready level (SSD1677 ready LOW, SSD2677 ready HIGH), so the first
+ * BUSY transition -- or the level once it has been stable for 200 ms
+ * -- names the chip. (Seeed's first-stage SPI read of command 0x70 is
+ * skipped: MISO is not wired to the panel SDO on every unit.) */
+static sticky_ctrl_t sticky_detect_controller(void)
+{
+    gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(1));
+    gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    int level = gpio_get_level((gpio_num_t)EPD_BUSY_PIN);
+    int stable = 1;
+    int64_t start = esp_timer_get_time();
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(2));
+        int now = gpio_get_level((gpio_num_t)EPD_BUSY_PIN);
+        if (now != level) { level = now; break; }
+        if (++stable >= 100) break;
+        if (esp_timer_get_time() - start >= 1500 * 1000) break;
+    }
+    return level ? STICKY_CTRL_SSD2677 : STICKY_CTRL_SSD1677;
 }
 
 static void sticky_deep_sleep(void)
 {
-    epd_cmd(0x3C); epd_data1(0x80);
-    epd_cmd(0x22); epd_data1(0x03);
+    epd_cmd(0x21); epd_data1(0x40);
+    epd_cmd(0x22); epd_data1(0x03); /* analog + clock off */
     epd_cmd(0x20);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(2));
     epd_wait_busy();
 
-    epd_cmd(0x10); epd_data1(0x03); /* DEEP_SLEEP mode 2 */
+    epd_cmd(0x10); epd_data1(0x01); /* DEEP_SLEEP mode 1 */
 }
 
 /* ---- display.h public API ---- */
@@ -368,12 +550,15 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     }
     memset(s_fb, 0xFF, FRAMEBUFFER_BYTES);
 
+    /* Full-refresh scratch for the SSD1677, previous frame for the
+     * SSD2677 -- one buffer serves whichever controller is fitted. */
     s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_fb_inv) s_fb_inv = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_8BIT);
     if (!s_fb_inv) {
         ESP_LOGE(TAG, "Full-refresh scratch buffer allocation failed");
         return;
     }
+    s_prev = s_fb_inv;
 
     s_width = PANEL_WIDTH;
     s_height = PANEL_HEIGHT;
@@ -391,6 +576,9 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     pwr_cfg.mode         = GPIO_MODE_OUTPUT;
     pwr_cfg.pin_bit_mask = (1ULL << EPD_PWR_EN_PIN);
     gpio_config(&pwr_cfg);
+    /* A deep-sleep pad hold on this pin survives the wake reset and
+     * would swallow the HIGH write below, leaving the panel unpowered. */
+    gpio_hold_dis((gpio_num_t)EPD_PWR_EN_PIN);
     gpio_set_level((gpio_num_t)EPD_PWR_EN_PIN, 1);
     vTaskDelay(pdMS_TO_TICKS(10));
 
@@ -430,8 +618,24 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     busy_cfg.pin_bit_mask = (1ULL << EPD_BUSY_PIN);
     gpio_config(&busy_cfg);
 
-    epd_reset_pulse();
-    sticky_ctrl_init();
+    s_ctrl = sticky_detect_controller();
+    if (s_ctrl == STICKY_CTRL_SSD2677) {
+        s_tx = (uint8_t *)heap_caps_malloc(SSD2677_TX_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_tx) {
+            ESP_LOGE(TAG, "SSD2677 transfer buffer allocation failed");
+            return;
+        }
+        /* Seeed's SSD2677 reset timing: low 20 ms, then 50 ms settle. */
+        gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        ssd2677_ctrl_init();
+        memset(s_prev, 0xFF, FRAMEBUFFER_BYTES);
+    } else {
+        epd_reset_pulse();
+        sticky_ctrl_init();
+    }
 
     s_needs_initial_full = true;
     s_force_full = true;
@@ -439,8 +643,9 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     clear_dirty();
     s_initialized = true;
 
-    ESP_LOGI(TAG, "Seeed reTerminal Sticky e-paper initialized (%dx%d)",
-             s_width, s_height);
+    ESP_LOGI(TAG, "Seeed reTerminal Sticky e-paper initialized (%dx%d, %s)",
+             s_width, s_height,
+             s_ctrl == STICKY_CTRL_SSD2677 ? "SSD2677" : "SSD1677");
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -523,11 +728,13 @@ extern "C" void display_flush(void)
                    s_partial_count >= STICKY_FULL_REFRESH_INTERVAL;
 
     if (do_full) {
-        sticky_display_full(s_fb);
+        if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_full(s_fb);
+        else                               sticky_display(s_fb, true, x0, y0, x1, y1);
         s_partial_count = 0;
         s_needs_initial_full = false;
     } else {
-        sticky_display_fast(s_fb);
+        if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_fast(s_fb);
+        else                               sticky_display(s_fb, false, x0, y0, x1, y1);
         s_partial_count++;
     }
 
@@ -576,7 +783,10 @@ extern "C" void display_set_backlight(int /*percent*/)
 
 extern "C" void display_deep_sleep_prepare(void)
 {
-    if (s_initialized) sticky_deep_sleep();
+    if (s_initialized) {
+        if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_deep_sleep();
+        else                               sticky_deep_sleep();
+    }
     s_initialized = false;
 }
 

@@ -2022,8 +2022,18 @@ extern "C" void app_main(void)
      * board's own power switch drops the rail as soon as the case
      * button is released -- see the board header comment. Release any
      * hold left by pre_sleep_reterminal_sticky_deinit() from before
-     * this wake first (gpio_deep_sleep_hold_dis() above only disarms
-     * the global latch, not each individual pin's hold).
+     * this wake first.
+     *
+     * gpio_deep_sleep_hold_dis() releases the chip-wide digital-pad
+     * autohold that pre_sleep_reterminal_sticky_deinit() armed. On the
+     * ESP32-S3 that autohold survives the wake reset and keeps every
+     * digital pad (GPIO22-48) frozen until it is disabled. Without it
+     * the e-paper power-enable (GPIO47, on the VDD_SPI domain, which
+     * is powered down in deep sleep) stays stuck in its unpowered
+     * state, display_init() cannot drive it, and the panel never
+     * shows anything after the first wake. It only disarms the global
+     * latch, not each individual pin's hold, hence the gpio_hold_dis()
+     * calls below.
      *
      * Charger enable (CHARGE_EN=GPIO39, active-LOW): driven LOW here
      * so the BQ25616 charges normally while awake, not just once
@@ -2031,6 +2041,7 @@ extern "C" void app_main(void)
      * reset-default pull-up would otherwise leave it effectively
      * disabled. */
     {
+        gpio_deep_sleep_hold_dis();
         gpio_hold_dis((gpio_num_t)PWR_HOLD_PIN);
         gpio_hold_dis((gpio_num_t)PWR_LOCK_PIN);
         gpio_hold_dis((gpio_num_t)CHARGE_EN_PIN);
@@ -2044,6 +2055,22 @@ extern "C" void app_main(void)
         gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 1);
         gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);
         gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 0);
+    }
+    /* The MicroSD card shares the e-paper SPI bus. Power it and park
+     * its CS high before display_init() sends anything: an unpowered
+     * card loads SCLK/MOSI through its protection diodes, and a
+     * floating CS lets it listen to panel traffic. */
+    {
+        gpio_hold_dis((gpio_num_t)SD_EN_PIN);
+        gpio_hold_dis((gpio_num_t)SD_SPI_CS_PIN);
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << SD_EN_PIN) | (1ULL << SD_SPI_CS_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)SD_SPI_CS_PIN, 1);
+        gpio_set_level((gpio_num_t)SD_EN_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 #endif
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)

@@ -564,8 +564,12 @@ used by Draftling.
 [Seeed Studio reTerminal
 Sticky](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
 -- a battery-powered, magnetically mounted ESP32-S3R8 badge driving a
-3.97" 800x480 SSD1677 black/white e-paper panel over SPI, the same
-panel class as the Waveshare ESP32-S3-ePaper-3.97 above. Unlike every
+3.97" 800x480 black/white e-paper panel over SPI, the same panel class
+as the Waveshare ESP32-S3-ePaper-3.97 above. Units ship with either an
+SSD1677 or an SSD2677 panel controller; the firmware detects which at
+boot from the BUSY line's polarity. The SSD1677 path is tested on
+physical hardware; the SSD2677 path is ported from Seeed's Seeed_GFX2
+library and untested. Unlike every
 other SSD1677 board in this repo, the on-board MicroSD card shares the
 panel's SPI bus (same SCLK/MOSI/MISO, separate CS) instead of getting
 its own dedicated bus. A GT911 capacitive touchscreen sits on its own
@@ -606,11 +610,20 @@ pin assignments, matching the treatment already given the Xteink X4
 Pro / Classic and the Elecrow CrowPanel 5.79". FreeInk's own comment
 for this device lists several items as "pending hardware validation"
 (panel mount orientation, MicroSD bus-sharing behavior, PDM mic
-pins); this port reuses whatever `display_ws_epd397.cpp` settled on
-after real hardware testing instead of FreeInk's documented choice
-for the full-refresh waveform and SPI clock speed -- see
+pins). The SSD1677 refresh sequences follow the
+[sticky-micronotes](https://github.com/LowFlowIO/sticky-micronotes)
+firmware, which is known to work on this board; the
+`display_ws_epd397.cpp` sequence this port first reused never changed
+the image on this panel. The MicroSD card must be powered (GPIO10)
+and deselected (CS GPIO8 high) before the panel's first SPI traffic,
+or the panel never shows an image -- `main.cpp` does both before
+`display_init()`. See
 `components/display/display_reterminal_sticky.cpp`'s file header for
-the specifics. The board also exposes a temperature/humidity sensor
+the specifics.
+
+The case's USB-C port is bridged through a WCH CH343 USB-to-UART chip,
+not wired to the ESP32-S3's native USB (GPIO19/20 go to the PDM
+microphone), so "SD card via USB" is not available on this board. The board also exposes a temperature/humidity sensor
 (SHT40), a 6-axis IMU (LSM6DS3TR-C), a PCF8563 RTC, a PDM microphone
 and an LEDC buzzer, none of which Draftling uses, matching the
 "vendor board carries more than the firmware touches" pattern already

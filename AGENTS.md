@@ -82,7 +82,7 @@ card).
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
-| Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677), 800x480, GT911 touch |
+| Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677/SSD2677, auto-detected), 800x480, GT911 touch |
 | M5Stack PaperMono / PaperMono-Lite | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
@@ -476,19 +476,26 @@ Per-board display backends behind a single C API:
   updates (~450 ms, TSSET 0x6E, PARTIAL_IN/WINDOW/OUT). No backlight.
 - **display_reterminal_sticky.cpp** -- from-scratch SPI e-paper
   backend for the Seeed reTerminal Sticky, gated on
-  `CONFIG_DRAFTLING_DISPLAY_RETERMINAL_STICKY`. Same 3.97" 800x480
-  SSD1677-family protocol as `display_ws_epd397.cpp` above (dual-RAM
-  differential refresh, single controller, no boot-time detection),
-  repinned for this board and with `MISO` wired -- unlike every other
-  single-board SSD1677 backend here, this panel's SPI bus is also
-  shared with the on-board MicroSD card (separate `CS`, same
-  `SCLK`/`MOSI`/`MISO`). No PMIC: the panel's power-enable pin is a
-  plain GPIO. Tested on physical hardware. Reuses
-  `display_ws_epd397.cpp`'s hardware-proven full-refresh waveform and
-  a conservative SPI clock rather than the values documented for this
-  device by the FreeInk SDK; see the file's header comment and
-  `main/boards/seeed_reterminal_sticky.h` for the full sourcing
-  notes.
+  `CONFIG_DRAFTLING_DISPLAY_RETERMINAL_STICKY`. Sticky units carry
+  either an SSD1677 or an SSD2677 controller; `display_init()` tells
+  them apart by BUSY polarity after reset (the SSD1677 holds BUSY
+  high while busy, the SSD2677 low), as Seeed_GFX2's
+  `Driver_Sticky_Auto` does. The SSD1677 path (dual-RAM differential
+  refresh) is tested on physical hardware; its sequences follow the
+  sticky-micronotes firmware (github.com/LowFlowIO/sticky-micronotes):
+  full refresh CTRL1 0x40 + CTRL2 0xF7, fast refresh CTRL2 0xFF, and
+  a fast refresh loads RAM_RED with the inverse of the new frame
+  inside the changed rectangle so every pixel there is re-driven (plain
+  differential refreshes left residue of earlier text). The
+  `display_ws_epd397.cpp` 0xFC sequence this backend started with
+  never changed the glass on this panel. The SSD2677 path (2bpp DTM1
+  data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
+  `Driver_SSD2677.cpp` and is untested. The SPI bus is shared with the
+  on-board MicroSD card (separate `CS`, same `SCLK`/`MOSI`/`MISO`):
+  main.cpp powers the card (`SD_EN_PIN`) and drives its CS high before
+  `display_init()`, because an unpowered card on the bus kept the panel
+  from ever showing an image. The panel's SDO is not readable over
+  `MISO`. No PMIC: the panel's power-enable pin is a plain GPIO.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
@@ -1639,7 +1646,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   an on-board AXP2101 PMIC on I2C. On-board MicroSD on SDMMC 1-bit.
   Tested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY** -- Seeed reTerminal
-  Sticky: the same 3.97" 800x480 SSD1677 panel class as the Waveshare
+  Sticky: the same 3.97" 800x480 panel class as the Waveshare
   ESP32-S3-ePaper-3.97 above, driven by
   `components/display/display_reterminal_sticky.cpp`, but with the
   on-board MicroSD sharing the panel's SPI bus instead of a dedicated
@@ -1652,7 +1659,14 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   Crosspoint firmware can still be installed later. Tested on
   physical hardware; pin assignments are triple-sourced from Seeed's
   own documentation and the FreeInk SDK (MIT licensed), which agree;
-  see `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md.
+  see `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md. The
+  panel controller is an SSD1677 or an SSD2677, auto-detected (see
+  `display_reterminal_sticky.cpp` above). The USB-C port goes through
+  a WCH CH343 USB-to-UART bridge, not the ESP32-S3's native USB, so
+  "SD card via USB" is not available. On wake, main.cpp calls
+  `gpio_deep_sleep_hold_dis()` before anything else: the digital-pad
+  autohold armed by the pre-sleep hook survives the wake reset and
+  would otherwise keep GPIO47 (panel power) frozen.
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_M5STACK_PAPERMONO** -- M5Stack PaperMono /
   PaperMono-Lite (one build for both; the full PaperMono's NFC and
@@ -1853,7 +1867,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
 | DRAFTLING_DISPLAY_WS_EPD397       | Selects `display_ws_epd397.cpp` (plain SPI, single SSD1677-family controller, no boot-time detection) | Waveshare ESP32-S3-ePaper-3.97 |
-| DRAFTLING_DISPLAY_RETERMINAL_STICKY | Selects `display_reterminal_sticky.cpp` (plain SPI, single SSD1677-family controller, MISO wired since the MicroSD card shares this panel's bus) | Seeed reTerminal Sticky |
+| DRAFTLING_DISPLAY_RETERMINAL_STICKY | Selects `display_reterminal_sticky.cpp` (plain SPI, SSD1677 or SSD2677 auto-detected by BUSY polarity, MISO wired since the MicroSD card shares this panel's bus) | Seeed reTerminal Sticky |
 | DRAFTLING_DISPLAY_M5_PAPERMONO    | Selects `display_m5_papermono.cpp` (plain SPI, single SSD1677 controller; panel supply/reset on the M5IOE1, front-light on the M5PM1) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B |

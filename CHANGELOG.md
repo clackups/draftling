@@ -6,6 +6,19 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Seeed reTerminal Sticky: the screen now works**: the display
+  stayed blank (or only showed the first screen after flashing) and
+  never updated, although the device was running and accepting
+  keyboard input. It now shows the editor, updates as you type, and
+  keeps working after waking from sleep. Sticky units fitted with the
+  alternative SSD2677 display controller are detected and supported
+  too, but that variant has not been tested on a real device yet.
+- **Seeed reTerminal Sticky: no leftover traces of earlier text**:
+  screen updates, such as the keyboard-search messages, no longer
+  leave faint remnants of the previous content behind.
+
 ## [1.0.12] - 2026-10-06
 
 ### Fixed
