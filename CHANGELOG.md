@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-10-07
+
 ### Fixed
 
 - **Seeed reTerminal Sticky: the screen now works**: the display
