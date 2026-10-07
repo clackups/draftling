@@ -82,13 +82,13 @@
  * physically separate from the fuel-gauge bus below. I2C_SDA_PIN /
  * I2C_SCL_PIN feed the generic touch bring-up in main.cpp
  * (touchscreen_config_t.sda/scl), so no board-specific main.cpp code
- * is needed for the bus itself -- just the power-enable poke below.
- * TOUCH_POWER_EN_PIN is active-HIGH (opposite polarity from the
- * Xteink X4 Pro's active-low GPIO2); driven HIGH once before
- * touchscreen_init() runs its own RST pulse and dual-address (0x5D /
- * 0x14) probe -- no address-select reset dance is done here, unlike
- * the X4 Pro, since this port has no hardware to verify one is
- * needed and the generic probe already covers both GT911 addresses. */
+ * is needed for the bus itself. TOUCH_POWER_EN_PIN is active-HIGH
+ * (opposite polarity from the Xteink X4 Pro's active-low GPIO2).
+ * main.cpp powers the GT911 and resets it with INT held LOW across
+ * the RST rising edge and for 50 ms after it (address 0x5D plus the
+ * GT911's INT synchronisation), like the X4 Pro. Tested on hardware:
+ * with INT left floating during reset the chip came up at 0x14,
+ * answered on I2C, but never reported a touch. */
 #define I2C_SDA_PIN         3
 #define I2C_SCL_PIN         2
 #define TOUCH_I2C_ADDR      0x5D

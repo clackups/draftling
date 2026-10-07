@@ -103,6 +103,13 @@ static uint8_t  *s_fb = NULL;
  * sticky_display(). SSD2677: the previous frame (s_prev). */
 static uint8_t  *s_fb_inv = NULL;
 static bool      s_initialized = false;
+/* SSD1677: copy of the frame being shown. A refresh is started
+ * without waiting for it to finish (see sticky_refresh()), so LVGL can
+ * keep changing s_fb meanwhile; RED RAM is re-synced from this copy
+ * once the panel is idle again. */
+static uint8_t  *s_shown = NULL;
+static bool      s_refresh_pending = false;
+static bool      s_red_stale = false;
 
 /* Sticky units ship with one of two panel controllers, mixed in
  * production (Seeed_GFX2's Driver_Sticky_Auto): an SSD1677, or an
@@ -306,14 +313,36 @@ static void sticky_ctrl_init(void)
  * dark ring), and 0xFF (the same with the Mode 2 differential
  * waveform). These are the values the sticky-micronotes firmware uses
  * on this board. */
+/* Starts the refresh and returns without waiting for it: the
+ * waveform takes ~0.4 s, and blocking here would block the LVGL task
+ * (this runs from its flush callback), so touch input would not be
+ * polled and the second tap of a double-tap would be lost.
+ * sticky_wait_idle() waits before the next command. */
 static void sticky_refresh(bool full)
 {
     epd_cmd(0x21); epd_data1(full ? 0x40 : 0x00); /* DISPLAY_UPDATE_CTRL1 */
     epd_cmd(0x3C); epd_data1(full ? 0x01 : 0x80); /* BORDER_WAVEFORM */
     epd_cmd(0x22); epd_data1(full ? 0xF7 : 0xFF); /* DISPLAY_UPDATE_CTRL2 */
     epd_cmd(0x20);                                /* MASTER_ACTIVATION */
-    vTaskDelay(pdMS_TO_TICKS(2));
-    epd_wait_busy();
+    vTaskDelay(pdMS_TO_TICKS(2));                 /* let BUSY rise */
+    s_refresh_pending = true;
+    s_red_stale = true;
+}
+
+/* Waits for a refresh started by sticky_refresh() to finish, then
+ * re-syncs RED to the frame now shown so the next fast refresh diffs
+ * against it. */
+static void sticky_wait_idle(void)
+{
+    if (s_refresh_pending) {
+        epd_wait_busy();
+        s_refresh_pending = false;
+    }
+    if (s_red_stale) {
+        sticky_set_ram_area_full();
+        epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES);
+        s_red_stale = false;
+    }
 }
 
 /* A fast refresh only drives the pixels whose BW and RED bits differ,
@@ -327,28 +356,33 @@ static void sticky_refresh(bool full)
 static void sticky_display(const uint8_t *fb, bool full,
                            int x0, int y0, int x1, int y1)
 {
+    sticky_wait_idle();
+
+    /* Snapshot the frame: the SPI transfers below are queued, and LVGL
+     * may change fb again once this returns. The last command sent
+     * here (in sticky_refresh()) drains the queue, so s_shown and
+     * s_fb_inv are no longer in use by then. */
+    memcpy(s_shown, fb, FRAMEBUFFER_BYTES);
+
     sticky_set_ram_area_full();
-    epd_cmd(0x24); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW = new frame */
+    epd_cmd(0x24); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW = new frame */
     if (full) {
-        epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
+        epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
     } else {
+        /* RED holds the previous frame (sticky_wait_idle()); replace
+         * the changed rectangle with the inverse of the new frame. */
         int bx0 = x0 >> 3, bx1 = x1 >> 3;
         int wb = bx1 - bx0 + 1;
         int h = y1 - y0 + 1;
         uint8_t *dst = s_fb_inv;
         for (int y = y0; y <= y1; ++y) {
-            const uint8_t *src = fb + (size_t)y * PANEL_WIDTH_BYTES + bx0;
+            const uint8_t *src = s_shown + (size_t)y * PANEL_WIDTH_BYTES + bx0;
             for (int b = 0; b < wb; ++b) *dst++ = (uint8_t)~src[b];
         }
         sticky_set_ram_area(bx0 * 8, y0, wb * 8, h);
         epd_cmd(0x26); epd_data(s_fb_inv, (size_t)wb * h);
     }
     sticky_refresh(full);
-
-    /* Re-sync RED to the just-shown frame so the next fast refresh
-     * diffs against it. */
-    sticky_set_ram_area_full();
-    epd_cmd(0x26); epd_data(fb, FRAMEBUFFER_BYTES);
 }
 
 /* ============================================================
@@ -521,6 +555,7 @@ static sticky_ctrl_t sticky_detect_controller(void)
 
 static void sticky_deep_sleep(void)
 {
+    sticky_wait_idle();
     epd_cmd(0x21); epd_data1(0x40);
     epd_cmd(0x22); epd_data1(0x03); /* analog + clock off */
     epd_cmd(0x20);
@@ -559,6 +594,13 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
         return;
     }
     s_prev = s_fb_inv;
+
+    s_shown = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_shown) s_shown = (uint8_t *)heap_caps_malloc(FRAMEBUFFER_BYTES, MALLOC_CAP_8BIT);
+    if (!s_shown) {
+        ESP_LOGE(TAG, "Shown-frame buffer allocation failed");
+        return;
+    }
 
     s_width = PANEL_WIDTH;
     s_height = PANEL_HEIGHT;

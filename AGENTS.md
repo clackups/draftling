@@ -496,6 +496,12 @@ Per-board display backends behind a single C API:
   `display_init()`, because an unpowered card on the bus kept the panel
   from ever showing an image. The panel's SDO is not readable over
   `MISO`. No PMIC: the panel's power-enable pin is a plain GPIO.
+  The SSD1677 refresh is started without waiting for BUSY (it runs
+  from the LVGL flush callback, and blocking there for the ~0.4 s
+  waveform stopped touch polling, so the second tap of a double-tap
+  was lost); `sticky_wait_idle()` waits before the next panel command
+  and then re-syncs RED RAM from `s_shown`, the driver's copy of the
+  frame on the glass.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
@@ -739,6 +745,13 @@ its `editor_format_t` (`help_title` and the `{ NULL, NULL }`-terminated
 `help` rows), so each format keeps its cheat sheet in its own file.
 Rows are word-wrapped by hand (`help_row()`) with a hanging indent so
 the descriptions stay in their column on narrow panels.
+
+**Double-tap** (touch boards) selects the word under the finger
+(`editor_touch_event_cb()`): a click counts as the second tap when its
+press began within `TOUCH_DOUBLE_TAP_MS` (400 ms) of the previous
+click's release and within `TOUCH_DOUBLE_TAP_PX` of it (12 px, 24 px on
+`CONFIG_DRAFTLING_DISPLAY_HIDPI` boards). Timing from press, not
+release, keeps the finger's dwell time out of the window.
 
 Editor shortcuts include `Ctrl+F` (Find) and `Ctrl+H` (Find +
 Replace). Both open a modal overlay; in Find+Replace mode, `Tab`
@@ -1666,7 +1679,11 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   "SD card via USB" is not available. On wake, main.cpp calls
   `gpio_deep_sleep_hold_dis()` before anything else: the digital-pad
   autohold armed by the pre-sleep hook survives the wake reset and
-  would otherwise keep GPIO47 (panel power) frozen.
+  would otherwise keep GPIO47 (panel power) frozen. main.cpp also
+  resets the GT911 itself (INT held LOW across the RST rising edge
+  and for 50 ms after it, then `tcfg.rst = -1`), like on the X4 Pro:
+  with INT floating the chip came up at 0x14 and never reported a
+  touch.
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_M5STACK_PAPERMONO** -- M5Stack PaperMono /
   PaperMono-Lite (one build for both; the full PaperMono's NFC and

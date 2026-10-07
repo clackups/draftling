@@ -642,6 +642,14 @@ firmware (same SSD1677 RAM addressing as this port) and the ESPHome
 configs for this device (`swap_xy` only, on a display frame rotated
 180 degrees from this one).
 
+The GT911 must be reset with its INT line held LOW across the RST
+rising edge and for 50 ms afterwards (as sticky-micronotes does):
+that selects address 0x5D and performs the GT911's INT
+synchronisation. With INT left floating during reset the chip came up
+at 0x14, answered on I2C, and never reported a touch. `main.cpp` does
+this reset itself and passes `rst = -1` to `touchscreen_init()`, like
+on the Xteink X4 Pro.
+
 
 ## Seeed Studio reTerminal E1001
 

@@ -2133,22 +2133,31 @@ extern "C" void app_main(void)
                  TOUCH_RST_PIN, TOUCH_INT_PIN);
     }
 #elif defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
-    /* GT911 power-enable, active-HIGH (opposite polarity from the
-     * Xteink X4 Pro above). Unlike that board, no address-select
-     * reset dance is done here: this port has no hardware to verify
-     * one is needed, and touchscreen_init() further below already
-     * probes both possible GT911 addresses (0x5D / 0x14) and pulses
-     * TOUCH_RST_PIN itself, so a plain power-up is enough for the
-     * driver to find and configure the chip either way. */
+    /* GT911 power-enable (active-HIGH), then a hardware reset with INT
+     * held LOW across the RST rising edge and for 50 ms after it, as
+     * the sticky-micronotes firmware does on this board. That selects
+     * address 0x5D and performs the GT911's INT synchronisation; with
+     * INT left floating (touchscreen_init()'s own plain RST pulse) the
+     * chip came up at 0x14 and answered on I2C but never reported a
+     * touch. tcfg.rst is passed as -1 below so touchscreen_init() does
+     * not pulse RST again. */
     {
         gpio_config_t g = {};
         g.intr_type    = GPIO_INTR_DISABLE;
         g.mode         = GPIO_MODE_OUTPUT;
-        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN);
+        g.pin_bit_mask = (1ULL << TOUCH_POWER_EN_PIN) |
+                         (1ULL << TOUCH_RST_PIN) | (1ULL << TOUCH_INT_PIN);
         gpio_config(&g);
         gpio_set_level((gpio_num_t)TOUCH_POWER_EN_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(20));
-        ESP_LOGI(TAG, "GT911 power-enabled (GPIO%d)", TOUCH_POWER_EN_PIN);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        gpio_set_level((gpio_num_t)TOUCH_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        /* Release INT; touchscreen_init() makes it an input. */
+        gpio_set_direction((gpio_num_t)TOUCH_INT_PIN, GPIO_MODE_INPUT);
+        ESP_LOGI(TAG, "GT911 power-enabled (GPIO%d) and reset", TOUCH_POWER_EN_PIN);
     }
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
@@ -3149,7 +3158,8 @@ extern "C" void app_main(void)
         touchscreen_config_t tcfg = {};
         tcfg.sda      = I2C_SDA_PIN;
         tcfg.scl      = I2C_SCL_PIN;
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO) || \
+    defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
         tcfg.rst      = -1;               /* reset already done in the block above */
 #else
         tcfg.rst      = TOUCH_RST_PIN;

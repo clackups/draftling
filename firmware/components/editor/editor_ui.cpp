@@ -3381,14 +3381,24 @@ static bool touch_is_word_byte(unsigned char c)
  * visual-line cursor movement can use it too.) */
 
 /* Last tap state for software double-tap detection. LVGL fires
- * LV_EVENT_CLICKED on every release; we compare against the
- * previous one and promote consecutive close-in-time clicks to a
- * "double tap". */
+ * LV_EVENT_CLICKED on every release; a click whose press began within
+ * TOUCH_DOUBLE_TAP_MS of the previous click (release), close to it,
+ * is promoted to a "double tap". Timing from the previous release to
+ * this press (not release to release) keeps how long the finger rests
+ * on the glass out of the window. */
 static uint32_t s_last_tap_ms = 0;
+static uint32_t s_press_ms    = 0;
 static int      s_last_tap_x  = -1;
 static int      s_last_tap_y  = -1;
 #define TOUCH_DOUBLE_TAP_MS   400  /* same as the LVGL default short-click streak */
-#define TOUCH_DOUBLE_TAP_PX    12  /* finger jitter tolerance */
+/* Finger jitter tolerance. 12 px is ~1 mm on the high-density panels,
+ * tighter than a fingertip repeats (seen on the Seeed reTerminal
+ * Sticky's 3.97" 800x480 panel). */
+#if defined(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+#define TOUCH_DOUBLE_TAP_PX    24
+#else
+#define TOUCH_DOUBLE_TAP_PX    12
+#endif
 
 /* Drag-to-scroll state. Touch panels here typically poll at 30-60 Hz
  * with small per-frame deltas; LVGL's built-in gesture detector needs
@@ -3532,6 +3542,7 @@ static void editor_touch_event_cb(lv_event_t *e)
         if (!indev) return;
         lv_point_t pt;
         lv_indev_get_point(indev, &pt);
+        s_press_ms      = lv_tick_get();
         s_drag_active   = true;
         s_drag_start_x  = pt.x;
         s_drag_start_y  = pt.y;
@@ -3598,7 +3609,7 @@ static void editor_touch_event_cb(lv_event_t *e)
         if (ly < 0) return;
 
         uint32_t now = lv_tick_get();
-        bool is_double = (now - s_last_tap_ms) <= TOUCH_DOUBLE_TAP_MS &&
+        bool is_double = (s_press_ms - s_last_tap_ms) <= TOUCH_DOUBLE_TAP_MS &&
                           (s_last_tap_x >= 0) &&
                           (std::abs((int)(pt.x - s_last_tap_x)) <= TOUCH_DOUBLE_TAP_PX) &&
                           (std::abs((int)(pt.y - s_last_tap_y)) <= TOUCH_DOUBLE_TAP_PX);

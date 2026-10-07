@@ -15,6 +15,15 @@ in the git log.
   keeps working after waking from sleep. Sticky units fitted with the
   alternative SSD2677 display controller are detected and supported
   too, but that variant has not been tested on a real device yet.
+- **Seeed reTerminal Sticky: the touchscreen now works**: taps were
+  ignored completely. The touch controller is now started the way it
+  expects, so tapping works.
+- **Double-tap to select a word is easier to hit**: on all touch
+  boards, the time your finger rests on the screen no longer counts
+  against the double-tap window. On the high-density screens (Seeed
+  reTerminal Sticky, Xteink X4 Pro, M5Stack PaperS3 and others) the
+  second tap may also land a little further from the first. On the
+  Sticky, double-taps were almost never recognised before.
 - **Seeed reTerminal Sticky: no leftover traces of earlier text**:
   screen updates, such as the keyboard-search messages, no longer
   leave faint remnants of the previous content behind.
