@@ -368,13 +368,19 @@ static void sticky_display(const uint8_t *fb, bool full,
 {
     sticky_wait_idle();
 
+    /* sticky_wait_idle() may have queued a RED write from s_shown;
+     * this sends commands, which waits for the queued transfers to
+     * finish, so s_shown is free to overwrite below. (Overwriting it
+     * first loaded part of RED with the new frame, and changed pixels
+     * there were never driven.) */
+    sticky_set_ram_area_full();
+
     /* Snapshot the frame: the SPI transfers below are queued, and LVGL
      * may change fb again once this returns. The last command sent
      * here (in sticky_refresh()) drains the queue, so s_shown and
      * s_fb_inv are no longer in use by then. */
     memcpy(s_shown, fb, FRAMEBUFFER_BYTES);
 
-    sticky_set_ram_area_full();
     epd_cmd(0x24); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW = new frame */
     if (full) {
         epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
@@ -745,10 +751,24 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
     }
     int ox = x + EPD_MARGIN_LEFT;
     int oy = y + EPD_MARGIN_TOP;
-    s_clip_x0 = std::max(0, ox);
-    s_clip_y0 = std::max(0, oy);
-    s_clip_x1 = std::min(s_width  - 1, ox + w - 1);
-    s_clip_y1 = std::min(s_height - 1, oy + h - 1);
+    int cx0 = std::max(0, ox);
+    int cy0 = std::max(0, oy);
+    int cx1 = std::min(s_width  - 1, ox + w - 1);
+    int cy1 = std::min(s_height - 1, oy + h - 1);
+    /* Several keys can be handled before the next flush, each setting
+     * a clip for its own edit. Keep the union, or the last key's clip
+     * drops the earlier edits (two quick Backspaces left part of the
+     * first erased letter on the panel). */
+    if (s_clip_x0 >= 0) {
+        cx0 = std::min(cx0, s_clip_x0);
+        cy0 = std::min(cy0, s_clip_y0);
+        cx1 = std::max(cx1, s_clip_x1);
+        cy1 = std::max(cy1, s_clip_y1);
+    }
+    s_clip_x0 = cx0;
+    s_clip_y0 = cy0;
+    s_clip_x1 = cx1;
+    s_clip_y1 = cy1;
 }
 
 extern "C" void display_flush(void)

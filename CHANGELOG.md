@@ -24,6 +24,10 @@ in the git log.
   boards, a button still held when the device goes to sleep no longer
   disables waking up: the device waits for it to be released, and if
   it stays pressed, wakes up on its own after a minute.
+- **Seeed reTerminal Sticky: erased letters no longer stay on the
+  screen**: after Backspace, especially pressed several times quickly,
+  the erased letter (or half of it) sometimes remained visible. The
+  screen now clears it.
 - **Seeed reTerminal Sticky: correct battery charging indicator**: on
   battery the "+" charging sign appeared and disappeared on every
   battery update, and with the USB cable connected it was often
