@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.15] - 2026-10-08
+
 ### Fixed
 
 - **Keyboards that ask for a pairing code can be paired**: when a
