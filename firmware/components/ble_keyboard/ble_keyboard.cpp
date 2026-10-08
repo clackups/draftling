@@ -94,6 +94,7 @@ int64_t ble_keyboard_last_pairing_activity_us(void)                      { retur
 #include <esp_gap_ble_api.h>
 #include <esp_gattc_api.h>
 #include <esp_hidh.h>
+#include <esp_private/esp_hidh_private.h>
 #include <nvs_flash.h>
 #include <nvs.h>
 
@@ -921,12 +922,41 @@ static void process_keyboard_report(const uint8_t *data, int len,
 
 /* ---- Unified HID Host callback ---- */
 
+/* Works around an ESP-IDF esp_hid bug. During service discovery
+ * ble_hidh.c counts HID services into dev->config.report_maps_len
+ * before it allocates dev->config.report_maps. If the link drops in
+ * between (e.g. supervision timeout, reason 0x8, while a keyboard is
+ * reconnecting), the CLOSE (or failed OPEN) event is followed -- in
+ * the same event task, right after this callback returns -- by
+ * esp_hidh_dev_resources_free(), which walks report_maps_len entries
+ * of the NULL array: LoadProhibited panic. Zero the count so the free
+ * skips the loop; there is nothing allocated to free. */
+static void hidh_fix_half_built_dev(esp_hidh_dev_t *dev)
+{
+    if (dev && dev->config.report_maps == NULL &&
+        dev->config.report_maps_len != 0) {
+        ESP_LOGW(TAG, "HID device closed during service discovery "
+                      "(%u report maps counted, none read)",
+                 (unsigned)dev->config.report_maps_len);
+        dev->config.report_maps_len = 0;
+    }
+}
+
 static void hidh_callback(void *handler_args, esp_event_base_t base,
                            int32_t id, void *event_data)
 {
-    if (s_disabled) return;
     esp_hidh_event_t event = (esp_hidh_event_t)id;
     esp_hidh_event_data_t *param = (esp_hidh_event_data_t *)event_data;
+
+    /* Before the s_disabled early return: the record is freed after
+     * this callback regardless. */
+    if (event == ESP_HIDH_CLOSE_EVENT) {
+        hidh_fix_half_built_dev(param->close.dev);
+    } else if (event == ESP_HIDH_OPEN_EVENT && param->open.status != ESP_OK) {
+        hidh_fix_half_built_dev(param->open.dev);
+    }
+
+    if (s_disabled) return;
 
     switch (event) {
     case ESP_HIDH_OPEN_EVENT: {

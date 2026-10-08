@@ -14,6 +14,10 @@ in the git log.
   with a hint to type it on the keyboard and press Enter. Before, the
   code only appeared inside the editor, or not at all while the screen
   was refreshing, so pairing such keyboards failed.
+- **No more crash when a keyboard drops out while connecting**: if the
+  Bluetooth link was lost at the moment a keyboard was (re)connecting,
+  the device could crash and restart. It now just keeps trying to
+  reconnect.
 
 ## [1.0.14] - 2026-10-08
 
