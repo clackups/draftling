@@ -332,6 +332,52 @@ extern "C" bool wifi_manager_get_configured_ssid(char *ssid, size_t ssid_sz)
     return ok;
 }
 
+extern "C" bool wifi_manager_get_configured(char *ssid, size_t ssid_sz,
+                                            char *pass, size_t pass_sz)
+{
+    if (!ssid || ssid_sz == 0 || !pass || pass_sz == 0) return false;
+    char s[33] = "", p[65] = "";
+    bool ok = load_configured(s, sizeof(s), p, sizeof(p), false);
+    strlcpy(ssid, ok ? s : "", ssid_sz);
+    strlcpy(pass, ok ? p : "", pass_sz);
+    memset(p, 0, sizeof(p));
+    return ok;
+}
+
+extern "C" esp_err_t wifi_manager_forget(void)
+{
+    wifi_manager_disconnect();
+
+    esp_err_t ret = ESP_OK;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open("wifi", NVS_READWRITE, &h);
+    if (err == ESP_OK) {
+        err = nvs_erase_all(h);
+        if (err == ESP_OK) err = nvs_commit(h);
+        nvs_close(h);
+    }
+    if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) ret = err;
+
+    /* The WiFi driver keeps its own copy of the last station config
+     * in NVS (namespace "nvs.net80211"). esp_wifi_restore() resets it
+     * once the driver is up; before that, erase the namespace. */
+    if (s_initialized) {
+        err = esp_wifi_restore();
+    } else {
+        err = nvs_open("nvs.net80211", NVS_READWRITE, &h);
+        if (err == ESP_OK) {
+            err = nvs_erase_all(h);
+            if (err == ESP_OK) err = nvs_commit(h);
+            nvs_close(h);
+        }
+        if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    }
+    if (err != ESP_OK && ret == ESP_OK) ret = err;
+    s_ssid[0] = '\0';
+    ESP_LOGI(TAG, "WiFi credentials erased: %s", esp_err_to_name(ret));
+    return ret;
+}
+
 extern "C" esp_err_t wifi_manager_connect_to(const char *ssid, const char *password, bool save)
 {
     /* Lazy-init: WiFi is only brought up when the user requests a

@@ -12,6 +12,7 @@
 #include <freertos/task.h>
 #include <esp_log.h>
 #include <esp_vfs_fat.h>
+#include <diskio_sdmmc.h>
 #include <sdmmc_cmd.h>
 #include <driver/sdmmc_host.h>
 #include <driver/sdspi_host.h>
@@ -367,6 +368,30 @@ extern "C" esp_err_t sd_card_deinit(void)
         ret = esp_vfs_fat_sdcard_unmount(s_mount, s_card);
     }
     s_card = NULL;
+    return ret;
+}
+
+extern "C" esp_err_t sd_card_format(void)
+{
+    if (!s_card) return ESP_ERR_INVALID_STATE;
+    /* Same settings as the mount. esp_vfs_fat_sdcard_format_cfg()
+     * unmounts the FAT volume, re-creates it and mounts it again at
+     * the same path; when that re-mount fails it releases the card,
+     * so forget the handle then. */
+    esp_vfs_fat_mount_config_t cfg = {};
+    cfg.format_if_mount_failed = false;
+    cfg.max_files              = 10;
+    cfg.allocation_unit_size   = 16 * 1024;
+    ESP_LOGW(TAG, "Formatting the SD card at %s", s_mount);
+    esp_err_t ret = esp_vfs_fat_sdcard_format_cfg(s_mount, s_card, &cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Format failed: %s", esp_err_to_name(ret));
+    }
+    /* Pointer lookup only: s_card has been freed if this fails. */
+    if (ff_diskio_get_pdrv_card(s_card) == 0xFF) {
+        s_card = NULL;
+        if (ret == ESP_OK) ret = ESP_FAIL;
+    }
     return ret;
 }
 

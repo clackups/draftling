@@ -644,6 +644,21 @@ overlay); `editor_delete_file()` then removes the file and its
 `.meta` sidecar, refusing while the file is open in a pane. The next
 sync commits the deletion.
 
+**Format SD card.** The F1 row `MENU_IDX_FORMAT_SD` (letter `F`) opens a
+picker rendered into `s_menu_list` like the "SD card via USB" one, with
+the question in the menu header (`s_lbl_menu_hdr`, reset to
+`MENU_HDR_TEXT` on close). Steps (`fmt_step_t`): `FMT_STEP_WIFI` keep /
+erase the WiFi settings (skipped when none are configured; the
+credentials are read here, before the card is wiped), then two
+confirmations with Cancel preselected. `fmt_start()` refuses while SD
+via USB is active, no card is mounted, or a Git sync is running; it
+calls `editor_discard_all_changes()` so no auto-save writes the old
+documents back, shows the busy message pop-up and runs `fmt_task()`:
+`sd_card_format()`, then `wifi_manager_save_to_file()` (keep) or
+`wifi_manager_forget()` (erase), then `esp_restart()` so nothing keeps
+pointing at the deleted files (open documents, Git repository,
+`git.cfg`).
+
 **F1 menu letter keys.** `s_menu_hotkeys[]` in `editor_ui.cpp` maps
 a letter (resolved with `kb_layout_shortcut_char()`, no Ctrl / Alt /
 Win) to a menu row and the character index of that letter in the
@@ -1092,9 +1107,14 @@ a FAT filesystem at `/sdcard`. Provides standard file operations (read,
 write, append, delete, rename, existence check, size query) and directory
 operations (mkdir, list).
 
+`sd_card_format()` re-creates the FAT file system on the mounted card
+(`esp_vfs_fat_sdcard_format_cfg()`, same mount settings) and mounts it
+again; if that re-mount fails the card is released and the handle
+cleared.
+
 Public API: `sd_card_init()`, `sd_card_read_file()`,
 `sd_card_write_file()`, `sd_card_list_dir()`, `sd_card_file_exists()`,
-and others.
+`sd_card_format()`, and others.
 
 ### components/standby/
 
@@ -1300,7 +1320,11 @@ start of every new connection attempt.
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
 `wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
-`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`.
+`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`,
+`wifi_manager_get_configured()` (SSID + password Ctrl+W would use),
+`wifi_manager_forget()` (disconnect and erase the `wifi` NVS namespace
+plus the WiFi driver's own saved station config: `esp_wifi_restore()`
+once the driver is up, otherwise the `nvs.net80211` namespace).
 
 ## Font Creation Process
 

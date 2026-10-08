@@ -39,6 +39,14 @@ const char *sd_card_get_mount_point(void);
  * off the card, rather than unmount it, while USB MSC owns it. */
 sdmmc_card_t *sd_card_get_handle(void);
 
+/* Erase the mounted card by creating a fresh FAT file system on it
+ * (every file and directory is lost), then mount it again at the same
+ * mount point. Blocking: can take several seconds on a large card.
+ * Nothing else may touch the card while this runs. Returns
+ * ESP_ERR_INVALID_STATE when no card is mounted; after any other
+ * failure the card may be left unmounted (sd_card_is_ready() false). */
+esp_err_t sd_card_format(void);
+
 /* Read entire file; caller must free(*out_buf) */
 esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t *out_len);
 /* Overwrite a file atomically: the bytes are written to a temporary

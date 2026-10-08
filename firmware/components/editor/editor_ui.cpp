@@ -825,8 +825,8 @@ static bool      s_menu_open    = false;
 
 /* F1 menu item indices. Fixed 0-8 for every board; "SD card via USB"
  * (9) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC, so
- * "Help" / "Sleep now" / "Close menu" shift down by one on every other
- * board.
+ * "Format SD card" / "Help" / "Sleep now" / "Close menu" shift down by
+ * one on every other board.
  * Use the MENU_IDX_* constants instead of bare integers everywhere
  * downstream so the two layouts stay in lock-step (mirrors the
  * SETTINGS_IDX_* convention used by the Settings submenu below). */
@@ -845,12 +845,35 @@ static bool      s_menu_open    = false;
 #else
 #define _MENU_NEXT_AFTER_USB_MSC 9
 #endif
-#define MENU_IDX_HELP         _MENU_NEXT_AFTER_USB_MSC
-#define MENU_IDX_SLEEP        (_MENU_NEXT_AFTER_USB_MSC + 1)
-#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 2)
+#define MENU_IDX_FORMAT_SD    _MENU_NEXT_AFTER_USB_MSC
+#define MENU_IDX_HELP         (_MENU_NEXT_AFTER_USB_MSC + 1)
+#define MENU_IDX_SLEEP        (_MENU_NEXT_AFTER_USB_MSC + 2)
+#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_USB_MSC + 3)
 
 /* Number of menu items */
-#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_USB_MSC + 3)
+#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_USB_MSC + 4)
+
+/* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
+ * card" picker replaces it with its question while it is open. */
+#define MENU_HDR_TEXT "Menu - Up/Down, Enter to select, Esc to close"
+
+/* "Format SD card" picker: three steps rendered into s_menu_list (like
+ * the "SD card via USB" picker), with the question in the menu header.
+ * FMT_STEP_WIFI is skipped when no WiFi network is configured. */
+typedef enum {
+    FMT_STEP_NONE = 0,   /* picker closed */
+    FMT_STEP_WIFI,       /* keep or erase the WiFi settings */
+    FMT_STEP_CONFIRM1,   /* first confirmation */
+    FMT_STEP_CONFIRM2,   /* second confirmation */
+} fmt_step_t;
+static fmt_step_t s_fmt_step     = FMT_STEP_NONE;
+static int        s_fmt_sel      = 0;
+static int        s_fmt_sel_prev = -1;
+static bool       s_fmt_keep_wifi = false;
+/* Credentials read before formatting, written back to wifi.cfg after
+ * it when s_fmt_keep_wifi is set. Wiped when the picker closes. */
+static char       s_fmt_ssid[33];
+static char       s_fmt_pass[65];
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 /* "SD card via USB" picker + deferred-apply state. Selecting the item
@@ -4197,6 +4220,7 @@ static const menu_hotkey_t s_menu_hotkeys[] = {
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     { MENU_IDX_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
 #endif
+    { MENU_IDX_FORMAT_SD,       'f', 0  },  /* "Format SD card..." */
     { MENU_IDX_HELP,            'h', 0  },  /* "Help (F10)" */
 };
 
@@ -4340,6 +4364,11 @@ static void refresh_menu_items(void)
     lv_list_add_btn(s_menu_list, NULL, buf);
 #endif
 
+    /* Format SD card */
+    lv_list_add_btn(s_menu_list, NULL,
+                    sd_card_get_handle() ? "Format SD card..."
+                                         : "Format SD card... (no SD card)");
+
     /* Help */
     lv_list_add_btn(s_menu_list, NULL, "Help (F10)");
 
@@ -4388,6 +4417,8 @@ static void show_menu(void)
     if (s_wifi_pw_panel) lv_obj_add_flag(s_wifi_pw_panel, LV_OBJ_FLAG_HIDDEN);
     s_dbx_open = false;
     if (s_dbx_panel) lv_obj_add_flag(s_dbx_panel, LV_OBJ_FLAG_HIDDEN);
+    s_fmt_step = FMT_STEP_NONE;
+    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Sync the staged choice to whatever usb_msc is actually doing
      * right now -- picks up an auto-off that happened while the menu
@@ -5663,6 +5694,213 @@ static void close_usbmsc_picker(void)
 }
 #endif
 
+/* ---- "Format SD card" picker (see fmt_step_t) ---- */
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static list_touch_ctx_t s_fmt_touch_ctx;
+#endif
+static void fmt_picker_activate(int idx);
+
+static void refresh_fmt_picker_items(void)
+{
+    char buf[96];
+    lv_obj_clean(s_menu_list);
+    switch (s_fmt_step) {
+    case FMT_STEP_WIFI:
+        lv_label_set_text(s_lbl_menu_hdr,
+                          "Format SD card: keep the WiFi settings?");
+        snprintf(buf, sizeof(buf), "Keep WiFi settings (%s)", s_fmt_ssid);
+        lv_list_add_btn(s_menu_list, NULL, buf);
+        lv_list_add_btn(s_menu_list, NULL, "Erase WiFi settings");
+        lv_list_add_btn(s_menu_list, NULL, "Cancel");
+        break;
+    case FMT_STEP_CONFIRM1:
+        lv_label_set_text(s_lbl_menu_hdr,
+                          "Format SD card: ALL files will be erased");
+        lv_list_add_btn(s_menu_list, NULL, "Cancel");
+        lv_list_add_btn(s_menu_list, NULL, "Erase all files on the SD card");
+        break;
+    case FMT_STEP_CONFIRM2:
+        lv_label_set_text(s_lbl_menu_hdr,
+                          "Really format the SD card? Cannot be undone.");
+        lv_list_add_btn(s_menu_list, NULL, "Cancel");
+        lv_list_add_btn(s_menu_list, NULL,
+                        s_fmt_keep_wifi
+                            ? "Yes, format now (keep WiFi settings)"
+                            : "Yes, format now (erase WiFi settings)");
+        break;
+    default:
+        return;
+    }
+    apply_list_selection_styles(s_menu_list, s_fmt_sel);
+    s_fmt_sel_prev = s_fmt_sel;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_fmt_touch_ctx.p_sel      = &s_fmt_sel;
+    s_fmt_touch_ctx.p_sel_prev = &s_fmt_sel_prev;
+    s_fmt_touch_ctx.activate   = fmt_picker_activate;
+    list_touch_attach(s_menu_list, &s_fmt_touch_ctx);
+#endif
+    sync_battery_labels();
+}
+
+static void update_fmt_picker_highlight(void)
+{
+    update_list_highlight(s_menu_list, s_fmt_sel, s_fmt_sel_prev);
+    s_fmt_sel_prev = s_fmt_sel;
+}
+
+static void fmt_set_step(fmt_step_t step)
+{
+    s_fmt_step = step;
+    s_fmt_sel = 0;   /* "Keep WiFi" / "Cancel" */
+    refresh_fmt_picker_items();
+}
+
+/* Back to the regular F1 menu list without formatting. */
+static void close_fmt_picker(void)
+{
+    s_fmt_step = FMT_STEP_NONE;
+    memset(s_fmt_pass, 0, sizeof(s_fmt_pass));
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    refresh_menu_items();
+}
+
+/* Why the card cannot be formatted right now, or NULL if it can. */
+static const char *fmt_blocked_reason(void)
+{
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    if (usb_msc_get_mode() != USB_MSC_MODE_OFF)
+        return "SD card via USB active -- disable it first";
+#endif
+    if (!sd_card_get_handle()) return "Format SD card: no SD card";
+    if (git_sync_get_state() == GIT_SYNC_IN_PROGRESS)
+        return "Format SD card: wait for Git sync to finish";
+    return NULL;
+}
+
+typedef struct {
+    bool keep_wifi;
+    char ssid[33];
+    char pass[65];
+} fmt_args_t;
+
+/* Formats the card off the LVGL task (it can take several seconds on
+ * a large card), then restores or erases the WiFi settings and
+ * restarts, so nothing keeps pointing at the deleted files (open
+ * documents, the Git repository, git.cfg). */
+static void fmt_task(void *arg)
+{
+    fmt_args_t *a = (fmt_args_t *)arg;
+    char text[256];
+
+    esp_err_t ret = sd_card_format();
+    if (ret == ESP_OK) {
+        const char *wifi_msg;
+        if (a->keep_wifi) {
+            wifi_msg = (wifi_manager_save_to_file(a->ssid, a->pass) == ESP_OK)
+                ? "The WiFi settings were written to the new wifi.cfg."
+                : "Could not write wifi.cfg; the WiFi settings stay in "
+                  "the device memory.";
+        } else {
+            wifi_msg = (wifi_manager_forget() == ESP_OK)
+                ? "The WiFi settings were erased."
+                : "Could not erase the WiFi settings from the device memory.";
+        }
+        snprintf(text, sizeof(text),
+                 "The SD card is formatted.\n%s\n"
+                 "The device will restart in a few seconds.", wifi_msg);
+    } else {
+        snprintf(text, sizeof(text),
+                 "Formatting failed: %s.\nRestart the device before "
+                 "using the SD card again.", esp_err_to_name(ret));
+    }
+    memset(a, 0, sizeof(*a));
+    free(a);
+
+    draftling_lvgl_port_lock(-1);
+    /* On success the device restarts on its own: show it as busy, so
+     * there is no "press Enter" hint and keys are ignored. */
+    show_msg_popup("Format SD card", text, ret == ESP_OK);
+    draftling_lvgl_port_unlock();
+
+    if (ret == ESP_OK) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        esp_restart();
+    }
+    vTaskDelete(NULL);
+}
+
+static void fmt_start(void)
+{
+    const char *why = fmt_blocked_reason();
+    if (why) {
+        close_fmt_picker();
+        editor_ui_set_status(why);
+        return;
+    }
+    fmt_args_t *a = (fmt_args_t *)calloc(1, sizeof(fmt_args_t));
+    if (!a) {
+        close_fmt_picker();
+        editor_ui_set_status("Format SD card: out of memory");
+        return;
+    }
+    a->keep_wifi = s_fmt_keep_wifi;
+    strlcpy(a->ssid, s_fmt_ssid, sizeof(a->ssid));
+    strlcpy(a->pass, s_fmt_pass, sizeof(a->pass));
+    close_fmt_picker();
+
+    /* The files are about to disappear: drop unsaved edits so no
+     * auto-save writes them back onto the fresh card, and keep
+     * standby from sleeping in the middle of the format. */
+    editor_discard_all_changes();
+    standby_reset_timer();
+    show_msg_popup("Format SD card",
+                   "Formatting the SD card...\n"
+                   "Do not remove the card or switch the device off.", true);
+
+    if (xTaskCreatePinnedToCore(fmt_task, "sd_format", 6 * 1024, a, 3,
+                                NULL, 0) != pdPASS) {
+        memset(a, 0, sizeof(*a));
+        free(a);
+        show_msg_popup("Format SD card",
+                       "Formatting failed: could not start the task.", false);
+    }
+}
+
+static void fmt_picker_activate(int idx)
+{
+    switch (s_fmt_step) {
+    case FMT_STEP_WIFI:
+        if (idx == 2) { close_fmt_picker(); break; }
+        s_fmt_keep_wifi = (idx == 0);
+        fmt_set_step(FMT_STEP_CONFIRM1);
+        break;
+    case FMT_STEP_CONFIRM1:
+        if (idx == 1) fmt_set_step(FMT_STEP_CONFIRM2);
+        else          close_fmt_picker();
+        break;
+    case FMT_STEP_CONFIRM2:
+        if (idx == 1) fmt_start();
+        else          close_fmt_picker();
+        break;
+    default:
+        break;
+    }
+}
+
+/* Entry point from the F1 menu row. */
+static void open_fmt_picker(void)
+{
+    const char *why = fmt_blocked_reason();
+    if (why) {
+        editor_ui_set_status(why);
+        return;
+    }
+    s_fmt_keep_wifi = false;
+    bool have_wifi = wifi_manager_get_configured(s_fmt_ssid, sizeof(s_fmt_ssid),
+                                                 s_fmt_pass, sizeof(s_fmt_pass));
+    fmt_set_step(have_wifi ? FMT_STEP_WIFI : FMT_STEP_CONFIRM1);
+}
+
 static void menu_activate_item(int idx)
 {
     switch (idx) {
@@ -5775,6 +6013,9 @@ static void menu_activate_item(int idx)
         refresh_usbmsc_picker_items();
         break;
 #endif
+    case MENU_IDX_FORMAT_SD:
+        open_fmt_picker();
+        break;
     case MENU_IDX_HELP:
         /* The help describes the screen the menu was opened from. */
         s_menu_open = false;
@@ -5824,6 +6065,29 @@ static void handle_menu_key(const kb_event_t *ev)
             break;
         case KB_KEY_ESCAPE:
             close_wifi_scan_picker();
+            break;
+        default:
+            break;
+        }
+        return;
+    }
+
+    if (s_fmt_step != FMT_STEP_NONE) {
+        int last_row = (s_fmt_step == FMT_STEP_WIFI) ? 2 : 1;
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+            if (s_fmt_sel > 0) s_fmt_sel--;
+            update_fmt_picker_highlight();
+            break;
+        case KB_KEY_DOWN:
+            if (s_fmt_sel < last_row) s_fmt_sel++;
+            update_fmt_picker_highlight();
+            break;
+        case KB_KEY_ENTER:
+            fmt_picker_activate(s_fmt_sel);
+            break;
+        case KB_KEY_ESCAPE:
+            close_fmt_picker();
             break;
         default:
             break;
@@ -9531,8 +9795,7 @@ static void build_screens(void)
     lv_obj_set_pos(s_lbl_menu_hdr, 2, 0);
     lv_obj_set_style_text_font(s_lbl_menu_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_menu_hdr, theme_fg(), 0);
-    lv_label_set_text(s_lbl_menu_hdr,
-                      "Menu - Up/Down, Enter to select, Esc to close");
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
 
     s_menu_list = lv_list_create(s_scr_menu);
     lv_obj_set_pos(s_menu_list, 0, HEADER_H);

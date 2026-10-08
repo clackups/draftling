@@ -6,6 +6,15 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Format the SD card from the menu**: F1 -> "Format SD card..."
+  erases the whole card. You can choose to keep the WiFi settings --
+  they are written to a new `wifi.cfg` on the formatted card -- or to
+  erase them, in which case the device forgets the WiFi network too.
+  You confirm twice before anything is erased, and the device restarts
+  afterwards.
+
 ### Fixed
 
 - **Seeed reTerminal Sticky: correct battery charging indicator**: on

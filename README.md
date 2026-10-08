@@ -134,7 +134,7 @@ load the firmware quickly without having to compile it.
 
 | Shortcut | Action |
 |----------|--------|
-| F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...). Inside the menu, the letter drawn bold picks its item: S Settings, B BLE scan, W WiFi connect, N new WiFi connection, D WiFi disconnect, G Git sync, K keyboard layout, U SD card via USB, H Help |
+| F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...). Inside the menu, the letter drawn bold picks its item: S Settings, B BLE scan, W WiFi connect, N new WiFi connection, D WiFi disconnect, G Git sync, K keyboard layout, U SD card via USB, F Format SD card, H Help |
 | F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn (or Ctrl+Up/Down), Home/End scroll; Esc or Enter closes it |
 | Arrow keys | Move cursor |
 | Home / End | Start / end of line |
@@ -346,6 +346,18 @@ The current layout is shown in the title bar. By default, only
 US-English and Ukrainian are compiled into the firmware. Other layouts
 need to be enabled in firmware configuration.
 
+
+## Formatting the SD card
+
+F1 -> "Format SD card..." erases everything on the card (documents,
+`wifi.cfg`, `git.cfg` and the local Git history) and creates a fresh
+FAT file system on it. If a WiFi network is configured, you are first
+asked whether to keep its settings: if you keep them, a new
+`wifi.cfg` with the same network and password is written to the
+formatted card; if you erase them, the device also forgets the network
+it remembers in its own memory. You then confirm twice (Cancel is
+preselected both times). Unsaved changes are lost. The device restarts
+when formatting is done.
 
 ## Configuration Files
 

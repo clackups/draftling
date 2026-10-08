@@ -66,6 +66,16 @@ esp_err_t wifi_manager_save_to_file(const char *ssid, const char *password);
  * not per frame. */
 bool wifi_manager_get_configured_ssid(char *ssid, size_t ssid_sz);
 
+/* Like wifi_manager_get_configured_ssid(), but also copies the
+ * password (empty for an open network). */
+bool wifi_manager_get_configured(char *ssid, size_t ssid_sz,
+                                 char *pass, size_t pass_sz);
+
+/* Disconnect and erase every stored WiFi credential from NVS: the
+ * SSID / password Draftling remembers, and the WiFi driver's own
+ * saved station config. /sdcard/wifi.cfg is not touched. */
+esp_err_t wifi_manager_forget(void);
+
 /* True when the most recent connection attempt failed because the AP
  * rejected the credentials (wrong password / security mode). Such a
  * failure is reported at once, without the retries used for other
