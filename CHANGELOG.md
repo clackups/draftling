@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.14] - 2026-10-08
+
 ### Added
 
 - **Format the SD card from the menu**: F1 -> "Format SD card..."
