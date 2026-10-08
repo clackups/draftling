@@ -380,6 +380,26 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.15-rc1",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            {
+              "path": "firmware/v1.0.15-rc1/draftling-seeed_reterminal_e1001-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/v1.0.15-rc1/draftling-seeed_reterminal_e1001-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/v1.0.15-rc1/draftling-seeed_reterminal_e1001.bin",
+              "offset": "0x10000"
+            }
+          ]
+        },
+        {
           "tag": "v1.0.14",
           "flashMode": "dio",
           "flashFreq": "80m",
