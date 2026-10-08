@@ -6,6 +6,15 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Keyboards that ask for a pairing code can be paired**: when a
+  keyboard requires a security code, the 6-digit code is now shown on
+  whatever screen is open (usually the "connect a keyboard" screen),
+  with a hint to type it on the keyboard and press Enter. Before, the
+  code only appeared inside the editor, or not at all while the screen
+  was refreshing, so pairing such keyboards failed.
+
 ## [1.0.14] - 2026-10-08
 
 ### Added

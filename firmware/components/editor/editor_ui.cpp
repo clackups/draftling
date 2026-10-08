@@ -8647,6 +8647,8 @@ static void poll_usb_msc_auto_off(void)
 }
 #endif
 
+static void apply_pending_passkey(void);
+
 static void key_drain_cb(lv_timer_t *timer)
 {
     (void)timer;
@@ -8663,6 +8665,7 @@ static void key_drain_cb(lv_timer_t *timer)
      * same tick has the last word on the prompt label. */
     apply_pending_ble_status_text();
     apply_pending_connect_state();
+    apply_pending_passkey();
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     poll_usb_msc_auto_off();
 #endif
@@ -8763,15 +8766,35 @@ static void key_repeat_cb(lv_timer_t *timer)
 
 /* ---- Passkey display callback ---- */
 
+/* Latest passkey event from the BLE host task, applied by the LVGL
+ * task in key_drain_cb() (like s_pending_conn_state below). The BLE
+ * task must not wait for the LVGL mutex: an e-paper refresh can hold
+ * it longer than any sensible timeout, and a dropped passkey left the
+ * user with no code to type, so pairing failed. */
+static portMUX_TYPE s_passkey_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t     s_passkey_pending = 0;
+static bool         s_passkey_has_pending = false;
+
 static void passkey_display_cb(uint32_t passkey)
 {
-    if (!draftling_lvgl_port_lock(100)) return;
+    taskENTER_CRITICAL(&s_passkey_mux);
+    s_passkey_pending = passkey;
+    s_passkey_has_pending = true;
+    taskEXIT_CRITICAL(&s_passkey_mux);
+}
+
+/* Run on the LVGL task (from key_drain_cb), mutex already held. */
+static void apply_pending_passkey(void)
+{
+    taskENTER_CRITICAL(&s_passkey_mux);
+    bool has = s_passkey_has_pending;
+    uint32_t passkey = s_passkey_pending;
+    s_passkey_has_pending = false;
+    taskEXIT_CRITICAL(&s_passkey_mux);
+    if (!has || !s_passkey_panel) return;
 
     if (passkey == BLE_PASSKEY_DISMISS) {
-        /* Hide the passkey overlay */
-        if (s_passkey_panel) {
-            lv_obj_add_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN);
-        }
+        lv_obj_add_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN);
         /* The dismiss is typically followed almost immediately by a
          * connect-state transition (BLE auth complete -> HIDH open
          * -> ble_connect_status_cb), which queues a second screen
@@ -8782,17 +8805,20 @@ static void passkey_display_cb(uint32_t passkey)
          * full refresh so both redraws coalesce. */
         display_request_full_refresh();
     } else {
-        /* Show the passkey overlay with the 6-digit code */
-        if (s_passkey_panel) {
-            char buf[48];
-            snprintf(buf, sizeof(buf), "Enter on keyboard:\n%06lu",
-                     (unsigned long)passkey);
-            lv_label_set_text(s_passkey_label, buf);
-            lv_obj_remove_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN);
-        }
+        /* Pairing normally runs while the BLE prompt screen (or the
+         * file browser) is shown, so move the overlay onto whichever
+         * screen is active, like the other pop-ups. */
+        char buf[96];
+        snprintf(buf, sizeof(buf),
+                 "Keyboard pairing code:\n%06lu\n"
+                 "Type it on the keyboard, then press Enter",
+                 (unsigned long)passkey);
+        lv_label_set_text(s_passkey_label, buf);
+        lv_obj_set_parent(s_passkey_panel, lv_scr_act());
+        lv_obj_center(s_passkey_panel);
+        lv_obj_move_foreground(s_passkey_panel);
+        lv_obj_remove_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN);
     }
-
-    draftling_lvgl_port_unlock();
 }
 
 /* ---- BLE connection status callback ---- */
@@ -9967,11 +9993,10 @@ static void build_screens(void)
     /* See note on s_list_files above. */
     lv_obj_set_style_bg_color(s_settings_list, theme_bg(), 0);
 
-    /* ---- Passkey overlay (shown on the editor screen) ---- */
+    /* ---- Passkey overlay (moved onto the active screen when shown) ---- */
     s_passkey_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_passkey_panel, SCR_W - 20, 60);
-    lv_obj_set_pos(s_passkey_panel,
-                   10, (SCR_H - 60) / 2);
+    lv_obj_set_size(s_passkey_panel, SCR_W - 20, LV_SIZE_CONTENT);
+    lv_obj_center(s_passkey_panel);
     lv_obj_set_style_bg_color(s_passkey_panel, theme_bg(), 0);
     lv_obj_set_style_bg_opa(s_passkey_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(s_passkey_panel, theme_fg(), 0);
@@ -9985,8 +10010,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_passkey_label, FONT_16, 0);
     lv_obj_set_style_text_color(s_passkey_label, theme_fg(), 0);
     lv_obj_set_style_text_align(s_passkey_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(s_passkey_label, SCR_W - 20 - 12);
-    lv_obj_center(s_passkey_label);
+    lv_obj_set_width(s_passkey_label, LV_PCT(100));
     lv_label_set_text(s_passkey_label, "");
 
     /* Register passkey display callback */
