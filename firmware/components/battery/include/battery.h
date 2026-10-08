@@ -67,7 +67,9 @@ int battery_init(int gpio_num, int enable_gpio, int divider);
  * default Data Memory and its Impedance-Track SoC stays pinned
  * around 50 % regardless of actual cell voltage, even after several
  * full discharge/charge cycles. Treating the gauge as a voltmeter
- * sidesteps the required-but-unprogrammed DM setup.
+ * sidesteps the required-but-unprogrammed DM setup. Boards whose
+ * gauge is programmed for the pack (Seeed reTerminal Sticky) set
+ * CONFIG_DRAFTLING_BATTERY_BQ27220_GAUGE_SOC and report 0x2C instead.
  *
  * Used on boards that route the LiPo cell through a TI BQ27220
  * coulomb counter on I2C (addr 0x55) instead of a GPIO ADC divider,
@@ -262,9 +264,10 @@ int battery_read_percent(void);
  *   - INA226   (M5Stack Tab5): reads the signed shunt-voltage register
  *               and reports the polarity. Sign convention is positive =
  *               into the cell on this board.
- *   - BQ27220  (LilyGO T5 Pro / Pro Lite): reads the Flags register
- *               (0x06); the DSG bit (bit 0) is 0 while charging or
- *               full, 1 while discharging.
+ *   - BQ27220  (Seeed reTerminal Sticky; LilyGO T5 Pro / Pro Lite
+ *               only if its BQ25896 charger cannot be read): 1 while
+ *               AverageCurrent (0x14) shows current flowing into the
+ *               cell, so a full cell on USB reads 0.
  *   - ADC backend / no backend: always returns -1.
  *
  * Callers (e.g. the editor status bar) should hide the charging

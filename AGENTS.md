@@ -200,21 +200,26 @@ Two backends:
   routed through a BQ25896 charger + BQ27220YZFR coulomb counter at
   0x55 on the I2C bus shared with epdiy (TPS65185 / PCA9535) and
   GT911. main.cpp creates the bus and passes its handle in. Voltage
-  GT911. main.cpp creates the bus and passes its handle in. Voltage
   comes from the Voltage register (0x08, mV), and percentage is
   derived from that voltage via the same LiPo discharge LUT used by
   the ADC backend -- the gauge's StateOfCharge register (0x2C) is
   ignored because the factory ships it with default Data Memory and
   its Impedance-Track SoC stays pinned around 50 % even after
-  several full discharge/charge cycles. Charge state is
-  derived from the Flags register (0x06): bit 0 (`DSG`) is 0 while
-  charging or full and 1 while discharging. Also used on the Seeed
+  several full discharge/charge cycles. On the T5 the BQ25896 charger
+  supplies the charge state; without it, charge state comes from the
+  sign of AverageCurrent (0x14, > 10 mA = charging). Note 0x06 is
+  Temperature, not a flags register (BatteryStatus is 0x0A); reading
+  it as "Flags" once made the charging glyph follow the temperature's
+  lowest bit. Also used on the Seeed
   reTerminal Sticky, but on its own dedicated I2C bus (main.cpp
   creates a second bus for it) rather than a bus shared with epdiy or
   touch -- see `main/boards/seeed_reterminal_sticky.h`. There is no
   I2C charger on that bus (the reTerminal Sticky's BQ25616 charger is
-  enabled purely through a GPIO, `CHARGE_EN_PIN`), so
-  `battery_read_charging()` always returns -1 (unknown) there.
+  enabled purely through a GPIO, `CHARGE_EN_PIN`), so charge state
+  comes from AverageCurrent. The Sticky's gauge ships with Data
+  Memory programmed for its pack (DesignCapacity = FullChargeCapacity
+  = 7500), so `CONFIG_DRAFTLING_BATTERY_BQ27220_GAUGE_SOC` makes
+  `battery_read_percent()` report its StateOfCharge (0x2C) there.
 * **TI INA226 power monitor** over I2C
   (`battery_init_ina226(bus, addr, cells)`): used on the M5Stack
   Tab5. Bus voltage (register 0x02) is divided by the cell count
@@ -1903,6 +1908,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
+| DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |

@@ -29,6 +29,9 @@
  *       register at 0x2C ships with default Data Memory on the T5
  *       Pro and reports a meaningless ~50 % regardless of actual
  *       cell voltage, even after several discharge/charge cycles.
+ *       * Seeed reTerminal Sticky: own I2C bus; its gauge is
+ *         programmed for the pack, so CONFIG_DRAFTLING_BATTERY_
+ *         BQ27220_GAUGE_SOC makes the percentage come from 0x2C.
  */
 
 #include "battery.h"
@@ -68,8 +71,10 @@ static int                       s_divider = 3;
 /* ---- BQ27220 backend state ---- */
 #define BQ27220_I2C_ADDR        0x55
 #define BQ27220_REG_VOLTAGE     0x08    /* u16 LE, mV */
-#define BQ27220_REG_FLAGS       0x06    /* u16 LE, bit 0 = DSG */
-#define BQ27220_FLAGS_DSG       0x0001  /* 0 = charging or full */
+#define BQ27220_REG_AVG_CURRENT 0x14    /* s16 LE, mA, ~1 s average */
+/* AverageCurrent above this means the cell is being charged. A few mA
+ * of margin keeps gauge offset noise at rest from lighting the "+". */
+#define BQ27220_CHARGE_MIN_MA   10
 #define BQ27220_REG_CURRENT     0x0C    /* s16 LE, mA -- signed two's complement,
                                          * + = into cell, - = out of cell */
 #define BQ27220_REG_SOC         0x2C    /* u16 LE, 0-100 % */
@@ -1340,6 +1345,17 @@ extern "C" int battery_read_percent(void)
          * in. bq27220_mv_to_displayed_percent() consults the charger's
          * CHRG_STAT and applies an I*R_int correction during Fast
          * Charge to keep the percentage close to true SoC. */
+#if defined(CONFIG_DRAFTLING_BATTERY_BQ27220_GAUGE_SOC)
+        /* This board's gauge comes with Data Memory programmed for its
+         * pack (DesignCapacity / FullChargeCapacity match the cell),
+         * so the coulomb-counted StateOfCharge is accurate, unlike the
+         * voltage LUT, which drops several percent as soon as the
+         * load pulls the cell below its post-charge voltage. */
+        uint16_t soc = 0;
+        if (bq27220_read_u16(BQ27220_REG_SOC, &soc) == 0) {
+            return (soc > 100) ? 100 : (int)soc;
+        }
+#endif
         int mv = battery_read_mv();
         return bq27220_mv_to_displayed_percent(mv);
     }
@@ -1405,11 +1421,15 @@ extern "C" int battery_read_charging(void)
          * so we don't lose all charge-state visibility. */
     }
     if (s_backend == BATT_BACKEND_BQ27220) {
-        /* Flags register, bit 0 (DSG): 0 -> charging or full, 1 -> discharging.
-         * BQ27220 datasheet, table 12-7. */
-        uint16_t flags = 0;
-        if (bq27220_read_u16(BQ27220_REG_FLAGS, &flags) != 0) return -1;
-        return (flags & BQ27220_FLAGS_DSG) ? 0 : 1;
+        /* Sign of AverageCurrent (positive = into the cell). The
+         * BatteryStatus DSG bit is not used: it also clears at rest,
+         * so it cannot tell charging from idle. (An earlier version
+         * read register 0x06 as "Flags", but 0x06 is Temperature in
+         * 0.1 K, so the "+" glyph followed the temperature's lowest
+         * bit.) */
+        uint16_t raw = 0;
+        if (bq27220_read_u16(BQ27220_REG_AVG_CURRENT, &raw) != 0) return -1;
+        return ((int16_t)raw > BQ27220_CHARGE_MIN_MA) ? 1 : 0;
     }
     if (s_backend == BATT_BACKEND_INA226) {
         if (!s_ina226_dev) return -1;

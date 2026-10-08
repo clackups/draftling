@@ -126,10 +126,10 @@
  * ESP32-S3 strapping pin; the bus is only created well after boot
  * strapping has latched, so this is safe. No I2C charger on this bus
  * (the BQ25616 charger's only host-visible control is the GPIO
- * CHARGE_EN_PIN above), so battery_read_charging() always reports
- * "unknown" for the fuel-gauge backend -- charge state is instead
- * surfaced only in the sense that CHARGE_EN_PIN keeps charging
- * enabled; Draftling has no separate UI signal for it on this board. */
+ * CHARGE_EN_PIN above), so battery_read_charging() derives charge
+ * state from the gauge's AverageCurrent sign. The gauge's Data Memory
+ * is programmed for this pack, so the percentage is its own
+ * StateOfCharge (CONFIG_DRAFTLING_BATTERY_BQ27220_GAUGE_SOC). */
 #define GAUGE_I2C_SDA_PIN   1
 #define GAUGE_I2C_SCL_PIN   0
 #define BATT_ADC_PIN        -1

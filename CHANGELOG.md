@@ -6,6 +6,19 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Seeed reTerminal Sticky: correct battery charging indicator**: on
+  battery the "+" charging sign appeared and disappeared on every
+  battery update, and with the USB cable connected it was often
+  missing. It is now shown exactly while the battery is charging (it
+  goes away once the battery is full).
+- **Seeed reTerminal Sticky: more accurate battery percentage**: the
+  percentage now comes from the battery's fuel gauge, which counts the
+  charge going in and out, instead of being estimated from the
+  battery voltage. It no longer drops from 100 % to the mid-90s within
+  minutes of unplugging USB.
+
 ## [1.0.13] - 2026-10-07
 
 ### Fixed

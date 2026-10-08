@@ -907,6 +907,17 @@ config DRAFTLING_BATTERY_BQ27220
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default n
 
+# BQ27220 boards whose gauge Data Memory is programmed for the pack:
+# battery_read_percent() reports the gauge's StateOfCharge (0x2C)
+# instead of running the cell voltage through the LiPo LUT. Left off
+# on the LilyGO T5, whose gauge ships with default Data Memory and
+# reports a meaningless ~50 %.
+config DRAFTLING_BATTERY_BQ27220_GAUGE_SOC
+    bool
+    depends on DRAFTLING_BATTERY_BQ27220
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
+    default n
+
 # Selects the TI INA226 bus-voltage backend in components/battery/.
 # main.cpp calls battery_init_ina226(i2c_bus, 0x41, 2) when this
 # symbol is set (Tab5 wires a 2S NP-F550 pack through the INA226).
