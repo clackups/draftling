@@ -339,6 +339,10 @@ static void enter_display_off(void)
 
 #endif /* CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF */
 
+/* Timer wake used when the wake pin is still LOW at sleep entry and
+ * EXT0 cannot be armed (see standby_enter_sleep()). */
+#define STUCK_WAKE_PIN_TIMER_SEC 60
+
 extern "C" void standby_enter_sleep(void)
 {
     stop_timer();
@@ -492,10 +496,13 @@ extern "C" void standby_enter_sleep(void)
      * sample at arm time latches the wake source.
      *
      * Poll the pad every 20 ms and require 3 consecutive HIGH reads
-     * (~60 ms quiet window) before we arm EXT0. Cap the total wait
-     * at 500 ms; if the pin is still LOW past that we skip EXT0
-     * arming entirely and fall through to RESET-only wake -- far
-     * better than burning the battery in a wake-sleep loop. We use
+     * (~60 ms quiet window) before we arm EXT0. A held button (e.g.
+     * the user pressing Power while the pre-sleep teardown is still
+     * running) gets up to 10 s to be released. If the pin is still
+     * LOW past that we skip EXT0 arming -- better than burning the
+     * battery in a wake-sleep loop -- and wake on a timer instead,
+     * since some boards (Seeed reTerminal Sticky) have no reachable
+     * RESET button and would otherwise never wake again. We use
      * gpio_get_level() because at this point the pad is still on
      * the digital GPIO matrix; esp_sleep_enable_ext0_wakeup() is
      * what later switches it to the RTC IO mux. */
@@ -503,7 +510,7 @@ extern "C" void standby_enter_sleep(void)
     {
         const int     poll_ms        = 20;
         const int     required_high  = 3;
-        const int     max_wait_ms    = 500;
+        const int     max_wait_ms    = 10000;
         int           consec_high    = 0;
         int           waited_ms      = 0;
         while (consec_high < required_high) {
@@ -511,6 +518,10 @@ extern "C" void standby_enter_sleep(void)
             if (lvl == 1) {
                 consec_high++;
             } else {
+                if (waited_ms == 0) {
+                    ESP_LOGI(TAG, "Wake pin GPIO%d is LOW -- waiting for "
+                                  "button release", (int)wake_gpio);
+                }
                 consec_high = 0;
             }
             if (consec_high >= required_high) {
@@ -519,8 +530,9 @@ extern "C" void standby_enter_sleep(void)
             if (waited_ms >= max_wait_ms) {
                 ESP_LOGW(TAG, "Wake pin GPIO%d still LOW after %d ms -- "
                               "skipping EXT0 arm to avoid immediate "
-                              "wake; device will only wake via RESET",
-                         (int)wake_gpio, max_wait_ms);
+                              "wake; waking on a %d s timer instead",
+                         (int)wake_gpio, max_wait_ms,
+                         STUCK_WAKE_PIN_TIMER_SEC);
                 wake_pin_ready = false;
                 break;
             }
@@ -546,7 +558,10 @@ extern "C" void standby_enter_sleep(void)
                      (int)wake_gpio, gpio_get_level(wake_gpio));
         }
     } else {
-        ESP_LOGI(TAG, "Entering deep sleep (EXT0 skipped, wake via RESET)...");
+        esp_sleep_enable_timer_wakeup((uint64_t)STUCK_WAKE_PIN_TIMER_SEC *
+                                      1000000ULL);
+        ESP_LOGI(TAG, "Entering deep sleep (EXT0 skipped, wake via timer "
+                      "or RESET)...");
     }
 #else
     /* Target has no EXT0 wake source (ESP32-P4, ESP32-C2/C3/C6/H2/...).

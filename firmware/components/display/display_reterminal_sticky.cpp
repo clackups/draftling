@@ -223,14 +223,24 @@ static inline void epd_data(const uint8_t *d, size_t n)
 }
 
 /* Busy while HIGH on the SSD1677, while LOW on the SSD2677. */
-static void epd_wait_busy(void)
+/* Returns false (and logs) when BUSY did not clear within timeout_ms. */
+static bool epd_wait_busy_ms(int timeout_ms)
 {
     int busy_level = (s_ctrl == STICKY_CTRL_SSD2677) ? 0 : 1;
     int64_t start = esp_timer_get_time();
     while (gpio_get_level((gpio_num_t)EPD_BUSY_PIN) == busy_level) {
         vTaskDelay(pdMS_TO_TICKS(1));
-        if (esp_timer_get_time() - start > 30 * 1000 * 1000) break;
+        if (esp_timer_get_time() - start > (int64_t)timeout_ms * 1000) {
+            ESP_LOGW(TAG, "BUSY still active after %d ms", timeout_ms);
+            return false;
+        }
     }
+    return true;
+}
+
+static void epd_wait_busy(void)
+{
+    (void)epd_wait_busy_ms(30 * 1000);
 }
 
 static void epd_reset_pulse(void)
@@ -553,15 +563,19 @@ static sticky_ctrl_t sticky_detect_controller(void)
     return level ? STICKY_CTRL_SSD2677 : STICKY_CTRL_SSD1677;
 }
 
+/* Every refresh sequence (CTRL2 0xF7 / 0xFF) already ends with analog
+ * and clock off, and the pre-sleep hook always runs a full refresh
+ * first, so only DEEP_SLEEP is sent here. A separate 0x03 power-off
+ * activation after such a refresh never released BUSY on this panel:
+ * the 30 s wait timed out, and a Power-button press made during that
+ * time (the screen was already blank) left the wake pin LOW when
+ * standby armed the wake source, so the device could not wake. */
 static void sticky_deep_sleep(void)
 {
-    sticky_wait_idle();
-    epd_cmd(0x21); epd_data1(0x40);
-    epd_cmd(0x22); epd_data1(0x03); /* analog + clock off */
-    epd_cmd(0x20);
-    vTaskDelay(pdMS_TO_TICKS(2));
-    epd_wait_busy();
-
+    if (s_refresh_pending) {
+        (void)epd_wait_busy_ms(3000);
+        s_refresh_pending = false;
+    }
     epd_cmd(0x10); epd_data1(0x01); /* DEEP_SLEEP mode 1 */
 }
 

@@ -17,6 +17,13 @@ in the git log.
 
 ### Fixed
 
+- **Seeed reTerminal Sticky: the Power button wakes the device again**:
+  going to sleep took about 30 seconds after the screen went blank, and
+  pressing Power during that time left the device asleep with no way to
+  wake it short of re-flashing. It now goes to sleep right away. On all
+  boards, a button still held when the device goes to sleep no longer
+  disables waking up: the device waits for it to be released, and if
+  it stays pressed, wakes up on its own after a minute.
 - **Seeed reTerminal Sticky: correct battery charging indicator**: on
   battery the "+" charging sign appeared and disappeared on every
   battery update, and with the USB cable connected it was often
