@@ -29,8 +29,9 @@
  *     (github.com/LowFlowIO/sticky-micronotes), which is known to work
  *     on this board. The 0xFC-only sequence this backend used before,
  *     borrowed from display_ws_epd397.cpp, never changed the glass on
- *     this panel. A fast refresh also re-drives every pixel inside the
- *     changed rectangle (see sticky_display()) to avoid residue.
+ *     this panel. A fast refresh also re-drives every pixel in a
+ *     full-width band around the changed rectangle (see
+ *     sticky_display()) to avoid residue.
  *   - SSD2677 (untested, no such unit available): ported from
  *     Seeed_GFX2's Driver_SSD2677.cpp; see the section below.
  *
@@ -358,11 +359,23 @@ static void sticky_wait_idle(void)
 /* A fast refresh only drives the pixels whose BW and RED bits differ,
  * and on this panel that leaves faint residue of earlier content
  * (e.g. the keyboard-search status messages). So for a fast refresh,
- * RED is loaded with the inverse of the new frame inside the changed
- * rectangle: every pixel there is re-driven to its target colour,
- * while the rest of the panel keeps RED = previous frame and is left
- * alone, so nothing outside the rectangle flashes. x0..x1 / y0..y1
- * are inclusive panel coordinates. */
+ * RED is loaded with the inverse of the new frame inside a band around
+ * the changed rectangle: every pixel there is re-driven to its target
+ * colour, while the rest of the panel keeps RED = previous frame and
+ * is left alone, so nothing outside the band flashes. The band spans
+ * the full panel width and STICKY_REDRIVE_MARGIN rows above and below
+ * the rectangle: re-driving only the rectangle (while typing, just the
+ * cursor line from the cursor on) left visible ghosting on the
+ * neighbouring lines, which a full-width band with this margin
+ * cleared on real hardware. The refresh takes the same time whatever
+ * the window size. x0..x1 / y0..y1 are inclusive panel coordinates.
+ *
+ * Driving the full refresh the same way (Mode 2 over the whole panel
+ * with RED = inverse frame, as display_ws_epd397.cpp does) instead of
+ * the Mode 1 0xF7 sequence was tried and made the ghosting around the
+ * cursor line clearly worse on this panel. */
+#define STICKY_REDRIVE_MARGIN 48
+
 static void sticky_display(const uint8_t *fb, bool full,
                            int x0, int y0, int x1, int y1)
 {
@@ -386,7 +399,12 @@ static void sticky_display(const uint8_t *fb, bool full,
         epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
     } else {
         /* RED holds the previous frame (sticky_wait_idle()); replace
-         * the changed rectangle with the inverse of the new frame. */
+         * the band around the changed rectangle with the inverse of
+         * the new frame. */
+        x0 = 0;
+        x1 = PANEL_WIDTH - 1;
+        y0 = std::max(0, y0 - STICKY_REDRIVE_MARGIN);
+        y1 = std::min(PANEL_HEIGHT - 1, y1 + STICKY_REDRIVE_MARGIN);
         int bx0 = x0 >> 3, bx1 = x1 >> 3;
         int wb = bx1 - bx0 + 1;
         int h = y1 - y0 + 1;

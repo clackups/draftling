@@ -490,8 +490,13 @@ Per-board display backends behind a single C API:
   sticky-micronotes firmware (github.com/LowFlowIO/sticky-micronotes):
   full refresh CTRL1 0x40 + CTRL2 0xF7, fast refresh CTRL2 0xFF, and
   a fast refresh loads RAM_RED with the inverse of the new frame
-  inside the changed rectangle so every pixel there is re-driven (plain
-  differential refreshes left residue of earlier text). The
+  in a full-width band reaching `STICKY_REDRIVE_MARGIN` (48) rows above
+  and below the changed rectangle, so every pixel there is re-driven
+  (plain differential refreshes left residue of earlier text, and
+  re-driving only the rectangle left ghosting on the lines around the
+  cursor line). A Mode 2 full refresh with an inverted RED plane, as
+  `display_ws_epd397.cpp` uses, made that ghosting worse here, so the
+  full refresh stays on Mode 1 (0xF7). The
   `display_ws_epd397.cpp` 0xFC sequence this backend started with
   never changed the glass on this panel. The SSD2677 path (2bpp DTM1
   data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
