@@ -16,6 +16,23 @@ static void md_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t *
     }
     md_parse_line(lt, ll, mi, sc->in_code);
     if (mi->type == MD_LINE_CODE_FENCE) sc->in_code = !sc->in_code;
+
+    /* A hard break at the end of a block (before an empty line, a
+     * heading, a new list item, ... or the end of the document) breaks
+     * nothing. Paragraph text continues a paragraph, a list item (as
+     * its continuation line) or a blockquote; a quote line continues a
+     * blockquote. */
+    if (mi->type != MD_LINE_PARAGRAPH && mi->type != MD_LINE_BLOCKQUOTE &&
+        mi->type != MD_LINE_BULLET && mi->type != MD_LINE_NUMBERED) return;
+    const char *end = sc->flat + sc->flat_len;
+    const char *nx = lt + ll + 1;
+    if (lt + ll >= end || nx > end) return;
+    const char *nl = (const char *)memchr(nx, '\n', (size_t)(end - nx));
+    size_t nll = nl ? (size_t)(nl - nx) : (size_t)(end - nx);
+    static md_line_info_t next;     /* too large for the LVGL task stack */
+    md_parse_line(nx, nll, &next, sc->in_code);
+    mi->next_continues = next.type == MD_LINE_PARAGRAPH ||
+        (mi->type == MD_LINE_BLOCKQUOTE && next.type == MD_LINE_BLOCKQUOTE);
 }
 
 static void hide_range(fmt_marks_t *m, size_t from, size_t to)
@@ -42,11 +59,22 @@ static void md_mark(const md_line_info_t *mi, bool reveal, fmt_marks_t *m)
 {
     /* A hard line break -- the next line continues the same paragraph
      * on a new row -- is shown as a return arrow in place of its
-     * marker, even on the cursor line (1:1, like the bullet). */
-    if (mi->type == MD_LINE_PARAGRAPH || mi->type == MD_LINE_BLOCKQUOTE ||
-        mi->type == MD_LINE_BULLET || mi->type == MD_LINE_NUMBERED) {
+     * marker, even on the cursor line (1:1, like the bullet). Not while
+     * the cursor sits in the trailing run of spaces / backslashes,
+     * though: there the user is still typing (or the line already had
+     * an invisible trailing space and one more was just added before
+     * it), and the break only means something once Enter takes the
+     * cursor to the next line. The scan (md_parse) has already checked
+     * the line type and that the next line continues the block. */
+    if (mi->next_continues) {
         const char *lt = mi->content - m->content_off;
         long cell = hard_break_cell(lt, m->content_off, m->content_end);
+        if (cell >= 0 && m->cursor >= 0) {
+            size_t run = m->content_end;
+            while (run > m->content_off &&
+                   (lt[run - 1] == ' ' || lt[run - 1] == '\\')) run--;
+            if ((size_t)m->cursor >= run) cell = -1;
+        }
         if (cell >= 0) m->rflags[cell] |= DECO_BREAK;
     }
 

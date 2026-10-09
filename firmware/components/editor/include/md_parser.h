@@ -67,6 +67,11 @@ typedef struct {
     int indent_level;
     md_span_t spans[MD_MAX_SPANS];
     int span_count;
+    /* The next line continues this line's block, so trailing break
+     * markers here are a real hard line break. md_parse_line() leaves
+     * it false: it needs the following line, which only the Markdown
+     * editor's top-to-bottom scan sees. */
+    bool next_continues;
 } md_line_info_t;
 
 void md_parse_line(const char *line, size_t len, md_line_info_t *info, bool in_code_block);

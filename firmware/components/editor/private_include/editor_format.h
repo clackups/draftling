@@ -51,6 +51,8 @@ typedef struct {
     size_t   ll;
     size_t   content_off;
     size_t   content_end;
+    long     cursor;        /* cursor byte offset in the line when it is
+                             * the focused cursor line (reveal), else -1 */
     bool     hr;            /* draw a horizontal rule */
     uint8_t  bullet_level;  /* list nesting, picks the bullet shape */
 } fmt_marks_t;

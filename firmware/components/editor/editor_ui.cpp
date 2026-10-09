@@ -2184,7 +2184,7 @@ static size_t utf8_byte_of_char(const char *s, size_t len, int n)
  * tab glyph. An all-hidden line (e.g. a rule) displays as a single
  * space so the label keeps one row of height. */
 static void build_line_view(const editor_format_t *fmt, const char *lt, size_t ll,
-                            const md_line_info_t *mi, bool reveal,
+                            const md_line_info_t *mi, bool reveal, long cursor,
                             std::string &text, line_view_t *v)
 {
     static std::vector<uint8_t> hide;
@@ -2198,7 +2198,7 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
     if (content_end > ll) content_end = ll;
 
     fmt_marks_t marks = { hide.data(), rflags.data(), ll, content_off, content_end,
-                          false, 0 };
+                          reveal ? cursor : -1, false, 0 };
     fmt->mark_line(mi, reveal, &marks);
     v->hr = marks.hr;
     v->bullet_level = marks.bullet_level;
@@ -2709,7 +2709,8 @@ static void refresh_active_pane(bool draw_cursor)
              * paragraphs of arbitrary length render in full without
              * truncation. */
             bool reveal = draw_cursor && line_idx == cur_line;
-            build_line_view(fmt, lt, ll, &mi, reveal, tmp, &view_tmp);
+            long cur_b = reveal ? (long)utf8_byte_of_char(lt, ll, cur_col) : -1;
+            build_line_view(fmt, lt, ll, &mi, reveal, cur_b, tmp, &view_tmp);
             line_view_t *view = &s_rp->view[i];
 
             /* Determine whether this line intersects the active

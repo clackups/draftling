@@ -6,6 +6,18 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **No line-break arrow while typing a space at the end of a line**:
+  in Markdown, the return arrow for a hard line break (two trailing
+  spaces or a trailing backslash) now appears only after the cursor
+  leaves the line, for example when you press Enter, and only when the
+  next line continues the same paragraph, list item or quote. Before,
+  typing a space at the end of a line that already ended in an
+  invisible space showed the arrow right away, and the arrow also
+  appeared before an empty line or at the end of the document, where
+  Markdown does not break the line.
+
 ## [1.0.15] - 2026-10-08
 
 ### Fixed

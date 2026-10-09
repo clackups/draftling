@@ -301,8 +301,9 @@ extern "C" void fountain_parse_line(const char *line, size_t len_,
      * The editor UI is single-threaded (LVGL lock held). */
     static md_line_info_t s_scratch;
     if (!info) info = &s_scratch;
-    info->indent_level = 0;
-    info->span_count   = 0;
+    info->indent_level   = 0;
+    info->span_count     = 0;
+    info->next_continues = false;
 
     int len = (int)len_;
     int sp = skip_ws(line, len);

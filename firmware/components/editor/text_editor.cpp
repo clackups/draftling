@@ -19,6 +19,7 @@ static void txt_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t 
     mi->content_len = ll;
     mi->indent_level = 0;
     mi->span_count = 0;
+    mi->next_continues = false;
 }
 
 static void txt_mark(const md_line_info_t *mi, bool reveal, fmt_marks_t *m)
