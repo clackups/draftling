@@ -1651,7 +1651,10 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   on-board MicroSD on SDMMC. Left/Right buttons inject Page Up / Page
   Down; Power is the wake source, and also puts the device to sleep on
   a short press (there is no hardware power-off latch on this board)
-  or forgets BLE keyboards on a 2 s hold. The enclosure's cover
+  or forgets BLE keyboards on a 2 s hold. The short press goes through
+  `editor_ui_request_sleep()`, so unsaved changes get the Ctrl+P
+  Save / Discard / Cancel prompt first (same on the reTerminal
+  Sticky). The enclosure's cover
   overlaps the panel; the user-adjustable screen margins (see below)
   compensate. `app_main()` power-cycles the GT911 (via its active-low
   `TOUCH_POWER_EN_PIN`) very early, *before* the shared I2C bus is
@@ -1700,7 +1703,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   one, a GT911 capacitive touchscreen on its own I2C bus, and a
   BQ27220 fuel gauge on a second, separate I2C bus. Two page-turn
   buttons (Up/Down) plus a combined Power/AI button (deep-sleep wake;
-  short press = sleep; 2 s hold = forget BLE keyboards) drive the
+  short press = sleep, asking first about unsaved changes; 2 s hold =
+  forget BLE keyboards) drive the
   editor without a keyboard. 32 MB flash; dual-OTA partition table
   (`partitions_seeed_reterminal_sticky.csv`) so the third-party
   Crosspoint firmware can still be installed later. Tested on

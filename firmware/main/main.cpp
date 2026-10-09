@@ -1700,10 +1700,12 @@ static void wakeup_btn_poll_cb(void *arg)
          * board's own power switch closed, not something Draftling
          * ever releases), so deep sleep IS this board's power-off. A
          * short press (release before the 2 s hold below) triggers it
-         * directly instead of waiting for the inactivity timeout,
-         * matching what a button labeled Power should do. The 2 s
-         * hold still forgets BLE keyboards; long_press_fired keeps
-         * the two mutually exclusive.
+         * instead of waiting for the inactivity timeout, matching what
+         * a button labeled Power should do -- through the editor, like
+         * Ctrl+P, so unsaved changes get the Save / Discard / Cancel
+         * prompt first (editor_ui_request_sleep()). The 2 s hold still
+         * forgets BLE keyboards; long_press_fired keeps the two
+         * mutually exclusive.
          *
          * On the reTerminal Sticky this deliberately does not match
          * the vendor firmware's own convention for this button
@@ -1711,8 +1713,8 @@ static void wakeup_btn_poll_cb(void *arg)
          * main/boards/seeed_reterminal_sticky.h for why Draftling
          * reuses the X4 Pro convention instead. */
         if (!long_press_fired) {
-            ESP_LOGI(TAG, "Power button released -- entering deep sleep");
-            standby_enter_sleep();
+            ESP_LOGI(TAG, "Power button released -- requesting deep sleep");
+            editor_ui_request_sleep();
         }
 #endif
         hold_ticks       = 0;

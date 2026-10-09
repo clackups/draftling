@@ -11,6 +11,12 @@ void editor_ui_show_file_browser(void);
 void editor_ui_show_editor(void);
 void editor_ui_set_status(const char *msg);
 
+/* Ask the editor to enter deep sleep, as Ctrl+P does: with unsaved
+ * changes in the open document the Save / Discard / Cancel prompt is
+ * shown instead. For a hardware Power button. Safe to call from any
+ * task; the request is handled by the UI task. */
+void editor_ui_request_sleep(void);
+
 /* Display a persistent (non-auto-clearing) status message. Used for
  * fatal boot-time errors where the firmware halts and the message
  * must remain on screen until the user resets the device. */

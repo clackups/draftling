@@ -310,7 +310,9 @@ Dual-channel (cool/warm) PWM front-light, both channels driven
 identically since Draftling has no warm/cool color-temperature UI.
 Three buttons: Left and Right scroll the editor a screen at a time
 (Page Up / Page Down); Power is the deep-sleep wake source, and a
-short press also puts the device to sleep on demand (there is no
+short press also puts the device to sleep on demand -- after the
+Save / Discard / Cancel prompt when the editor has unsaved changes,
+as with Ctrl+P (there is no
 hardware latch on this board that can cut power to the ESP32 itself,
 so deep sleep is the closest equivalent to "off" -- see
 `wakeup_btn_poll_cb()` in `firmware/main/main.cpp`), while a 2 s hold forgets
@@ -579,7 +581,7 @@ Xteink X4 Pro or the LilyGO T5 Pro. Two page-turn buttons (Up/Down,
 injecting Page Up / Page Down like the Xteink X4 Pro's Left/Right) plus
 a single combined Power/AI button round out input without a keyboard;
 the Power button is the deep-sleep wake source, a short press enters
-sleep directly (reusing the Xteink X4 Pro's convention for a
+sleep (asking first about unsaved changes, as Ctrl+P does; reusing the Xteink X4 Pro's convention for a
 single-button "Power" control -- see `main/main.cpp`'s
 `wakeup_btn_poll_cb()`), and a 2 s hold forgets every stored BLE
 keyboard. 32 MB flash.

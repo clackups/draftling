@@ -6969,6 +6969,17 @@ static void exit_prompt_activate(void)
     }
 }
 
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+/* A tap on an option row chooses it, like Up/Down + Enter. */
+static void exit_opt_touch_cb(lv_event_t *e)
+{
+    if (!s_exit_open) return;
+    s_exit_sel = (int)(intptr_t)lv_event_get_user_data(e);
+    refresh_exit_prompt();
+    exit_prompt_activate();
+}
+#endif
+
 static void handle_exit_prompt_key(const kb_event_t *ev)
 {
     switch (ev->keycode) {
@@ -8649,6 +8660,7 @@ static void poll_usb_msc_auto_off(void)
 #endif
 
 static void apply_pending_passkey(void);
+static void apply_pending_sleep_request(void);
 
 static void key_drain_cb(lv_timer_t *timer)
 {
@@ -8667,6 +8679,7 @@ static void key_drain_cb(lv_timer_t *timer)
     apply_pending_ble_status_text();
     apply_pending_connect_state();
     apply_pending_passkey();
+    apply_pending_sleep_request();
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     poll_usb_msc_auto_off();
 #endif
@@ -8785,6 +8798,56 @@ static void passkey_display_cb(uint32_t passkey)
 }
 
 /* Run on the LVGL task (from key_drain_cb), mutex already held. */
+/* Set by editor_ui_request_sleep() (button poller task), handled in
+ * the UI task by apply_pending_sleep_request(). */
+static volatile bool s_sleep_requested = false;
+
+extern "C" void editor_ui_request_sleep(void)
+{
+    standby_reset_timer();
+    s_sleep_requested = true;
+}
+
+/* A Power-button sleep request, treated like Ctrl+P / "Sleep now":
+ * with unsaved changes in the editor, ask first. The prompt can only
+ * be raised from the editor itself (or over the F1 menu, which is
+ * closed first, as "Sleep now" does); while another dialog is open the
+ * press only explains why nothing happened, and while an operation is
+ * running (busy pop-up, e.g. formatting the card) it is ignored. */
+static void apply_pending_sleep_request(void)
+{
+    if (!s_sleep_requested) return;
+    s_sleep_requested = false;
+
+    if (s_msg_open && s_msg_busy) return;
+    if (!s_editor_screen_active || !editor_is_modified()) {
+        standby_enter_sleep();
+        return;
+    }
+    if (s_exit_open) return;    /* already asking */
+    /* Only the plain menu list is closed; a picker shown inside the
+     * menu counts as an open dialog. */
+    bool menu_picker = s_wifi_scan_picker_open || s_fmt_step != FMT_STEP_NONE;
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    menu_picker = menu_picker || s_usbmsc_picker_open;
+#endif
+    if (s_menu_open && !s_settings_open && !s_wifi_pw_open &&
+        !s_dbx_open && !s_help_open && !menu_picker) {
+        close_menu();
+    }
+    if (s_msg_open || s_save_open || s_newfmt_open || s_del_open ||
+        s_search_open || s_settings_open || s_wifi_pw_open || s_dbx_open ||
+        s_help_open || s_menu_open || s_inpane_browser_open) {
+        if (!s_msg_open) {
+            show_msg_popup("Unsaved changes",
+                           "Close this dialog, then press Power again "
+                           "to save or discard the changes.", false);
+        }
+        return;
+    }
+    show_sleep_prompt();
+}
+
 static void apply_pending_passkey(void)
 {
     taskENTER_CRITICAL(&s_passkey_mux);
@@ -10091,6 +10154,11 @@ static void build_screens(void)
             lv_obj_set_style_pad_hor(s_exit_opt_lbl[i], 2, 0);
             lv_label_set_text(s_exit_opt_lbl[i], EXIT_OPT_LABELS[i]);
             lv_obj_set_pos(s_exit_opt_lbl[i], 0, exit_row_y + i * (LINE_H + 2));
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+            lv_obj_add_flag(s_exit_opt_lbl[i], LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_event_cb(s_exit_opt_lbl[i], exit_opt_touch_cb,
+                                LV_EVENT_CLICKED, (void *)(intptr_t)i);
+#endif
         }
     }
 

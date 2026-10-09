@@ -8,6 +8,17 @@ in the git log.
 
 ### Fixed
 
+- **Seeed reTerminal Sticky and Xteink X4 Pro: the Power button no
+  longer drops unsaved text**: a short press on Power with unsaved
+  changes in the editor now asks first (save, discard or cancel), the
+  same as Ctrl+P, instead of going to sleep at once. An untitled
+  document used to lose its text this way. While another dialog is
+  open, Power tells you to close it first; while an operation such as
+  formatting the card is running, Power is ignored.
+- **Unsaved-changes dialog works by touch**: on touchscreen boards, tap
+  Save, Discard or Cancel in the dialog shown by Esc, Ctrl+P or the
+  Power button. Before, it could only be answered from a keyboard.
+
 - **No line-break arrow while typing a space at the end of a line**:
   in Markdown, the return arrow for a hard line break (two trailing
   spaces or a trailing backslash) now appears only after the cursor
