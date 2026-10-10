@@ -22,16 +22,14 @@
  * (Seeed_GFX2's Driver_Sticky_Auto); sticky_detect_controller() tells
  * them apart by BUSY polarity after reset.
  *
- *   - SSD1677 (tested on physical hardware): reset timing, booster
- *     soft-start, RAM addressing and the refresh sequences (full:
- *     CTRL1 0x40 + CTRL2 0xF7, border 0x01; fast: CTRL1 0x00 + CTRL2
- *     0xFF, border 0x80) follow the sticky-micronotes firmware
- *     (github.com/LowFlowIO/sticky-micronotes), which is known to work
- *     on this board. The 0xFC-only sequence this backend used before,
- *     borrowed from display_ws_epd397.cpp, never changed the glass on
- *     this panel. A fast refresh also re-drives every pixel in a
- *     full-width band around the changed rectangle (see
- *     sticky_display()) to avoid residue.
+ *   - SSD1677 (tested on physical hardware): the same reset timing,
+ *     booster, borders and 0xFC refresh sequences as
+ *     display_ws_epd397.cpp (full refresh = RED loaded with the
+ *     inverse frame), the standard SSD1677 method in AGENTS.md. It
+ *     ghosts much less here than the sticky-micronotes sequences
+ *     (full 0xF7, fast 0xFF) used before. An earlier 0xFC attempt
+ *     showed nothing, but the panel was blank then anyway because of
+ *     the unpowered SD card.
  *   - SSD2677 (untested, no such unit available): ported from
  *     Seeed_GFX2's Driver_SSD2677.cpp; see the section below.
  *
@@ -100,7 +98,7 @@ static const char *TAG = "DisplayReterminalSticky";
 
 static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
-/* SSD1677: inverted copy of the fast-refresh rectangle, see
+/* SSD1677: inverted frame for a full refresh, see
  * sticky_display(). SSD2677: the previous frame (s_prev). */
 static uint8_t  *s_fb_inv = NULL;
 static bool      s_initialized = false;
@@ -247,53 +245,45 @@ static void epd_wait_busy(void)
 static void epd_reset_pulse(void)
 {
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(2));
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 /* ============================================================
  * SSD1677 register sequence (dual-RAM BW=0x24 / RED=0x26 differential
- * refresh) -- see the file header comment for its source.
+ * refresh) -- same as display_ws_epd397.cpp.
  * ============================================================ */
 
-/* RAM window in panel pixels; x and w must be multiples of 8. */
-static void sticky_set_ram_area(int x, int y, int w, int h)
+static void sticky_set_ram_area_full(void)
 {
     /* Data-entry: X increment, Y decrement (no mirror). Gates are
      * addressed from the bottom, so the Y window is computed from
-     * the bottom. */
+     * the bottom -- y_win is 0 for the full-frame window. */
+    int y = 0, h = PANEL_HEIGHT, w = PANEL_WIDTH;
     int y_win = PANEL_HEIGHT - y - h;
-    int x_end = x + w - 1;
-    int y_end = y_win + h - 1;
 
     epd_cmd(0x11); epd_data1(0x01); /* DATA_ENTRY_MODE */
 
     epd_cmd(0x44); /* SET_RAM_X_RANGE */
-    epd_data1((uint8_t)(x & 0xFF)); epd_data1((uint8_t)(x >> 8));
-    epd_data1((uint8_t)(x_end & 0xFF)); epd_data1((uint8_t)(x_end >> 8));
+    epd_data1(0x00); epd_data1(0x00);
+    epd_data1((uint8_t)(((w - 1)) & 0xFF)); epd_data1((uint8_t)(((w - 1) >> 8) & 0xFF));
 
     epd_cmd(0x45); /* SET_RAM_Y_RANGE */
-    epd_data1((uint8_t)(y_end & 0xFF)); epd_data1((uint8_t)(y_end >> 8));
-    epd_data1((uint8_t)(y_win & 0xFF)); epd_data1((uint8_t)(y_win >> 8));
+    epd_data1((uint8_t)((y_win + h - 1) & 0xFF)); epd_data1((uint8_t)(((y_win + h - 1) >> 8) & 0xFF));
+    epd_data1((uint8_t)(y_win & 0xFF)); epd_data1((uint8_t)((y_win >> 8) & 0xFF));
 
-    epd_cmd(0x4E); /* SET_RAM_X_COUNTER */
-    epd_data1((uint8_t)(x & 0xFF)); epd_data1((uint8_t)(x >> 8));
+    epd_cmd(0x4E); epd_data1(0x00); epd_data1(0x00); /* SET_RAM_X_COUNTER */
 
     epd_cmd(0x4F); /* SET_RAM_Y_COUNTER */
-    epd_data1((uint8_t)(y_end & 0xFF)); epd_data1((uint8_t)(y_end >> 8));
-}
-
-static void sticky_set_ram_area_full(void)
-{
-    sticky_set_ram_area(0, 0, PANEL_WIDTH, PANEL_HEIGHT);
+    epd_data1((uint8_t)((y_win + h - 1) & 0xFF)); epd_data1((uint8_t)(((y_win + h - 1) >> 8) & 0xFF));
 }
 
 static void sticky_ctrl_init(void)
 {
-    static const uint8_t booster[5] = { 0xAE, 0xC7, 0xC3, 0xC0, 0x40 };
+    static const uint8_t booster[5] = { 0xAE, 0xC7, 0xC3, 0xC0, 0x80 };
 
     epd_cmd(0x12); /* SOFT_RESET */
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -309,7 +299,7 @@ static void sticky_ctrl_init(void)
     epd_data1((uint8_t)(((PANEL_HEIGHT - 1) >> 8) & 0xFF));
     epd_data1(0x02);
 
-    epd_cmd(0x3C); epd_data1(0x01); /* BORDER_WAVEFORM */
+    epd_cmd(0x3C); epd_data1(0x80); /* BORDER_WAVEFORM init value */
 
     sticky_set_ram_area_full();
 
@@ -317,32 +307,30 @@ static void sticky_ctrl_init(void)
     epd_cmd(0x47); epd_data1(0xF7); epd_wait_busy(); /* AUTO_WRITE_RED_RAM */
 }
 
-/* Full refresh: CTRL1 0x40 makes the controller treat RED RAM as 0,
- * so the 0xF7 sequence (clock + analog on, load temperature and the
- * Mode 1 waveform, display, power off) re-drives every pixel. Fast
- * refresh: CTRL1 normal (RED = previous frame), border 0x80 (avoids a
- * dark ring), and 0xFF (the same with the Mode 2 differential
- * waveform). These are the values the sticky-micronotes firmware uses
- * on this board. */
+/* Both full and fast refreshes use CTRL1 normal, border 0xC0 and the
+ * 0xFC differential sequence, as display_ws_epd397.cpp does; a full
+ * refresh differs only in loading RED with the inverse of the new
+ * frame (see sticky_display()). */
 /* Starts the refresh and returns without waiting for it: the
  * waveform takes ~0.4 s, and blocking here would block the LVGL task
  * (this runs from its flush callback), so touch input would not be
  * polled and the second tap of a double-tap would be lost.
  * sticky_wait_idle() waits before the next command. */
-static void sticky_refresh(bool full)
+static void sticky_refresh(void)
 {
-    epd_cmd(0x21); epd_data1(full ? 0x40 : 0x00); /* DISPLAY_UPDATE_CTRL1 */
-    epd_cmd(0x3C); epd_data1(full ? 0x01 : 0x80); /* BORDER_WAVEFORM */
-    epd_cmd(0x22); epd_data1(full ? 0xF7 : 0xFF); /* DISPLAY_UPDATE_CTRL2 */
-    epd_cmd(0x20);                                /* MASTER_ACTIVATION */
-    vTaskDelay(pdMS_TO_TICKS(2));                 /* let BUSY rise */
+    epd_cmd(0x21); epd_data1(0x00); /* DISPLAY_UPDATE_CTRL1 */
+    epd_cmd(0x3C); epd_data1(0xC0); /* BORDER_WAVEFORM, all modes */
+    epd_cmd(0x22); epd_data1(0xFC); /* DISPLAY_UPDATE_CTRL2 */
+    epd_cmd(0x20);                  /* MASTER_ACTIVATION */
+    vTaskDelay(pdMS_TO_TICKS(2));   /* let BUSY rise */
     s_refresh_pending = true;
     s_red_stale = true;
 }
 
 /* Waits for a refresh started by sticky_refresh() to finish, then
- * re-syncs RED to the frame now shown so the next fast refresh diffs
- * against it. */
+ * re-syncs both planes to the frame now shown so the next fast
+ * refresh diffs against a clean baseline (display_ws_epd397.cpp's
+ * post-sync). */
 static void sticky_wait_idle(void)
 {
     if (s_refresh_pending) {
@@ -351,41 +339,19 @@ static void sticky_wait_idle(void)
     }
     if (s_red_stale) {
         sticky_set_ram_area_full();
+        epd_cmd(0x24); epd_data(s_shown, FRAMEBUFFER_BYTES);
         epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES);
         s_red_stale = false;
     }
 }
 
-/* A fast refresh only drives the pixels whose BW and RED bits differ,
- * and on this panel that leaves faint residue of earlier content
- * (e.g. the keyboard-search status messages). So for a fast refresh,
- * RED is loaded with the inverse of the new frame inside a band around
- * the changed rectangle: every pixel there is re-driven to its target
- * colour, while the rest of the panel keeps RED = previous frame and
- * is left alone, so nothing outside the band flashes. The band spans
- * the full panel width and STICKY_REDRIVE_MARGIN rows above and below
- * the rectangle: re-driving only the rectangle (while typing, just the
- * cursor line from the cursor on) left visible ghosting on the
- * neighbouring lines, which a full-width band with this margin
- * cleared on real hardware. The refresh takes the same time whatever
- * the window size. x0..x1 / y0..y1 are inclusive panel coordinates.
- *
- * Driving the full refresh the same way (Mode 2 over the whole panel
- * with RED = inverse frame, as display_ws_epd397.cpp does) instead of
- * the Mode 1 0xF7 sequence was tried and made the ghosting around the
- * cursor line clearly worse on this panel. */
-#define STICKY_REDRIVE_MARGIN 48
-
-static void sticky_display(const uint8_t *fb, bool full,
-                           int x0, int y0, int x1, int y1)
+static void sticky_display(const uint8_t *fb, bool full)
 {
     sticky_wait_idle();
 
-    /* sticky_wait_idle() may have queued a RED write from s_shown;
-     * this sends commands, which waits for the queued transfers to
-     * finish, so s_shown is free to overwrite below. (Overwriting it
-     * first loaded part of RED with the new frame, and changed pixels
-     * there were never driven.) */
+    /* sticky_wait_idle() may have queued writes from s_shown; this
+     * sends commands, which waits for the queued transfers to finish,
+     * so s_shown is free to overwrite below. */
     sticky_set_ram_area_full();
 
     /* Snapshot the frame: the SPI transfers below are queued, and LVGL
@@ -396,27 +362,15 @@ static void sticky_display(const uint8_t *fb, bool full,
 
     epd_cmd(0x24); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_BW = new frame */
     if (full) {
-        epd_cmd(0x26); epd_data(s_shown, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
-    } else {
-        /* RED holds the previous frame (sticky_wait_idle()); replace
-         * the band around the changed rectangle with the inverse of
-         * the new frame. */
-        x0 = 0;
-        x1 = PANEL_WIDTH - 1;
-        y0 = std::max(0, y0 - STICKY_REDRIVE_MARGIN);
-        y1 = std::min(PANEL_HEIGHT - 1, y1 + STICKY_REDRIVE_MARGIN);
-        int bx0 = x0 >> 3, bx1 = x1 >> 3;
-        int wb = bx1 - bx0 + 1;
-        int h = y1 - y0 + 1;
-        uint8_t *dst = s_fb_inv;
-        for (int y = y0; y <= y1; ++y) {
-            const uint8_t *src = s_shown + (size_t)y * PANEL_WIDTH_BYTES + bx0;
-            for (int b = 0; b < wb; ++b) *dst++ = (uint8_t)~src[b];
+        /* RED = inverse of the new frame, so every pixel reads as
+         * changed and is re-driven by the differential waveform. */
+        for (size_t i = 0; i < FRAMEBUFFER_BYTES; ++i) {
+            s_fb_inv[i] = (uint8_t)~s_shown[i];
         }
-        sticky_set_ram_area(bx0 * 8, y0, wb * 8, h);
-        epd_cmd(0x26); epd_data(s_fb_inv, (size_t)wb * h);
+        epd_cmd(0x26); epd_data(s_fb_inv, FRAMEBUFFER_BYTES); /* WRITE_RAM_RED */
     }
-    sticky_refresh(full);
+    /* Fast: RED already holds the previous frame (sticky_wait_idle()). */
+    sticky_refresh();
 }
 
 /* ============================================================
@@ -587,20 +541,23 @@ static sticky_ctrl_t sticky_detect_controller(void)
     return level ? STICKY_CTRL_SSD2677 : STICKY_CTRL_SSD1677;
 }
 
-/* Every refresh sequence (CTRL2 0xF7 / 0xFF) already ends with analog
- * and clock off, and the pre-sleep hook always runs a full refresh
- * first, so only DEEP_SLEEP is sent here. A separate 0x03 power-off
- * activation after such a refresh never released BUSY on this panel:
- * the 30 s wait timed out, and a Power-button press made during that
- * time (the screen was already blank) left the wake pin LOW when
- * standby armed the wake source, so the device could not wake. */
+/* The 0xFC sequence leaves analog and clock on, so power them off
+ * with a 0x03 activation before DEEP_SLEEP, as display_ws_epd397.cpp
+ * does. The BUSY waits are bounded: a 30 s hang here once left the
+ * wake pin LOW when standby armed the wake source. */
 static void sticky_deep_sleep(void)
 {
     if (s_refresh_pending) {
         (void)epd_wait_busy_ms(3000);
         s_refresh_pending = false;
     }
-    epd_cmd(0x10); epd_data1(0x01); /* DEEP_SLEEP mode 1 */
+    epd_cmd(0x3C); epd_data1(0x80);
+    epd_cmd(0x22); epd_data1(0x03);
+    epd_cmd(0x20);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    (void)epd_wait_busy_ms(3000);
+
+    epd_cmd(0x10); epd_data1(0x03); /* DEEP_SLEEP mode 2 */
 }
 
 /* ---- display.h public API ---- */
@@ -823,12 +780,12 @@ extern "C" void display_flush(void)
 
     if (do_full) {
         if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_full(s_fb);
-        else                               sticky_display(s_fb, true, x0, y0, x1, y1);
+        else                               sticky_display(s_fb, true);
         s_partial_count = 0;
         s_needs_initial_full = false;
     } else {
         if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_fast(s_fb);
-        else                               sticky_display(s_fb, false, x0, y0, x1, y1);
+        else                               sticky_display(s_fb, false);
         s_partial_count++;
     }
 

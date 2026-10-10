@@ -544,17 +544,14 @@ repo's own `components/display/display_xteink_epd.cpp` (`ssd1677_*`
 functions), not a port of the vendor's driver. This board also has no
 front-light / backlight.
 
-Its periodic ghost-clearing full refresh uses the same DISPLAY Mode 1
-/ GC16 waveform (`DISPLAY_UPDATE_CTRL2 = 0xF7`) as
-`display_xteink_epd.cpp`'s `ssd1677_display_full()`. The quicker Mode
-2 waveform (`0xC7`) was tried on real hardware to shorten the visibly
-multi-pass full refresh, but it never drives black pixels to full
-saturation -- they render as light grey instead of black -- so it was
-reverted. The several internal black/white settling passes Mode 1
-runs are what fully saturate the ink; that time is the cost of a real
-black on this panel, not something the waveform choice can trim.
-`CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL` is the lever for how
-often that cost is paid.
+Both its fast and its periodic ghost-clearing full refresh use the
+differential `DISPLAY_UPDATE_CTRL2 = 0xFC` sequence; a full refresh
+loads the "previous frame" RAM with the inverse of the new frame so
+every pixel is re-driven. The Mode 1 (`0xF7`) and Mode 2 (`0xC7`)
+flood waveforms tried earlier left black text faded on real hardware.
+This is now the standard method for every SSD1677-family panel in
+this repo (see AGENTS.md). `CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL`
+sets how often the full refresh runs.
 
 The vendor board additionally carries a PCF85063 RTC, an SHTC3
 temperature/humidity sensor, a QMI8658 IMU, and an ES8311 audio codec
@@ -612,11 +609,11 @@ pin assignments, matching the treatment already given the Xteink X4
 Pro / Classic and the Elecrow CrowPanel 5.79". FreeInk's own comment
 for this device lists several items as "pending hardware validation"
 (panel mount orientation, MicroSD bus-sharing behavior, PDM mic
-pins). The SSD1677 refresh sequences follow the
+pins). The SSD1677 refresh uses the same sequence as the Waveshare
+ESP32-S3-ePaper-3.97 (`display_ws_epd397.cpp`), which ghosts clearly
+less on this panel than the
 [sticky-micronotes](https://github.com/LowFlowIO/sticky-micronotes)
-firmware, which is known to work on this board; the
-`display_ws_epd397.cpp` sequence this port first reused never changed
-the image on this panel. The MicroSD card must be powered (GPIO10)
+sequences used before. The MicroSD card must be powered (GPIO10)
 and deselected (CS GPIO8 high) before the panel's first SPI traffic,
 or the panel never shows an image -- `main.cpp` does both before
 `display_init()`. See

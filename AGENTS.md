@@ -486,20 +486,14 @@ Per-board display backends behind a single C API:
   them apart by BUSY polarity after reset (the SSD1677 holds BUSY
   high while busy, the SSD2677 low), as Seeed_GFX2's
   `Driver_Sticky_Auto` does. The SSD1677 path (dual-RAM differential
-  refresh) is tested on physical hardware; its sequences follow the
-  sticky-micronotes firmware (github.com/LowFlowIO/sticky-micronotes):
-  full refresh CTRL1 0x40 + CTRL2 0xF7, fast refresh CTRL2 0xFF, and
-  a fast refresh loads RAM_RED with the inverse of the new frame
-  in a full-width band reaching `STICKY_REDRIVE_MARGIN` (48) rows above
-  and below the changed rectangle, so every pixel there is re-driven
-  (plain differential refreshes left residue of earlier text, and
-  re-driving only the rectangle left ghosting on the lines around the
-  cursor line). A Mode 2 full refresh with an inverted RED plane, as
-  `display_ws_epd397.cpp` uses, made that ghosting worse here, so the
-  full refresh stays on Mode 1 (0xF7). The
-  `display_ws_epd397.cpp` 0xFC sequence this backend started with
-  never changed the glass on this panel. The SSD2677 path (2bpp DTM1
-  data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
+  refresh) is tested on physical hardware and uses the same
+  sequences as `display_ws_epd397.cpp` (see "SSD1677 refresh method"
+  below). Its earlier sticky-micronotes sequences (full CTRL2 0xF7,
+  fast 0xFF, plus a re-driven band around each change) left
+  noticeably more ghosting. The first attempt with the ws_epd397
+  sequence seemed not to change the glass, but the panel was blank
+  then anyway because of the unpowered SD card (see below). The
+  SSD2677 path (2bpp DTM1 data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
   `Driver_SSD2677.cpp` and is untested. The SPI bus is shared with the
   on-board MicroSD card (separate `CS`, same `SCLK`/`MOSI`/`MISO`):
   main.cpp powers the card (`SD_EN_PIN`) and drives its CS high before
@@ -510,8 +504,8 @@ Per-board display backends behind a single C API:
   from the LVGL flush callback, and blocking there for the ~0.4 s
   waveform stopped touch polling, so the second tap of a double-tap
   was lost); `sticky_wait_idle()` waits before the next panel command
-  and then re-syncs RED RAM from `s_shown`, the driver's copy of the
-  frame on the glass.
+  and then re-syncs both RAM planes from `s_shown`, the driver's copy
+  of the frame on the glass.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
@@ -527,6 +521,30 @@ Per-board display backends behind a single C API:
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
   LVGL rotation angle. See the "Screen margins", "Display
   orientation" and "Display upside down" sections further down.
+
+**SSD1677 refresh method.** Every SSD1677 e-paper backend must use
+the method of
+`display_ws_epd397.cpp`, which gives the cleanest image with the least
+ghosting on these 3.97" / 4.26" 800x480 panels (confirmed on the
+Waveshare ePaper-3.97 and the Seeed reTerminal Sticky):
+
+- Init: booster soft-start `0xAE 0xC7 0xC3 0xC0 0x80`, border `0x80`,
+  BW and RED RAM auto-filled white (0x46 / 0x47 `0xF7`).
+- Fast refresh: write the new frame to RAM_BW (0x24) and leave RAM_RED
+  (0x26) holding the previous frame, then CTRL1 (0x21) `0x00`, border
+  (0x3C) `0xC0`, CTRL2 (0x22) `0xFC`, MASTER_ACTIVATION (0x20).
+- Full refresh: the same `0xFC` sequence, but RAM_RED is loaded with
+  the bitwise inverse of the new frame so every pixel counts as
+  changed and is re-driven. Do not use the Mode 1 `0xF7` / Mode 2
+  `0xC7` / `0xFF` flood sequences or CTRL1 `0x40`.
+- After each refresh, write the shown frame to both RAM_BW and
+  RAM_RED so the next fast refresh diffs against a clean baseline.
+- Before DEEP_SLEEP (0x10 `0x03`), power analog and clock off with
+  border `0x80`, CTRL2 `0x03` and an activation, since `0xFC` leaves
+  them on.
+
+Board-specific needs (SPI clock, pins, power rails, a non-blocking
+refresh as on the Sticky) may differ; the register sequence should not.
 
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files

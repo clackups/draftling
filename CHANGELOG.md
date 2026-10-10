@@ -28,10 +28,10 @@ in the git log.
   invisible space showed the arrow right away, and the arrow also
   appeared before an empty line or at the end of the document, where
   Markdown does not break the line.
-- **Seeed reTerminal Sticky: less ghosting while typing**: faint traces
-  of earlier text no longer build up on the lines around the one you
-  are typing on. The screen now cleans those neighbouring lines too
-  each time it updates, with no loss of typing speed.
+- **Seeed reTerminal Sticky: much less ghosting**: the screen now
+  updates the same way as on the Waveshare ESP32-S3-ePaper-3.97, so
+  faint traces of earlier text no longer build up while you type, and
+  the periodic full refresh leaves a clean, solid black image.
 
 ## [1.0.15] - 2026-10-08
 
