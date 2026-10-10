@@ -56,6 +56,30 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "v1.0.16",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_pro-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_pro-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_pro-otadata.bin",
+              "offset": "0xd000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_pro.bin",
+              "offset": "0x10000"
+            }
+          ]
+        },
+        {
           "tag": "v1.0.15",
           "flashMode": "dio",
           "flashFreq": "80m",
@@ -111,6 +135,30 @@
       "description": "ESP32-S3, 800x480 e-paper (SSD1677/UC8179/UC8279), buttons only",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.16",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_classic-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_classic-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_classic-otadata.bin",
+              "offset": "0xd000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-xteink_x4_classic.bin",
+              "offset": "0x10000"
+            }
+          ]
+        },
         {
           "tag": "v1.0.15",
           "flashMode": "dio",
@@ -695,6 +743,30 @@
       "description": "ESP32-S3, 3.97\" 800x480 e-paper (SSD1677 or SSD2677, auto-detected) + GT911 touch",
       "chipFamily": "ESP32-S3",
       "releases": [
+        {
+          "tag": "v1.0.16",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "32MB",
+          "parts": [
+            {
+              "path": "firmware/v1.0.16/draftling-seeed_reterminal_sticky-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-seeed_reterminal_sticky-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-seeed_reterminal_sticky-otadata.bin",
+              "offset": "0xd000"
+            },
+            {
+              "path": "firmware/v1.0.16/draftling-seeed_reterminal_sticky.bin",
+              "offset": "0x10000"
+            }
+          ]
+        },
         {
           "tag": "v1.0.15",
           "flashMode": "dio",
