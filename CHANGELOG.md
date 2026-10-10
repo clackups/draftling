@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.16] - 2026-10-10
+
 ### Fixed
 
 - **Seeed reTerminal Sticky and Xteink X4 Pro: the Power button no
@@ -18,7 +20,6 @@ in the git log.
 - **Unsaved-changes dialog works by touch**: on touchscreen boards, tap
   Save, Discard or Cancel in the dialog shown by Esc, Ctrl+P or the
   Power button. Before, it could only be answered from a keyboard.
-
 - **No line-break arrow while typing a space at the end of a line**:
   in Markdown, the return arrow for a hard line break (two trailing
   spaces or a trailing backslash) now appears only after the cursor
