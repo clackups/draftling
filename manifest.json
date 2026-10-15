@@ -1124,6 +1124,34 @@
           ]
         }
       ]
+    },
+    {
+      "id": "microjournal_rev5",
+      "name": "MicroJournal Rev 5",
+      "description": "ESP32-S3, 320x240 color LCD (ILI9341), USB keyboard -- UNTESTED on physical hardware",
+      "chipFamily": "ESP32-S3",
+      "releases": [
+        {
+          "tag": "v1.0.16-dev-033a84e",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            {
+              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5.bin",
+              "offset": "0x10000"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
