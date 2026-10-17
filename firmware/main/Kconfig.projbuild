@@ -186,14 +186,26 @@ config DRAFTLING_MODEL_FREENOVE_FNK0104N
         the deep-sleep wakeup source. Tested on physical hardware.
         See https://github.com/Freenove/Freenove_ESP32_S3_Display
 
-config DRAFTLING_MODEL_MICROJOURNAL_REV5
-    bool "MicroJournal Rev 5 (ESP32-S3, ILI9341, 320x240, USB host)"
+config DRAFTLING_MODEL_MICROJOURNAL_REV5_0
+    bool "MicroJournal Rev 5.0 (ESP32-S3, ILI9341, 320x240, USB host)"
     depends on IDF_TARGET_ESP32S3
     help
-        MicroJournal Rev 5 writerdeck with an ILI9341 SPI color LCD and
+        MicroJournal Rev 5.0 writerdeck with an ILI9341 SPI color LCD and
         an on-board SPI MicroSD reader sharing the display bus. Uses an
         ESP32-S3 N16R8 module. Display and peripheral pins are defined
-        in main/boards/microjournal_rev5.h.
+        in main/boards/microjournal_rev5_0.h.
+        See https://github.com/unkyulee/micro-journal (rev.5/5.0).
+
+config DRAFTLING_MODEL_MICROJOURNAL_REV5_1
+    bool "MicroJournal Rev 5.1 (ESP32-S3, ST7789, 320x240, USB host)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        MicroJournal Rev 5.1 writerdeck. Same wiring as Rev 5.0 (SPI
+        MicroSD reader on the display bus, USB host keyboard port), but
+        with an ST7789 2.8" 240x320 SPI color LCD instead of the
+        ILI9341 (upstream firmware environment rev_5_st7789). Pins are
+        defined in main/boards/microjournal_rev5_1.h.
+        See https://github.com/unkyulee/micro-journal (rev.5/5.1).
 
 config DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     bool "Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 3.5\" transflective display (ESP32-S3, ST7365, 480x320, touch)"
@@ -391,7 +403,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
-    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default n
 
@@ -499,7 +511,17 @@ config DRAFTLING_DISPLAY_ILI9341
     bool
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
-    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_0
+    default n
+
+# DRAFTLING_DISPLAY_ST7789 is set automatically when the selected board
+# uses an ST7789 SPI color LCD (MicroJournal Rev 5.1). Same SPI wiring convention and
+# pixel pipeline as DRAFTLING_DISPLAY_ILI9341
+# (components/display/display_ili9341.cpp selects the ST7789 init
+# sequence at build time).
+config DRAFTLING_DISPLAY_ST7789
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_1
     default n
 
 # DRAFTLING_DISPLAY_ST7796 is set automatically when the selected
@@ -630,6 +652,17 @@ config DRAFTLING_MODEL_XTEINK_X4
     default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default n
 
+# DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY is set for every MicroJournal
+# Rev 5 build (5.0 and 5.1): they share the wiring,
+# the USB host port, the shared-SPI MicroSD reader, the missing wake
+# button and the 180-degree base rotation. The feature symbols below
+# key off this instead of the two model ids.
+config DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_0
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_1
+    default n
+
 # DRAFTLING_DISPLAY_SSD1683 selects the from-scratch dual-controller
 # SPI e-paper backend for the Elecrow CrowPanel 5.79" E-Paper HMI
 # Display (components/display/display_ssd1683.cpp). The 792x272
@@ -712,8 +745,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_AXS15231B
     default y if DRAFTLING_DISPLAY_MIPI_DSI
     default y if DRAFTLING_DISPLAY_RGB
-    # MicroJournal Rev 5 (also ILI9341) has no backlight control.
-    default y if DRAFTLING_DISPLAY_ILI9341 && !DRAFTLING_MODEL_MICROJOURNAL_REV5
+    # MicroJournal Rev 5.0 / 5.1 have no backlight control.
+    default y if DRAFTLING_DISPLAY_ILI9341 && !DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     default y if DRAFTLING_DISPLAY_ST7796
     default y if DRAFTLING_DISPLAY_ST7365
     default y if DRAFTLING_DISPLAY_ST77922
@@ -998,7 +1031,7 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
-    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     default n
 
 # Some USB host ports are initialized by a board support package rather
@@ -1197,7 +1230,7 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104N
-    default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     # Viewe UEDX24320028E-WB-A: BOOT button on GPIO0 (shared with
     # the WS2812B RGB LED data line, which Draftling leaves unused).
     default 0  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1556,7 +1589,7 @@ config DRAFTLING_DISPLAY_WIDTH
     # 90-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
     # editor landscape at 480x320.
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104N
-    default 320 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default 320 if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     # Viewe UEDX24320028E-WB-A + UEED035HV: 320x480 portrait panel,
     # rendered landscape by the display backend (MADCTL MV).
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1586,7 +1619,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
-    default 240 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default 240 if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default 320 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -1605,7 +1638,7 @@ choice DRAFTLING_DISPLAY_ROTATE
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_M5STACK_TAB5
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default DRAFTLING_DISPLAY_ROTATE_90 if DRAFTLING_MODEL_FREENOVE_FNK0104N
-    default DRAFTLING_DISPLAY_ROTATE_180 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default DRAFTLING_DISPLAY_ROTATE_180 if DRAFTLING_MODEL_MICROJOURNAL_REV5_ANY
     default DRAFTLING_DISPLAY_ROTATE_0
     help
         Rotation angle for the display in degrees.

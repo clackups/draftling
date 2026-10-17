@@ -269,7 +269,11 @@ FT6336U capacitive touch controller, and the FNK0104N has touch built
 into its display controller, so touch works alongside the BLE
 keyboard.
 
-## MicroJournal Rev 5
+## MicroJournal Rev 5.0
+
+This section is about Micro Journal revision 5.0
+(<https://github.com/unkyulee/micro-journal>, `rev.5/5.0`); for 5.1
+see the next section.
 
 ESP32-S3 N16R8 writerdeck with an ILI9341 SPI color LCD, configured
 for 320x240 landscape. LCD signals are MOSI=GPIO11, MISO=GPIO13,
@@ -285,7 +289,22 @@ The USB host connector must also receive 5 V VBUS; no VBUS enable pin
 was provided. The preset routes the console over UART because USB-OTG
 host and USB-Serial/JTAG share the ESP32-S3 internal PHY.
 
-Build with the `microjournal_rev5` preset.
+Build with the `microjournal_rev5_0` preset.
+
+## MicroJournal Rev 5.1
+
+Micro Journal revision 5.1 (`rev.5/5.1` in the upstream repository)
+has the same wiring as Rev 5.0 in a new enclosure, so everything in
+the Rev 5.0 section above applies: same pins, shared-SPI MicroSD on
+CS=GPIO9, USB host keyboard on GPIO19/20, no backlight control, no
+wake button, console on UART, Bluetooth disabled.
+
+The difference is the display: Rev 5.1 has an ST7789 2.8" 240x320
+panel instead of the ILI9341. Its init sequence follows TFT_eSPI's, as
+the upstream firmware's `rev_5_st7789` build does (BGR color order,
+display inversion off). Not yet tested on physical hardware.
+
+Build with the `microjournal_rev5_1` preset.
 
 
 ## Viewe UEDX24320028E-WB-A with UEED035HV-RX40-L001 display

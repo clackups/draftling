@@ -81,8 +81,10 @@
 #include "boards/freenove_fnk0104s.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N)
 #include "boards/freenove_fnk0104n.h"
-#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5)
-#include "boards/microjournal_rev5.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5_0)
+#include "boards/microjournal_rev5_0.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5_1)
+#include "boards/microjournal_rev5_1.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV)
 #include "boards/viewe_uedx24320028_ueed035hv.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)

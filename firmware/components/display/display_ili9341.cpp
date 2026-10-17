@@ -1,6 +1,6 @@
 #include "sdkconfig.h"
 #if defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+    defined(CONFIG_DRAFTLING_DISPLAY_ST7365) || defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
 
 /*
  * Shared 4-wire SPI TFT backend for the Freenove FNK0104 family's
@@ -38,6 +38,12 @@
  * (ESP32_Display_Panel board file BOARD_VIEWE_UEDX32480035E_WB_A.h in
  * https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display),
  * which the straps and init table here follow. Tested on hardware.
+ *
+ * It also drives the ST7789 version of the 2.8" 240x320 module used by
+ * the MicroJournal Rev 5.1 (CONFIG_DRAFTLING_DISPLAY_ST7789). The init
+ * table is TFT_eSPI's ST7789_Init.h (2.5.43), which the upstream
+ * Micro Journal firmware (rev_5_st7789: ST7789_DRIVER, TFT_RGB_ORDER =
+ * TFT_BGR, TFT_INVERSION_OFF) uses.
  */
 
 #include <cstdio>
@@ -232,6 +238,11 @@ extern "C" void display_set_backlight(int percent)
  * value applies there. */
 #define FNK_MADCTL_LANDSCAPE  0x28
 
+/* The ST7789's native scan direction differs from the ILI9341's, so the
+ * same landscape picture takes MX | MV | BGR (TFT_eSPI's ST7789
+ * rotation 1) instead of MV | BGR. */
+#define ST7789_MADCTL_LANDSCAPE  0x68
+
 #if defined(CONFIG_DRAFTLING_DISPLAY_ILI9341)
 static void ili9341_init_sequence(void)
 {
@@ -289,6 +300,62 @@ static void ili9341_init_sequence(void)
     send_command(0x11); /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(150));
     send_command(0x29); /* DISPON */
+}
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+static void st7789_init_sequence(void)
+{
+    panel_hw_reset();
+    send_command(0x01); /* SWRESET */
+    vTaskDelay(pdMS_TO_TICKS(150));
+
+    static const uint8_t madctl[] = {ST7789_MADCTL_LANDSCAPE};
+    static const uint8_t b6[]     = {0x0A, 0x82};
+    static const uint8_t ramctrl[] = {0x00, 0xE0};
+    static const uint8_t colmod[] = {0x55};
+    static const uint8_t porctrl[] = {0x0C, 0x0C, 0x00, 0x33, 0x33};
+    static const uint8_t gctrl[]  = {0x35};
+    static const uint8_t vcoms[]  = {0x28};
+    static const uint8_t lcmctrl[] = {0x0C};
+    static const uint8_t vdvvrhen[] = {0x01, 0xFF};
+    static const uint8_t vrhs[]   = {0x10};
+    static const uint8_t vdvset[] = {0x20};
+    static const uint8_t frctr2[] = {0x0F};
+    static const uint8_t pwctrl1[] = {0xA4, 0xA1};
+    static const uint8_t e0[]     = {0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x32,
+                                     0x44, 0x42, 0x06, 0x0E, 0x12, 0x14, 0x17};
+    static const uint8_t e1[]     = {0xD0, 0x00, 0x02, 0x07, 0x0A, 0x28, 0x31,
+                                     0x54, 0x47, 0x0E, 0x1C, 0x17, 0x1B, 0x1E};
+
+    send_command(0x11); /* SLPOUT */
+    vTaskDelay(pdMS_TO_TICKS(120));
+    send_command(0x13); /* NORON */
+    send_cmd_data(0x36, madctl, sizeof(madctl));
+    send_cmd_data(0xB6, b6, sizeof(b6));
+    send_cmd_data(0xB0, ramctrl, sizeof(ramctrl));
+    send_cmd_data(0x3A, colmod, sizeof(colmod));
+    vTaskDelay(pdMS_TO_TICKS(10));
+    send_cmd_data(0xB2, porctrl, sizeof(porctrl));
+    send_cmd_data(0xB7, gctrl, sizeof(gctrl));
+    send_cmd_data(0xBB, vcoms, sizeof(vcoms));
+    send_cmd_data(0xC0, lcmctrl, sizeof(lcmctrl));
+    send_cmd_data(0xC2, vdvvrhen, sizeof(vdvvrhen));
+    send_cmd_data(0xC3, vrhs, sizeof(vrhs));
+    send_cmd_data(0xC4, vdvset, sizeof(vdvset));
+    send_cmd_data(0xC6, frctr2, sizeof(frctr2));
+    send_cmd_data(0xD0, pwctrl1, sizeof(pwctrl1));
+    send_cmd_data(0xE0, e0, sizeof(e0));
+    send_cmd_data(0xE1, e1, sizeof(e1));
+
+    /* TFT_eSPI's table ends with INVON, but the upstream firmware builds
+     * this panel with TFT_INVERSION_OFF, which TFT_eSPI applies right
+     * after the table -- so the net state is inversion off. */
+    send_command(0x20); /* INVOFF */
+
+    vTaskDelay(pdMS_TO_TICKS(120));
+    send_command(0x29); /* DISPON */
+    vTaskDelay(pdMS_TO_TICKS(120));
 }
 #endif
 
@@ -493,6 +560,8 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
     st7365_init_sequence();
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+    st7789_init_sequence();
 #elif defined(CONFIG_DRAFTLING_DISPLAY_ST7796)
     st7796_init_sequence();
 #else
@@ -692,9 +761,11 @@ const char *display_controller_name(void)
     return "ST7796";
 #elif defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
     return "ST7365";
+#elif defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
+    return "ST7789";
 #else
     return "ILI9341";
 #endif
 }
 
-#endif /* CONFIG_DRAFTLING_DISPLAY_ILI9341 || CONFIG_DRAFTLING_DISPLAY_ST7796 || CONFIG_DRAFTLING_DISPLAY_ST7365 */
+#endif /* CONFIG_DRAFTLING_DISPLAY_ILI9341 || _ST7796 || _ST7365 || _ST7789 */

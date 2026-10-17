@@ -1,0 +1,11 @@
+# CMakePresets.json board defaults: MicroJournal Rev 5.0
+# Sets the hardware model and IDF target used by the preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5_0=y
+CONFIG_DRAFTLING_DISPLAY_ROTATE_180=y
+CONFIG_BT_ENABLED=n
+
+# USB-OTG host and USB-Serial/JTAG share the S3 internal PHY. Keep the
+# console on UART so the USB-OTG controller can own the PHY.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y

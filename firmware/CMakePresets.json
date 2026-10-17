@@ -137,12 +137,21 @@
             }
         },
         {
-            "name": "microjournal_rev5",
-            "displayName": "MicroJournal Rev 5 (ESP32-S3 N16R8, ILI9341, USB host)",
-            "binaryDir": "build/microjournal_rev5",
+            "name": "microjournal_rev5_0",
+            "displayName": "MicroJournal Rev 5.0 (ESP32-S3 N16R8, ILI9341, USB host)",
+            "binaryDir": "build/microjournal_rev5_0",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.microjournal_rev5",
-                "SDKCONFIG": "build/microjournal_rev5/sdkconfig"
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.microjournal_rev5_0",
+                "SDKCONFIG": "build/microjournal_rev5_0/sdkconfig"
+            }
+        },
+        {
+            "name": "microjournal_rev5_1",
+            "displayName": "MicroJournal Rev 5.1 (ESP32-S3 N16R8, ST7789, USB host)",
+            "binaryDir": "build/microjournal_rev5_1",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.microjournal_rev5_1",
+                "SDKCONFIG": "build/microjournal_rev5_1/sdkconfig"
             }
         },
         {

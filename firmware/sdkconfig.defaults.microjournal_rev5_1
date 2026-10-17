@@ -1,8 +1,8 @@
-# CMakePresets.json board defaults: MicroJournal Rev 5
+# CMakePresets.json board defaults: MicroJournal Rev 5.1 (ST7789 panel)
 # Sets the hardware model and IDF target used by the preset.
 
 CONFIG_IDF_TARGET="esp32s3"
-CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5=y
+CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV5_1=y
 CONFIG_DRAFTLING_DISPLAY_ROTATE_180=y
 CONFIG_BT_ENABLED=n
 

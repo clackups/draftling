@@ -32,7 +32,8 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `waveshare_touch_lcd_7`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
-`microjournal_rev5`, `xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
+`microjournal_rev5_0`, `microjournal_rev5_1`,
+`xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
 `waveshare_epaper_397`, `seeed_reterminal_e1001`,
 `seeed_reterminal_sticky`, `m5stack_papermono`.
 

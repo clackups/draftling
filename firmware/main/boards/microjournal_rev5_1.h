@@ -1,17 +1,27 @@
 #pragma once
-/* ----- MicroJournal Rev 5 -----
+/* ----- MicroJournal Rev 5.1 -----
  *
- * ESP32-S3 N16R8 writerdeck with an ILI9341 SPI LCD, an on-board SPI
- * MicroSD reader sharing the LCD bus, and a native USB host connector.
- * The panel is configured as 320x240 landscape. Backlight wiring was
- * not provided, so software brightness control is disabled.
+ * Same wiring as Rev 5.0 (main/boards/microjournal_rev5_0.h), with an
+ * ST7789 panel instead of the ILI9341 and a new enclosure. ESP32-S3
+ * N16R8, 2.8" 240x320 ST7789 SPI LCD with an on-board MicroSD slot
+ * sharing the LCD bus, and a USB-A host port for the keyboard on the
+ * native USB pins (GPIO19 D-, GPIO20 D+).
+ * No backlight control, battery monitor or wake button.
+ *
+ * Sources: https://github.com/unkyulee/micro-journal rev.5/5.1/build.md
+ * ("Internals of Rev.5.1. is the same as the previous Rev.5 build") and
+ * rev.5/5.0/build.md for the pin table; the upstream firmware's
+ * rev_5_st7789 environment
+ * (https://github.com/unkyulee/micro-journal-mcu, platformio.ini) use
+ * the same pins.
  */
 
-#define BOARD_NAME          "MicroJournal Rev 5"
+#define BOARD_NAME          "MicroJournal Rev 5.1"
 
-/* ILI9341 SPI panel (passed to display_ili9341.cpp through
+/* SPI panel (passed to display_ili9341.cpp through
  * display_spi_tft_config()). MISO is wired because the MicroSD card
- * shares this bus. No software backlight control. */
+ * shares this bus. The LCD's LED pin is tied to VCC, so there is no
+ * software backlight control. */
 #define LCD_MOSI_PIN        11
 #define LCD_MISO_PIN        13
 #define LCD_SCK_PIN         12
@@ -32,7 +42,7 @@
 #define SD_EN_PIN           -1
 #define SD_SPI_HOST_NUM     SPI2_HOST
 
-/* No touch or battery hardware was specified. */
+/* No touch or battery hardware. */
 #define I2C_SDA_PIN         -1
 #define I2C_SCL_PIN         -1
 #define TOUCH_I2C_ADDR      -1

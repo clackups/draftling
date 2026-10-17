@@ -2443,10 +2443,10 @@ extern "C" void app_main(void)
     ws_lcd316_quiet_i2c_peripherals();
 #endif
 #elif defined(CONFIG_DRAFTLING_DISPLAY_ILI9341) || defined(CONFIG_DRAFTLING_DISPLAY_ST7796) || \
-      defined(CONFIG_DRAFTLING_DISPLAY_ST7365)
+      defined(CONFIG_DRAFTLING_DISPLAY_ST7365) || defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
     /* Freenove FNK0104A/B (ILI9341) / FNK0104S (ST7796) / Viewe
-     * UEDX24320028E-WB-A + UEED035HV (ST7365) / MicroJournal Rev 5
-     * (ILI9341). Shared 4-wire SPI TFT backend; the panel wiring comes
+     * UEDX24320028E-WB-A + UEED035HV (ST7365) / MicroJournal Rev 5.0
+     * (ILI9341) / Rev 5.1 (ST7789). Shared 4-wire SPI TFT backend; the panel wiring comes
      * from the board header. display_init()'s pin parameters are
      * ignored. */
     {

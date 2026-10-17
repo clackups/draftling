@@ -42,7 +42,7 @@ load the firmware quickly without having to compile it.
   * Viewe UEDX24320028E-WB-A board with the UEED035HV-RX40-L001 3.5" transflective display
   * Waveshare ESP32-S3-Touch-LCD-7 
   * Waveshare ESP32-S3-LCD-3.16
-  * MicroJournal Rev 5 writerdeck (ESP32-S3, ILI9341)
+  * MicroJournal Rev 5.0 (ILI9341) and Rev 5.1 (ST7789) writerdecks
   * M5Stack Tab5 (no web flasher support, as internal firmware needs an upgrade too)
 
 
@@ -51,7 +51,7 @@ load the firmware quickly without having to compile it.
 - **WYSIWYG Markdown editing** on monochrome or color LCD display or e-paper
 
 - **Works with any Bluetooth Low Energy (BLE) keyboard**. M5Stack Tab5
-  and MicroJournal Rev 5 also support a wired USB keyboard.
+  and MicroJournal Rev 5.0 / 5.1 also support a wired USB keyboard.
 
 - **Fountain screenplays**: `.fountain` files open in a screenplay
   mode that formats scenes, characters, dialogue and transitions as you

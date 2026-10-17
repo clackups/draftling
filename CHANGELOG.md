@@ -8,11 +8,14 @@ in the git log.
 
 ### Added
 
-- **MicroJournal Rev 5 firmware target**: adds a dedicated build preset
-  for the ESP32-S3 writerdeck with its ILI9341 display (landscape,
+- **MicroJournal Rev 5.0 firmware target**: adds a dedicated build preset
+  for the Micro Journal revision 5.0 ESP32-S3 writerdeck with its ILI9341 display (landscape,
   turned 180 degrees to match the enclosure), shared-SPI MicroSD reader
   and wired USB keyboard host; Bluetooth is disabled in this build. GPIO0 is reserved for hardware power control; after
   deep sleep, wake by hardware reset or power cycling.
+- **MicroJournal Rev 5.1 firmware target**: Micro Journal revision 5.1
+  has the same wiring as 5.0 in a new enclosure, with an ST7789 display
+  instead of the ILI9341. Everything else works as on Rev 5.0.
 - **Hardware information page**: the new F1 menu item "Hardware
   information" (letter I) shows the board model and chip, the RAM,
   PSRAM and flash sizes (with free RAM and PSRAM), the screen and touch
