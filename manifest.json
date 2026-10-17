@@ -1126,27 +1126,27 @@
       ]
     },
     {
-      "id": "microjournal_rev5",
+      "id": "microjournal_rev5_0",
       "name": "MicroJournal Rev 5.0",
       "description": "ESP32-S3, 320x240 color LCD (ILI9341), USB keyboard -- UNTESTED on physical hardware",
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.16-dev-033a84e",
+          "tag": "v1.0.16-dev-4c18f79",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
             {
-              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5-bootloader.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_0-bootloader.bin",
               "offset": "0x0"
             },
             {
-              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5-partition-table.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_0-partition-table.bin",
               "offset": "0x8000"
             },
             {
-              "path": "firmware/v1.0.16-dev-033a84e/draftling-microjournal_rev5.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_0.bin",
               "offset": "0x10000"
             }
           ]
@@ -1155,54 +1155,26 @@
     },
     {
       "id": "microjournal_rev5_1",
-      "name": "MicroJournal Rev 5.1 (ILI9341)",
-      "description": "ESP32-S3, 320x240 color LCD (ILI9341), USB keyboard -- UNTESTED on physical hardware",
-      "chipFamily": "ESP32-S3",
-      "releases": [
-        {
-          "tag": "v1.0.16-dev-e2d4ccc",
-          "flashMode": "dio",
-          "flashFreq": "80m",
-          "flashSize": "16MB",
-          "parts": [
-            {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1-bootloader.bin",
-              "offset": "0x0"
-            },
-            {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1-partition-table.bin",
-              "offset": "0x8000"
-            },
-            {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1.bin",
-              "offset": "0x10000"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "microjournal_rev5_1_st7789",
-      "name": "MicroJournal Rev 5.1 (ST7789)",
+      "name": "MicroJournal Rev 5.1",
       "description": "ESP32-S3, 320x240 color LCD (ST7789), USB keyboard -- UNTESTED on physical hardware",
       "chipFamily": "ESP32-S3",
       "releases": [
         {
-          "tag": "v1.0.16-dev-e2d4ccc",
+          "tag": "v1.0.16-dev-4c18f79",
           "flashMode": "dio",
           "flashFreq": "80m",
           "flashSize": "16MB",
           "parts": [
             {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1_st7789-bootloader.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_1-bootloader.bin",
               "offset": "0x0"
             },
             {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1_st7789-partition-table.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_1-partition-table.bin",
               "offset": "0x8000"
             },
             {
-              "path": "firmware/v1.0.16-dev-e2d4ccc/draftling-microjournal_rev5_1_st7789.bin",
+              "path": "firmware/v1.0.16-dev-4c18f79/draftling-microjournal_rev5_1.bin",
               "offset": "0x10000"
             }
           ]
