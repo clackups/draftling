@@ -6,6 +6,13 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Wrong colors on the MicroJournal Rev 5.0**: the ILI9341 screen
+  showed every color inverted (for example a white background and a
+  blue highlight in the "Orange on black" theme). Colors now match
+  the selected theme.
+
 ## [1.0.18] - 2026-10-23
 
 ### Added

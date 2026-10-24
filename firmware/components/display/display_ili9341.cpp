@@ -536,10 +536,16 @@ static void ili9341_init_sequence(void)
     send_cmd_data(0xE0, e0, sizeof(e0));
     send_cmd_data(0xE1, e1, sizeof(e1));
 
+#if defined(CONFIG_DRAFTLING_ILI9341_INVERSION_OFF)
+    /* MicroJournal Rev 5.0: INVON inverts this panel's colors (black
+     * shows white, orange shows blue). */
+    send_command(0x20); /* INVOFF */
+#else
     /* Freenove's TFT_eSPI setup header for this panel defines
      * TFT_INVERSION_ON -- send INVON (0x21) so colors match the
      * vendor reference firmware. */
     send_command(0x21);
+#endif
 
     send_command(0x11); /* SLPOUT */
     vTaskDelay(pdMS_TO_TICKS(150));

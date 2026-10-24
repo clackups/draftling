@@ -2302,6 +2302,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_M5_PAPERMONO    | Selects `display_m5_papermono.cpp` (plain SPI, single SSD1677 controller; panel supply/reset on the M5IOE1, front-light on the M5PM1) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
 | DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B, MicroJournal Rev 5 |
+| DRAFTLING_ILI9341_INVERSION_OFF   | Ends the ILI9341 init sequence with INVOFF instead of INVON (the Freenove panels need INVON; the MicroJournal Rev 5.0 panel shows inverted colors with it) | MicroJournal Rev 5 |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (ST77922 QSPI panel, native portrait, LVGL port rotates) | Freenove FNK0104N |
 | DRAFTLING_DISPLAY_ST7365          | Selects `display_ili9341.cpp` with Viewe's ST7365 init table (pins, incl. RST and the IM0/IM1 interface-mode straps, come from the board header) | Viewe UEDX24320028E-WB-A + UEED035HV |

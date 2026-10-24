@@ -590,6 +590,17 @@ config DRAFTLING_ST7789_INIT_TFT_ESPI
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
     default n
 
+# DRAFTLING_ILI9341_INVERSION_OFF leaves display inversion off (INVOFF)
+# at the end of the ILI9341 init sequence. The Freenove panels need
+# INVON (their TFT_eSPI setup defines TFT_INVERSION_ON); the MicroJournal
+# Rev 5.0 panel shows inverted colors with it (upstream rev_5_ili9341
+# build: no TFT_INVERSION_ON).
+config DRAFTLING_ILI9341_INVERSION_OFF
+    bool
+    depends on DRAFTLING_DISPLAY_ILI9341
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default n
+
 # DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT compiles both the ILI9341 and the
 # ST7789 init sequences into components/display/display_ili9341.cpp and
 # picks one at boot: before the SPI bus is set up, the backend bit-bangs
