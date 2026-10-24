@@ -298,7 +298,8 @@ The USB host connector must also receive 5 V VBUS; no VBUS enable pin
 was provided. The preset routes the console over UART because USB-OTG
 host and USB-Serial/JTAG share the ESP32-S3 internal PHY.
 
-Not yet tested on physical hardware.
+Tested on physical hardware with the Rev 5.0 (ILI9341) panel only; the
+Rev 5.1 (ST7789) panel is untested.
 
 Build with the `microjournal_rev5` preset (for both revisions).
 

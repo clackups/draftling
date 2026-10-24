@@ -77,7 +77,7 @@ card).
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
-| MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host (untested on hardware) |
+| MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host (tested on hardware with the ILI9341 only) |
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
@@ -1990,8 +1990,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   sleep the device wakes only by reset or power cycle). The console
   is on UART because USB-OTG host and USB-Serial/JTAG share the
   internal PHY; `usb_kbd_init()` installs the USB Host library itself
-  (no BSP). Backlight control is disabled. Not yet tested on
-  physical hardware. *Requires ESP32-S3.*
+  (no BSP). Backlight control is disabled. Tested on physical hardware with the
+  Rev 5.0 (ILI9341) panel only; the Rev 5.1 (ST7789) is untested. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
   e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
   UC8279) auto-detected at boot by
