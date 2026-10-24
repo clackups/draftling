@@ -800,6 +800,26 @@
       "chipFamily": "ESP32-S3",
       "releases": [
         {
+          "tag": "main-86a7160",
+          "flashMode": "dio",
+          "flashFreq": "80m",
+          "flashSize": "16MB",
+          "parts": [
+            {
+              "path": "firmware/main-86a7160/draftling-microjournal_rev5-bootloader.bin",
+              "offset": "0x0"
+            },
+            {
+              "path": "firmware/main-86a7160/draftling-microjournal_rev5-partition-table.bin",
+              "offset": "0x8000"
+            },
+            {
+              "path": "firmware/main-86a7160/draftling-microjournal_rev5.bin",
+              "offset": "0x10000"
+            }
+          ]
+        },
+        {
           "tag": "v1.0.18",
           "flashMode": "dio",
           "flashFreq": "80m",
