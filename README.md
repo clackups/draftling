@@ -23,9 +23,8 @@ The [web flasher](https://clackups.github.io/draftling/) allows you to
 load the firmware quickly without having to compile it.
 
 * Ready-made consumer grade hardware
-  * [Xteink X4 Pro](https://www.xteink.com) (**unlocked devices only!**), so far the best value for money amongst e-paper devices.
-  * [Xteink X4 Classic](https://www.xteink.com) (**unlocked devices only!**) -- the buttons-only, no-front-light X4.
-  * [Seeed reTerminal Sticky](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/)
+  * [Xteink X4 Pro and Xteink X4 Classic](https://www.xteink.com) (**unlocked devices only!**).
+  * [Seeed reTerminal Sticky](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/), so far the best value for money amongst e-paper devices.
   * M5Stack [PaperMono](https://docs.m5stack.com/en/core/PaperMono) / [PaperMono-Lite](https://docs.m5stack.com/en/core/PaperMono-Lite)
   * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO)
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
