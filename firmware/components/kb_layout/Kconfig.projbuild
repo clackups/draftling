@@ -1,4 +1,55 @@
-menu "DRAFTLING Keyboard Layouts"
+menu "DRAFTLING Language Pack and Keyboard Layouts"
+
+choice DRAFTLING_LANG_PACK
+    prompt "Language pack"
+    default DRAFTLING_LANG_PACK_DEFAULT
+    help
+        A language pack is the set of keyboard layouts, input methods
+        and font subsets compiled into the firmware. Each pack is a
+        separate firmware image; build one with
+        "idf.py --preset <board> --lang-pack <pack> build" (see
+        BUILDING.md). The pack only sets the defaults of the layout
+        options below -- each layout can still be switched on or off
+        individually.
+
+    config DRAFTLING_LANG_PACK_DEFAULT
+        bool "Default (US, Ukrainian, German, French, Hebrew)"
+
+    config DRAFTLING_LANG_PACK_VIETNAMESE
+        bool "Vietnamese (US, Vietnamese Telex)"
+        help
+            US-English plus Vietnamese typed with the Telex input
+            method, and the Vietnamese letters of the fonts.
+
+    config DRAFTLING_LANG_PACK_KOREAN
+        bool "Korean (US, Korean 2-set Hangul)"
+        help
+            US-English plus Korean (Dubeolsik), with the Hangul pixel
+            fonts (all 11,172 syllables).
+
+    config DRAFTLING_LANG_PACK_JAPANESE
+        bool "Japanese (US, romaji -> kana -> kanji)"
+        help
+            US-English plus Japanese input with kana-kanji conversion
+            (Mozc-derived dictionary, about 1 MB), with the kana and
+            JIS X 0208 kanji pixel fonts in Japanese glyph style.
+
+    config DRAFTLING_LANG_PACK_CHINESE
+        bool "Chinese (US, Simplified Chinese pinyin)"
+        help
+            US-English plus Simplified Chinese pinyin input (AOSP
+            PinyinIME dictionary, about 1 MB), with the GB 2312 hanzi
+            pixel fonts in Simplified Chinese glyph style.
+
+endchoice
+
+config DRAFTLING_LANG_PACK_NAME
+    string
+    default "default" if DRAFTLING_LANG_PACK_DEFAULT
+    default "vietnamese" if DRAFTLING_LANG_PACK_VIETNAMESE
+    default "korean" if DRAFTLING_LANG_PACK_KOREAN
+    default "japanese" if DRAFTLING_LANG_PACK_JAPANESE
+    default "chinese" if DRAFTLING_LANG_PACK_CHINESE
 
 config KB_LAYOUT_ENABLE_US
     bool "US-English (QWERTY)"
@@ -8,30 +59,80 @@ config KB_LAYOUT_ENABLE_US
 
 config KB_LAYOUT_ENABLE_UA
     bool "Ukrainian (Cyrillic)"
-    default y
+    default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Ukrainian Cyrillic keyboard layout.
 
 config KB_LAYOUT_ENABLE_DE
     bool "German (QWERTZ)"
-    default y
+    default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the German QWERTZ keyboard layout with umlauts.
 
 config KB_LAYOUT_ENABLE_FR
     bool "French (AZERTY)"
-    default y
+    default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the French AZERTY keyboard layout with accents.
 
 config KB_LAYOUT_ENABLE_HE
     bool "Hebrew (Israeli standard)"
-    default y
+    default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Hebrew (Israeli standard SI 1452) keyboard layout.
         Enabling this option also pulls the Hebrew glyph range
         (U+0590..U+05FF) of the Greybeard font into the firmware.
         Hebrew typing is right-to-left; LVGL's bidirectional text
         engine (LV_USE_BIDI) handles the visual reordering.
+
+config KB_LAYOUT_ENABLE_VI
+    bool "Vietnamese (Telex input)"
+    default y if DRAFTLING_LANG_PACK_VIETNAMESE
+    help
+        Enable Vietnamese typing with the Telex input method on a
+        US-English keyboard (aa -> a-circumflex, dd -> d-stroke,
+        s/f/r/x/j -> tone marks, z removes the tone). Also compiles in
+        the Vietnamese letters (Latin Extended Additional) of the
+        Greybeard / DejaVu Sans Mono fonts.
+
+config KB_LAYOUT_ENABLE_KO
+    bool "Korean (2-set Hangul)"
+    default y if DRAFTLING_LANG_PACK_KOREAN
+    help
+        Enable the Korean Dubeolsik (2-set) layout. Jamo are composed
+        into Hangul syllables as they are typed. Pulls in the CJK
+        fonts.
+
+config KB_LAYOUT_ENABLE_JA
+    bool "Japanese (romaji, kana-kanji conversion)"
+    default y if DRAFTLING_LANG_PACK_JAPANESE
+    help
+        Enable Japanese input: romaji typed on a US-English keyboard
+        become hiragana, and Space converts the reading to kanji with
+        a dictionary derived from the Mozc open-source dictionary
+        (about 1 MB). Pulls in the CJK fonts.
+
+config KB_LAYOUT_ENABLE_ZH
+    bool "Chinese (pinyin)"
+    default y if DRAFTLING_LANG_PACK_CHINESE
+    help
+        Enable Simplified Chinese input with full pinyin on a
+        US-English keyboard, with a word dictionary derived from the
+        Android Open Source Project PinyinIME (about 0.7 MB). Pulls
+        in the CJK fonts.
+
+config DRAFTLING_HAS_CJK
+    bool
+    default y if KB_LAYOUT_ENABLE_KO || KB_LAYOUT_ENABLE_JA || KB_LAYOUT_ENABLE_ZH
+
+# Which CJK font set is compiled in (components/fonts/cjk/<set>/): the
+# glyph repertoire and regional glyph style of one language. With more
+# than one CJK layout enabled by hand, the first of ja, zh, ko wins.
+config DRAFTLING_CJK_FONT_SET
+    string
+    depends on DRAFTLING_HAS_CJK
+    default "ja" if KB_LAYOUT_ENABLE_JA
+    default "zh" if KB_LAYOUT_ENABLE_ZH
+    default "ko"
 
 endmenu

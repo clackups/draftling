@@ -36,6 +36,32 @@ if(CONFIG_KB_LAYOUT_ENABLE_HE)
     )
 endif()
 
+# Latin-extension subset (Vietnamese letters, curly quotes, dashes) for
+# the Vietnamese, Korean, Japanese and Chinese language packs.
+set(latinx_enabled FALSE)
+if(CONFIG_KB_LAYOUT_ENABLE_VI OR CONFIG_DRAFTLING_HAS_CJK)
+    set(latinx_enabled TRUE)
+endif()
+set(font_slots_gb 11 14 16 18 22 26 30 34)
+set(font_slots_hack 9 11 14 16 18 22 26 30)
+
+if(latinx_enabled)
+    foreach(n ${font_slots_gb})
+        list(APPEND srcs "greybeard_latinx_${n}.c")
+    endforeach()
+endif()
+
+# CJK pixel fonts: the runtime driver plus one font set (see
+# cjk/LICENSE.txt): the glyphs of the language pack's language, in its
+# regional style, at the three native sizes.
+set(embed_files)
+if(CONFIG_DRAFTLING_HAS_CJK)
+    list(APPEND srcs "cjk_font.c")
+    set(cjk_set "${CONFIG_DRAFTLING_CJK_FONT_SET}")
+    list(APPEND embed_files "cjk/${cjk_set}/cjk10.bin" "cjk/${cjk_set}/cjk12.bin"
+                            "cjk/${cjk_set}/cjk16.bin")
+endif()
+
 if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     # High-density boards render 1:1 with the larger Hack font family
     # instead of upscaling Greybeard. The base Hack fonts cover Latin;
@@ -77,10 +103,16 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
             "hack_hebrew_30.c"
         )
     endif()
+    if(latinx_enabled)
+        foreach(n ${font_slots_hack})
+            list(APPEND srcs "hack_latinx_${n}.c")
+        endforeach()
+    endif()
 endif()
 
 idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS "include"
+    EMBED_FILES ${embed_files}
     PRIV_REQUIRES lvgl__lvgl
 )

@@ -434,6 +434,13 @@ The current layout is shown in the title bar. By default, only
 US-English and Ukrainian are compiled into the firmware. Other layouts
 need to be enabled in firmware configuration.
 
+Vietnamese, Korean, Japanese and Simplified Chinese come in separate
+firmware images, the language packs, each with US-English and the
+input method of its language (Telex, 2-set Hangul, romaji to kana and
+kanji, pinyin). See [docs/language-packs.md](docs/language-packs.md)
+for typing in them and [BUILDING.md](BUILDING.md#language-packs) for
+building them.
+
 
 ## Formatting the SD card
 

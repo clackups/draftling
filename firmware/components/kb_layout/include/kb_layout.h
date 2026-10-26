@@ -29,8 +29,35 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
     KB_LAYOUT_HE,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    KB_LAYOUT_VI,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    KB_LAYOUT_KO,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    KB_LAYOUT_JA,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    KB_LAYOUT_ZH,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
+
+/* Input method attached to a layout. Layouts with an input method
+ * produce keystrokes that the editor hands to the `ime` component,
+ * which composes them into the final text (Vietnamese tone marks,
+ * Hangul syllables, kana / kanji, hanzi). */
+typedef enum {
+    KB_IME_NONE = 0,
+    KB_IME_TELEX,      /* Vietnamese Telex */
+    KB_IME_HANGUL,     /* Korean 2-set (Dubeolsik) composition */
+    KB_IME_KANA,       /* Japanese romaji -> kana -> kanji */
+    KB_IME_PINYIN,     /* Chinese pinyin -> hanzi */
+} kb_ime_t;
+
+/* Input method of the active layout (KB_IME_NONE for plain layouts). */
+kb_ime_t kb_layout_ime(void);
 
 /* Returns the UTF-8 string for a given HID keycode + modifier.
  * The returned pointer is valid until the next call.

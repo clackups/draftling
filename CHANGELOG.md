@@ -6,6 +6,19 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Language packs for Vietnamese, Korean, Japanese and Chinese**:
+  besides the default set of layouts, the firmware can now be built
+  with one of four language packs, each a separate image with
+  US-English plus one language. Vietnamese is typed with Telex
+  (aa, dd, s/f/r/x/j for the tones), Korean with the 2-set (Dubeolsik)
+  layout, Japanese as romaji that turns into kana and is converted to
+  kanji with Space, and Simplified Chinese as pinyin with candidates
+  in the status bar. Korean, Japanese and Chinese text is drawn with
+  pixel fonts in that language's style at every font size. See
+  docs/language-packs.md.
+
 ### Fixed
 
 - **Wrong colors on the MicroJournal Rev 5.0**: the ILI9341 screen
