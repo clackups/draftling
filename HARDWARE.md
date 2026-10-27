@@ -204,7 +204,8 @@ charger, and a CH340 USB-to-UART bridge. Build preset
 - No battery level: the board has a charger but no voltage sense line.
 - No "SD card via USB" and no "Sync via browser", since the USB port
   goes through the CH340 bridge, not the ESP32-S3's native USB.
-
+- Power consumption in standby is about 48mA, so it's not really
+  usable for portable designs.
 
 ## Waveshare ESP32-S3-Touch-LCD-7
 
