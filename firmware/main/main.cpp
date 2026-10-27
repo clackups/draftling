@@ -46,6 +46,7 @@
 #include "wifi_manager.h"
 #include "git_sync.h"
 #include "standby.h"
+#include "esp_pm.h"
 #include "battery.h"
 #include "touchscreen.h"
 #include "power.h"
@@ -1112,6 +1113,32 @@ static void pre_sleep_crowpanel_50_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
+    defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
+    defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
+    defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N)
+static void pre_sleep_freenove_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Freenove FNK0104 peripheral teardown");
+
+    pre_sleep_autosave();
+    /* FT6336U (FNK0104B/S) to hibernate; no-op without a touch
+     * controller (FNK0104A) or one with no sleep command (the
+     * ST77922's, FNK0104N). */
+    touchscreen_sleep();
+    /* Every chip on these boards stays powered in deep sleep, the SD
+     * card included: release it so it drops to its idle state. */
+    (void)sd_card_deinit();
+
+    /* Backlight off and the LCD controller in SLPIN. Take the LVGL
+     * lock so no flush is in progress. (standby calls this again
+     * afterwards; that second call is harmless.) */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+}
+#endif /* Freenove FNK0104A/B/S/N */
+
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
 static void pre_sleep_reterminal_sticky_deinit(void)
 {
@@ -2112,6 +2139,28 @@ extern "C" void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+#if CONFIG_PM_ENABLE
+    /* Dynamic frequency scaling, on boards whose sdkconfig.defaults
+     * enable power management: the CPU runs at full speed while there
+     * is work and drops to 80 MHz when idle. The floor is 80 MHz, not
+     * the 40 MHz crystal, so the APB clock (SPI, I2C, LEDC backlight
+     * PWM, SDMMC) stays at 80 MHz throughout. No automatic light
+     * sleep: it would stop the backlight PWM and the USB device. */
+    {
+        esp_pm_config_t pm = {};
+        pm.max_freq_mhz       = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ;
+        pm.min_freq_mhz       = 80;
+        pm.light_sleep_enable = false;
+        esp_err_t pm_err = esp_pm_configure(&pm);
+        if (pm_err != ESP_OK) {
+            ESP_LOGW(TAG, "esp_pm_configure failed: %s", esp_err_to_name(pm_err));
+        } else {
+            ESP_LOGI(TAG, "CPU frequency scaling: %d-%d MHz",
+                     pm.min_freq_mhz, pm.max_freq_mhz);
+        }
+    }
+#endif
 
     /* Load the user-adjustable panel margins (Settings -> Screen
      * margins; zero on a fresh install) before anything below derives
@@ -3494,6 +3543,11 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
+      defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
+      defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
+      defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N)
+    standby_set_pre_sleep_cb(pre_sleep_freenove_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

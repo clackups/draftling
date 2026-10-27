@@ -13,3 +13,7 @@ CONFIG_TINYUSB_MSC_ENABLED=y
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_RX_BUFSIZE=4096
 CONFIG_TINYUSB_CDC_TX_BUFSIZE=4096
+
+# Dynamic CPU frequency scaling (160 MHz when busy, 80 MHz when idle;
+# configured by esp_pm_configure() in main.cpp). No light sleep.
+CONFIG_PM_ENABLE=y

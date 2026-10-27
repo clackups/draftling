@@ -721,6 +721,9 @@ extern "C" void touchscreen_init(const touchscreen_config_t *cfg)
     /* Optional dedicated reset line. (On the JC3248W535 the touch
      * reset is tied to the LCD reset, so this is usually -1.) */
     if (s_cfg.rst >= 0) {
+        /* touchscreen_sleep() may have latched RST HIGH for deep
+         * sleep; that hold survives the wake reset. */
+        gpio_hold_dis((gpio_num_t)s_cfg.rst);
         gpio_config_t g = {};
         g.intr_type    = GPIO_INTR_DISABLE;
         g.mode         = GPIO_MODE_OUTPUT;
@@ -1001,6 +1004,30 @@ extern "C" void touchscreen_sleep(void)
                      esp_err_to_name(err));
         }
     }
+#elif defined(CONFIG_DRAFTLING_TOUCH_FT6336U)
+    if (!s_dev) return;
+    /* FocalTech power-mode register ID_G_PMODE (0xA5): 0x03 =
+     * hibernate (tens of uA instead of a few mA while scanning). Only
+     * a reset pulse brings the chip out of it, so skip it on boards
+     * without a RST line (touchscreen_init() pulses RST on every
+     * boot). RST is latched HIGH through deep sleep so the chip stays
+     * in hibernate instead of falling into reset; the caller's
+     * gpio_deep_sleep_hold_en() (display_deep_sleep_prepare()) makes
+     * the hold effective. */
+    if (s_cfg.rst < 0) return;
+    if (s_mux && xSemaphoreTake(s_mux, pdMS_TO_TICKS(50)) == pdTRUE) {
+        const uint8_t cmd[2] = { 0xA5, 0x03 };
+        esp_err_t err = i2c_master_transmit(s_dev, cmd, sizeof(cmd), 50 /* ms */);
+        xSemaphoreGive(s_mux);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "FT6336U entered hibernate mode");
+        } else {
+            ESP_LOGW(TAG, "FT6336U hibernate cmd failed: %s",
+                     esp_err_to_name(err));
+        }
+    }
+    gpio_set_level((gpio_num_t)s_cfg.rst, 1);
+    gpio_hold_en((gpio_num_t)s_cfg.rst);
 #else
     /* AXS5106L has no documented sleep command in the public
      * register map; it idles to ~100 uA on its own once polling

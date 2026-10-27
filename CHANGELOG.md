@@ -6,6 +6,16 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lower standby current on the Freenove FNK0104 boards**: before
+  going to sleep, the device now also puts the LCD controller and the
+  touch controller to sleep and releases the MicroSD card, instead of
+  only switching the backlight off. The LCD controller change also
+  applies to the Viewe UEED035HV display. While the device is awake,
+  these boards also lower the CPU clock from 160 to 80 MHz whenever
+  there is nothing to do, which reduces the running current.
+
 ## [1.0.19] - 2026-10-27
 
 ### Added

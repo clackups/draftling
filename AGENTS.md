@@ -205,6 +205,16 @@ without saving" first calls `editor_discard_all_changes()`, so by the
 time this callback runs there is nothing left to save; an automatic
 (inactivity-timeout) sleep never discards.
 
+When a board's `sdkconfig.defaults.<board>` sets `CONFIG_PM_ENABLE=y`
+(currently the Freenove FNK0104A/B/S/N), `app_main()` calls
+`esp_pm_configure()` right after NVS init for dynamic frequency
+scaling: max `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ`, min 80 MHz (not the
+40 MHz crystal, so the APB clock under SPI / I2C / LEDC / SDMMC stays
+at 80 MHz), light sleep off (it would stop the LEDC backlight PWM and
+the USB device). The Bluetooth controller holds an APB_FREQ_MAX lock
+while enabled, which on the ESP32-S3 means 80 MHz, so the CPU still
+idles at 80 MHz with BLE on.
+
 `app_config.h` defines display-dimension and scale macros from Kconfig
 symbols and then delegates all board-specific pin constants to a thin
 per-board header included from `main/boards/`. Each file in `main/boards/`

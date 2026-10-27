@@ -1123,18 +1123,17 @@ extern "C" void display_wake(void)
 extern "C" void display_deep_sleep_prepare(void)
 {
     display_set_backlight(0);
-#if defined(CONFIG_DRAFTLING_DISPLAY_ST7789)
-    /* The NiceMCU board keeps the panel powered through deep sleep and
-     * wakes by a full reset (which re-runs the init sequence), so put
-     * the controller to sleep as well to cut its draw. (On the
-     * MicroJournal Rev 5 this also covers the ILI9341, which takes the
-     * same DISPOFF / SLPIN commands.) */
+    /* The panel stays powered through deep sleep, and a controller
+     * left in normal display mode keeps drawing several mA with the
+     * backlight off. Put it to sleep too: every controller this
+     * backend drives (ILI9341, ST7796, ST7365, ST7789) takes the same
+     * DISPOFF / SLPIN commands, and the wake is a full reset whose
+     * init sequence sends SLPOUT again. */
     if (!s_panel_asleep) {
         send_command(0x28); /* DISPOFF */
         send_command(0x10); /* SLPIN */
         s_panel_asleep = true;
     }
-#endif
     if (s_cfg.bl >= 0) {
         gpio_hold_en((gpio_num_t)s_cfg.bl);
 #if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
