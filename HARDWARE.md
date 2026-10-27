@@ -170,6 +170,42 @@ development boards with 16-bit parallel RGB565 interface and a GT911
 capacitive touch controller.
 
 
+## Elecrow CrowPanel ESP32 HMI 5.0"
+
+[Elecrow CrowPanel ESP32 HMI
+5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html)
+(DIS07050H, [GitHub](https://github.com/Elecrow-RD/CrowPanel-5.0-HMI-ESP32-Display-800x480)):
+ESP32-S3-WROOM-1-N4R8 (4 MB flash, 8 MB PSRAM) with a 5" 800x480 TN
+color LCD on the 16-bit parallel RGB565 interface, a GT911 capacitive
+touch controller, a MicroSD slot on SPI, a LiPo connector with a
+charger, and a CH340 USB-to-UART bridge. Build preset
+`elecrow_crowpanel_50`. Tested on physical hardware.
+
+- The data lines are wired like the Sunton ESP32-8048S043C, but the
+  pixel clock is on GPIO0, the BOOT button, and the panel holds that
+  line low. BOOT therefore does nothing in Draftling: it cannot wake
+  the device, and holding it to forget keyboards is not available (use
+  the "Forget KB" touch button on the keyboard prompt instead). Press
+  RESET to wake the device from sleep; open documents are saved before
+  it goes to sleep.
+- On hardware v3.0 the GT911's reset and INT lines are on a PCA9557
+  I2C IO-expander (0x18), which Draftling uses to reset the touch
+  controller at boot. Earlier revisions have no PCA9557; touch then
+  relies on finding the GT911 at either of its two addresses.
+- 4 MB flash: the board uses its own partition table
+  (`firmware/partitions_4mb.csv`, ~3.9 MB app). The default,
+  Vietnamese and Korean language packs fit; the Japanese and Chinese
+  ones do not.
+- The backlight is dimmed with a 15 kHz PWM signal: 1 kHz made the
+  backlight driver whine audibly, and 25 kHz made bright areas
+  flicker. If your unit still whines or flickers, change "Backlight
+  PWM frequency (Hz)" in `idf.py --preset elecrow_crowpanel_50
+  menuconfig` (DRAFTLING Configuration).
+- No battery level: the board has a charger but no voltage sense line.
+- No "SD card via USB" and no "Sync via browser", since the USB port
+  goes through the CH340 bridge, not the ESP32-S3's native USB.
+
+
 ## Waveshare ESP32-S3-Touch-LCD-7
 
 [Waveshare

@@ -83,6 +83,15 @@
             }
         },
         {
+            "name": "elecrow_crowpanel_50",
+            "displayName": "Elecrow CrowPanel ESP32 HMI 5.0\"",
+            "binaryDir": "build/elecrow_crowpanel_50",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.elecrow_crowpanel_50",
+                "SDKCONFIG": "build/elecrow_crowpanel_50/sdkconfig"
+            }
+        },
+        {
             "name": "waveshare_touch_lcd_7",
             "displayName": "Waveshare ESP32-S3-Touch-LCD-7",
             "binaryDir": "build/waveshare_touch_lcd_7",

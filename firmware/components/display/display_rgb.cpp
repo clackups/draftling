@@ -11,6 +11,9 @@
  *     RGB; LCD reset and backlight sit behind a CH422G I2C
  *     IO-expander instead of direct GPIOs -- see
  *     CONFIG_DRAFTLING_HAS_CH422G below)
+ *   - Elecrow CrowPanel ESP32 HMI 5.0" (5.0", 800x480, 16-bit RGB;
+ *     PCLK is GPIO0, the BOOT button net -- see
+ *     CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50 below)
  *   - Waveshare ESP32-S3-LCD-3.16 (3.16", 320x820 portrait, ST7701,
  *     16-bit RGB; the controller needs a vendor init sequence over a
  *     bit-banged 3-wire SPI bus before it shows anything -- see
@@ -171,6 +174,43 @@ static const int kDataGpios[16] = {
     1, 2, 42, 41, 40        /* R0-R4 */
 };
 
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50)
+/* ---- Elecrow CrowPanel ESP32 HMI 5.0" (DIS07050H) ----
+ * Pins and porch timings from Elecrow's v3.0 PlatformIO example
+ * (example/V3.0/PlatformIO50/src/main.cpp in
+ * Elecrow-RD/CrowPanel-5.0-HMI-ESP32-Display-800x480). The data lines
+ * are the Sunton ESP32-8048S043C's; PCLK is GPIO0, which is also the
+ * BOOT button (unusable as a button: the powered panel holds the net
+ * LOW). display_deep_sleep_prepare() stops the panel and latches the
+ * backlight off (RGB_STOP_PANEL_ON_SLEEP). Backlight on GPIO2, active
+ * high. */
+#define RGB_BL_GPIO         2
+/* 16 MHz (~37 Hz frame rate), as in Elecrow's ESP-IDF example
+ * (example/V3.0/ESP_IDF/LVGL_Control_LED_50). Their PlatformIO example's
+ * 12 MHz (~28 Hz) made the panel flicker at times. */
+#define RGB_PCLK_HZ         (16 * 1000 * 1000)   /* 16 MHz */
+#define RGB_HSYNC_GPIO      39
+#define RGB_VSYNC_GPIO      41
+#define RGB_DE_GPIO         40
+#define RGB_PCLK_GPIO       0
+#define RGB_HSYNC_PULSE     4
+#define RGB_HSYNC_BACK      43
+#define RGB_HSYNC_FRONT     8
+#define RGB_VSYNC_PULSE     4
+#define RGB_VSYNC_BACK      12
+#define RGB_VSYNC_FRONT     8
+#define RGB_PCLK_ACTIVE_NEG 1
+#define RGB_PCLK_IDLE_HIGH  0
+#define RGB_STOP_PANEL_ON_SLEEP 1
+
+/* data_gpio_nums[0] is the RGB565 LSB: B0-B4, G0-G5, R0-R4 (Elecrow's
+ * pin_d0..pin_d15). */
+static const int kDataGpios[16] = {
+    8, 3, 46, 9, 1,       /* B0-B4 */
+    5, 6, 7, 15, 16, 4,   /* G0-G5 */
+    45, 48, 47, 21, 14    /* R0-R4 */
+};
+
 #elif defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
 #define RGB_BL_GPIO         2
 /* ---- Sunton ESP32-8048S043C (4.3", ST7262) ---- */
@@ -229,6 +269,9 @@ static const int kDataGpios[16] = {
 #ifndef RGB_BL_ACTIVE_LOW
 #define RGB_BL_ACTIVE_LOW   0
 #endif
+#ifndef RGB_STOP_PANEL_ON_SLEEP
+#define RGB_STOP_PANEL_ON_SLEEP 0
+#endif
 
 #if !defined(CONFIG_DRAFTLING_HAS_CH422G)
 /* ---- Backlight LEDC (direct GPIO) ---- */
@@ -236,8 +279,11 @@ static const int kDataGpios[16] = {
 #define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_8_BIT
-#define BL_LEDC_DUTY_MAX    ((1 << 8) - 1)
-#define BL_LEDC_FREQ_HZ     1000
+/* 2^res, not 2^res - 1: LEDC accepts duty == 2^res and then holds the
+ * output constantly on, so 100 % has no off-pulse in each period. */
+#define BL_LEDC_DUTY_MAX    (1 << 8)
+/* CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ (main/Kconfig.projbuild). */
+#define BL_LEDC_FREQ_HZ     CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ
 #endif
 
 /* Logical-to-panel pixel scale (Kconfig). Each logical LVGL pixel is
@@ -476,6 +522,14 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 #if defined(CONFIG_DRAFTLING_RGB_PANEL_ST7701)
     st7701_send_init();
 #endif
+#if RGB_STOP_PANEL_ON_SLEEP
+    /* display_deep_sleep_prepare() armed the chip-wide digital-pad
+     * autohold (gpio_deep_sleep_hold_en()), which survives the wake
+     * reset on the ESP32-S3 and would keep the non-RTC sync / data
+     * pads (39-41, 45-48) frozen, so the panel would get no HSYNC /
+     * VSYNC / DE. */
+    gpio_deep_sleep_hold_dis();
+#endif
 
     esp_lcd_rgb_panel_config_t cfg = {};
     cfg.clk_src   = LCD_CLK_SRC_DEFAULT;
@@ -633,7 +687,7 @@ extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
 
 extern "C" void display_flush(void)
 {
-    if (s_dirty_x1 < 0) return;
+    if (s_dirty_x1 < 0 || !s_panel) return;
 
     int x1 = s_dirty_x1, y1 = s_dirty_y1;
     int x2 = s_dirty_x2, y2 = s_dirty_y2;
@@ -719,6 +773,23 @@ extern "C" void display_deep_sleep_prepare(void)
     if (s_bl_pin < 0) return;
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     backlight_ch422g_set(0);
+#elif RGB_STOP_PANEL_ON_SLEEP
+    /* Backlight off and latched low for deep sleep (LEDC is powered
+     * down there; backlight_pwm_init() releases the hold on the next
+     * boot). */
+    ledc_stop(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
+    gpio_set_direction((gpio_num_t)s_bl_pin, GPIO_MODE_OUTPUT);
+    gpio_set_level((gpio_num_t)s_bl_pin, 0);
+    gpio_hold_en((gpio_num_t)s_bl_pin);
+    gpio_deep_sleep_hold_en();
+
+    /* Stop the scan-out so the panel is not left with a frozen clock,
+     * and leave PCLK as a plain input. */
+    if (s_panel) {
+        esp_lcd_panel_del(s_panel);
+        s_panel = NULL;
+    }
+    gpio_reset_pin((gpio_num_t)RGB_PCLK_GPIO);
 #elif RGB_BL_ACTIVE_LOW
     /* LEDC is powered down in deep sleep, and an undriven active-low
      * backlight pin would light the panel. Park it high and latch it
@@ -746,6 +817,8 @@ const char *display_controller_name(void)
     return "ST7701 (RGB)";
 #elif defined(CONFIG_DRAFTLING_HAS_CH422G) || defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
     return "ST7262 (RGB)";
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50)
+    return "ILI6122 / ILI5960 (RGB)";
 #else
     return "RGB parallel TFT";
 #endif

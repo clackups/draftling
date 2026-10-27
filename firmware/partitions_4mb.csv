@@ -1,0 +1,11 @@
+# Variant of partitions.csv sized for 4 MB flash -- used only by the
+# Elecrow CrowPanel ESP32 HMI 5.0" (ESP32-S3-WROOM-1-N4R8: 4 MB flash,
+# 8 MB PSRAM). factory takes everything after the 64 KB boot area up to
+# the last 64 KB block (0x3E0000, ~3.9 MB): enough for the default and
+# Vietnamese / Korean language-pack images (~2.4 / ~3.2 MB), not for the
+# Japanese / Chinese ones.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        0x3E0000,
+nvs_keys, data, nvs_keys,,        0x1000,

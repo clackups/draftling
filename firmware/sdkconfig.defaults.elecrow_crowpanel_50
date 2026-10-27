@@ -1,0 +1,12 @@
+# CMakePresets.json board defaults: Elecrow CrowPanel ESP32 HMI 5.0"
+# Sets the hardware model and IDF target used by the "elecrow_crowpanel_50" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50=y
+
+# The module is an ESP32-S3-WROOM-1-N4R8 (4 MB flash, 8 MB octal
+# PSRAM). Override the 16 MB flash size and the shared partition table
+# (whose 14 MB factory partition does not fit) -- see
+# partitions_4mb.csv.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_4mb.csv"

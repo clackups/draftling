@@ -69,6 +69,8 @@
 #include "boards/sunton_8048s070.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SUNTON_8048S043)
 #include "boards/sunton_8048s043.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
+#include "boards/elecrow_crowpanel_50.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7)
 #include "boards/waveshare_touch_lcd_7.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316)

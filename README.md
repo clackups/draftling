@@ -35,6 +35,7 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-ePaper-3.97/))
   * [Waveshare ESP32-S3-RLCD-4.2](https://docs.waveshare.com/ESP32-S3-RLCD-4.2) ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
   * [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html) ([GitHub](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792))
+  * [Elecrow CrowPanel ESP32 HMI 5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html) (800x480 color LCD, capacitive touch)
   * Guition JC3248W535
   * [7" and 4.3" Sunton boards](https://github.com/rzeldent/platformio-espressif32-sunton)
   * [2.8", 3.5" and 4" Freenove boards](https://github.com/Freenove/Freenove_ESP32_S3_Display)

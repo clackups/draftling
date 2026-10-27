@@ -19,6 +19,11 @@ in the git log.
   pixel fonts in that language's style at every font size. See
   docs/language-packs.md.
 
+- **Elecrow CrowPanel ESP32 HMI 5.0" support**:
+  the 5" 800x480 color touch-screen board, with MicroSD, Bluetooth
+  keyboard and adjustable backlight. The RESET button wakes the device
+  from sleep. See HARDWARE.md.
+
 ### Fixed
 
 - **Wrong colors on the MicroJournal Rev 5.0**: the ILI9341 screen

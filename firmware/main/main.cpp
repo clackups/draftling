@@ -20,7 +20,8 @@
     defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY) || \
     defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO) || \
     defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_LCD_316) || \
-    defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42)
+    defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42) || \
+    defined(CONFIG_DRAFTLING_HAS_PCA9557)
 #include <driver/i2c_master.h>
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -50,6 +51,7 @@
 #include "power.h"
 #include "io_expander_ch422g.h"
 #include "io_expander_m5ioe1.h"
+#include "io_expander_pca9557.h"
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
 #include "usb_kbd.h"
 #endif
@@ -1093,6 +1095,22 @@ static void pre_sleep_seeed_reterminal_e1001_deinit(void)
     display_deep_sleep_prepare();
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_E1001 */
+
+#if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
+static void pre_sleep_crowpanel_50_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Elecrow CrowPanel 5.0in peripheral teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+
+    /* Backlight off and the RGB panel stopped. Take the LVGL lock so no
+     * flush is in progress. */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
 static void pre_sleep_reterminal_sticky_deinit(void)
@@ -2326,7 +2344,8 @@ extern "C" void app_main(void)
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
+    defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO) || \
+    defined(CONFIG_DRAFTLING_HAS_PCA9557)
     /* The LilyGO T5 E-Paper S3 Pro / Pro Lite shares its on-board
      * I2C bus between epdiy (TPS65185 EPD power IC + PCA9535 IO
      * expander), the GT911 capacitive touch controller and the
@@ -2429,6 +2448,24 @@ extern "C" void app_main(void)
         gpio_reset_pin((gpio_num_t)TOUCH_INT_PIN);
     }
 #endif
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_PCA9557)
+    /* Elecrow CrowPanel 5.0" v3.0: the GT911's RST and INT lines sit on
+     * a PCA9557 that shares the touch I2C bus. Elecrow's touch_reset():
+     * hold both low, release RST after 20 ms, wait 100 ms, then turn
+     * INT back into an input -- INT low at the RST edge selects
+     * address 0x5D. Older board revisions have no PCA9557; there the
+     * touchscreen component probes both GT911 addresses. */
+    if (pca9557_init((void *)shared_i2c_bus, 0x18) == ESP_OK &&
+        pca9557_is_present()) {
+        pca9557_set_pin(PCA9557_TOUCH_RST_PIN, false);
+        pca9557_set_pin(PCA9557_TOUCH_INT_PIN, false);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        pca9557_set_pin(PCA9557_TOUCH_RST_PIN, true);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        pca9557_release_pin(PCA9557_TOUCH_INT_PIN);
+        ESP_LOGI(TAG, "GT911 reset through the PCA9557");
+    }
 #endif
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
@@ -3402,7 +3439,7 @@ extern "C" void app_main(void)
         tcfg.user_rotate_deg = 0;
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
-    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO)
+    defined(CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO) || defined(CONFIG_DRAFTLING_HAS_PCA9557)
         tcfg.i2c_bus = (void *)shared_i2c_bus;
 #elif defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* The m5stack_tab5 BSP owns the I2C master bus (created
@@ -3455,6 +3492,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_papermono_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
+    standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

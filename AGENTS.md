@@ -73,6 +73,7 @@ card).
 | Waveshare ESP32-S3-RLCD-4.2 | 4.2-inch reflective LCD, 400x300 |
 | M5Stack PaperS3 | 4.7-inch e-paper (ED047TC1), 540x960 |
 | Waveshare ESP32-S3-LCD-3.16 | 3.16-inch ST7701 RGB color LCD, 320x820 portrait rendered landscape at 820x320, no touch |
+| Elecrow CrowPanel ESP32 HMI 5.0" | 5.0-inch RGB parallel color LCD, 800x480, GT911 touch (reset via PCA9557 on v3.0), 4 MB flash |
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
@@ -134,8 +135,9 @@ CMakeLists.txt              Top-level CMake project file
 CMakePresets.json           Per-board build presets (idf.py --preset <board>)
 partitions.csv              Custom partition table (16 MB flash, single
                             "factory" app) -- used by every board except
-                            the four below
+                            the five below
 partitions_8mb.csv          8 MB-flash variant (Elecrow CrowPanel 5.79")
+partitions_4mb.csv          4 MB-flash variant (Elecrow CrowPanel 5.0")
 partitions_xteink_x4_pro.csv Dual-OTA layout (otadata + ota_0/ota_1) so
                             the Xteink X4 Pro can be re-flashed with the
                             stock or Crosspoint firmware afterwards
@@ -410,7 +412,13 @@ Per-board display backends behind a single C API:
   line) and the Waveshare ESP32-S3-Touch-LCD-7
   (`CONFIG_DRAFTLING_HAS_CH422G`: backlight and LCD reset instead
   routed through a CH422G I2C IO-expander -- see
-  `components/io_expander/`) and the Waveshare ESP32-S3-LCD-3.16
+  `components/io_expander/`), the Elecrow CrowPanel ESP32 HMI 5.0"
+  (`CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50`: PCLK is GPIO0, the BOOT
+  button net; `display_deep_sleep_prepare()` deletes the panel and
+  latches the backlight off, and `display_init()` calls
+  `gpio_deep_sleep_hold_dis()` because the digital-pad autohold
+  survives the wake reset and would freeze the sync / data pads) and
+  the Waveshare ESP32-S3-LCD-3.16
   (`CONFIG_DRAFTLING_RGB_PANEL_ST7701`: an ST7701 controller that is
   first configured over a bit-banged 3-wire SPI bus -- CS=GPIO0 (BOOT),
   SCK=GPIO2, SDA=GPIO1, which are the SDMMC CMD / CLK lines -- inside
@@ -1315,6 +1323,19 @@ supplies off again.
 
 Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
 
+A third driver, NXP PCA9557 (`io_expander_pca9557.cpp`), is compiled
+in only with `CONFIG_DRAFTLING_HAS_PCA9557` (the Elecrow CrowPanel
+ESP32 HMI 5.0") and stubbed otherwise. One byte per register (output
+0x01, configuration 0x03, 1 = input; IO0 is open-drain).
+`pca9557_init(bus, addr)` returns `ESP_ERR_NOT_FOUND` when nothing
+answers, as on CrowPanel 5.0" revisions before v3.0; main.cpp then
+skips the touch reset and the touchscreen component probes both GT911
+addresses. On v3.0 main.cpp pulses GT911 RST (IO0) with INT (IO1)
+held low, then releases INT, so the GT911 answers at 0x5D.
+
+Public API: `pca9557_init()`, `pca9557_is_present()`,
+`pca9557_set_pin()`, `pca9557_release_pin()`.
+
 ### components/kb_layout/
 
 Translates HID keycodes and modifier flags into UTF-8 character strings
@@ -2128,6 +2149,24 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   on-board MicroSD on SPI3, BOOT button on GPIO0 used as
   the EXT0 deep-sleep wake source (the only RTC-capable user-input
   GPIO on the board). *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_ELECROW_CROWPANEL_50** -- Elecrow CrowPanel ESP32
+  HMI 5.0" (DIS07050H, `main/boards/elecrow_crowpanel_50.h`):
+  ESP32-S3-WROOM-1-N4R8 (4 MB flash, `partitions_4mb.csv`), 5" 800x480
+  RGB parallel panel (`display_rgb.cpp`, Sunton 8048S043C data lines,
+  PCLK on GPIO0, 16 MHz as in Elecrow's ESP-IDF example; 12 MHz flickered), Hack fonts (HIDPI), GT911 touch on I2C
+  SDA=19/SCL=20 polled without INT (RST/INT on a PCA9557 at 0x18 on
+  v3.0), MicroSD on SPI (CS=10, MOSI=11, SCK=12, MISO=13), LEDC
+  backlight on GPIO2 at 15 kHz (`DRAFTLING_BACKLIGHT_PWM_HZ`, a
+  prompted int for every direct-GPIO RGB board, 1 kHz elsewhere: the
+  MT9201 LED driver whined at 1 kHz and flickered at 25 kHz), CH340 USB-UART (no USB MSC / Kermit), no battery
+  monitor. No GPIO wake (`DRAFTLING_WAKEUP_GPIO` -1, wake by RESET):
+  BOOT (GPIO0) is wired through a 0 ohm link to the LCD's pixel clock
+  input with no pull-up resistor, the panel supply follows the chip's
+  EN line (so it stays on in deep sleep), and on hardware the panel
+  held GPIO0 LOW after the scan-out was stopped, so standby could
+  never arm EXT0 on it. `pre_sleep_crowpanel_50_deinit()` stops the
+  panel and latches the backlight off. Pins and timings from Elecrow's
+  v3.0 PlatformIO example. Tested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_FREENOVE_FNK0104A** -- Freenove FNK0104A: 2.8"
   ILI9341 color SPI LCD, 320x240, no touch, on-board MicroSD on
   SDMMC, BOOT button on GPIO0 as the wake source. *Requires ESP32-S3.*
@@ -2306,13 +2345,13 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
-  Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
-  792 (Elecrow CrowPanel 5.79").
+  Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
+  Elecrow CrowPanel 5.0"), 792 (Elecrow CrowPanel 5.79").
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
-  Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono),
-  272 (Elecrow CrowPanel 5.79").
+  Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
+  Elecrow CrowPanel 5.0"), 272 (Elecrow CrowPanel 5.79").
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -2482,15 +2521,17 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT | Compiles both the ILI9341 and the ST7789 init sequences into `display_ili9341.cpp` and picks one at boot from a bit-banged controller-ID read (needs the panel's SDO on MISO, or a bidirectional SDA); ILI9341 if nothing answers | MicroJournal Rev 5 |
 | DRAFTLING_LCD_BUS_PARLIO          | `display_ili9341.cpp` sends its SPI traffic through PARLIO TX in 1-bit mode (`esp_lcd_new_panel_io_parl()`) instead of a GP-SPI host, leaving the C5's only GP-SPI controller to the SD card | NiceMCU-C5E-DEV_2.8IPS |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
+| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
 | DRAFTLING_RGB_PANEL_ST7701        | Switches `display_rgb.cpp` to the ST7701 branch: own pins / timings, direct-GPIO reset, active-low PWM backlight, and the vendor init sequence over a bit-banged 3-wire SPI bus (CS=0/BOOT, SCK=2, SDA=1) that is released afterwards for the BOOT button and the SDMMC slot | Waveshare LCD-3.16 |
 | DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
+| DRAFTLING_RGB_BOARD_CROWPANEL_50  | Switches `display_rgb.cpp` to the CrowPanel 5.0" pin map / timings (PCLK on GPIO0) and stops the panel and latches the backlight off before deep sleep | Elecrow CrowPanel 5.0" |
+| DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards, Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
@@ -2616,7 +2657,7 @@ PSRAM) are not supported.
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
-`waveshare_touch_lcd_7`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
