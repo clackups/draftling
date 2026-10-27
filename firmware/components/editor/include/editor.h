@@ -192,6 +192,11 @@ void editor_move_word_right(void);
 bool editor_insert_char(char c);
 bool editor_insert_text(const char *text, size_t len);
 bool editor_insert_newline(void);
+/* Copy up to max bytes immediately before the cursor, stopping at a
+ * line break; returns the count (for the input methods). */
+size_t editor_peek_before(char *out, size_t max);
+/* Replace the del bytes before the cursor with text (input methods). */
+bool editor_replace_before(size_t del, const char *text);
 void editor_delete_back(void);
 void editor_delete_forward(void);
 void editor_delete_line(void);

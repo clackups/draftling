@@ -2,7 +2,9 @@
  * Keyboard layout translation module.
  *
  * Translates HID keycodes + modifier flags into UTF-8 strings
- * for US-English, Ukrainian, German, and French layouts.
+ * for US-English, Ukrainian, German, French, Hebrew and Korean
+ * layouts. Vietnamese, Japanese and Chinese type on the US layout
+ * and are composed by an input method (components/ime/).
  *
  * Non-ASCII characters are encoded as UTF-8 byte sequences using
  * hex escapes to keep the source file ASCII-only.
@@ -20,10 +22,23 @@
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
 /* Default "Active language layouts" set: US and UA when compiled in,
- * else the first compiled-in layout so the set is never empty. */
+ * plus the input-method layout (VI, KO, JA, ZH) of a pack, else the first
+ * compiled-in layout so the set is never empty. */
 static uint32_t default_active_mask(void)
 {
     uint32_t mask = 0;
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    mask |= (1u << KB_LAYOUT_VI);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    mask |= (1u << KB_LAYOUT_KO);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    mask |= (1u << KB_LAYOUT_JA);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    mask |= (1u << KB_LAYOUT_ZH);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
     mask |= (1u << KB_LAYOUT_US);
 #endif
@@ -56,9 +71,9 @@ static uint32_t s_active_mask = default_active_mask();
 #define KC_DOT   0x37
 #define KC_SLASH 0x38
 
-#ifdef CONFIG_KB_LAYOUT_ENABLE_US
 /* ------------------------------------------------------------------ */
 /* US-English layout                                                  */
+/* Always compiled: Vietnamese, Japanese and Chinese type on it too.  */
 /* ------------------------------------------------------------------ */
 
 /* unshifted: keycodes 0x04..0x38 */
@@ -82,7 +97,6 @@ static const char *US_SHIFT[] = {
     "_","+","{","}","|",
     NULL,":","\x22","~","<",">","?",
 };
-#endif /* CONFIG_KB_LAYOUT_ENABLE_US */
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE
 /* ------------------------------------------------------------------ */
@@ -495,6 +509,82 @@ static const char *HE_SHIFT[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_HE */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+/* ------------------------------------------------------------------ */
+/* Korean 2-set (Dubeolsik) layout                                    */
+/* ------------------------------------------------------------------ */
+
+/* Letter keys produce Hangul Compatibility Jamo (U+3131..U+3163); the
+ * Hangul input method composes them into syllables. Shift only
+ * changes the five keys with a tense / extra form (Q W E R T -> the
+ * double consonants, O P -> yae / ye); digits and symbols are US. */
+static const char *KO_NORMAL[] = {
+    "\xE3\x85\x81", /* 04 a: mieum */
+    "\xE3\x85\xA0", /* 05 b: yu */
+    "\xE3\x85\x8A", /* 06 c: chieuch */
+    "\xE3\x85\x87", /* 07 d: ieung */
+    "\xE3\x84\xB7", /* 08 e: tikeut */
+    "\xE3\x84\xB9", /* 09 f: rieul */
+    "\xE3\x85\x8E", /* 0A g: hieuh */
+    "\xE3\x85\x97", /* 0B h: o */
+    "\xE3\x85\x91", /* 0C i: ya */
+    "\xE3\x85\x93", /* 0D j: eo */
+    "\xE3\x85\x8F", /* 0E k: a */
+    "\xE3\x85\xA3", /* 0F l: i */
+    "\xE3\x85\xA1", /* 10 m: eu */
+    "\xE3\x85\x9C", /* 11 n: u */
+    "\xE3\x85\x90", /* 12 o: ae */
+    "\xE3\x85\x94", /* 13 p: e */
+    "\xE3\x85\x82", /* 14 q: pieup */
+    "\xE3\x84\xB1", /* 15 r: kiyeok */
+    "\xE3\x84\xB4", /* 16 s: nieun */
+    "\xE3\x85\x85", /* 17 t: sios */
+    "\xE3\x85\x95", /* 18 u: yeo */
+    "\xE3\x85\x8D", /* 19 v: phieuph */
+    "\xE3\x85\x88", /* 1A w: cieuc */
+    "\xE3\x85\x8C", /* 1B x: thieuth */
+    "\xE3\x85\x9B", /* 1C y: yo */
+    "\xE3\x85\x8B", /* 1D z: khieukh */
+    "1","2","3","4","5","6","7","8","9","0",           /* 1E-27 */
+    NULL,NULL,NULL,NULL," ",                           /* 28-2C */
+    "-","=","[","]","\\",                              /* 2D-31 */
+    NULL,";","'","`",",",".","/",                      /* 32-38 */
+};
+
+static const char *KO_SHIFT[] = {
+    "\xE3\x85\x81", /* 04 A: mieum */
+    "\xE3\x85\xA0", /* 05 B: yu */
+    "\xE3\x85\x8A", /* 06 C: chieuch */
+    "\xE3\x85\x87", /* 07 D: ieung */
+    "\xE3\x84\xB8", /* 08 E: ssangtikeut */
+    "\xE3\x84\xB9", /* 09 F: rieul */
+    "\xE3\x85\x8E", /* 0A G: hieuh */
+    "\xE3\x85\x97", /* 0B H: o */
+    "\xE3\x85\x91", /* 0C I: ya */
+    "\xE3\x85\x93", /* 0D J: eo */
+    "\xE3\x85\x8F", /* 0E K: a */
+    "\xE3\x85\xA3", /* 0F L: i */
+    "\xE3\x85\xA1", /* 10 M: eu */
+    "\xE3\x85\x9C", /* 11 N: u */
+    "\xE3\x85\x92", /* 12 O: yae */
+    "\xE3\x85\x96", /* 13 P: ye */
+    "\xE3\x85\x83", /* 14 Q: ssangpieup */
+    "\xE3\x84\xB2", /* 15 R: ssangkiyeok */
+    "\xE3\x84\xB4", /* 16 S: nieun */
+    "\xE3\x85\x86", /* 17 T: ssangsios */
+    "\xE3\x85\x95", /* 18 U: yeo */
+    "\xE3\x85\x8D", /* 19 V: phieuph */
+    "\xE3\x85\x89", /* 1A W: ssangcieuc */
+    "\xE3\x85\x8C", /* 1B X: thieuth */
+    "\xE3\x85\x9B", /* 1C Y: yo */
+    "\xE3\x85\x8B", /* 1D Z: khieukh */
+    "!","@","#","$","%","^","&","*","(",")",
+    NULL,NULL,NULL,NULL," ",
+    "_","+","{","}","|",
+    NULL,":","\x22","~","<",">","?",
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_KO */
+
 /* ------------------------------------------------------------------ */
 /* Layout table structure                                             */
 /* ------------------------------------------------------------------ */
@@ -524,6 +614,18 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
     [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL,      ARRAY_SIZE(HE_NORMAL) },
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL,      ARRAY_SIZE(US_NORMAL) },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL,      ARRAY_SIZE(KO_NORMAL) },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL,      ARRAY_SIZE(US_NORMAL) },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL,      ARRAY_SIZE(US_NORMAL) },
+#endif
 };
 
 static const char *s_layout_names[KB_LAYOUT_COUNT] = {
@@ -541,6 +643,50 @@ static const char *s_layout_names[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
     [KB_LAYOUT_HE] = "HE",
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    [KB_LAYOUT_VI] = "VI",
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    [KB_LAYOUT_KO] = "KO",
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    [KB_LAYOUT_JA] = "JA",
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    [KB_LAYOUT_ZH] = "ZH",
+#endif
+};
+
+/* Input method per layout. C++ needs every designator in order, so the
+ * plain layouts are listed too. */
+static const kb_ime_t s_layout_ime[KB_LAYOUT_COUNT] = {
+#ifdef CONFIG_KB_LAYOUT_ENABLE_US
+    [KB_LAYOUT_US] = KB_IME_NONE,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_UA
+    [KB_LAYOUT_UA] = KB_IME_NONE,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DE
+    [KB_LAYOUT_DE] = KB_IME_NONE,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR
+    [KB_LAYOUT_FR] = KB_IME_NONE,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HE
+    [KB_LAYOUT_HE] = KB_IME_NONE,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    [KB_LAYOUT_VI] = KB_IME_TELEX,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    [KB_LAYOUT_KO] = KB_IME_HANGUL,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    [KB_LAYOUT_JA] = KB_IME_KANA,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    [KB_LAYOUT_ZH] = KB_IME_PINYIN,
 #endif
 };
 
@@ -565,6 +711,18 @@ static const bool s_layout_is_latin[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
     [KB_LAYOUT_HE] = false,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_VI
+    [KB_LAYOUT_VI] = true,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_KO
+    [KB_LAYOUT_KO] = false,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_JA
+    [KB_LAYOUT_JA] = true,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
+    [KB_LAYOUT_ZH] = true,
+#endif
 };
 
 /* ------------------------------------------------------------------ */
@@ -580,6 +738,12 @@ extern "C" void kb_layout_set(kb_layout_id_t layout)
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
+}
+
+extern "C" kb_ime_t kb_layout_ime(void)
+{
+    if (s_layout >= KB_LAYOUT_COUNT) return KB_IME_NONE;
+    return s_layout_ime[s_layout];
 }
 
 extern "C" const char *kb_layout_name(kb_layout_id_t layout)

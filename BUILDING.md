@@ -2,10 +2,11 @@
 
 ### Configuring enabled keyboard layouts
 
-The set of compiled-in keyboard layouts is configurable via
-`idf.py menuconfig` under **DRAFTLING Keyboard Layouts**. Each layout
-can be independently enabled or disabled. By default **US-English** and
-**Ukrainian** are enabled. Disabling unused layouts saves flash space.
+The set of compiled-in keyboard layouts follows the language pack (see
+"Language packs" below) and can be fine-tuned via `idf.py menuconfig`
+under **DRAFTLING Language Pack and Keyboard Layouts**, where each
+layout can be enabled or disabled on its own. Disabling unused layouts
+saves flash space.
 
 ## Building
 
@@ -56,13 +57,61 @@ cd firmware
 idf.py --preset waveshare_rlcd42 build
 ```
 
+## Language packs
+
+A language pack is the set of keyboard layouts, input methods and
+fonts built into one firmware image. The board preset picks the
+hardware; the language pack is chosen separately, with the
+`--lang-pack` option or the `DRAFTLING_LANG_PACK` environment
+variable:
+
+| Pack | Layouts | Image size (RLCD-4.2) |
+|------|---------|-----------------------|
+| `default` | US-English, Ukrainian, German, French, Hebrew | 2.3 MB |
+| `vietnamese` | US-English, Vietnamese (Telex) | 2.3 MB |
+| `korean` | US-English, Korean (2-set Hangul) | 3.1 MB |
+| `japanese` | US-English, Japanese (romaji -> kana -> kanji) | 4.2 MB |
+| `chinese` | US-English, Simplified Chinese (pinyin) | 3.9 MB |
+
+Every pack fits every board, including the 8 MB-flash ones.
+
+```bash
+cd firmware
+idf.py --preset waveshare_rlcd42 --lang-pack japanese build
+idf.py --preset waveshare_rlcd42 --lang-pack japanese -p /dev/ttyACM0 flash
+
+# the same, with environment variables
+export IDF_PRESET=waveshare_rlcd42 DRAFTLING_LANG_PACK=japanese
+idf.py build
+```
+
+`--lang-pack` must be given (or the variable set) for every command
+on a non-default pack, including `flash` and `monitor`, because it
+selects the build directory: the `default` pack builds in
+`build/<board>` as before, any other pack in `build/<pack>/<board>`
+(e.g. `build/japanese/waveshare_rlcd42`), with its own `sdkconfig`.
+So images for different regions can be built side by side and never
+share a build tree. The option is added to `idf.py` by
+[`firmware/idf_ext.py`](firmware/idf_ext.py); it also appends
+`sdkconfig.defaults.lang_<pack>` to the preset's defaults. If an
+`sdkconfig` made for one pack is used to build another (for example
+with a hand-picked `-B` directory), the build stops with a "Language
+pack mismatch" error; delete that `sdkconfig` and build again.
+
+The Korean, Japanese and Chinese packs draw their characters with
+pixel fonts (Fusion Pixel Font 10 / 12 px and GNU Unifont 16 px, all
+SIL OFL 1.1) in that language's glyph style, scaled by whole numbers to
+the editor's font sizes. The generated fonts and dictionaries are
+committed; the scripts that make them and their sources are listed in
+[`AGENTS.md`](AGENTS.md) ("Language packs").
+
 ## Menuconfig Options
 
 Run `idf.py menuconfig` (supplying the preset name either on the
 command line or iin a variable) to open the interactive configuration
 UI. Draftling adds three custom menus described below (**DRAFTLING
-Configuration**, **DRAFTLING Keyboard Layouts** and **DRAFTLING
-Editor**). All other options (Bluetooth, LVGL fonts, etc.) use the
+Configuration**, **DRAFTLING Language Pack and Keyboard Layouts** and
+**DRAFTLING Editor**). All other options (Bluetooth, LVGL fonts, etc.) use the
 ESP-IDF defaults from `sdkconfig.defaults` and normally do not need to
 be changed.
 

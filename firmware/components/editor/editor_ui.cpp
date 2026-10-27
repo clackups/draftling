@@ -38,6 +38,11 @@
 #include "usb_msc.h"
 #endif
 #include "kb_layout.h"
+#if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_KB_LAYOUT_ENABLE_KO) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH)
+#define DRAFTLING_HAS_IME 1
+#include "ime.h"
+#endif
 #include "wifi_manager.h"
 #include "git_sync.h"
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
@@ -206,7 +211,8 @@ static int s_char_w       = 6;
 
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
-static int utf8_chars_in_bytes(const char *text, size_t byte_len);
+static int utf8_cells_in_bytes(const char *text, size_t byte_len);
+static size_t utf8_bytes_for_cells(const char *text, size_t byte_len, int cells);
 static size_t utf8_byte_of_char(const char *s, size_t len, int n);
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
@@ -646,7 +652,20 @@ static void save_append_only_to_nvs(void)
  * to get back to the one or two they actually use. Defaults to US and
  * UA (see kb_layout.cpp's default_active_mask()). The mask itself is
  * owned by kb_layout.cpp; this is just the NVS load/save wrapper. */
+/* The bit order of the mask follows the compiled-in layouts, so each
+ * language pack keeps its own key: flashing a different pack must not
+ * reinterpret the other pack's bits. */
+#if defined(CONFIG_DRAFTLING_LANG_PACK_VIETNAMESE)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_vi"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_KOREAN)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_ko"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_JAPANESE)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_ja"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_CHINESE)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
+#else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
+#endif
 
 static void load_active_layouts_from_nvs(void)
 {
@@ -2132,13 +2151,14 @@ static void update_title_bar(void)
      * the counters and end it with an ellipsis (U+2026, one cell; every
      * base font carries the glyph). */
     int avail = TITLE_W / char_width_for_font(FONT_11);
-    int name_max = avail - utf8_chars_in_bytes(tail, strlen(tail));
+    int name_max = avail - utf8_cells_in_bytes(tail, strlen(tail));
     size_t name_len = strlen(name);
-    if (utf8_chars_in_bytes(name, name_len) > name_max) {
+    if (utf8_cells_in_bytes(name, name_len) > name_max) {
         static const char ellipsis[] = "\xE2\x80\xA6";   /* U+2026 */
         int keep = name_max - 1;
         if (keep < 1) keep = 1;
-        size_t keep_bytes = utf8_byte_of_char(name, name_len, keep);
+        size_t keep_bytes = utf8_bytes_for_cells(name, name_len, keep);
+        if (keep_bytes == 0) keep_bytes = utf8_byte_of_char(name, name_len, 1);
         snprintf(buf, sizeof(buf), "%.*s%s%s", (int)keep_bytes, name, ellipsis, tail);
     } else {
         snprintf(buf, sizeof(buf), "%s%s", name, tail);
@@ -2201,14 +2221,50 @@ static int char_width_for_font(const lv_font_t *font)
 #endif
 }
 
-/* Count UTF-8 characters in the first byte_len bytes of text. */
-static int utf8_chars_in_bytes(const char *text, size_t byte_len)
+/* True for code points drawn two monospace cells wide (CJK, Hangul,
+ * kana, fullwidth forms; see components/fonts/cjk_font.c). */
+static bool cp_is_wide(uint32_t cp)
 {
-    int count = 0;
-    for (size_t i = 0; i < byte_len; i++) {
-        if ((text[i] & 0xC0) != 0x80) count++;
+    return (cp >= 0x2E80 && cp <= 0x2FDF) ||
+           (cp >= 0x3000 && cp <= 0x33FF) ||
+           (cp >= 0x3400 && cp <= 0x4DBF) ||
+           (cp >= 0x4E00 && cp <= 0x9FFF) ||
+           (cp >= 0xAC00 && cp <= 0xD7A3) ||
+           (cp >= 0xF900 && cp <= 0xFAFF) ||
+           (cp >= 0xFE30 && cp <= 0xFE4F) ||
+           (cp >= 0xFF01 && cp <= 0xFF60) ||
+           (cp >= 0xFFE0 && cp <= 0xFFE6);
+}
+
+static uint32_t utf8_decode(const char *s, size_t len, size_t *i);
+
+/* Monospace cells taken by the first byte_len bytes of text: one per
+ * character, two for the wide ones (CJK). */
+static int utf8_cells_in_bytes(const char *text, size_t byte_len)
+{
+    int cells = 0;
+    size_t i = 0;
+    while (i < byte_len) {
+        uint32_t cp = utf8_decode(text, byte_len, &i);
+        cells += cp_is_wide(cp) ? 2 : 1;
     }
-    return count;
+    return cells;
+}
+
+/* Byte length of the longest prefix of text that fits in `cells`. */
+static size_t utf8_bytes_for_cells(const char *text, size_t byte_len, int cells)
+{
+    size_t i = 0;
+    int used = 0;
+    while (i < byte_len) {
+        size_t next = i;
+        uint32_t cp = utf8_decode(text, byte_len, &next);
+        int w = cp_is_wide(cp) ? 2 : 1;
+        if (used + w > cells) break;
+        used += w;
+        i = next;
+    }
+    return i;
 }
 
 
@@ -3985,7 +4041,7 @@ static void fit_status_text(char *buf, size_t n, const char *prefix,
     int avail = status_avail_width() / char_width_for_font(FONT_11);
     for (int i = 0; i < nhints; i++) {
         snprintf(buf, n, "%s%s", prefix, hints[i]);
-        if (utf8_chars_in_bytes(buf, strlen(buf)) <= avail) return;
+        if (utf8_cells_in_bytes(buf, strlen(buf)) <= avail) return;
     }
     snprintf(buf, n, "%s", prefix);
 }
@@ -4391,14 +4447,15 @@ static int status_avail_width(void)
 /* Hide the editor's status label when its current text is wider than
  * the available area (so only the battery percentage remains visible
  * in the bottom bar); show it otherwise. Greybeard is monospaced, so
- * the rendered width is utf8_chars * char_width(FONT_11). */
+ * the rendered width is cells * char_width(FONT_11) (a CJK character
+ * takes two cells). */
 static void update_status_visibility(void)
 {
     if (!s_lbl_status) return;
     const char *text = lv_label_get_text(s_lbl_status);
     if (!text) text = "";
-    int chars = utf8_chars_in_bytes(text, strlen(text));
-    int text_w = chars * char_width_for_font(FONT_11);
+    int cells = utf8_cells_in_bytes(text, strlen(text));
+    int text_w = cells * char_width_for_font(FONT_11);
     if (text_w > status_avail_width()) {
         lv_obj_add_flag(s_lbl_status, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -9157,7 +9214,7 @@ struct typing_pre_state_t {
     int         cur_y;        /* absolute screen y of cursor before */
     int         cur_h;        /* cursor height before */
     bool        modified;     /* editor_is_modified() before */
-    int         line_chars;   /* UTF-8 char count of the line before */
+    int         line_chars;   /* monospace cells of the line before */
     int         char_w;       /* monospace cell width at body font */
 };
 
@@ -9194,7 +9251,7 @@ static void capture_typing_pre_state(typing_pre_state_t *out)
      * line's element depends on its neighbours). */
     if (!editor_format_active()->line_is_plain(lt, ll)) return;
 
-    int chars = utf8_chars_in_bytes(lt, ll);
+    int chars = utf8_cells_in_bytes(lt, ll);
 
     out->valid       = true;
     out->line        = line;
@@ -9249,7 +9306,7 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
 
     if (!editor_format_active()->line_is_plain(lt, ll)) return false;
 
-    int post_chars = utf8_chars_in_bytes(lt, ll);
+    int post_chars = utf8_cells_in_bytes(lt, ll);
     int char_w     = pre->char_w;
     int pre_w      = pre->line_chars * char_w;
     int post_w     = post_chars * char_w;
@@ -9515,6 +9572,47 @@ static void save_modified_doc_cb(editor_doc_t *doc, void *ctx)
     }
 }
 
+#ifdef DRAFTLING_HAS_IME
+/* ---- Input methods (Vietnamese / Korean / Japanese / Chinese packs) ----
+ * The ime component composes text right before the cursor through
+ * these two callbacks; candidates go to the status bar. */
+static size_t ime_host_peek(char *buf, size_t max)
+{
+    return editor_peek_before(buf, max);
+}
+
+static bool ime_host_replace(size_t del, const char *text)
+{
+    return editor_replace_before(del, text);
+}
+
+static const ime_host_t s_ime_host = { ime_host_peek, ime_host_replace };
+static bool s_ime_status_shown = false;
+
+/* Mirror ime_status() into the status bar (it stays until the
+ * composition ends, then the default text comes back). */
+static void ime_sync_status(void)
+{
+    const char *st = ime_status();
+    if (st) {
+        set_status_with_timeout(st, 0);
+        s_ime_status_shown = true;
+    } else if (s_ime_status_shown) {
+        s_ime_status_shown = false;
+        restore_default_status();
+    }
+}
+
+/* End any composition before a key the input method does not see. */
+static void ime_finish(void)
+{
+    if (!ime_composing()) return;
+    pane_bind_focus();
+    ime_commit();
+    ime_sync_status();
+}
+#endif
+
 static void handle_editor_key(const kb_event_t *ev)
 {
     bool ctrl  = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
@@ -9546,6 +9644,15 @@ static void handle_editor_key(const kb_event_t *ev)
     if (ev->keycode != KB_KEY_UP && ev->keycode != KB_KEY_DOWN) {
         s_visual_goal_x = -1;
     }
+
+#ifdef DRAFTLING_HAS_IME
+    /* Shortcuts, function keys and Alt / Win combinations are not for
+     * the input method: finish its composition first. */
+    if (ctrl || (ev->modifier & (KB_MOD_LALT | KB_MOD_LGUI | KB_MOD_RGUI)) ||
+        (ev->keycode >= KB_KEY_F1 && ev->keycode <= KB_KEY_F12)) {
+        ime_finish();
+    }
+#endif
 
     /* F1 opens the menu */
     if (ev->keycode == KB_KEY_F1) {
@@ -9803,6 +9910,40 @@ static void handle_editor_key(const kb_event_t *ev)
         else                  editor_ui_refresh();
         return;
     }
+
+#ifdef DRAFTLING_HAS_IME
+    /* Input methods: Vietnamese Telex, Korean Hangul, Japanese kana /
+     * kanji, Chinese pinyin. Typed keys and, while a composition is
+     * open, the editing keys (Space, Enter, Backspace, arrows, Esc)
+     * go to the ime component first. */
+    {
+        kb_ime_t kind = kb_layout_ime();
+        bool composing = ime_composing();
+        const char *text = (kind != KB_IME_NONE)
+                               ? kb_layout_translate(ev->keycode, ev->modifier)
+                               : NULL;
+        if (kind != KB_IME_NONE && (text || composing)) {
+            if (text && !composing) {
+                /* Same preparation as plain typing below. */
+                if (s_append_only) {
+                    editor_clear_selection();
+                    if (!cursor_at_doc_end()) editor_move_doc_end();
+                } else {
+                    editor_delete_selection();
+                }
+            }
+            bool used = ime_handle_key(kind, ev->keycode, ev->modifier, text);
+            ime_sync_status();
+            if (used) {
+                ensure_cursor_visible();
+                editor_ui_refresh();
+                return;
+            }
+        } else if (composing) {
+            ime_finish();
+        }
+    }
+#endif
 
     /* Special keys */
     /* Flip Left / Right semantics on RTL paragraphs so the visual
@@ -12419,13 +12560,18 @@ static void rebuild_screens_for_theme(void)
 
 extern "C" void editor_ui_init(void)
 {
-    /* Chain optional font subsets (Cyrillic / Hebrew) into the base
-     * font's fallback slot before any text is rendered. High-density
-     * boards use the Hack family; all others use Greybeard. */
+    /* Chain optional font subsets (Cyrillic / Hebrew / Vietnamese /
+     * CJK) into the base font's fallback slot before any text is
+     * rendered. High-density boards use the Hack family; all others
+     * use Greybeard. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
     hack_init();
 #else
     greybeard_init();
+#endif
+#ifdef DRAFTLING_HAS_IME
+    ime_init(&s_ime_host, ime_builtin_ja_dict(), ime_builtin_zh_dict());
+    ime_set_status_cells(status_avail_width() / char_width_for_font(FONT_11));
 #endif
 
     load_font_size_from_nvs();

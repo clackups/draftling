@@ -1171,6 +1171,35 @@ extern "C" bool editor_insert_text(const char *text, size_t len)
     return true;
 }
 
+extern "C" size_t editor_peek_before(char *out, size_t max)
+{
+    /* The bytes before the cursor are s_buf[0 .. s_gap_start). */
+    size_t n = 0;
+    while (n < max && n < s_gap_start && s_buf[s_gap_start - n - 1] != '\n') n++;
+    memcpy(out, s_buf + s_gap_start - n, n);
+    return n;
+}
+
+extern "C" bool editor_replace_before(size_t del, const char *text)
+{
+    if (del > s_gap_start) return false;
+    size_t len = text ? strlen(text) : 0;
+    if (content_len() - del + len > s_buf_size - 64) {
+        ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte insert",
+                 (unsigned)(s_buf_size / 1024), len);
+        return false;
+    }
+    s_gap_start -= del;
+    s_sel_anchor = -1;
+    if (len > 0) {
+        memcpy(s_buf + s_gap_start, text, len);
+        s_gap_start += len;
+    }
+    s_modified = true;
+    invalidate_flat();
+    return true;
+}
+
 extern "C" bool editor_insert_newline(void)
 {
     return editor_insert_char('\n');

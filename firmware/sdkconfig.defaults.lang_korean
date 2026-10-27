@@ -1,0 +1,17 @@
+# Korean language pack: US-English and Korean (2-set Hangul), with the
+# Hangul pixel fonts.
+#
+# Applied after sdkconfig.defaults and the board's own defaults by
+# "idf.py --preset <board> --lang-pack korean" (see idf_ext.py and
+# BUILDING.md), so the explicit layout lines below override any board
+# that picks its own layout set.
+CONFIG_DRAFTLING_LANG_PACK_KOREAN=y
+CONFIG_KB_LAYOUT_ENABLE_US=y
+CONFIG_KB_LAYOUT_ENABLE_UA=n
+CONFIG_KB_LAYOUT_ENABLE_DE=n
+CONFIG_KB_LAYOUT_ENABLE_FR=n
+CONFIG_KB_LAYOUT_ENABLE_HE=n
+CONFIG_KB_LAYOUT_ENABLE_VI=n
+CONFIG_KB_LAYOUT_ENABLE_KO=y
+CONFIG_KB_LAYOUT_ENABLE_JA=n
+CONFIG_KB_LAYOUT_ENABLE_ZH=n

@@ -32,6 +32,17 @@ if(NOT CONFIG_SPIRAM)
         "bare ESP32-C3 modules without PSRAM), it is not supported.")
 endif()
 
+# Language pack consistency: idf.py --lang-pack (idf_ext.py) passes
+# DRAFTLING_LANG_PACK and puts each pack in its own build directory. If
+# an sdkconfig made for another pack ends up here anyway (a hand-picked
+# -B, an old build tree), stop instead of building the wrong image.
+if(DEFINED DRAFTLING_LANG_PACK AND NOT DRAFTLING_LANG_PACK STREQUAL CONFIG_DRAFTLING_LANG_PACK_NAME)
+    message(FATAL_ERROR
+        "Language pack mismatch: idf.py asked for '${DRAFTLING_LANG_PACK}' "
+        "but ${SDKCONFIG} was made for '${CONFIG_DRAFTLING_LANG_PACK_NAME}'. "
+        "Delete that sdkconfig (or the whole build directory) and build again.")
+endif()
+
 # Silence warnings emitted from the vroland/epdiy managed component
 # (last upstream release 2.0.0, Nov 2023). The component still uses
 # APIs that have since been deprecated in ESP-IDF:

@@ -150,6 +150,12 @@ sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, BLE,
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
+sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
+                            korean, japanese, chinese), appended by
+                            idf.py --lang-pack
+idf_ext.py                  idf.py extension: --lang-pack option /
+                            DRAFTLING_LANG_PACK variable (see
+                            "Language packs")
 main/                       Application entry point and hardware config
   main.cpp                  app_main(): initializes all subsystems
   app_config.h              Display macros; includes the active board header
@@ -164,11 +170,15 @@ components/                 Reusable IDF components
   editor/                   Gap-buffer text editor, Markdown / Fountain
                             parsers, Markdown / Fountain / plain-text
                             format hooks, LVGL UI
-  fonts/                    Custom LVGL bitmap fonts (Greybeard family)
+  fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
+                            Vietnamese subsets, CJK pixel-font driver)
   git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
                             (M5Stack PaperMono) I2C IO-expander drivers
-  kb_layout/                Keyboard layout translation (US/UA/DE/FR)
+  ime/                      Input methods: Vietnamese Telex, Korean
+                            Hangul, Japanese kana-kanji, Chinese pinyin
+  kb_layout/                Keyboard layout translation (US/UA/DE/FR/HE/
+                            VI/KO/JA/ZH) and language-pack Kconfig
   kermit/                   Kermit file server on the serial console
                             ("Sync via browser")
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -1309,10 +1319,15 @@ Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
 
 Translates HID keycodes and modifier flags into UTF-8 character strings
 for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
-(Cyrillic), German (QWERTZ), French (AZERTY), and Hebrew (SI 1452, RTL
-via LVGL's bidi engine). Each layout can be independently enabled or
-disabled at build time via Kconfig (see
-`components/kb_layout/Kconfig.projbuild`); all five default to enabled.
+(Cyrillic), German (QWERTZ), French (AZERTY), Hebrew (SI 1452, RTL
+via LVGL's bidi engine), Korean (Dubeolsik; the letter keys give
+Hangul Compatibility Jamo) and the US-based Vietnamese, Japanese and
+Chinese layouts. Each layout can be independently enabled or disabled
+at build time via Kconfig (see `components/kb_layout/Kconfig.projbuild`);
+the language pack sets the defaults. `kb_layout_ime()` tells the
+editor which input method (`components/ime/`) the active layout uses
+(`KB_IME_TELEX`, `_HANGUL`, `_KANA`, `_PINYIN`, or `KB_IME_NONE`).
+The US tables are always compiled, since VI / JA / ZH type on them.
 
 Which of the compiled-in layouts `kb_layout_next()` (bound to `Ctrl+L`
 and `Win+Space` in the editor) actually cycles through is a separate,
@@ -1320,7 +1335,8 @@ user-configurable "active set" -- see `kb_layout_set_active()` /
 `kb_layout_is_active()` / `kb_layout_get_active_mask()` /
 `kb_layout_set_active_mask()`. `components/editor/editor_ui.cpp` owns
 persisting this set to NVS and exposes it as the "Active layouts" row
-in the F1 -> Settings menu; it defaults to US + UA. The title bar only
+in the F1 -> Settings menu; it defaults to US + UA, plus the
+input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
 Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
@@ -1330,8 +1346,9 @@ a raw `kb_layout_translate()` call: under a Latin layout (US/DE/FR) it
 follows the national layout, and is not limited to the classic 26-key
 US letter block -- so Ctrl+Z lands on the key printed "Z" on a German
 keyboard, and Ctrl+M on a French (AZERTY) keyboard is the semicolon
-key, since AZERTY moves "m" there. Under a non-Latin layout
-(Ukrainian/Hebrew) it falls back to the US physical key position
+key, since AZERTY moves "m" there (VI / JA / ZH count as Latin: they
+are the US layout). Under a non-Latin layout
+(Ukrainian/Hebrew/Korean) it falls back to the US physical key position
 within that classic block, since there is no national Latin letter to
 remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
@@ -1340,7 +1357,63 @@ Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
 `kb_layout_set()`, `kb_layout_get()`, `kb_layout_name()`,
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
-`kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`.
+`kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
+`kb_layout_ime()`.
+
+### components/ime/
+
+Input methods of the Vietnamese, Korean, Japanese and Chinese language
+packs (user docs: `docs/language-packs.md`). Plain C with no ESP-IDF
+dependency outside `ime_builtin.c` (the embedded dictionaries), so the
+engines can be compiled and tested on a host with a fake document.
+Built only when KB_LAYOUT_ENABLE_VI / _KO / _JA / _ZH is set (an empty
+component otherwise; the editor requires it through
+`idf_component_optional_requires()`).
+
+The composed text lives in the document right before the cursor. The
+editor supplies two callbacks (`ime_host_t`): `peek_before()`
+(`editor_peek_before()`, the bytes before the cursor on its line, read
+straight from the gap buffer) and `replace_before()`
+(`editor_replace_before()`). The core (`ime.c`) remembers what the
+engine inserted (`g_comp`) and, before every key, checks it is still
+there (`comp_valid()`); if the cursor moved or the text changed, the
+composition is dropped and the text kept. Candidates are shown via
+`ime_status()`, which `editor_ui.cpp` mirrors into the status bar
+(`ime_sync_status()`); pages are cut to `ime_set_status_cells()`.
+
+- `ime_telex.c` -- Vietnamese Telex. Stateless: each letter re-reads
+  the word before the cursor (`parse_cp()`), applies the key
+  (`apply()`: circumflex / breve / horn / stroke / tones, a repeated
+  key undoes), checks the result is a plausible syllable (valid
+  initial, at most three vowels, valid final) and writes the word
+  back; plain appends return false so the editor types the letter.
+  Tone placement (`tone_pos()`): the vowel with a mark (o in u-horn
+  o-horn), the last vowel before a final consonant, the middle of
+  three, else the first of two (traditional style).
+- `ime_hangul.c` -- Korean syllable composition from compatibility
+  jamo (initial / medial / final indexes, double finals and compound
+  vowels, a final moving to the next syllable before a vowel), with a
+  per-syllable history for jamo-wise Backspace.
+- `ime_kana.c` -- Japanese. Romaji table (`ROMAJI[]`, sorted, kana as
+  UTF-8 escapes) with the nn / n' / n+consonant and doubled-consonant
+  rules. Space converts: `best_first_word()` is a unigram Viterbi over
+  dictionary costs plus `WORD_PENALTY` per word (4500, tuned on test
+  sentences) and `UNKNOWN_COST` per unknown kana; candidates are the
+  dictionary entries, then hiragana and katakana.
+- `ime_pinyin.c` -- Chinese. `SYLLABLES[]` (from the dictionary);
+  `segment()` splits the letters into the fewest syllables, the last
+  one possibly incomplete; candidates are the words for the longest
+  run of complete syllables, then shorter runs; each candidate's
+  `span` is the letters it consumes.
+
+Dictionaries (`dict/ja.bin`, `dict/zh.bin`, DIME format: sorted keys
+with offsets, a cost and up to 12 candidates per key) are generated by
+`tools/gen_ime_dicts.py` -- see "Language packs" below.
+
+Public API: `ime_init()`, `ime_builtin_ja_dict()`,
+`ime_builtin_zh_dict()`, `ime_handle_key()`, `ime_commit()`,
+`ime_composing()`, `ime_status()`, `ime_set_status_cells()`,
+`ime_text_cells()`.
 
 ### components/kermit/
 
@@ -1763,6 +1836,7 @@ for builds that do not need a given script.
 |--------------|-------|----------|
 | `greybeard_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
 | `greybeard_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
+| `greybeard_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
 
 The base font is generated with `--lv-fallback greybeard_NN_ext` and
 the Hebrew subset with `--lv-fallback greybeard_NN_he_next`. Both
@@ -1924,6 +1998,103 @@ backing the H1 heading of the non-HIDPI 18 px base font size.
 `FONT_34` is non-HIDPI-only (`&greybeard_34`), backing the H1 heading
 of the non-HIDPI 22 px base font size -- Hack has no matching slot
 since HIDPI's base font sizes top out at 20 px.
+
+## Language packs
+
+A language pack is the set of layouts, input methods and font subsets
+of one firmware image: `default` (US, UA, DE, FR, HE), `vietnamese`
+(US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
+ZH). Each is a separate image; the board preset picks the hardware and
+the pack is chosen independently.
+
+**Build mechanism.** `firmware/idf_ext.py` is a project idf.py
+extension adding the global option `--lang-pack` (default `default`;
+environment variable `DRAFTLING_LANG_PACK`). Its global callback runs
+after idf.py has resolved the preset's `binaryDir`, and for a
+non-default pack moves the build directory from `build/<board>` to
+`build/<pack>/<board>`, passes `-DSDKCONFIG=<that dir>/sdkconfig` and
+`-DSDKCONFIG_DEFAULTS=<preset defaults>;sdkconfig.defaults.lang_<pack>`
+(command-line `-D` overrides the preset's `cacheVariables`). It always
+passes `-DDRAFTLING_LANG_PACK=<pack>`; the top-level `CMakeLists.txt`
+stops with "Language pack mismatch" when that differs from
+`CONFIG_DRAFTLING_LANG_PACK_NAME`. The default pack keeps
+`build/<board>` (release steps and the web flasher rely on it). idf.py
+does no macro expansion in `CMakePresets.json` and does not support
+preset inheritance, which is why this is an extension rather than
+extra presets. To add a pack: a `DRAFTLING_LANG_PACK_*` choice option
+and `DRAFTLING_LANG_PACK_NAME` default in
+`components/kb_layout/Kconfig.projbuild`, its layout defaults, a
+`sdkconfig.defaults.lang_<pack>` setting every layout explicitly, the
+name in `LANG_PACKS` in `idf_ext.py`, and an NVS key for the active
+layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
+
+Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
+2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
+Xteink X4 Pro). All fit
+the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
+slots.
+
+**Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
+base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin extension
+(`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Cyrillic
+(generated without a fallback, so always last). Missing subsets are
+skipped (`slot_chain_t` table).
+
+**Latin extension** (`greybeard_latinx_NN.c`, `hack_latinx_NN.c`,
+compiled with KB_LAYOUT_ENABLE_VI or DRAFTLING_HAS_CJK): the
+Vietnamese letters (U+0102/0103, U+0110/0111, U+0128/0129,
+U+0168/0169, U+01A0/01A1, U+01AF/01B0, U+1EA0..U+1EF9), the dong sign
+and curly quotes, dashes, bullet, per mille. Generated by
+`components/fonts/tools/gen_latinx.sh` with the pinned lv_font_conv:
+Greybeard has all of it; for Hack the punctuation comes from Hack and
+the letters from Noto Sans Mono v2.014 (hinted TTF, SIL OFL 1.1) --
+DejaVu Sans Mono, Hack's parent, lacks the 46 letters with stacked
+marks. Hack advances are snapped to the cell width like the other Hack
+fonts.
+
+**CJK fonts** (`components/fonts/cjk_font.c`, `cjk/<set>/cjk{10,12,16}.bin`,
+licenses in `cjk/LICENSE.txt`): Fusion Pixel Font 10 / 12 px
+monospaced BDF (release 2026.10.25; ja / zh_hans / ko styles) and GNU
+Unifont 18.0.01 16 px BDF (unifont_jp for the ja set), all used under
+the SIL OFL 1.1. `components/fonts/tools/gen_cjk_fonts.py <set> ...`
+keeps only full-width glyphs of the set's repertoire (ja: kana, JIS X
+0208 kanji via the euc_jp codec, every character of `ja.bin`; zh:
+bopomofo, GB 2312 hanzi via the gb2312 codec, every character of
+`zh.bin`; ko: all Hangul syllables and compatibility jamo; all:
+U+3000..U+303F and fullwidth forms) and writes "DCJK" blobs (u16 code
+points + fixed N x N 1 bpp cells), embedded with `EMBED_FILES`. The
+driver creates one `lv_font_t` per slot (`cjk_font_create()`, called
+from the chain init with the base font's line height, baseline and
+cell width): advance = two cells, the native glyph scaled by a whole
+number, centred in the line box. `plan_choices()` takes the largest
+`N * k` that fits min(two cells, line height) (10 px only unscaled),
+then smaller sizes for glyphs missing there, then oversize ones as a
+last resort. LVGL's word wrap breaks between CJK characters
+(`lv_text_is_a_word()`).
+
+**Editor integration** (`editor_ui.cpp`, `DRAFTLING_HAS_IME`):
+`handle_editor_key()` hands typed keys -- and Space / Enter /
+Backspace / arrows / Esc while composing -- to `ime_handle_key()`
+after the Ctrl block and before the special-key switch; Ctrl / Alt /
+Win combinations and F-keys call `ime_finish()` first. Width estimates
+(`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
+e-paper typing fast path) count CJK characters as two cells
+(`cp_is_wide()`, same ranges as `cjk_is_wide()`). The small text
+fields (search, file names, WiFi) are not wired to the input methods.
+
+**Dictionaries** (`components/ime/tools/gen_ime_dicts.py`, licenses in
+`components/ime/dict/LICENSE.txt`):
+- `ja.bin` from the Mozc OSS dictionary (`src/data/dictionary_oss`,
+  `dictionary0*.txt` + `id.def`, BSD-3 / IPAdic notice): content words
+  with cost <= 4500, proper nouns <= 3500, all particles and auxiliary
+  verbs; hiragana spellings only when cost <= 2000 and ranked +500
+  (so the kanji comes first, except for particles); katakana spellings
+  only for nouns with cost <= 4000. About 30,800 readings, 1.1 MB.
+- `zh.bin` from AOSP PinyinIME `rawdict_utf16_65105_freq.txt` (Apache
+  2.0), grouped by pinyin, cost = 8000 - 500 ln(freq + 1). About
+  39,000 keys, 1.1 MB.
+After changing a dictionary, regenerate the ja / zh font sets too
+(their repertoire includes the dictionary's characters).
 
 ## Hardware Definitions in Kconfig.projbuild
 
@@ -2383,30 +2554,45 @@ approach produced blocky, upscaled glyphs; rendering the Hack font at
 its native size at full panel resolution is sharper. The display
 backends now always run their 1:1 (SCALE == 1) path.
 
-### components/kb_layout/Kconfig.projbuild -- Keyboard Layouts
+### components/kb_layout/Kconfig.projbuild -- Language Pack and Keyboard Layouts
 
-This file defines the **DRAFTLING Keyboard Layouts** menu. Each layout
-is an independent `bool` option that can be enabled or disabled:
+This file defines the **DRAFTLING Language Pack and Keyboard Layouts**
+menu: the `DRAFTLING_LANG_PACK` choice (`_DEFAULT`, `_VIETNAMESE`,
+`_KOREAN`, `_JAPANESE`, `_CHINESE`; its name is the string
+`DRAFTLING_LANG_PACK_NAME`) and one `bool` per layout, whose default
+follows the pack:
 
 | Symbol | Layout | Default |
 |--------|--------|---------|
-| KB_LAYOUT_ENABLE_US | US-English (QWERTY) | y (enabled) |
-| KB_LAYOUT_ENABLE_UA | Ukrainian (Cyrillic) | y (enabled) |
-| KB_LAYOUT_ENABLE_DE | German (QWERTZ) | y (enabled) |
-| KB_LAYOUT_ENABLE_FR | French (AZERTY) | y (enabled) |
-| KB_LAYOUT_ENABLE_HE | Hebrew (SI 1452) | y (enabled) |
+| KB_LAYOUT_ENABLE_US | US-English (QWERTY) | y (every pack) |
+| KB_LAYOUT_ENABLE_UA | Ukrainian (Cyrillic) | y in the default pack |
+| KB_LAYOUT_ENABLE_DE | German (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_FR | French (AZERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_HE | Hebrew (SI 1452) | y in the default pack |
+| KB_LAYOUT_ENABLE_VI | Vietnamese (Telex) | y in the vietnamese pack |
+| KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
+| KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
+| KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
+
+Derived: `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
+fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
+of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
 component reads these symbols at compile time to conditionally compile
 only the enabled layout tables. A board-specific `sdkconfig.defaults.*`
 can override individual symbols (see `sdkconfig.defaults.sunton_8048s043`,
-which keeps only US + DE for that author's German keyboard).
+which keeps only US + DE for that author's German keyboard); the
+`sdkconfig.defaults.lang_<pack>` files set every layout explicitly, so
+they win over such board lines.
 
 Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
 Settings), independent of this Kconfig menu -- see the `kb_layout`
-component writeup above.
+component writeup above. Its NVS key differs per pack (`actlayouts`,
+`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`), because the bit
+order follows the compiled-in layouts.
 
 ## Building
 
@@ -2446,6 +2632,14 @@ isolated. Run these from inside `firmware/`:
 cd firmware
 idf.py --preset waveshare_rlcd42 build
 idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash monitor
+```
+
+A language pack other than the default is selected with `--lang-pack`
+(or `DRAFTLING_LANG_PACK`) and builds in `build/<pack>/<board>`; see
+"Language packs":
+
+```bash
+idf.py --preset waveshare_rlcd42 --lang-pack japanese build
 ```
 
 If you pull new changes that touch `sdkconfig.defaults` or a board's

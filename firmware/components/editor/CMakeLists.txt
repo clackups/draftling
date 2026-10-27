@@ -20,6 +20,11 @@ if(CONFIG_DRAFTLING_HAS_USB_MSC)
     idf_component_optional_requires(PRIVATE usb_msc)
 endif()
 
+if(CONFIG_KB_LAYOUT_ENABLE_VI OR CONFIG_KB_LAYOUT_ENABLE_KO OR
+   CONFIG_KB_LAYOUT_ENABLE_JA OR CONFIG_KB_LAYOUT_ENABLE_ZH)
+    idf_component_optional_requires(PRIVATE ime)
+endif()
+
 if(CONFIG_DRAFTLING_HAS_KERMIT)
     idf_component_optional_requires(PRIVATE kermit)
 endif()
