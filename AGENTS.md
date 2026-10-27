@@ -2703,15 +2703,13 @@ first step of every release.
 
 A release also publishes prebuilt binaries for the boards covered by
 the web flasher (see below), on the `_flasher` branch only -- never as
-GitHub release assets. Currently: `m5stack_papers3`,
-`xteink_x4_pro`, `xteink_x4_classic`, `waveshare_rlcd42`,
-`waveshare_touch_lcd_349`, `waveshare_lcd_316`, `waveshare_epaper_397`,
-`lilygo_t5_epd_s3_pro`, `freenove_fnk0104a`, `freenove_fnk0104b`,
-`freenove_fnk0104s`, `freenove_fnk0104n`, `elecrow_crowpanel_579`,
-`seeed_reterminal_e1001`, `seeed_reterminal_sticky`, and
-`m5stack_papermono`. Extend the list
-there
-as more boards get a web-flasher entry. A release does not need to
+GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
+`waveshare_rlcd42`, `waveshare_epaper_397`, `lilygo_t5_epd_s3_pro`,
+`seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
+`m5stack_papermono` and `microjournal_rev5`, each in every language
+pack (the default image plus one per non-default pack, listed in the
+release's `languagePacks` array in `manifest.json`). Extend the list
+there as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
 keep pointing at an older tag until it is next rebuilt. An

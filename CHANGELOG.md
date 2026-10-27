@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-10-27
+
 ### Added
 
 - **Language packs for Vietnamese, Korean, Japanese and Chinese**:
