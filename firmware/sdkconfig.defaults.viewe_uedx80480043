@@ -1,0 +1,5 @@
+# CMakePresets.json board defaults: VIEWE UEDX80480043E-WB-A / -WB-B
+# Sets the hardware model and IDF target used by the "viewe_uedx80480043" preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043=y

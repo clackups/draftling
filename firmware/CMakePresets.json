@@ -83,6 +83,15 @@
             }
         },
         {
+            "name": "viewe_uedx80480043",
+            "displayName": "VIEWE UEDX80480043E-WB-A / -WB-B",
+            "binaryDir": "build/viewe_uedx80480043",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.viewe_uedx80480043",
+                "SDKCONFIG": "build/viewe_uedx80480043/sdkconfig"
+            }
+        },
+        {
             "name": "elecrow_crowpanel_50",
             "displayName": "Elecrow CrowPanel ESP32 HMI 5.0\"",
             "binaryDir": "build/elecrow_crowpanel_50",

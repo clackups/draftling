@@ -37,6 +37,7 @@ load the firmware quickly without having to compile it.
   * [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html) ([GitHub](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792))
   * [Elecrow CrowPanel ESP32 HMI 5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html) (800x480 color LCD, capacitive touch)
   * Guition JC3248W535
+  * [VIEWE UEDX80480043E-WB-A / -WB-B](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display) (4.3" 800x480 color LCD, capacitive touch)
   * [7" and 4.3" Sunton boards](https://github.com/rzeldent/platformio-espressif32-sunton)
   * [2.8", 3.5" and 4" Freenove boards](https://github.com/Freenove/Freenove_ESP32_S3_Display)
   * [Viewe UEDX24320028E-WB-A](https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display) board with the [UEED035HV-RX40-L001](https://viewedisplay.com/product/3-5-inch-320x480-sunlight-readable-transflective-with-super-low-power-tft-lcd-module/) 3.5" transflective display

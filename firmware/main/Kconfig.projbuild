@@ -125,6 +125,18 @@ config DRAFTLING_MODEL_ELECROW_CROWPANEL_50
         IO-expander (0x18). MicroSD on SPI, backlight on GPIO2, USB
         through a CH340 USB-to-UART bridge. No battery monitor.
 
+config DRAFTLING_MODEL_VIEWE_UEDX80480043
+    bool "VIEWE UEDX80480043E-WB-A / -WB-B (ESP32-S3, 4.3\" RGB color LCD, 800x480)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        VIEWE UEDX80480043E-WB-A / -WB-B 4.3-inch smart display:
+        ESP32-S3 (16 MB flash, 8 MB octal PSRAM), 4.3" color LCD,
+        800x480, ST7262 panel on a 16-bit parallel RGB565 interface.
+        Same pin map as the Sunton ESP32-8048S043C (GT911 touch on I2C,
+        MicroSD on SPI, backlight on GPIO2), with VIEWE's panel timings.
+        USB through a CH340C USB-to-UART bridge. USB-powered, no
+        battery input.
+
 config DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     bool "Waveshare ESP32-S3-Touch-LCD-7 (ESP32-S3, 7\" RGB color LCD, 800x480, CH422G expander)"
     depends on IDF_TARGET_ESP32S3
@@ -430,6 +442,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -494,6 +507,7 @@ config DRAFTLING_DISPLAY_RGB
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default n
@@ -527,6 +541,15 @@ config DRAFTLING_RGB_BOARD_S043
 config DRAFTLING_RGB_BOARD_CROWPANEL_50
     bool
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default n
+
+# DRAFTLING_RGB_BOARD_UEDX80480043 switches components/display/display_rgb.cpp
+# to the VIEWE UEDX80480043E-WB panel definition: the Sunton
+# ESP32-8048S043C pin map with VIEWE's timings. The backend also stops
+# the panel and latches the backlight off before deep sleep.
+config DRAFTLING_RGB_BOARD_UEDX80480043
+    bool
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default n
 
 # DRAFTLING_HAS_PCA9557 compiles in the PCA9557 I2C IO-expander driver
@@ -872,6 +895,9 @@ config DRAFTLING_BACKLIGHT_PWM_HZ
     depends on DRAFTLING_DISPLAY_RGB && !DRAFTLING_HAS_CH422G
     range 100 100000
     default 15000 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    # VIEWE UEDX80480043E-WB: VIEWE's BSP uses 5 kHz, which whined
+    # audibly on hardware.
+    default 15000 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default 1000
     help
         LEDC PWM frequency used to dim the backlight. A frequency in the
@@ -1348,6 +1374,7 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_M5STACK_TAB5
     default 0  if DRAFTLING_MODEL_SUNTON_8048S070
     default 0  if DRAFTLING_MODEL_SUNTON_8048S043
+    default 0  if DRAFTLING_MODEL_VIEWE_UEDX80480043
     # Elecrow CrowPanel 5.0": no GPIO wake. BOOT (GPIO0) is wired
     # straight to the LCD's pixel clock input with no pull-up resistor,
     # and the panel stays powered in deep sleep and holds the line LOW
@@ -1473,6 +1500,8 @@ config DRAFTLING_TOUCHSCREEN
     # Elecrow CrowPanel 5.0": GT911 with a deterministic reset through
     # the PCA9557 expander on v3.0 boards (see main.cpp).
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    # VIEWE UEDX80480043E-WB: GT911 with RST on GPIO38, polled.
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
@@ -1510,6 +1539,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
@@ -1633,6 +1663,7 @@ config DRAFTLING_TOUCH_RST_GPIO
     default 41 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 38 if DRAFTLING_MODEL_SUNTON_8048S070
     default 38 if DRAFTLING_MODEL_SUNTON_8048S043
+    default 38 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -1726,6 +1757,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_SUNTON_8048S070
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
     default 800 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default 800 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: native 320x820 portrait panel; the
     # 270-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
@@ -1771,6 +1803,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_SUNTON_8048S070
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
     default 480 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default 480 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -1855,6 +1888,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_XTEINK_X4
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: 320x820 on a 3.16" panel is ~280

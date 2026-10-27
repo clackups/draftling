@@ -6,6 +6,12 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **VIEWE UEDX80480043E-WB-A / -WB-B support**: the 4.3" 800x480
+  touch display board from VIEWE is now supported, with touch, the
+  MicroSD slot and an adjustable backlight.
+
 ### Fixed
 
 - **Lower standby current on the Freenove FNK0104 boards**: before

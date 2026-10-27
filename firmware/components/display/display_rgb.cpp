@@ -11,6 +11,9 @@
  *     RGB; LCD reset and backlight sit behind a CH422G I2C
  *     IO-expander instead of direct GPIOs -- see
  *     CONFIG_DRAFTLING_HAS_CH422G below)
+ *   - VIEWE UEDX80480043E-WB-A / -WB-B (4.3", 800x480, ST7262, 16-bit
+ *     RGB; the Sunton ESP32-8048S043C pin map with VIEWE's timings --
+ *     see CONFIG_DRAFTLING_RGB_BOARD_UEDX80480043 below)
  *   - Elecrow CrowPanel ESP32 HMI 5.0" (5.0", 800x480, 16-bit RGB;
  *     PCLK is GPIO0, the BOOT button net -- see
  *     CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50 below)
@@ -205,6 +208,37 @@ static const int kDataGpios[16] = {
 
 /* data_gpio_nums[0] is the RGB565 LSB: B0-B4, G0-G5, R0-R4 (Elecrow's
  * pin_d0..pin_d15). */
+static const int kDataGpios[16] = {
+    8, 3, 46, 9, 1,       /* B0-B4 */
+    5, 6, 7, 15, 16, 4,   /* G0-G5 */
+    45, 48, 47, 21, 14    /* R0-R4 */
+};
+
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_UEDX80480043)
+/* ---- VIEWE UEDX80480043E-WB-A / -WB-B (4.3", ST7262) ----
+ * Pins and timings from VIEWE's ESP-IDF BSP
+ * (viewesmart/bsp_uedx80480043_wb_a 1.0.0: bsp_uedx80480043_wb_a.h,
+ * display.h). The pin map is the Sunton ESP32-8048S043C's. Backlight
+ * on GPIO2, active high. display_deep_sleep_prepare() stops the panel
+ * and latches the backlight off (RGB_STOP_PANEL_ON_SLEEP). */
+#define RGB_BL_GPIO         2
+#define RGB_PCLK_HZ         (16 * 1000 * 1000)   /* 16 MHz */
+#define RGB_HSYNC_GPIO      39
+#define RGB_VSYNC_GPIO      41
+#define RGB_DE_GPIO         40
+#define RGB_PCLK_GPIO       42
+#define RGB_HSYNC_PULSE     4
+#define RGB_HSYNC_BACK      40
+#define RGB_HSYNC_FRONT     20
+#define RGB_VSYNC_PULSE     4
+#define RGB_VSYNC_BACK      16
+#define RGB_VSYNC_FRONT     16
+#define RGB_PCLK_ACTIVE_NEG 1
+#define RGB_PCLK_IDLE_HIGH  0
+#define RGB_STOP_PANEL_ON_SLEEP 1
+
+/* data_gpio_nums[0] is the RGB565 LSB: B0-B4, G0-G5, R0-R4 (the BSP's
+ * BSP_LCD_DATA0..15). */
 static const int kDataGpios[16] = {
     8, 3, 46, 9, 1,       /* B0-B4 */
     5, 6, 7, 15, 16, 4,   /* G0-G5 */
@@ -815,7 +849,8 @@ const char *display_controller_name(void)
 {
 #if defined(CONFIG_DRAFTLING_RGB_PANEL_ST7701)
     return "ST7701 (RGB)";
-#elif defined(CONFIG_DRAFTLING_HAS_CH422G) || defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
+#elif defined(CONFIG_DRAFTLING_HAS_CH422G) || defined(CONFIG_DRAFTLING_RGB_BOARD_S043) || \
+      defined(CONFIG_DRAFTLING_RGB_BOARD_UEDX80480043)
     return "ST7262 (RGB)";
 #elif defined(CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50)
     return "ILI6122 / ILI5960 (RGB)";

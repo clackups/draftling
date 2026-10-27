@@ -207,6 +207,38 @@ charger, and a CH340 USB-to-UART bridge. Build preset
 - Power consumption in standby is about 48mA, so it's not really
   usable for portable designs.
 
+## VIEWE UEDX80480043E-WB-A / -WB-B
+
+[VIEWE
+UEDX80480043E-WB](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display)
+is a 4.3" smart display: ESP32-S3 with 16 MB flash and 8 MB PSRAM, an
+800x480 color LCD (ST7262, 16-bit RGB) with GT911 capacitive touch, a
+MicroSD slot and a CH340C USB-to-UART bridge. The WB-B revision
+replaces the WB-A; VIEWE states the two need no software differences,
+so one firmware covers both. Build preset `viewe_uedx80480043`.
+
+The wiring is the same as on the Sunton ESP32-8048S043C; Draftling uses
+the panel timings from VIEWE's own ESP-IDF board support package.
+
+Recommended for desktop designs: the board is powered from USB and has
+no battery input.
+
+- BOOT (GPIO0) wakes the device from sleep; holding it for 2 seconds
+  forgets the paired keyboards.
+- Before sleep the backlight is switched off, the panel scan-out is
+  stopped, the touch controller is put to sleep and the SD card is
+  released.
+- The backlight is dimmed with a 15 kHz PWM signal; the 5 kHz used by
+  VIEWE's own code made the backlight whine audibly. If your unit
+  still whines or flickers, change "Backlight PWM frequency (Hz)" in
+  `idf.py --preset viewe_uedx80480043 menuconfig` (DRAFTLING
+  Configuration).
+- No "SD card via USB" and no "Sync via browser", since the USB port
+  goes through the CH340C bridge, not the ESP32-S3's native USB.
+- Power consumption in standby is about 30 mA.
+
+Tested on physical hardware.
+
 ## Waveshare ESP32-S3-Touch-LCD-7
 
 [Waveshare

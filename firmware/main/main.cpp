@@ -1113,6 +1113,25 @@ static void pre_sleep_crowpanel_50_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)
+static void pre_sleep_viewe_uedx80480043_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: VIEWE UEDX80480043E peripheral teardown");
+
+    pre_sleep_autosave();
+    /* GT911 to sleep; the RST pulse in touchscreen_init() wakes it on
+     * the next boot. */
+    touchscreen_sleep();
+    (void)sd_card_deinit();
+
+    /* Backlight off and the RGB panel stopped. Take the LVGL lock so no
+     * flush is in progress. */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
@@ -3543,6 +3562,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)
+    standby_set_pre_sleep_cb(pre_sleep_viewe_uedx80480043_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
