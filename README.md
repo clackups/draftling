@@ -115,8 +115,8 @@ load the firmware quickly without having to compile it.
 
 - **Color themes** On color LCD boards the editor offers a
   runtime-selectable color theme (F1 -> Settings -> Color theme):
-  light green on black (default), dark green on black, amber/orange on
-  black, white on black, or black on beige.
+  light green on black (default), amber on dark red, amber on black,
+  white on black, or black on beige.
 
 - **Sync via browser** F1 -> "Sync via browser..." -> Start turns the
   serial console into a Kermit file server and asks you to open

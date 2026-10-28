@@ -364,10 +364,10 @@ static const color_theme_t COLOR_THEMES[] = {
 static const color_theme_t COLOR_THEMES[] = {
     /* Color themes that look nice to the eye on most LCD panels.  */
     { "Light green on black", 0x00FF00, 0x000000 },
-    { "Dark green on black",  0x15631A, 0x000000 },
-    { "Orange on black",      0xCC6600, 0x000000 },
+    { "Amber on dark-red",    0xCC6600, 0x400000 },
+    { "Amber on black",       0xCC6600, 0x000000 },
     { "White on black",       0xFFFFFF, 0x000000 },
-    { "Black on beige",       0x000000, 0xF3EFEA },
+    { "Black on beige",       0x000000, 0xDAA06D },
 };
 #endif
 

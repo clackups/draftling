@@ -12,6 +12,16 @@ in the git log.
   touch display board from VIEWE is now supported, with touch, the
   MicroSD slot and an adjustable backlight.
 
+### Changed
+
+- **New color themes on color LCD boards**: the "Dark green on black"
+  theme is replaced by "Amber on dark-red", "Orange on black" is
+  renamed "Amber on black" (same colors), and the background of
+  "Black on beige" is a warmer, darker beige that is easier on the
+  eyes. If you used "Dark green on black", the editor now starts in
+  "Amber on dark-red"; pick another theme in F1 -> Settings -> Color
+  theme if you prefer.
+
 ### Fixed
 
 - **Lower standby current on the Freenove FNK0104 boards**: before
