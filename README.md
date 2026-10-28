@@ -19,7 +19,7 @@ Seeed reterminal Sticky running Draftling firmware:
 [HARDWARE.md](HARDWARE.md) provides a detailed list of all supported
 hardware types.
 
-The [web flasher](https://clackups.github.io/draftling/) allows you to
+The [web flasher](https://flasher.draftling.art/) allows you to
 load the firmware quickly without having to compile it.
 
 * Ready-made consumer grade hardware

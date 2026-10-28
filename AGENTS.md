@@ -2736,7 +2736,8 @@ shows it in the F1 menu's bottom status row. Bump this string as the
 first step of every release.
 
 A release also publishes prebuilt binaries for the boards covered by
-the web flasher (see below), on the `_flasher` branch only -- never as
+the web flasher (https://flasher.draftling.art/, see below), in the
+separate `clackups/draftling-flasher` repository only -- never as
 GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`, `lilygo_t5_epd_s3_pro`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
@@ -2752,8 +2753,8 @@ experimental / untested board's manifest entry marks itself with a
 `description` field, matching the convention already used for
 `xteink_x4_classic`; there is no separate schema flag for this.
 
-Note: step 5 below refers to `firmware/` on the *`_flasher`* branch --
-its own binary-staging directory, named the same as (but unrelated to)
+Note: step 5 below refers to `firmware/` in the *`draftling-flasher`*
+repository -- its own binary-staging directory, named the same as (but unrelated to)
 the `firmware/` subdirectory on `main` that holds the actual build
 tree referenced in steps 1-4.
 
@@ -2784,7 +2785,8 @@ tree referenced in steps 1-4.
    ```bash
    gh release create vX.Y.Z --title "Release X.Y.Z" --notes-file notes.md
    ```
-5. Update the web flasher on the `_flasher` branch (see below). Each
+5. Update the web flasher in the `clackups/draftling-flasher`
+   repository (see below). Each
    board gets three images, named
    `draftling-<board>[-bootloader|-partition-table].bin` (from
    `firmware/build/<board>/bootloader/bootloader.bin`,
@@ -2803,11 +2805,12 @@ tree referenced in steps 1-4.
    default single-"factory"-app partition table like most other boards,
    so it needs only the usual three images.
 
-   The `_flasher` branch has its own `README.md` with the full layout
-   and rationale -- it is an orphan branch with no shared history with
-   `main`, published via GitHub Pages, so check it out in a separate
-   `git worktree` rather than switching your main checkout to it:
-   - Add `firmware/vX.Y.Z/` (on `_flasher`) with those images, named
+   The `draftling-flasher` repository
+   (https://github.com/clackups/draftling-flasher) has its own
+   `README.md` with the full layout and rationale. It is published via
+   GitHub Pages at https://flasher.draftling.art/ from its `main`
+   branch; clone it next to this checkout:
+   - Add `firmware/vX.Y.Z/` (in `draftling-flasher`) with those images, named
      as above, for each board included in this release (including
      `draftling-xteink_x4_pro-otadata.bin`,
      `draftling-xteink_x4_classic-otadata.bin` and
@@ -2823,15 +2826,16 @@ tree referenced in steps 1-4.
      `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
      "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
-   - Commit and push to `_flasher` -- GitHub Pages redeploys
-     automatically; no separate deploy step.
-   - A `firmware/<tag>/` directory (on `_flasher`) can be deleted once
-     no board's `releases` references it any more (check every board,
-     not just the ones just updated).
+   - Commit and push to `draftling-flasher`'s `main` -- GitHub Pages
+     redeploys automatically; no separate deploy step.
+   - A `firmware/<tag>/` directory (in `draftling-flasher`) can be
+     deleted once no board's `releases` references it any more
+     (check every board, not just the ones just updated).
 
 Note: the `gh` CLI here is authenticated with a fine-grained PAT that
 can create tags, releases, and release assets, but is *not* authorized
 to manage repository settings (e.g. `gh api repos/.../pages` returns
-403). GitHub Pages for `_flasher` only needed enabling once, in
-Settings -> Pages; it does not need to be touched again for routine
+403). GitHub Pages (with the `flasher.draftling.art` custom domain)
+for `draftling-flasher` only needed enabling once, in Settings ->
+Pages; it does not need to be touched again for routine
 releases.
