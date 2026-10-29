@@ -31,8 +31,10 @@ in the git log.
   with a Logitech MX Keys Mini) refused to connect otherwise and only
   showed "Connection failed" without ever asking for a pairing code.
   When a connection still fails, the message now says at which step
-  (for example "no HID service" or "pairing error 0x..."), which helps
-  when reporting the problem.
+  (for example "no link, reason 0x3e" or "pairing error 0x..."),
+  which helps when reporting the problem. If a keyboard does not
+  answer the connection request at all, the next attempt uses the
+  connection settings phones use.
 - **Lower standby current on the Freenove FNK0104 boards**: before
   going to sleep, the device now also puts the LCD controller and the
   touch controller to sleep and releases the MicroSD card, instead of

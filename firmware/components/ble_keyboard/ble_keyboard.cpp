@@ -660,6 +660,22 @@ static volatile bool s_force_close_on_open = false;
 static char s_open_fail_detail[40] = "";
 static bool s_hid_svc_seen = false;
 
+/* The link layer connection came up during the current open (GATTC
+ * CONNECT seen). A failed open without it means the keyboard never
+ * answered our connection request. */
+static bool s_link_up = false;
+
+/* Initial connection parameters. Normally the CONNECT_IND carries the
+ * 32 s supervision timeout (SUPERVISION_TIMEOUT_FLOOR_10MS, see the
+ * UPDATE_CONN_PARAMS handler). After an open in which the link never
+ * came up, the next attempt uses Android's defaults instead (30-50 ms
+ * interval, 5 s timeout), in case a keyboard ignores a connection
+ * request with the unusual 32 s value; a link that then comes up still
+ * gets the floor through the UPDATE_CONN_PARAMS handler. The two
+ * alternate until one connects. */
+#define CONN_TIMEOUT_COMPAT_10MS 500
+static bool s_conn_compat = false;
+
 /* Forward declarations */
 static void start_reconnection(void);
 static void reconn_timer_cb(TimerHandle_t timer);
@@ -1455,6 +1471,7 @@ static void connect_task(void *arg)
     esp_hidh_dev_t *dev = NULL;
     s_open_fail_detail[0] = '\0';
     s_hid_svc_seen = false;
+    s_link_up = false;
     /* Mark the open as in flight BEFORE we ask the controller to
      * negotiate connection parameters. The UPDATE_CONN_PARAMS_EVT
      * handler keys off this flag to decide whether to pin the
@@ -1476,12 +1493,14 @@ static void connect_task(void *arg)
      * range; intentionally not aggressive so we do not regress power
      * if the peer accepts it as-is. latency=0, supervision_timeout =
      * SUPERVISION_TIMEOUT_FLOOR_10MS. */
+    const uint16_t init_sto = s_conn_compat ? CONN_TIMEOUT_COMPAT_10MS
+                                            : SUPERVISION_TIMEOUT_FLOOR_10MS;
     esp_err_t pref_err = esp_ble_gap_set_prefer_conn_params(
         s_target_bda,
         24, 40, 0,
-        SUPERVISION_TIMEOUT_FLOOR_10MS);
-    ESP_LOGI(TAG, "Preferred conn params set (sto=%u 10 ms): %s",
-             (unsigned)SUPERVISION_TIMEOUT_FLOOR_10MS,
+        init_sto);
+    ESP_LOGI(TAG, "Preferred conn params set (sto=%u 10 ms%s): %s",
+             (unsigned)init_sto, s_conn_compat ? ", compat" : "",
              esp_err_to_name(pref_err));
 
     for (int attempt = 0; attempt < CONNECT_RETRIES; attempt++) {
@@ -1526,6 +1545,14 @@ static void connect_task(void *arg)
             notify_status("Connection failed, retrying...");
         }
         s_connecting = false;
+        /* The keyboard never answered the connection request: try the
+         * other set of initial connection parameters next time. */
+        if (!s_link_up) {
+            s_conn_compat = !s_conn_compat;
+            ESP_LOGW(TAG, "No link; next attempt uses %s connection "
+                          "parameters",
+                     s_conn_compat ? "compatible" : "default");
+        }
         /* Open never produced a device -- no HIDH event will arrive
          * to clear s_open_in_flight, so do it here. */
         s_open_in_flight = false;
@@ -1652,6 +1679,11 @@ static void gattc_event_handler(esp_gattc_cb_event_t event,
             memcmp(c->remote_bda, s_target_bda, sizeof(esp_bd_addr_t)) != 0) {
             break;
         }
+        s_link_up = true;
+        ESP_LOGI(TAG, "Link up: int=%u lat=%u sto=%u",
+                 (unsigned)c->conn_params.interval,
+                 (unsigned)c->conn_params.latency,
+                 (unsigned)c->conn_params.timeout);
         bool bonded = is_bonded_addr(c->remote_bda);
         esp_err_t err = esp_ble_set_encryption(c->remote_bda,
                                                ESP_BLE_SEC_ENCRYPT_MITM);
@@ -1668,7 +1700,9 @@ static void gattc_event_handler(esp_gattc_cb_event_t event,
 
     case ESP_GATTC_OPEN_EVT:
         if (param->open.status != ESP_GATT_OK) {
-            if (s_open_in_flight) {
+            /* Keep the more specific text from the DISCONNECT that
+             * precedes a failed connection attempt. */
+            if (s_open_in_flight && !s_open_fail_detail[0]) {
                 snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
                          "connect error 0x%x", (unsigned)param->open.status);
             }
@@ -1714,10 +1748,22 @@ static void gattc_event_handler(esp_gattc_cb_event_t event,
             ESP_LOGW(TAG, "Link lost while pairing");
             pair_hold_clear();
         }
-        if (event == ESP_GATTC_CLOSE_EVT && s_open_in_flight &&
-            !s_open_fail_detail[0]) {
-            snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
-                     "link lost 0x%x", (unsigned)param->close.reason);
+        if (s_open_in_flight && !s_open_fail_detail[0]) {
+            unsigned reason = (event == ESP_GATTC_CLOSE_EVT)
+                              ? (unsigned)param->close.reason
+                              : (unsigned)param->disconnect.reason;
+            if (!s_link_up) {
+                /* A failed connection attempt: the reason is the HCI
+                 * code, e.g. 0x3e = connection failed to be
+                 * established. */
+                ESP_LOGE(TAG, "Keyboard did not answer the connection "
+                              "request, reason 0x%x", reason);
+                snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                         "no link, reason 0x%x", reason);
+            } else {
+                snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                         "link lost 0x%x", reason);
+            }
         }
         break;
     }
