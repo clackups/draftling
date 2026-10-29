@@ -655,6 +655,11 @@ static esp_err_t request_conn_param_update(
  * fresh open is initiated. */
 static volatile bool s_force_close_on_open = false;
 
+/* Why the last esp_hidh_dev_open() failed, shown in the status text
+ * so a user without a serial console can report it. */
+static char s_open_fail_detail[40] = "";
+static bool s_hid_svc_seen = false;
+
 /* Forward declarations */
 static void start_reconnection(void);
 static void reconn_timer_cb(TimerHandle_t timer);
@@ -1448,6 +1453,8 @@ static void connect_task(void *arg)
     }
 
     esp_hidh_dev_t *dev = NULL;
+    s_open_fail_detail[0] = '\0';
+    s_hid_svc_seen = false;
     /* Mark the open as in flight BEFORE we ask the controller to
      * negotiate connection parameters. The UPDATE_CONN_PARAMS_EVT
      * handler keys off this flag to decide whether to pin the
@@ -1509,10 +1516,15 @@ static void connect_task(void *arg)
     }
 
     if (!dev) {
-        ESP_LOGE(TAG, "esp_hidh_dev_open failed after %d attempts "
-                 "(GATT client may not be registered)",
-                 CONNECT_RETRIES);
-        notify_status("Connection failed, retrying...");
+        ESP_LOGE(TAG, "esp_hidh_dev_open failed after %d attempts (%s)",
+                 CONNECT_RETRIES,
+                 s_open_fail_detail[0] ? s_open_fail_detail : "no detail");
+        if (s_open_fail_detail[0]) {
+            notify_status("Connection failed:\n%s\nretrying...",
+                          s_open_fail_detail);
+        } else {
+            notify_status("Connection failed, retrying...");
+        }
         s_connecting = false;
         /* Open never produced a device -- no HIDH event will arrive
          * to clear s_open_in_flight, so do it here. */
@@ -1563,6 +1575,157 @@ static bool is_bonded_addr(const esp_bd_addr_t bda)
         }
     }
     return false;
+}
+
+/* ---- Pair before service discovery ---- */
+
+/* esp_hidh only pairs when a GATT read fails with "insufficient
+ * authentication", i.e. after it has already searched the services.
+ * Phones and PCs pair a new HID keyboard right after the link comes
+ * up instead, and some keyboards (seen with a Logitech MX Keys Mini:
+ * "Connection failed" with no passkey ever requested) do not get past
+ * an unencrypted service search. So we wrap esp_hidh's GATTC handler:
+ * on CONNECT we request encryption at once, and for a keyboard we are
+ * not bonded with we hold back the OPEN event (which starts esp_hidh's
+ * service search) until ESP_GAP_BLE_AUTH_CMPL_EVT says the pairing
+ * succeeded or failed. A bonded keyboard is not held: re-encrypting
+ * with a stored key produces no GAP event to release it on.
+ *
+ * GATTC and GAP callbacks both run on the BTC task, so the held state
+ * needs no lock. If the link drops while OPEN is held, the CLOSE event
+ * alone ends esp_hidh_dev_open() (the device is not "connected" yet)
+ * and the held OPEN is dropped. PAIR_HOLD_MAX_MS is a backstop for a
+ * peer that never answers the pairing request: SMP's own 30 s timeout
+ * normally ends it first. */
+#define PAIR_HOLD_MAX_MS 90000
+
+static bool                     s_pair_pending = false;
+static bool                     s_open_held    = false;
+static esp_bd_addr_t            s_pair_bda;
+static esp_gatt_if_t            s_held_gattc_if;
+static esp_ble_gattc_cb_param_t s_held_open;
+static TimerHandle_t            s_pair_hold_timer = NULL;
+
+static void pair_hold_clear(void)
+{
+    s_pair_pending = false;
+    s_open_held    = false;
+    if (s_pair_hold_timer) xTimerStop(s_pair_hold_timer, 0);
+}
+
+/* Called from the GAP handler on AUTH_CMPL: let esp_hidh go on with
+ * the service search, now on an encrypted link (or, after a failed
+ * pairing, as it did before). */
+static void pair_hold_release(bool success)
+{
+    if (!s_pair_pending) return;
+    bool held = s_open_held;
+    pair_hold_clear();
+    if (held) {
+        ESP_LOGI(TAG, "Pairing %s; starting service discovery",
+                 success ? "done" : "failed");
+        esp_hidh_gattc_event_handler(ESP_GATTC_OPEN_EVT, s_held_gattc_if,
+                                     &s_held_open);
+    }
+}
+
+static void pair_hold_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    if (!s_pair_pending) return;
+    ESP_LOGW(TAG, "Pairing did not complete in %d ms; disconnecting",
+             PAIR_HOLD_MAX_MS);
+    snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+             "pairing timed out");
+    /* The resulting CLOSE event clears the hold and ends the open. */
+    esp_ble_gap_disconnect(s_pair_bda);
+}
+
+static void gattc_event_handler(esp_gattc_cb_event_t event,
+                                esp_gatt_if_t gattc_if,
+                                esp_ble_gattc_cb_param_t *param)
+{
+    switch (event) {
+    case ESP_GATTC_CONNECT_EVT: {
+        auto *c = &param->connect;
+        if (c->link_role != 0 || !s_open_in_flight ||
+            memcmp(c->remote_bda, s_target_bda, sizeof(esp_bd_addr_t)) != 0) {
+            break;
+        }
+        bool bonded = is_bonded_addr(c->remote_bda);
+        esp_err_t err = esp_ble_set_encryption(c->remote_bda,
+                                               ESP_BLE_SEC_ENCRYPT_MITM);
+        ESP_LOGI(TAG, "Link up (%s); encryption requested: %s",
+                 bonded ? "bonded" : "new keyboard", esp_err_to_name(err));
+        if (err == ESP_OK && !bonded) {
+            memcpy(s_pair_bda, c->remote_bda, sizeof(esp_bd_addr_t));
+            s_pair_pending = true;
+            s_open_held    = false;
+            if (s_pair_hold_timer) xTimerReset(s_pair_hold_timer, 0);
+        }
+        break;
+    }
+
+    case ESP_GATTC_OPEN_EVT:
+        if (param->open.status != ESP_GATT_OK) {
+            if (s_open_in_flight) {
+                snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                         "connect error 0x%x", (unsigned)param->open.status);
+            }
+            break;
+        }
+        if (s_pair_pending &&
+            memcmp(param->open.remote_bda, s_pair_bda,
+                   sizeof(esp_bd_addr_t)) == 0) {
+            ESP_LOGI(TAG, "Holding service discovery until pairing completes");
+            s_held_open     = *param;
+            s_held_gattc_if = gattc_if;
+            s_open_held     = true;
+            return;
+        }
+        break;
+
+    case ESP_GATTC_SEARCH_RES_EVT:
+        if (param->search_res.srvc_id.uuid.len == ESP_UUID_LEN_16 &&
+            param->search_res.srvc_id.uuid.uuid.uuid16 == BLE_SVC_HID_UUID16) {
+            s_hid_svc_seen = true;
+        }
+        break;
+
+    case ESP_GATTC_SEARCH_CMPL_EVT:
+        if (param->search_cmpl.status != ESP_GATT_OK) {
+            snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                     "service search 0x%x",
+                     (unsigned)param->search_cmpl.status);
+        } else if (!s_hid_svc_seen) {
+            ESP_LOGE(TAG, "Keyboard shows no HID service");
+            snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                     "no HID service");
+        }
+        break;
+
+    case ESP_GATTC_DISCONNECT_EVT:
+    case ESP_GATTC_CLOSE_EVT: {
+        const uint8_t *bda = (event == ESP_GATTC_CLOSE_EVT)
+                             ? param->close.remote_bda
+                             : param->disconnect.remote_bda;
+        if (s_pair_pending &&
+            memcmp(bda, s_pair_bda, sizeof(esp_bd_addr_t)) == 0) {
+            ESP_LOGW(TAG, "Link lost while pairing");
+            pair_hold_clear();
+        }
+        if (event == ESP_GATTC_CLOSE_EVT && s_open_in_flight &&
+            !s_open_fail_detail[0]) {
+            snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                     "link lost 0x%x", (unsigned)param->close.reason);
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+    esp_hidh_gattc_event_handler(event, gattc_if, param);
 }
 
 static void start_reconnection(void)
@@ -1639,6 +1802,17 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event,
      * disabled so s_scan_params_ready latches and a later
      * ble_keyboard_enable() can start scanning without an extra
      * round-trip. All other events are suppressed when disabled. */
+    /* Before the s_disabled early return: a held OPEN must always be
+     * released, or esp_hidh_dev_open() would never return. */
+    if (event == ESP_GAP_BLE_AUTH_CMPL_EVT) {
+        if (!param->ble_security.auth_cmpl.success && s_open_in_flight) {
+            snprintf(s_open_fail_detail, sizeof(s_open_fail_detail),
+                     "pairing error 0x%x",
+                     (unsigned)param->ble_security.auth_cmpl.fail_reason);
+        }
+        pair_hold_release(param->ble_security.auth_cmpl.success);
+    }
+
     if (s_disabled && event != ESP_GAP_BLE_SCAN_PARAM_SET_COMPLETE_EVT) {
         return;
     }
@@ -2101,6 +2275,10 @@ static void ble_init_task(void *arg)
                                          pdMS_TO_TICKS(OPEN_STUCK_RECOVERY_MS),
                                          pdFALSE, NULL, open_stuck_cb);
 
+    s_pair_hold_timer = xTimerCreate("ble_pair_hold",
+                                     pdMS_TO_TICKS(PAIR_HOLD_MAX_MS),
+                                     pdFALSE, NULL, pair_hold_timer_cb);
+
     /* Reconnection will be started from the SCAN_PARAM_SET_COMPLETE_EVT
      * callback once scan parameters are ready. */
     stack_bonds_refresh();
@@ -2203,9 +2381,12 @@ extern "C" void ble_keyboard_init(void)
      * esp_hidh_init() blocks forever.
      *
      * See esp_hidh_gattc.h and the official ESP-IDF HID host
-     * example (examples/bluetooth/esp_hid_host). */
+     * example (examples/bluetooth/esp_hid_host). Our
+     * gattc_event_handler() forwards every event to it, holding back
+     * OPEN while a new keyboard pairs (see "Pair before service
+     * discovery"). */
     ESP_ERROR_CHECK(
-        esp_ble_gattc_register_callback(esp_hidh_gattc_event_handler));
+        esp_ble_gattc_register_callback(gattc_event_handler));
     ESP_LOGI(TAG, "GATTC callback registered");
 
     /* Spawn ble_init_task to handle esp_hidh_init() and the

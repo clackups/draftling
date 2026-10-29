@@ -24,6 +24,15 @@ in the git log.
 
 ### Fixed
 
+- **Bluetooth keyboards that need pairing before anything else can
+  now connect**: a new keyboard is now paired as soon as the
+  Bluetooth link is up, before the device looks at what the keyboard
+  offers, the way phones and computers do it. Some keyboards (seen
+  with a Logitech MX Keys Mini) refused to connect otherwise and only
+  showed "Connection failed" without ever asking for a pairing code.
+  When a connection still fails, the message now says at which step
+  (for example "no HID service" or "pairing error 0x..."), which helps
+  when reporting the problem.
 - **Lower standby current on the Freenove FNK0104 boards**: before
   going to sleep, the device now also puts the LCD controller and the
   touch controller to sleep and releases the MicroSD card, instead of
