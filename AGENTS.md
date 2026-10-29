@@ -8,6 +8,15 @@ document -- `main/...`, `components/...`, `CMakeLists.txt`,
 The repository root also has `docs/`, `images/`, `3D_Prints/`, and the
 top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
 
+## Git Author
+
+All commits in this repository -- and in every other Draftling-related
+repository (draftling, draftling-flasher, draftbox, draftbridge) --
+must use `clackups <clackups@gmail.com>` as both author and
+committer. Check `git config user.name` / `user.email` before
+committing, and pass `--author="clackups <clackups@gmail.com>"` if
+they differ. Never commit under any other identity.
+
 ## Code Style
 
 - Do not use non-ASCII characters anywhere in the repository -- in code,
