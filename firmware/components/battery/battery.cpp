@@ -159,7 +159,7 @@ static i2c_master_dev_handle_t   s_axp2101_dev = NULL;
 #define M5PM1_I2C_ADDR           0x6E
 #define M5PM1_REG_DEVICE_ID      0x00
 #define M5PM1_REG_PWR_SRC        0x04  /* [2:0] 0=5VIN (USB) 1=5VINOUT 2=battery */
-#define M5PM1_REG_PWR_CFG        0x06  /* [4] LED_EN level [2] LDO [1] DCDC [0] CHG */
+#define M5PM1_REG_PWR_CFG        0x06  /* [4] red LED [3] BOOST [2] LDO [1] DCDC [0] CHG */
 #define M5PM1_REG_I2C_CFG        0x09  /* [3:0] idle-sleep timeout, 0 = never */
 #define M5PM1_REG_WDT_CNT        0x0A  /* 0 = watchdog disabled */
 #define M5PM1_REG_GPIO_MODE      0x10  /* 1 = output */
@@ -169,7 +169,17 @@ static i2c_master_dev_handle_t   s_axp2101_dev = NULL;
 #define M5PM1_REG_PWM0_L         0x30  /* 12-bit duty, 0x31 [4] = enable */
 #define M5PM1_REG_PWM_FREQ_L     0x34  /* Hz, 16-bit over 0x34/0x35 */
 
-#define M5PM1_PWR_CFG_ON         0x17  /* LED_EN level, LDO, DCDC, charging */
+#define M5PM1_PWR_CFG_ON         0x07  /* LDO, DCDC, charging */
+/* PaperMono: bit 4 drives the red leg of the discrete RGB status LED
+ * (the green and blue legs are on the M5IOE1), bit 3 the 5 V boost
+ * for the Grove port. The register keeps its value through the
+ * ESP32's deep sleep and resets, and the stock firmware leaves the
+ * red LED lit (FreeInk SDK, PaperMonoBoard.h / LedManager.cpp). */
+#define M5PM1_PWR_CFG_LED_R      0x10
+#define M5PM1_PWR_CFG_BOOST      0x08
+/* GPIO_DRV bit of the red LED output: 0 = push-pull, so writing 0 to
+ * M5PM1_PWR_CFG_LED_R really switches it off. */
+#define M5PM1_GPIO_DRV_LED_R     0x20
 #define M5PM1_PWR_SRC_5VIN       0
 #define M5PM1_FRONTLIGHT_GPIO    3
 #define M5PM1_FRONTLIGHT_PWM_HZ  5000
@@ -802,6 +812,11 @@ extern "C" int battery_init_m5pm1(void *i2c_master_bus)
     if (m5pm1_rmw_u8(M5PM1_REG_PWR_CFG, M5PM1_PWR_CFG_ON, M5PM1_PWR_CFG_ON) != 0) {
         ESP_LOGW(TAG, "M5PM1: failed to enable power rails");
     }
+    /* Keep the red status LED dark: it only drains the battery. */
+    if (m5pm1_rmw_u8(M5PM1_REG_GPIO_DRV, M5PM1_GPIO_DRV_LED_R, 0) != 0 ||
+        m5pm1_rmw_u8(M5PM1_REG_PWR_CFG, M5PM1_PWR_CFG_LED_R, 0) != 0) {
+        ESP_LOGW(TAG, "M5PM1: failed to switch the red LED off");
+    }
 
     s_backend = BATT_BACKEND_M5PM1;
 
@@ -840,6 +855,22 @@ extern "C" int battery_m5pm1_set_frontlight(int percent)
     uint8_t pwm[3] = { M5PM1_REG_PWM0_L, (uint8_t)(duty & 0xFF),
                        (uint8_t)((percent ? 0x10 : 0x00) | ((duty >> 8) & 0x0F)) };
     return m5pm1_write(pwm, sizeof(pwm));
+}
+
+extern "C" int battery_m5pm1_prepare_sleep(void)
+{
+    if (!s_m5pm1_dev) return -1;
+    int rc = battery_m5pm1_set_frontlight(0);
+    /* Red LED and Grove 5 V boost off. The LDO / DCDC rails and
+     * charging stay on: the chip keeps PWR_CFG through deep sleep, and
+     * the board must still charge and wake on Button A. */
+    if (m5pm1_rmw_u8(M5PM1_REG_GPIO_DRV, M5PM1_GPIO_DRV_LED_R, 0) != 0 ||
+        m5pm1_rmw_u8(M5PM1_REG_PWR_CFG,
+                     M5PM1_PWR_CFG_LED_R | M5PM1_PWR_CFG_BOOST, 0) != 0) {
+        rc = -1;
+    }
+    if (rc != 0) ESP_LOGW(TAG, "M5PM1: pre-sleep power-down incomplete");
+    return rc;
 }
 
 /* ---- INA226 backend ---- */

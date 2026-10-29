@@ -320,7 +320,14 @@ Two backends:
   (5VIN) powers the board. The chip's GPIO3 doubles as PWM0, which
   drives the PaperMono front-light:
   `battery_m5pm1_set_frontlight(percent)`, called by that board's
-  display backend from `display_set_backlight()`.
+  display backend from `display_set_backlight()`. PWR_CFG bit 4 is
+  the red leg of the PaperMono's RGB status LED (green / blue are
+  M5IOE1 PYG8 / PYG9, also its PWM2 / PWM1); the chip and the
+  expander keep their state across resets, and the stock firmware
+  leaves the LED lit, so boot and the pre-sleep hook switch all three
+  legs (and the expander's PWM) off.
+  `battery_m5pm1_prepare_sleep()` also clears the Grove 5 V boost
+  (bit 3); LDO / DCDC / charging stay on.
 
 When no backend has been initialized, `battery_read_percent()`
 returns -1 and the editor UI hides the battery indicator.

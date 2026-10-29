@@ -1073,10 +1073,17 @@ static void pre_sleep_papermono_deinit(void)
     (void)sd_card_deinit();
     display_deep_sleep_prepare();
     display_set_backlight(0);
+    /* Front-light, red LED leg and Grove 5 V boost on the M5PM1. */
+    battery_m5pm1_prepare_sleep();
 
     /* The M5IOE1 keeps its outputs through the ESP32's deep sleep:
-     * switch off the MicroSD, touch and e-paper supplies (the panel
-     * keeps its image unpowered) and hold both reset lines low. */
+     * switch off the status LED, the microphone, the MicroSD, touch
+     * and e-paper supplies (the panel keeps its image unpowered) and
+     * hold both reset lines low. */
+    m5ioe1_pwm_off();
+    m5ioe1_set_pin(LED_G_IOE_PIN, false);
+    m5ioe1_set_pin(LED_B_IOE_PIN, false);
+    m5ioe1_set_pin(MIC_EN_IOE_PIN, false);
     m5ioe1_set_pin(SD_EN_IOE_PIN, false);
     m5ioe1_set_pin(TOUCH_EN_IOE_PIN, false);
     m5ioe1_set_pin(TOUCH_RST_IOE_PIN, false);
@@ -2469,6 +2476,12 @@ extern "C" void app_main(void)
         ESP_LOGE(TAG, "M5PM1 init failed");
     }
     if (m5ioe1_init((void *)shared_i2c_bus) == ESP_OK) {
+        /* Status LED and microphone off: earlier firmware may have
+         * left them on, and the expander keeps its state. */
+        m5ioe1_pwm_off();
+        m5ioe1_set_pin(LED_G_IOE_PIN, false);
+        m5ioe1_set_pin(LED_B_IOE_PIN, false);
+        m5ioe1_set_pin(MIC_EN_IOE_PIN, false);
         m5ioe1_set_pin(EPD_EN_IOE_PIN, true);
         m5ioe1_set_pin(TOUCH_EN_IOE_PIN, true);
         m5ioe1_set_pin(SD_EN_IOE_PIN, true);

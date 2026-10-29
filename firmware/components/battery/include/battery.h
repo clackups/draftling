@@ -175,9 +175,10 @@ int battery_init_axp2101(void *i2c_master_bus);
  * Initialize the M5Stack M5PM1 power-management backend on an existing
  * I2C master bus, at the fixed 7-bit address 0x6E. Used by the M5Stack
  * PaperMono. Besides selecting the M5PM1 as the battery monitor, this
- * disables the chip's I2C idle sleep and watchdog and switches on its
- * 3.3 V / 5 V rails and charging, so main.cpp calls it early in boot,
- * before the display is initialized.
+ * disables the chip's I2C idle sleep and watchdog, switches on its
+ * 3.3 V / 5 V rails and charging and switches the red leg of the
+ * RGB status LED off, so main.cpp calls it early in boot, before the
+ * display is initialized.
  *
  * The M5PM1 measures the cell voltage only; the percentage comes from
  * the same LiPo discharge LUT as the ADC backend.
@@ -193,6 +194,15 @@ int battery_init_m5pm1(void *i2c_master_bus);
  * success, non-zero on failure or before battery_init_m5pm1().
  */
 int battery_m5pm1_set_frontlight(int percent);
+
+/*
+ * Before deep sleep on the M5Stack PaperMono: switch off the
+ * front-light, the red leg of the RGB status LED and the 5 V Grove
+ * boost on the M5PM1 (the chip keeps these settings while the ESP32
+ * sleeps). Returns 0 on success, non-zero on failure or before
+ * battery_init_m5pm1().
+ */
+int battery_m5pm1_prepare_sleep(void);
 
 /*
  * Initialize the TI BQ25896 single-cell Li-ion charger on an existing

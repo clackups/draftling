@@ -15,6 +15,7 @@
  *   0x05/0x06 GPIO_OUT   output level
  *   0x09/0x0A GPIO_PU, 0x0B/0x0C GPIO_PD  pull-up / pull-down
  *   0x13/0x14 GPIO_DRV   1 = open-drain, 0 = push-pull
+ *   0x1B/0x1C PWM1, 0x1D/0x1E PWM2  duty + [15] enable (PYG9 / PYG8)
  *   0x23      I2C_CFG    [3:0] idle-sleep timeout, 0 = never sleep
  * (register map from M5Stack's MIT-licensed M5IOE1 library).
  */
@@ -49,6 +50,13 @@ esp_err_t m5ioe1_set_pin(int pin, bool level);
  * e.g. to stop powering a peripheral before deep sleep.
  */
 esp_err_t m5ioe1_release_pin(int pin);
+
+/*
+ * Disable both PWM channels (PWM1 on PYG9, PWM2 on PYG8), so the pins
+ * follow m5ioe1_set_pin() again. The chip keeps its PWM state across
+ * ESP32 resets and reflashes; other firmware may leave a channel on.
+ */
+esp_err_t m5ioe1_pwm_off(void);
 
 #ifdef __cplusplus
 }

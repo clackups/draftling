@@ -38,11 +38,18 @@
 #define I2C_SDA_PIN     47
 #define I2C_SCL_PIN     48
 
-/* M5IOE1 expander pins, numbered as M5Stack's pin map does (PYG1 ..
+/* The RGB status LED's red leg is on the M5PM1 (PWR_CFG bit 4, see
+ * components/battery/). Draftling keeps all three legs dark, at boot
+ * and in deep sleep, to save the battery.
+ *
+ * M5IOE1 expander pins, numbered as M5Stack's pin map does (PYG1 ..
  * PYG14; the driver maps pin n to register bit n - 1). */
 #define EPD_EN_IOE_PIN      3   /* e-paper 3.3 V supply enable */
 #define EPD_RST_IOE_PIN     5   /* e-paper RST, active low */
 #define TOUCH_RST_IOE_PIN   6   /* FT6336G RST, active low */
+#define LED_G_IOE_PIN       8   /* RGB status LED, green leg (also PWM2) */
+#define LED_B_IOE_PIN       9   /* RGB status LED, blue leg (also PWM1) */
+#define MIC_EN_IOE_PIN      12  /* PDM microphone supply enable */
 #define TOUCH_EN_IOE_PIN    13  /* FT6336G VDD enable */
 #define SD_EN_IOE_PIN       14  /* MicroSD supply enable */
 

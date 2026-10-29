@@ -17,6 +17,8 @@ static const char *TAG = "M5IOE1";
 #define REG_GPIO_PU_L       0x09
 #define REG_GPIO_PD_L       0x0B
 #define REG_GPIO_DRV_L      0x13
+#define REG_PWM1_DUTY_L     0x1B  /* drives PYG9; H byte [7] = enable */
+#define REG_PWM2_DUTY_L     0x1D  /* drives PYG8 */
 #define REG_I2C_CFG         0x23
 
 static i2c_master_dev_handle_t s_dev = NULL;
@@ -114,7 +116,28 @@ extern "C" esp_err_t m5ioe1_release_pin(int pin)
     return update16(REG_GPIO_MODE_L, (uint16_t)(1u << (pin - 1)), false);
 }
 
+extern "C" esp_err_t m5ioe1_pwm_off(void)
+{
+    if (!s_dev) return ESP_ERR_INVALID_STATE;
+    /* Duty 0 with the enable bit clear. While a channel is enabled it
+     * owns its pin and GPIO writes never reach it. */
+    const uint8_t regs[] = { REG_PWM1_DUTY_L, REG_PWM2_DUTY_L };
+    esp_err_t ret = ESP_OK;
+    for (uint8_t reg : regs) {
+        uint8_t wr[3] = { reg, 0x00, 0x00 };
+        esp_err_t err = i2c_master_transmit(s_dev, wr, sizeof(wr), 100);
+        if (err != ESP_OK) ret = err;
+    }
+    if (ret != ESP_OK) ESP_LOGW(TAG, "PWM off failed: %s", esp_err_to_name(ret));
+    return ret;
+}
+
 #else /* !CONFIG_DRAFTLING_HAS_M5IOE1 */
+
+extern "C" esp_err_t m5ioe1_pwm_off(void)
+{
+    return ESP_OK;
+}
 
 extern "C" esp_err_t m5ioe1_init(void *i2c_bus)
 {
