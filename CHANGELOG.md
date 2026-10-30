@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.20] - 2026-10-30
+
 ### Added
 
 - **VIEWE UEDX80480043E-WB-A / -WB-B support**: the 4.3" 800x480
@@ -34,17 +36,16 @@ in the git log.
   a right-to-left line ending in a space was drawn one space too far
   to the right, so its last letter slid past the right edge, and the
   same happened to every wrapped row of a long Hebrew paragraph.
-- **Bluetooth keyboards that need pairing before anything else can
-  now connect**: a new keyboard is now paired as soon as the
-  Bluetooth link is up, before the device looks at what the keyboard
-  offers, the way phones and computers do it. Some keyboards (seen
-  with a Logitech MX Keys Mini) refused to connect otherwise and only
-  showed "Connection failed" without ever asking for a pairing code.
-  When a connection still fails, the message now says at which step
-  (for example "no link, reason 0x3e" or "pairing error 0x..."),
-  which helps when reporting the problem. If a keyboard does not
-  answer the connection request at all, the next attempt uses the
-  connection settings phones use.
+- **Bluetooth keyboard connection: earlier pairing, clearer errors**:
+  a new keyboard is now paired as soon as the Bluetooth link is up,
+  before the device looks at what the keyboard offers, the way phones
+  and computers do it. When a connection fails, the message now says
+  at which step (for example "no link, reason 0x3e" or "pairing error
+  0x..."), which helps when reporting the problem. If a keyboard does
+  not answer the connection request at all, the next attempt uses the
+  connection settings phones use. "no link, reason 0x3e" usually means
+  the keyboard is not in pairing mode, or is still paired with another
+  device.
 - **Lower standby current on the Freenove FNK0104 boards**: before
   going to sleep, the device now also puts the LCD controller and the
   touch controller to sleep and releases the MicroSD card, instead of
