@@ -30,3 +30,10 @@ idf_component_register(
 idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
 target_sources(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/lv_mem_psram.c")
 target_link_libraries(${lvgl_lib} PRIVATE idf::esp_hw_support)
+
+# Right-aligned right-to-left rows ending in a space were placed one
+# space too far right (Hebrew lines while typing, wrapped Hebrew rows);
+# see lv_rtl_line_width.c. The wrapper lives in the lvgl__lvgl library
+# for the same reason as lv_mem_psram.c and for its private headers.
+target_sources(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/lv_rtl_line_width.c")
+idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_text_get_line_width" APPEND)

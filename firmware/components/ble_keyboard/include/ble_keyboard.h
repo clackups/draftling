@@ -110,6 +110,17 @@ const char *ble_keyboard_get_device_name(void);
  * addr. Returns false (addr untouched) when no keyboard is connected. */
 bool ble_keyboard_get_device_addr(uint8_t *addr);
 int ble_keyboard_get_battery_level(void);
+
+/* HID keyboard LED output bits (ble_keyboard_set_leds(),
+ * usb_kbd_set_leds()). */
+#define KB_LED_NUM_LOCK    0x01
+#define KB_LED_CAPS_LOCK   0x02
+#define KB_LED_SCROLL_LOCK 0x04
+
+/* Set the connected keyboard's LEDs; remembered and sent again after
+ * every (re)connect. A no-op for keyboards without an LED output
+ * report. */
+void ble_keyboard_set_leds(uint8_t leds);
 /* esp_timer_get_time() of the most recent pairing event (security
  * request, passkey / numeric comparison shown, authentication success
  * or failure), or 0 if there has been none since boot. Lets the

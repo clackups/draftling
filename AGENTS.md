@@ -658,6 +658,17 @@ Waveshare ePaper-3.97 and the Seeed reTerminal Sticky):
 Board-specific needs (SPI clock, pins, power rails, a non-blocking
 refresh as on the Sticky) may differ; the register sequence should not.
 
+**Right-to-left rows.** LVGL right-aligns a row with
+`lv_text_get_line_width()`, which leaves out trailing spaces; in a
+right-to-left row the bidi reordering draws them at the left, so a
+Hebrew row ending in a space (the line being typed, every soft-wrapped
+row) was pushed one space past the right edge. `lv_rtl_line_width.c`
+is compiled into the `lvgl__lvgl` library (like `lv_mem_psram.c`) and
+linked with `-Wl,--wrap=lv_text_get_line_width` (display
+`CMakeLists.txt`): for a row that `lv_bidi_detect_base_dir()` finds
+right to left it counts the trailing spaces. Still unfixed in LVGL
+master; drop the wrapper once LVGL handles it.
+
 The component's `idf_component.yml` declares the `vroland/epdiy`
 dependency required by both e-paper backends; the source files
 themselves are gated by `CONFIG_DRAFTLING_DISPLAY_EPDIY` so
@@ -1390,6 +1401,19 @@ persisting this set to NVS and exposes it as the "Active layouts" row
 in the F1 -> Settings menu; it defaults to US + UA, plus the
 input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
+
+Caps Lock (`kb_layout_set_caps_lock()` / `kb_layout_get_caps_lock()`,
+HID keycode `KB_KEYCODE_CAPS_LOCK`) is applied inside
+`kb_layout_translate()`: it inverts Shift on keys whose Shift output is
+an uppercase letter (A-Z, Latin-1, Cyrillic), so digits, symbols and
+AltGr are unaffected, and on Hebrew (Shift = Latin capitals) it types
+Latin capitals as on Windows. `process_key_event()` in `editor_ui.cpp`
+toggles it (Caps Lock is excluded from key repeat), shows "CAPS" in the
+title bar and sets the keyboard LEDs through `ble_keyboard_set_leds()`
+(LED output report, re-sent 1.5 s after each connect) and
+`usb_kbd_set_leds()` (SET_REPORT on the HID event task).
+`kb_layout_shortcut_char()` reads the normal layer directly, so
+shortcuts do not depend on Caps Lock.
 
 Ctrl-letter shortcuts (`handle_editor_key()` / `handle_browser_key()`
 in `editor_ui.cpp`), `Alt+R`, `Alt+D` and the file browser's unmodified `N`

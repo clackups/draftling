@@ -61,8 +61,21 @@ kb_ime_t kb_layout_ime(void);
 
 /* Returns the UTF-8 string for a given HID keycode + modifier.
  * The returned pointer is valid until the next call.
- * Returns NULL if the keycode does not produce a character. */
+ * Returns NULL if the keycode does not produce a character.
+ * Caps Lock (kb_layout_set_caps_lock()) is applied here. */
 const char *kb_layout_translate(uint8_t keycode, uint8_t modifier);
+
+/* HID keycode of the Caps Lock key. */
+#define KB_KEYCODE_CAPS_LOCK 0x39
+
+/* Caps Lock state, as on a PC keyboard: while on, Shift is inverted on
+ * letter keys only -- keys whose Shift output is an uppercase letter
+ * (A-Z, accented Latin, Cyrillic). Digits, symbols and AltGr are not
+ * affected. On the Hebrew layout, whose Shift layer is Latin capitals
+ * (SI 1452), Caps Lock therefore types Latin capitals, like Windows.
+ * The state is shared by all layouts and keyboards. */
+void kb_layout_set_caps_lock(bool on);
+bool kb_layout_get_caps_lock(void);
 
 /* Set the active keyboard layout */
 void kb_layout_set(kb_layout_id_t layout);

@@ -66,6 +66,7 @@ void ble_keyboard_start_scan(void)                                       {}
 const char *ble_keyboard_get_device_name(void)                           { return ""; }
 bool ble_keyboard_get_device_addr(uint8_t * /*addr*/)                    { return false; }
 int ble_keyboard_get_battery_level(void)                                 { return -1; }
+void ble_keyboard_set_leds(uint8_t /*leds*/)                             {}
 int64_t ble_keyboard_last_pairing_activity_us(void)                      { return 0; }
 
 } /* extern "C" */
@@ -540,7 +541,7 @@ static uint32_t       s_open_watchdog_armed_ms = 0;
  *   - SMP authentication timeout (~30 s)
  *   - LE supervision timeout (SUPERVISION_TIMEOUT_FLOOR_10MS, 32 s)
  *   - HIDH's own service-discovery / CCCD-write retries
- * 60 s after the watchdog (≈85 s after esp_hidh_dev_open() was
+ * 60 s after the watchdog (~85 s after esp_hidh_dev_open() was
  * called) sits comfortably past all of these, so reaching this
  * callback is genuine evidence that no HIDH event will ever arrive
  * for this open attempt. */
@@ -676,8 +677,15 @@ static bool s_link_up = false;
 #define CONN_TIMEOUT_COMPAT_10MS 500
 static bool s_conn_compat = false;
 
+/* Keyboard LED state (HID LED output report bits: 0 Num Lock,
+ * 1 Caps Lock, 2 Scroll Lock), set by ble_keyboard_set_leds() and sent
+ * again after each connect. */
+static volatile uint8_t s_led_state = 0;
+static TimerHandle_t    s_led_timer = NULL;
+
 /* Forward declarations */
 static void start_reconnection(void);
+static void led_timer_cb(TimerHandle_t timer);
 static void reconn_timer_cb(TimerHandle_t timer);
 static void startup_timer_cb(TimerHandle_t timer);
 static void open_watchdog_cb(TimerHandle_t timer);
@@ -1053,6 +1061,10 @@ static void hidh_callback(void *handler_args, esp_event_base_t base,
             }
 
             if (s_connect_cb) s_connect_cb(true);
+
+            /* Restore the LEDs (e.g. Caps Lock on) once esp_hid has
+             * finished subscribing to the input reports. */
+            if (s_led_state && s_led_timer) xTimerReset(s_led_timer, 0);
 
             /* Proactively shorten the LE supervision timeout from the
              * FLOOR (32 s, needed during open) down to STEADY (~4 s)
@@ -2321,6 +2333,9 @@ static void ble_init_task(void *arg)
                                          pdMS_TO_TICKS(OPEN_STUCK_RECOVERY_MS),
                                          pdFALSE, NULL, open_stuck_cb);
 
+    s_led_timer = xTimerCreate("ble_leds", pdMS_TO_TICKS(1500),
+                               pdFALSE, NULL, led_timer_cb);
+
     s_pair_hold_timer = xTimerCreate("ble_pair_hold",
                                      pdMS_TO_TICKS(PAIR_HOLD_MAX_MS),
                                      pdFALSE, NULL, pair_hold_timer_cb);
@@ -2640,6 +2655,41 @@ extern "C" bool ble_keyboard_get_device_addr(uint8_t *addr)
     if (!s_connected || !s_dev_bda_valid) return false;
     memcpy(addr, s_dev_bda, sizeof(s_dev_bda));
     return true;
+}
+
+/* Write s_led_state to the keyboard's LED output report. The GATT
+ * write is queued, not waited for. */
+static void send_leds(void)
+{
+    esp_hidh_dev_t *dev = s_hidh_dev;
+    if (!dev || !s_connected) return;
+    size_t n = 0;
+    esp_hid_report_item_t *r = NULL;
+    if (esp_hidh_dev_reports_get(dev, &n, &r) != ESP_OK || !r) return;
+    for (size_t i = 0; i < n; i++) {
+        if (r[i].usage == ESP_HID_USAGE_KEYBOARD &&
+            r[i].report_type == ESP_HID_REPORT_TYPE_OUTPUT &&
+            r[i].protocol_mode == ESP_HID_PROTOCOL_MODE_REPORT) {
+            uint8_t v = s_led_state;
+            esp_err_t err = esp_hidh_dev_output_set(dev, r[i].map_index,
+                                                    r[i].report_id, &v, 1);
+            ESP_LOGI(TAG, "LEDs 0x%02x: %s", v, esp_err_to_name(err));
+            break;
+        }
+    }
+    free(r);
+}
+
+static void led_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    send_leds();
+}
+
+extern "C" void ble_keyboard_set_leds(uint8_t leds)
+{
+    s_led_state = leds;
+    send_leds();
 }
 
 extern "C" int ble_keyboard_get_battery_level(void)

@@ -24,6 +24,16 @@ in the git log.
 
 ### Fixed
 
+- **Caps Lock works**: the Caps Lock key now turns capital letters on
+  and off like on a computer. It affects letters only (Shift gives
+  lowercase while it is on); digits and symbols are unchanged. On the
+  Hebrew layout it types Latin capitals, as on Windows. "CAPS" shows in
+  the editor's title bar while it is on, and the keyboard's Caps Lock
+  light follows it on keyboards that have one.
+- **Hebrew lines no longer jump off the screen when you type a space**:
+  a right-to-left line ending in a space was drawn one space too far
+  to the right, so its last letter slid past the right edge, and the
+  same happened to every wrapped row of a long Hebrew paragraph.
 - **Bluetooth keyboards that need pairing before anything else can
   now connect**: a new keyboard is now paired as soon as the
   Bluetooth link is up, before the device looks at what the keyboard

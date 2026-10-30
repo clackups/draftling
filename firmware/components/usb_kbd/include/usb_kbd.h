@@ -55,6 +55,13 @@ bool usb_kbd_is_connected(void);
 void usb_kbd_set_callback(kb_event_callback_t cb);
 
 /*
+ * Set the keyboard LEDs (KB_LED_* bits from ble_keyboard.h) on every
+ * connected USB keyboard; remembered for keyboards plugged in later.
+ * Non-blocking: the transfer runs on the internal HID event task.
+ */
+void usb_kbd_set_leds(uint8_t leds);
+
+/*
  * Callback fired when a USB HID keyboard is connected (true) or
  * disconnected (false). Mirrors ble_keyboard_set_connect_callback()
  * so the editor UI can react to a late USB hot-plug (e.g. dismiss

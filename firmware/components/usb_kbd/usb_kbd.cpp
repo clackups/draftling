@@ -230,7 +230,27 @@ typedef struct {
     hid_host_device_handle_t handle;
     hid_host_driver_event_t  event;
     void                    *arg;
+    int                      leds;   /* >= 0: an LED update, not a driver event */
 } hid_event_t;
+
+/* Keyboard LED state (KB_LED_* bits), set by usb_kbd_set_leds() and
+ * sent to every keyboard interface, including ones plugged in later. */
+static volatile uint8_t s_led_state = 0;
+
+/* SET_REPORT(Output) with the LED byte. A blocking control transfer,
+ * so it only runs on hid_event_task. */
+static void send_leds_to(const kbd_iface_t *k, uint8_t leds)
+{
+    uint8_t buf[2];
+    size_t len = 0;
+    if (k->uses_id) buf[len++] = k->report_id;
+    buf[len++] = leds;
+    esp_err_t err = hid_class_request_set_report(k->handle,
+                                                 HID_REPORT_TYPE_OUTPUT,
+                                                 k->uses_id ? k->report_id : 0,
+                                                 buf, len);
+    ESP_LOGI(TAG, "LEDs 0x%02x: %s", leds, esp_err_to_name(err));
+}
 
 /* ---- USB Host library task ---- */
 #if !defined(CONFIG_DRAFTLING_USB_HOST_BSP_MANAGED)
@@ -421,6 +441,7 @@ static void hid_drv_cb(hid_host_device_handle_t hid_dev_handle,
         .handle = hid_dev_handle,
         .event  = event,
         .arg    = arg,
+        .leds   = -1,
     };
     xQueueSend(s_hid_event_queue, &evt, 0);
 }
@@ -430,6 +451,14 @@ static void hid_event_task(void *arg)
     hid_event_t evt;
     while (true) {
         if (xQueueReceive(s_hid_event_queue, &evt, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (evt.leds >= 0) {
+            for (int i = 0; i < MAX_KBD_IFACES; i++) {
+                if (s_kbd_ifaces[i].in_use) {
+                    send_leds_to(&s_kbd_ifaces[i], (uint8_t)evt.leds);
+                }
+            }
             continue;
         }
         if (evt.event != HID_HOST_DRIVER_EVENT_CONNECTED) continue;
@@ -513,6 +542,10 @@ static void hid_event_task(void *arg)
             continue;
         }
         s_kbd_connected = true;
+        if (s_led_state) {
+            kbd_iface_t *k = find_kbd_iface(evt.handle);
+            if (k) send_leds_to(k, s_led_state);
+        }
 
         if (was_connected) {
             /* Another keyboard interface (e.g. a second interface on
@@ -584,6 +617,15 @@ extern "C" int usb_kbd_init(void)
 
     ESP_LOGI(TAG, "HID host driver installed; waiting for keyboard");
     return 0;
+}
+
+extern "C" void usb_kbd_set_leds(uint8_t leds)
+{
+    s_led_state = leds;
+    if (!s_hid_event_queue) return;
+    hid_event_t evt = {};
+    evt.leds = leds;
+    xQueueSend(s_hid_event_queue, &evt, 0);
 }
 
 extern "C" bool usb_kbd_is_connected(void)

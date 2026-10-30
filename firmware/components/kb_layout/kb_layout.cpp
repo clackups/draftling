@@ -833,6 +833,33 @@ extern "C" bool kb_layout_is_rtl(void)
 #endif
 }
 
+static volatile bool s_caps_lock = false;
+
+extern "C" void kb_layout_set_caps_lock(bool on) { s_caps_lock = on; }
+extern "C" bool kb_layout_get_caps_lock(void)    { return s_caps_lock; }
+
+/* True if the UTF-8 string is a single uppercase letter (one that has
+ * a lowercase form): A-Z, Latin-1 capitals, Cyrillic capitals. */
+static bool is_upper_letter(const char *s)
+{
+    if (!s) return false;
+    const uint8_t *u = (const uint8_t *)s;
+    uint32_t cp;
+    if (u[0] < 0x80) {
+        if (u[1]) return false;
+        cp = u[0];
+    } else if ((u[0] & 0xE0) == 0xC0 && (u[1] & 0xC0) == 0x80 && !u[2]) {
+        cp = ((uint32_t)(u[0] & 0x1F) << 6) | (u[1] & 0x3F);
+    } else {
+        return false;
+    }
+    if (cp >= 'A' && cp <= 'Z') return true;
+    if (cp >= 0xC0 && cp <= 0xDE && cp != 0xD7) return true;   /* Latin-1 */
+    if (cp >= 0x400 && cp <= 0x42F) return true;               /* Cyrillic */
+    if (cp >= 0x460 && cp <= 0x4FF && !(cp & 1)) return true;  /* e.g. Ukrainian G with upturn */
+    return false;
+}
+
 extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
 {
     if (keycode < 0x04) return NULL;
@@ -850,6 +877,7 @@ extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
         result = lt->altgr[idx];
     }
     if (!result) {
+        if (s_caps_lock && is_upper_letter(lt->shift[idx])) shift = !shift;
         result = shift ? lt->shift[idx] : lt->normal[idx];
     }
 
@@ -871,8 +899,10 @@ extern "C" char kb_layout_shortcut_char(uint8_t keycode)
          * keyboard is that semicolon-position key, not the US M
          * position. A key producing a non-letter here (a genuine
          * symbol under this layout) has no Ctrl-shortcut letter. */
-        const char *t = kb_layout_translate(keycode, 0);
-        if (t && !t[1]) {
+        const layout_table_t *lt = &s_layouts[s_layout];
+        int idx = keycode - 0x04;
+        const char *t = (idx < lt->table_size) ? lt->normal[idx] : NULL;
+        if (t && t[0] && !t[1]) {
             if (t[0] >= 'a' && t[0] <= 'z') return t[0];
             if (t[0] >= 'A' && t[0] <= 'Z') return (char)(t[0] - 'A' + 'a');
         }

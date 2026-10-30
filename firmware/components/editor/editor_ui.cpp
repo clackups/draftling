@@ -2123,10 +2123,13 @@ static void update_title_bar(void)
      * "Active language layouts" setting) -- with a single active
      * layout Ctrl+L has nothing to switch to, so the tag would just be
      * noise in the title bar. */
-    char layout_tag[16] = "";
+    char layout_tag[24] = "";
     if (kb_layout_active_count() > 1) {
         snprintf(layout_tag, sizeof(layout_tag), "  [%s]",
                  kb_layout_name(kb_layout_get()));
+    }
+    if (kb_layout_get_caps_lock()) {
+        strncat(layout_tag, "  CAPS", sizeof(layout_tag) - strlen(layout_tag) - 1);
     }
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     /* On e-paper boards the cursor moves on every keystroke, so the
@@ -10599,6 +10602,21 @@ static void process_key_event(const kb_event_t *ev)
         }
     }
 
+    /* Caps Lock toggles, as on a PC; kb_layout_translate() applies
+     * it. The LEDs of the keyboards are set to match. */
+    if (norm.keycode == KB_KEYCODE_CAPS_LOCK) {
+        bool on = !kb_layout_get_caps_lock();
+        kb_layout_set_caps_lock(on);
+        uint8_t leds = on ? KB_LED_CAPS_LOCK : 0;
+        ble_keyboard_set_leds(leds);
+#if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
+        usb_kbd_set_leds(leds);
+#endif
+        /* Other screens show the title when the editor is next drawn. */
+        if (s_scr && lv_screen_active() == s_scr) update_title_bar();
+        return;
+    }
+
     const kb_event_t *e = &norm;
 
     if (s_msg_open) {
@@ -10746,6 +10764,12 @@ extern "C" void editor_ui_handle_key(const void *event)
     if (ev->pressed) {
         /* Reset standby inactivity timer on key-down */
         standby_reset_timer();
+
+        /* Caps Lock toggles once per press: no key repeat. */
+        if (ev->keycode == KB_KEYCODE_CAPS_LOCK) {
+            if (s_key_queue) xQueueSend(s_key_queue, ev, 0);
+            return;
+        }
 
         /* Start key-repeat tracking */
         s_repeat_ev     = *ev;
