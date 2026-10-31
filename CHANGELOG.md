@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.21] - 2026-10-31
+
 ### Added
 
 - **Guition JC4827W543C support**: the 4.3" 480x272 touch display
