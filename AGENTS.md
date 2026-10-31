@@ -721,6 +721,19 @@ The largest component. Contains:
   BLE / WiFi / Git sync / LVGL widget growth). Exposes `editor_get_max_doc_size()` for the UI,
   which surfaces the value read-only in F1 -> Settings. Provides
   cursor movement, selection, clipboard, insert/delete, and file I/O.
+  Per-keystroke cost does not grow with the document: the newline
+  counts before the gap and in total are kept up to date by every gap
+  move and edit (line count and cursor line are O(1)); the flat text
+  cache is valid up to `flat_valid`, which an edit lowers to its
+  offset, so `editor_get_text()` only re-copies the bytes after the
+  edit; `editor_get_line()` walks from the nearest known line start
+  (the cached line, the cursor line or line 0), forward or backward.
+  Gap moves never invalidate the flat cache (the text is unchanged).
+  `editor_change_mark_get()` / `_reset()` (one slot per pane) report
+  the lowest offset changed since a reset; `refresh_active_pane()` in
+  `editor_ui.cpp` uses it to keep a per-pane checkpoint of the
+  format's scan state at the scroll line (`pane_t::scan_ck_*`), so the
+  lines above the screen are not re-parsed on every refresh.
 - **editor_ui.cpp** -- LVGL-based user interface: title bar with battery
   and layout indicators, scrollable text area with Markdown rendering,
   status bar, file browser dialog, and settings menu (F1).

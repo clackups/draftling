@@ -12,6 +12,13 @@ in the git log.
   board from Guition is now supported, with touch, the MicroSD slot
   and an adjustable backlight. The BOOT button wakes it from sleep.
 
+### Fixed
+
+- **Faster typing in large documents**: typing near the end of a long
+  file (hundreds of kilobytes) no longer slows down. The editor used to
+  re-read the whole document on every key press; it now only looks at
+  the part that changed and the lines on the screen.
+
 ## [1.0.20] - 2026-10-30
 
 ### Added

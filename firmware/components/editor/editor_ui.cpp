@@ -1527,7 +1527,24 @@ typedef struct {
     int           top_px;
     int           top_px_line;
     editor_doc_t *top_px_doc;
+
+    /* The format's scan state (Markdown code fence, Fountain element)
+     * after lines 0..scan_ck_line-1 of scan_ck_doc, so a refresh does
+     * not re-parse every line above the screen. Valid while nothing
+     * before scan_ck_off (the start of that line) changed -- see
+     * editor_change_mark_get() -- and, since a Fountain line's element
+     * depends on whether the cursor is on the next line, while the
+     * cursor stays after scan_ck_off. */
+    editor_doc_t          *scan_ck_doc;
+    const editor_format_t *scan_ck_fmt;
+    int                    scan_ck_line;
+    size_t                 scan_ck_off;
+    bool                   scan_ck_in_code;
+    ftn_state_t            scan_ck_ftn;
 } pane_t;
+
+static_assert(EDITOR_MAX_PANES <= EDITOR_CHANGE_MARKS,
+              "one editor change mark per pane");
 
 static pane_t  s_panes[EDITOR_MAX_PANES];
 static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
@@ -2805,11 +2822,38 @@ static void refresh_active_pane(bool draw_cursor)
         editor_format_scan_begin(fmt, &scan);
 
         /* Carry the format's line state (Markdown: code fences;
-         * Fountain: the element context) up to the scroll line */
-        for (int i = 0; i < scroll && i < total; i++) {
+         * Fountain: the element context) up to the scroll line,
+         * starting from the pane's checkpoint when it is still valid */
+        int mark = (int)(s_rp - s_panes);
+        int first = 0;
+        if (scroll > 0 && s_rp->scan_ck_doc == s_rp->doc &&
+            s_rp->scan_ck_fmt == fmt && s_rp->scan_ck_line > 0 &&
+            s_rp->scan_ck_line <= scroll &&
+            editor_change_mark_get(mark) > s_rp->scan_ck_off &&
+            scan.cursor > s_rp->scan_ck_off) {
+            first = s_rp->scan_ck_line;
+            scan.in_code = s_rp->scan_ck_in_code;
+            scan.ftn     = s_rp->scan_ck_ftn;
+        }
+        for (int i = first; i < scroll && i < total; i++) {
             size_t ll;
             const char *lt = editor_get_line(i, &ll);
             fmt->parse_line(&scan, lt, ll, NULL);
+        }
+        s_rp->scan_ck_doc = NULL;
+        if (scroll > 0 && scroll < total) {
+            size_t ll;
+            const char *lt = editor_get_line(scroll, &ll);
+            size_t off = (size_t)(lt - scan.flat);
+            if (scan.cursor > off) {
+                s_rp->scan_ck_doc     = s_rp->doc;
+                s_rp->scan_ck_fmt     = fmt;
+                s_rp->scan_ck_line    = scroll;
+                s_rp->scan_ck_off     = off;
+                s_rp->scan_ck_in_code = scan.in_code;
+                s_rp->scan_ck_ftn     = scan.ftn;
+                editor_change_mark_reset(mark);
+            }
         }
 
         std::string tmp;        /* final rendered text for the current slot */

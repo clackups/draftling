@@ -35,22 +35,28 @@ struct editor_doc_s {
 
     char   path[256];     /* backing file path, "" when untitled */
     bool   modified;
-    bool   flat_dirty;
+    /* flat[0, flat_valid) matches the document; the rest is rebuilt
+     * by editor_get_text(). An edit at offset p lowers it to p, so
+     * typing near the end only copies the bytes after the edit. */
+    size_t flat_valid;
     editor_doc_format_t format; /* Markdown, Fountain or plain text */
     editor_mode_t mode;
     int    scroll_line;
     int    sel_anchor;    /* logical byte offset, -1 = no selection */
 
-    /* Cached line count of the flattened text. -1 means "not computed".
-     * Invalidated alongside the flat buffer in invalidate_flat(). */
-    int    line_count_cache;
-    /* Forward-only line-lookup cache used by editor_get_line(). Stores
-     * the byte offset into flat where line line_cache_num starts.
-     * editor_ui_refresh() iterates lines in increasing order, so this
-     * lets each refresh walk the flat buffer at most once instead of
-     * O(N^2). Invalidated alongside the flat buffer in invalidate_flat(). */
+    /* Newlines before the gap (= the cursor line) and in the whole
+     * document, kept up to date by every gap move and edit, so the
+     * line count and the cursor line cost nothing to read. */
+    int    nl_before;
+    int    nl_total;
+    /* Line-lookup cache used by editor_get_line(): line line_cache_num
+     * starts at byte line_cache_offset. Dropped by an edit before that
+     * offset. -1 = empty. */
     int    line_cache_num;
     size_t line_cache_offset;
+    /* Lowest byte offset changed since editor_change_mark_reset(i);
+     * SIZE_MAX = unchanged. Lets the UI keep per-pane caches. */
+    size_t change_mark[EDITOR_CHANGE_MARKS];
 };
 
 /* Maximum number of simultaneously open documents. Two is enough for the
@@ -76,12 +82,13 @@ static size_t s_doc_buf_size = 0;
 #define s_buf_size          (s_active->buf_size)
 #define s_path              (s_active->path)
 #define s_modified          (s_active->modified)
-#define s_flat_dirty        (s_active->flat_dirty)
+#define s_flat_valid        (s_active->flat_valid)
 #define s_format            (s_active->format)
 #define s_mode              (s_active->mode)
 #define s_scroll_line       (s_active->scroll_line)
 #define s_sel_anchor        (s_active->sel_anchor)
-#define s_line_count_cache  (s_active->line_count_cache)
+#define s_nl_before         (s_active->nl_before)
+#define s_nl_total          (s_active->nl_total)
 #define s_line_cache_num    (s_active->line_cache_num)
 #define s_line_cache_offset (s_active->line_cache_offset)
 
@@ -98,17 +105,81 @@ static inline char char_at(size_t p)
     return (p < s_gap_start) ? s_buf[p] : s_buf[p + (s_gap_end - s_gap_start)];
 }
 
+static int count_nl(const char *p, size_t n)
+{
+    int c = 0;
+    const char *end = p + n;
+    while (p < end) {
+        p = (const char *)memchr(p, '\n', (size_t)(end - p));
+        if (!p) break;
+        c++;
+        p++;
+    }
+    return c;
+}
+
+/* The whole document was replaced (open, new, close, discard): drop
+ * every cache and recount the newlines. */
 static void doc_invalidate_flat(editor_doc_t *d)
 {
-    d->flat_dirty        = true;
-    d->line_count_cache  = -1;
+    d->flat_valid        = 0;
     d->line_cache_num    = -1;
     d->line_cache_offset = 0;
+    for (int i = 0; i < EDITOR_CHANGE_MARKS; i++) d->change_mark[i] = 0;
+    if (d->buf) {
+        d->nl_before = count_nl(d->buf, d->gap_start);
+        d->nl_total  = d->nl_before +
+                       count_nl(d->buf + d->gap_end, d->buf_size - d->gap_end);
+    } else {
+        d->nl_before = d->nl_total = 0;
+    }
 }
 
 static void invalidate_flat(void)
 {
     doc_invalidate_flat(s_active);
+}
+
+/* The text changed at logical byte offset pos and after it; everything
+ * before pos is untouched. The newline counters are updated by the
+ * caller. */
+static void content_changed(size_t pos)
+{
+    if (s_flat_valid > pos) s_flat_valid = pos;
+    if (s_line_cache_num >= 0 && s_line_cache_offset > pos) {
+        s_line_cache_num = -1;
+        s_line_cache_offset = 0;
+    }
+    for (int i = 0; i < EDITOR_CHANGE_MARKS; i++) {
+        if (s_active->change_mark[i] > pos) s_active->change_mark[i] = pos;
+    }
+    s_modified = true;
+}
+
+/* Drop the bytes between the new and the old gap start / end, keeping
+ * the newline counters in step. */
+static void remove_before_gap(size_t new_start)
+{
+    int n = count_nl(s_buf + new_start, s_gap_start - new_start);
+    s_nl_before -= n;
+    s_nl_total  -= n;
+    s_gap_start = new_start;
+}
+
+static void remove_after_gap(size_t new_end)
+{
+    s_nl_total -= count_nl(s_buf + s_gap_end, new_end - s_gap_end);
+    s_gap_end = new_end;
+}
+
+/* Copy text into the gap at the cursor. The caller checked the size. */
+static void insert_at_gap(const char *text, size_t len)
+{
+    memcpy(s_buf + s_gap_start, text, len);
+    int n = count_nl(text, len);
+    s_nl_before += n;
+    s_nl_total  += n;
+    s_gap_start += len;
 }
 
 static void ensure_gap(size_t need)
@@ -861,83 +932,99 @@ extern "C" void editor_discard_all_changes(void)
 
 extern "C" const char *editor_get_text(size_t *out_len)
 {
-    if (s_flat_dirty) {
-        memcpy(s_flat, s_buf, s_gap_start);
-        memcpy(s_flat + s_gap_start, s_buf + s_gap_end, s_buf_size - s_gap_end);
-        size_t len = content_len();
-        s_flat[len] = '\0';
-        s_flat_dirty = false;
+    size_t len = content_len();
+    size_t v = s_flat_valid;
+    if (v < len) {
+        if (v < s_gap_start) {
+            memcpy(s_flat + v, s_buf + v, s_gap_start - v);
+            v = s_gap_start;
+        }
+        memcpy(s_flat + v, s_buf + s_gap_end + (v - s_gap_start), len - v);
     }
-    if (out_len) *out_len = content_len();
+    s_flat[len] = '\0';
+    s_flat_valid = len;
+    if (out_len) *out_len = len;
     return s_flat;
 }
 
 extern "C" size_t editor_get_cursor(void) { return s_gap_start; }
 
+static size_t find_line_start(size_t pos);
+
 extern "C" void editor_get_cursor_pos(int *line, int *col)
 {
-    int l = 0, c = 0;
-    for (size_t i = 0; i < s_gap_start; i++) {
-        if (s_buf[i] == '\n') { l++; c = 0; }
-        else {
-            /* Count only the first byte of each UTF-8 character.
-             * Continuation bytes have the form 10xxxxxx (0x80..0xBF). */
+    if (line) *line = s_nl_before;
+    if (col) {
+        /* Count only the first byte of each UTF-8 character.
+         * Continuation bytes have the form 10xxxxxx (0x80..0xBF). */
+        int c = 0;
+        for (size_t i = find_line_start(s_gap_start); i < s_gap_start; i++) {
             if ((s_buf[i] & 0xC0) != 0x80) c++;
         }
+        *col = c;
     }
-    if (line) *line = l;
-    if (col)  *col  = c;
 }
 
 extern "C" int editor_get_line_count(void)
 {
-    if (s_line_count_cache >= 0) return s_line_count_cache;
-    /* Use the flat buffer (single contiguous scan, no gap branch per
-     * byte) instead of char_at() so this is fast even for large
-     * documents. editor_get_text() also rebuilds the flat buffer if
-     * needed, keeping this and editor_get_line() in sync. */
-    size_t total;
-    const char *text = editor_get_text(&total);
-    int count = 1;
-    for (size_t i = 0; i < total; i++) {
-        if (text[i] == '\n') count++;
-    }
-    s_line_count_cache = count;
-    return count;
+    return s_nl_total + 1;
 }
 
 extern "C" const char *editor_get_line(int line_num, size_t *out_len)
 {
-    /* Flatten first, then find the line in the flat buffer */
     size_t total;
     const char *text = editor_get_text(&total);
+    if (line_num < 0 || line_num > s_nl_total) {
+        if (out_len) *out_len = 0;
+        return "";
+    }
 
-    /* Forward-only cache: if the requested line is at or after the
-     * cached line, walk forward from the cached offset instead of
-     * restarting from byte 0. The renderer iterates lines in order,
-     * so this collapses the per-refresh cost from O(N^2) to O(N). */
-    const char *p;
-    int cur;
-    if (line_num >= s_line_cache_num && s_line_cache_num >= 0 &&
-        s_line_cache_offset <= total) {
-        p   = text + s_line_cache_offset;
+    /* Walk from the nearest line whose start is known: the cached
+     * line, the cursor line or the first line. */
+    int    cur = 0;
+    size_t off = 0;
+    int    cl  = s_nl_before;
+    if (abs(line_num - cl) < line_num) {
+        cur = cl;
+        off = find_line_start(s_gap_start);
+    }
+    if (s_line_cache_num >= 0 && s_line_cache_offset <= total &&
+        abs(line_num - s_line_cache_num) < abs(line_num - cur)) {
         cur = s_line_cache_num;
-    } else {
-        p   = text;
-        cur = 0;
+        off = s_line_cache_offset;
     }
-    while (cur < line_num && p < text + total) {
-        if (*p == '\n') cur++;
-        p++;
+    const char *p = text + off;
+    while (cur < line_num) {
+        const char *nl = (const char *)memchr(p, '\n', (size_t)(text + total - p));
+        if (!nl) break;   /* cannot happen: line_num <= s_nl_total */
+        p = nl + 1;
+        cur++;
     }
-    if (cur < line_num) { if (out_len) *out_len = 0; return ""; }
-    /* Update the cache to the line we just landed on. */
+    while (cur > line_num) {
+        /* p is a line start after a '\n'; find the start of the line
+         * before it. */
+        const char *q = p - 1;
+        while (q > text && q[-1] != '\n') q--;
+        p = q;
+        cur--;
+    }
     s_line_cache_num    = line_num;
     s_line_cache_offset = (size_t)(p - text);
-    const char *end = p;
-    while (end < text + total && *end != '\n') end++;
-    if (out_len) *out_len = end - p;
+    const char *end = (const char *)memchr(p, '\n', (size_t)(text + total - p));
+    if (!end) end = text + total;
+    if (out_len) *out_len = (size_t)(end - p);
     return p;
+}
+
+extern "C" void editor_change_mark_reset(int slot)
+{
+    if (slot >= 0 && slot < EDITOR_CHANGE_MARKS) s_active->change_mark[slot] = SIZE_MAX;
+}
+
+extern "C" size_t editor_change_mark_get(int slot)
+{
+    if (slot < 0 || slot >= EDITOR_CHANGE_MARKS) return 0;
+    return s_active->change_mark[slot];
 }
 
 extern "C" int editor_get_scroll_line(void) { return s_scroll_line; }
@@ -963,15 +1050,15 @@ static void gap_shift_left(void)
     s_gap_end--;
     s_buf[s_gap_end] = s_buf[s_gap_start - 1];
     s_gap_start--;
-    invalidate_flat();
+    if (s_buf[s_gap_end] == '\n') s_nl_before--;
 }
 
 static void gap_shift_right(void)
 {
     s_buf[s_gap_start] = s_buf[s_gap_end];
+    if (s_buf[s_gap_start] == '\n') s_nl_before++;
     s_gap_start++;
     s_gap_end++;
-    invalidate_flat();
 }
 
 /* Move the gap to a given logical position using memmove (faster than
@@ -981,16 +1068,17 @@ static void move_gap_to(size_t pos)
     if (pos == s_gap_start) return;
     if (pos < s_gap_start) {
         size_t n = s_gap_start - pos;
+        s_nl_before -= count_nl(s_buf + pos, n);
         memmove(s_buf + s_gap_end - n, s_buf + pos, n);
         s_gap_start = pos;
         s_gap_end -= n;
     } else {
         size_t n = pos - s_gap_start;
+        s_nl_before += count_nl(s_buf + s_gap_end, n);
         memmove(s_buf + s_gap_start, s_buf + s_gap_end, n);
         s_gap_start += n;
         s_gap_end += n;
     }
-    invalidate_flat();
 }
 
 /* Count UTF-8 characters in s_buf[start..end) (before the gap). */
@@ -1151,9 +1239,9 @@ extern "C" bool editor_insert_char(char c)
     }
     ensure_gap(1);
     if (s_gap_start >= s_gap_end) return false;
-    s_buf[s_gap_start++] = c;
-    s_modified = true;
-    invalidate_flat();
+    size_t pos = s_gap_start;
+    insert_at_gap(&c, 1);
+    content_changed(pos);
     return true;
 }
 
@@ -1189,14 +1277,11 @@ extern "C" bool editor_replace_before(size_t del, const char *text)
                  (unsigned)(s_buf_size / 1024), len);
         return false;
     }
-    s_gap_start -= del;
+    remove_before_gap(s_gap_start - del);
     s_sel_anchor = -1;
-    if (len > 0) {
-        memcpy(s_buf + s_gap_start, text, len);
-        s_gap_start += len;
-    }
-    s_modified = true;
-    invalidate_flat();
+    size_t pos = s_gap_start;
+    if (len > 0) insert_at_gap(text, len);
+    content_changed(pos);
     return true;
 }
 
@@ -1210,22 +1295,23 @@ extern "C" void editor_delete_back(void)
     if (s_gap_start == 0) return;
     /* Remove all bytes of the previous UTF-8 character by expanding
      * the gap leftward past continuation bytes and the start byte. */
+    size_t ns = s_gap_start;
     do {
-        s_gap_start--;
-    } while (s_gap_start > 0 && (s_buf[s_gap_start] & 0xC0) == 0x80);
-    s_modified = true;
-    invalidate_flat();
+        ns--;
+    } while (ns > 0 && (s_buf[ns] & 0xC0) == 0x80);
+    remove_before_gap(ns);
+    content_changed(ns);
 }
 
 extern "C" void editor_delete_forward(void)
 {
     if (s_gap_end >= s_buf_size) return;
     /* Remove the start byte and any following continuation bytes. */
-    s_gap_end++;
-    while (s_gap_end < s_buf_size && (s_buf[s_gap_end] & 0xC0) == 0x80)
-        s_gap_end++;
-    s_modified = true;
-    invalidate_flat();
+    size_t ne = s_gap_end + 1;
+    while (ne < s_buf_size && (s_buf[ne] & 0xC0) == 0x80)
+        ne++;
+    remove_after_gap(ne);
+    content_changed(s_gap_start);
 }
 
 extern "C" void editor_delete_line(void)
@@ -1234,9 +1320,8 @@ extern "C" void editor_delete_line(void)
     size_t end = s_gap_end;
     while (end < s_buf_size && s_buf[end] != '\n') end++;
     if (end < s_buf_size) end++; /* include the newline */
-    s_gap_end = end;
-    s_modified = true;
-    invalidate_flat();
+    remove_after_gap(end);
+    content_changed(s_gap_start);
 }
 
 extern "C" void editor_set_cursor(size_t pos)
@@ -1292,15 +1377,13 @@ extern "C" esp_err_t editor_replace_range(size_t start, size_t end,
      * position. Going through the existing helpers preserves all
      * gap/cache invariants. */
     move_gap_to(end);
-    s_gap_start = start;
+    remove_before_gap(start);
     s_sel_anchor = -1;
     if (rlen > 0) {
         ensure_gap(rlen);
-        memcpy(s_buf + s_gap_start, replacement, rlen);
-        s_gap_start += rlen;
+        insert_at_gap(replacement, rlen);
     }
-    s_modified = true;
-    invalidate_flat();
+    content_changed(start);
     return ESP_OK;
 }
 
@@ -1340,10 +1423,9 @@ extern "C" bool editor_delete_selection(void)
     size_t sel_s, sel_e;
     editor_get_selection_range(&sel_s, &sel_e);
     move_gap_to(sel_e);
-    s_gap_start = sel_s;
+    remove_before_gap(sel_s);
     s_sel_anchor = -1;
-    s_modified = true;
-    invalidate_flat();
+    content_changed(sel_s);
     return true;
 }
 

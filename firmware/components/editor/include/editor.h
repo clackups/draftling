@@ -166,6 +166,15 @@ size_t editor_get_cursor(void);
 void editor_get_cursor_pos(int *line, int *col);
 int editor_get_line_count(void);
 const char *editor_get_line(int line_num, size_t *out_len);
+
+/* Change marks for caches kept outside the editor (one per UI pane).
+ * editor_change_mark_get(slot) returns the lowest byte offset of the
+ * active document changed since editor_change_mark_reset(slot), or
+ * SIZE_MAX if nothing changed; loading or clearing a document counts
+ * as a change at 0. */
+#define EDITOR_CHANGE_MARKS 2
+void editor_change_mark_reset(int slot);
+size_t editor_change_mark_get(int slot);
 int editor_get_scroll_line(void);
 void editor_set_scroll_line(int line);
 
