@@ -6115,7 +6115,7 @@ static void refresh_dbx_prompt(void)
     int pos = site ? s_dbx_site_pos : s_dbx_otp_pos;
 
     lv_label_set_text(s_dbx_hdr_lbl, site
-        ? "Draftbox site (Enter: next, Esc: cancel):"
+        ? "Draftbox site name (Enter: next, Esc: cancel):"
         : "8-digit one-time password (Enter/Esc):");
     lv_label_set_text(s_dbx_val_lbl, buf);
 
