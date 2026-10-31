@@ -6,6 +6,12 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Guition JC4827W543C support**: the 4.3" 480x272 touch display
+  board from Guition is now supported, with touch, the MicroSD slot
+  and an adjustable backlight. The BOOT button wakes it from sleep.
+
 ## [1.0.20] - 2026-10-30
 
 ### Added

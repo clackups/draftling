@@ -1139,6 +1139,44 @@ static void pre_sleep_viewe_uedx80480043_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
+/* The NS4168 speaker amplifier is unused and its enable is not wired
+ * to a GPIO. Drive its I2S lines LOW so it sees no clock and no
+ * floating inputs. Called at boot (which also releases the holds set
+ * by the pre-sleep hook) and before deep sleep with hold = true. */
+static void jc4827w543_quiet_speaker(bool hold = false)
+{
+    const int pins[] = { SPK_I2S_LRCLK_PIN, SPK_I2S_BCLK_PIN, SPK_I2S_DIN_PIN };
+    for (int pin : pins) {
+        gpio_hold_dis((gpio_num_t)pin);
+        gpio_reset_pin((gpio_num_t)pin);
+        gpio_set_direction((gpio_num_t)pin, GPIO_MODE_OUTPUT);
+        gpio_set_level((gpio_num_t)pin, 0);
+        if (hold) gpio_hold_en((gpio_num_t)pin);
+    }
+}
+
+static void pre_sleep_jc4827w543_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: Guition JC4827W543C peripheral teardown");
+
+    pre_sleep_autosave();
+    /* GT911 to sleep; the RST pulse in touchscreen_init() wakes it on
+     * the next boot. */
+    touchscreen_sleep();
+    /* The SD card stays powered in deep sleep: release it so it drops
+     * to its idle state. */
+    (void)sd_card_deinit();
+    jc4827w543_quiet_speaker(true);
+
+    /* Backlight off (held LOW) and the NV3041A in SLPIN. Take the
+     * LVGL lock so no flush is in progress. */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
@@ -2760,6 +2798,25 @@ extern "C" void app_main(void)
      * portrait frame; the LVGL port rotates it landscape. Pin
      * parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_NV3041A)
+    /* Guition JC4827W543C. NV3041A QSPI color LCD, native 480x272
+     * landscape; pins come from the board header. Pin parameters of
+     * display_init() are ignored. */
+    {
+        display_nv3041a_config_t nv = {};
+        nv.cs           = LCD_QSPI_CS_PIN;
+        nv.sck          = LCD_QSPI_SCK_PIN;
+        nv.d0           = LCD_QSPI_D0_PIN;
+        nv.d1           = LCD_QSPI_D1_PIN;
+        nv.d2           = LCD_QSPI_D2_PIN;
+        nv.d3           = LCD_QSPI_D3_PIN;
+        nv.bl           = LCD_BL_PIN;
+        nv.spi_clock_hz = LCD_SPI_CLOCK_HZ;
+        nv.bl_pwm_hz    = LCD_BL_PWM_HZ;
+        display_nv3041a_config(&nv);
+    }
+    jc4827w543_quiet_speaker();
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1683)
     /* Elecrow CrowPanel 5.79in E-Paper HMI. Dual-SSD1683 SPI panel;
      * all panel GPIOs and the panel power-enable pin are hard-coded
@@ -3577,6 +3634,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)
     standby_set_pre_sleep_cb(pre_sleep_viewe_uedx80480043_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
+    standby_set_pre_sleep_cb(pre_sleep_jc4827w543_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \

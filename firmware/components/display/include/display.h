@@ -55,6 +55,22 @@ typedef struct {
  * display_init(); the structure is copied. */
 void display_spi_tft_config(const display_spi_tft_config_t *cfg);
 
+/*
+ * Board wiring for the NV3041A QSPI backend (display_nv3041a.cpp).
+ */
+typedef struct {
+    int cs;
+    int sck;
+    int d0, d1, d2, d3;
+    int bl;            /* active-high PWM backlight, -1 if none */
+    int spi_clock_hz;
+    int bl_pwm_hz;
+} display_nv3041a_config_t;
+
+/* Only implemented by display_nv3041a.cpp. Must be called before
+ * display_init(); the structure is copied. */
+void display_nv3041a_config(const display_nv3041a_config_t *cfg);
+
 void display_clear(uint8_t color);
 void display_set_pixel(uint16_t x, uint16_t y, uint8_t color);
 

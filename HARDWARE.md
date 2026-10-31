@@ -239,6 +239,29 @@ no battery input.
 
 Tested on physical hardware.
 
+## Guition JC4827W543C
+
+[Guition JC4827W543C](https://www.atomic14.com/esp32/boards/guition-jc4827w543/)
+is a 4.3" smart display: ESP32-S3 with 4 MB flash and 8 MB PSRAM, a
+480x272 IPS color LCD (NV3041A, QSPI) with GT911 capacitive touch, a
+MicroSD slot, a speaker amplifier and an IP5306 battery charger. Build
+preset `guition_jc4827w543`. Pins are taken from the vendor IO table
+in [profi-max/JC4827W543_4.3inch_ESP32S3_board](https://github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
+The resistive-touch JC4827W543R is not supported.
+
+- BOOT (GPIO0) wakes the device from sleep; holding it for 2 seconds
+  forgets the paired keyboards.
+- Before sleep the backlight is switched off, the panel is put in its
+  sleep mode, the touch controller is put to sleep, the SD card is
+  released and the speaker amplifier inputs are held low.
+- No battery level indication: the board has a battery connector and
+  an IP5306 charger, but no battery voltage meter -- neither the
+  charger nor the battery is connected to the ESP32-S3, so the status
+  bar shows no battery percentage.
+- 4 MB flash: the Japanese and Chinese language packs do not fit.
+
+Tested on physical hardware.
+
 ## Waveshare ESP32-S3-Touch-LCD-7
 
 [Waveshare

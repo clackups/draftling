@@ -83,6 +83,15 @@
             }
         },
         {
+            "name": "guition_jc4827w543",
+            "displayName": "Guition JC4827W543C",
+            "binaryDir": "build/guition_jc4827w543",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.guition_jc4827w543",
+                "SDKCONFIG": "build/guition_jc4827w543/sdkconfig"
+            }
+        },
+        {
             "name": "viewe_uedx80480043",
             "displayName": "VIEWE UEDX80480043E-WB-A / -WB-B",
             "binaryDir": "build/viewe_uedx80480043",

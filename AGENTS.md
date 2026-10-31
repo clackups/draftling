@@ -84,6 +84,7 @@ card).
 | Waveshare ESP32-S3-LCD-3.16 | 3.16-inch ST7701 RGB color LCD, 320x820 portrait rendered landscape at 820x320, no touch |
 | Elecrow CrowPanel ESP32 HMI 5.0" | 5.0-inch RGB parallel color LCD, 800x480, GT911 touch (reset via PCA9557 on v3.0), 4 MB flash |
 | VIEWE UEDX80480043E-WB-A / -WB-B | 4.3-inch ST7262 RGB parallel color LCD, 800x480, GT911 touch (Sunton ESP32-8048S043C pin map) |
+| Guition JC4827W543C | 4.3-inch NV3041A QSPI color LCD, 480x272, GT911 touch, 4 MB flash |
 | Freenove FNK0104A | 2.8-inch ILI9341 color LCD, 320x240, no touch |
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
@@ -145,9 +146,10 @@ CMakeLists.txt              Top-level CMake project file
 CMakePresets.json           Per-board build presets (idf.py --preset <board>)
 partitions.csv              Custom partition table (16 MB flash, single
                             "factory" app) -- used by every board except
-                            the five below
+                            the ones below
 partitions_8mb.csv          8 MB-flash variant (Elecrow CrowPanel 5.79")
-partitions_4mb.csv          4 MB-flash variant (Elecrow CrowPanel 5.0")
+partitions_4mb.csv          4 MB-flash variant (Elecrow CrowPanel 5.0",
+                            Guition JC4827W543C)
 partitions_xteink_x4_pro.csv Dual-OTA layout (otadata + ota_0/ota_1) so
                             the Xteink X4 Pro can be re-flashed with the
                             stock or Crosspoint firmware afterwards
@@ -526,6 +528,29 @@ Per-board display backends behind a single C API:
   boundaries. Logs RDDPM after init as a health check (0x9C = on,
   0xFF = no reply). See the ESP-IDF QUAD-flag bug noted under
   "Supported Hardware".
+- **display_nv3041a.cpp** -- QSPI backend for the Guition
+  JC4827W543C's 4.3" 480x272 NV3041A panel, gated on
+  `CONFIG_DRAFTLING_DISPLAY_NV3041A`. Same framing as Arduino_GFX's
+  `Arduino_ESP32QSPI` (used by the vendor demos): register writes are
+  opcode 0x02 + 24-bit address on one lane; a flush sends CASET /
+  RASET / RAMWR as register writes, then the pixels in 8K-pixel chunks
+  with opcode 0x32 + RAMWRC (0x3C) on 4 lanes. SWRESET (no reset
+  GPIO), Arduino_GFX's `nv3041a_init_operations[]` byte for byte, then
+  INVON and MADCTL 0xC0 once more after the vendor register bank is
+  closed (0xFF 0x00), as `Arduino_NV3041A::begin()` does. The table's
+  own MADCTL write (inside the 0xFF 0xA5 bank) does not set the
+  orientation: without the trailing writes the picture was upside down
+  and inverted. The panel has no reset GPIO and keeps its state across
+  ESP32 resets, which hid this on warm boots; a test pattern cycling
+  MADCTL x INVON / INVOFF confirmed 0xC0 + INVON after cold and warm
+  starts. Native landscape, no base rotation.
+  Pins come from the board header through `display_nv3041a_config()`
+  (`display_nv3041a_config_t`), called by main.cpp before
+  `display_init()`. The panel's TE output is wired to GPIO0 (BOOT, the
+  wake source) and never enabled; `display_init()` logs the GPIO0
+  level. `display_deep_sleep_prepare()` sends DISPOFF + SLPIN and holds
+  the backlight LOW; it does not hold the QSPI CS (GPIO45, a strapping
+  pin).
 - **display_xteink_epd.cpp** -- from-scratch SPI e-paper backend for
   the Xteink X4 Pro and X4 Classic, gated on
   `CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD`. The two boards share the
@@ -2240,6 +2265,23 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   releases the SD card, stops the panel and latches the backlight
   off. Tested on physical hardware (standby about 30 mA).
   *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_GUITION_JC4827W543** -- Guition JC4827W543C
+  (`main/boards/guition_jc4827w543.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
+  flash, `partitions_4mb.csv`), 4.3" 480x272 NV3041A QSPI panel
+  (`display_nv3041a.cpp`; CS=45, SCK=47, D0-D3=21/48/40/39, same QSPI
+  pins as the JC3248W535), LEDC backlight on GPIO1 at 5 kHz, GT911
+  touch on I2C SDA=8/SCL=4, INT=3, RST=38 (native 480x272 frame, no
+  swap / mirror), MicroSD on SPI3 (CS=10, MOSI=11, SCK=12, MISO=13),
+  BOOT (GPIO0) wake, no battery level indication (IP5306 charger only,
+  no battery voltage meter wired to the ESP32-S3). The
+  unused NS4168 I2S amplifier (LRCLK=2, BCLK=42, DIN=41; no enable
+  GPIO) has its lines driven LOW at boot (`jc4827w543_quiet_speaker()`
+  in main.cpp) and held LOW through deep sleep.
+  `pre_sleep_jc4827w543_deinit()` puts the GT911 to sleep, releases
+  the SD card, holds the amplifier lines and calls
+  `display_deep_sleep_prepare()`. No USB MSC / Kermit (native USB vs.
+  bridge not confirmed). Tested on physical hardware.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_FREENOVE_FNK0104A** -- Freenove FNK0104A: 2.8"
   ILI9341 color SPI LCD, 320x240, no touch, on-board MicroSD on
   SDMMC, BOOT button on GPIO0 as the wake source. *Requires ESP32-S3.*
@@ -2419,12 +2461,14 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
-  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79").
+  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
+  480 (Guition JC4827W543C).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
-  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79").
+  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79",
+  Guition JC4827W543C).
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -2588,6 +2632,7 @@ in C / C++ code:
 | DRAFTLING_ILI9341_INVERSION_OFF   | Ends the ILI9341 init sequence with INVOFF instead of INVON (the Freenove panels need INVON; the MicroJournal Rev 5.0 panel shows inverted colors with it) | MicroJournal Rev 5 |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (ST77922 QSPI panel, native portrait, LVGL port rotates) | Freenove FNK0104N |
+| DRAFTLING_DISPLAY_NV3041A         | Selects `display_nv3041a.cpp` (NV3041A QSPI panel, native landscape; pins from the board header via `display_nv3041a_config()`) | Guition JC4827W543C |
 | DRAFTLING_DISPLAY_ST7365          | Selects `display_ili9341.cpp` with Viewe's ST7365 init table (pins, incl. RST and the IM0/IM1 interface-mode straps, come from the board header) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_ST7789          | Selects `display_ili9341.cpp` with an ST7789 init sequence: Adafruit_ST7789's with RGB-order landscape MADCTL 0xA0 by default | NiceMCU-C5E-DEV_2.8IPS, MicroJournal Rev 5 |
 | DRAFTLING_ST7789_INIT_TFT_ESPI    | Switches the ST7789 to TFT_eSPI's init table (inversion off, landscape MADCTL 0x68 = MX \| MV \| BGR), as in the upstream Micro Journal `rev_5_st7789` build | MicroJournal Rev 5 |
@@ -2601,9 +2646,9 @@ in C / C++ code:
 | DRAFTLING_RGB_BOARD_UEDX80480043 | Switches `display_rgb.cpp` to the VIEWE UEDX80480043E-WB timings (Sunton 8048S043C pin map, 16 MHz) and stops the panel and latches the backlight off before deep sleep | VIEWE UEDX80480043E-WB |
 | DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
@@ -2731,7 +2776,7 @@ PSRAM) are not supported.
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
-`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
