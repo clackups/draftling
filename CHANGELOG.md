@@ -14,6 +14,12 @@ in the git log.
   board from Guition is now supported, with touch, the MicroSD slot
   and an adjustable backlight. The BOOT button wakes it from sleep.
 
+### Changed
+
+- **Larger "Forget KB" and "Off" buttons**: the two touch buttons on
+  the keyboard-connection screen are now much bigger, with a wider gap
+  between them, so they are easy to hit with a finger.
+
 ### Fixed
 
 - **Faster typing in large documents**: typing near the end of a long
