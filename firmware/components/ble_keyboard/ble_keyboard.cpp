@@ -666,6 +666,32 @@ static bool s_hid_svc_seen = false;
  * answered our connection request. */
 static bool s_link_up = false;
 
+/* esp_hidh posts ESP_HIDH_OPEN_EVENT *before* it subscribes to the
+ * input reports (battery read, then a REGISTER_FOR_NOTIFY and a CCCD
+ * write per report, each waiting for its answer without a timeout);
+ * esp_hidh_dev_open() returns only after that. On a NuPhy Air60 V2
+ * this step once hung right after a first pairing: the UI said
+ * "connected", the CCCDs were never written, and no key reached the
+ * editor until the keyboard was power-cycled. If the subscription has
+ * not finished SUBSCRIBE_TIMEOUT_MS after the OPEN event, drop the
+ * link so the normal reconnection runs again on the new bond. */
+#define SUBSCRIBE_TIMEOUT_MS 10000
+static volatile bool s_open_returned = true;
+static TimerHandle_t s_subscribe_timer = NULL;
+
+static void subscribe_timer_cb(TimerHandle_t timer)
+{
+    (void)timer;
+    if (s_open_returned || !s_connected || s_disabled) return;
+    ESP_LOGW(TAG, "Keyboard connected, but subscribing to its key "
+                  "reports did not finish in %d ms; disconnecting to "
+                  "retry", SUBSCRIBE_TIMEOUT_MS);
+    esp_err_t err = esp_ble_gap_disconnect(s_target_bda);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_ble_gap_disconnect: %s", esp_err_to_name(err));
+    }
+}
+
 /* Initial connection parameters. Normally the CONNECT_IND carries the
  * 32 s supervision timeout (SUPERVISION_TIMEOUT_FLOOR_10MS, see the
  * UPDATE_CONN_PARAMS handler). After an open in which the link never
@@ -1062,6 +1088,13 @@ static void hidh_callback(void *handler_args, esp_event_base_t base,
 
             if (s_connect_cb) s_connect_cb(true);
 
+            /* connect_task() sets s_open_returned once
+             * esp_hidh_dev_open() is back, i.e. the reports are
+             * subscribed; the callback re-checks it. */
+            if (!s_open_returned && s_subscribe_timer) {
+                xTimerReset(s_subscribe_timer, 0);
+            }
+
             /* Restore the LEDs (e.g. Caps Lock on) once esp_hid has
              * finished subscribing to the input reports. */
             if (s_led_state && s_led_timer) xTimerReset(s_led_timer, 0);
@@ -1114,6 +1147,7 @@ static void hidh_callback(void *handler_args, esp_event_base_t base,
          * connect that never reached OPEN. */
         open_watchdog_stop();
         s_open_in_flight = false;
+        if (s_subscribe_timer) xTimerStop(s_subscribe_timer, 0);
         /* Any pending Connection Parameter Update Request the
          * controller was waiting on us for is implicitly cancelled
          * by the link teardown; clear the gate so the next connection
@@ -1520,9 +1554,12 @@ static void connect_task(void *arg)
          * milestones re-arm it (open_watchdog_progress()); OPEN/CLOSE
          * handlers stop it. */
         open_watchdog_start(OPEN_WATCHDOG_MS);
+        s_open_returned = false;
         dev = esp_hidh_dev_open(s_target_bda,
                                 ESP_HID_TRANSPORT_BLE,
                                 s_target_addr_type);
+        s_open_returned = true;
+        if (s_subscribe_timer) xTimerStop(s_subscribe_timer, 0);
         if (dev) {
             /* Belt-and-braces: if the user disabled BLE while we
              * were blocked inside esp_hidh_dev_open(), close the
@@ -2339,6 +2376,10 @@ static void ble_init_task(void *arg)
     s_pair_hold_timer = xTimerCreate("ble_pair_hold",
                                      pdMS_TO_TICKS(PAIR_HOLD_MAX_MS),
                                      pdFALSE, NULL, pair_hold_timer_cb);
+
+    s_subscribe_timer = xTimerCreate("ble_subscribe",
+                                     pdMS_TO_TICKS(SUBSCRIBE_TIMEOUT_MS),
+                                     pdFALSE, NULL, subscribe_timer_cb);
 
     /* Reconnection will be started from the SCAN_PARAM_SET_COMPLETE_EVT
      * callback once scan parameters are ready. */

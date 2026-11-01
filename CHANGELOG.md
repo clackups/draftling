@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bluetooth keyboard that connects but does not type**: rarely, a
+  keyboard showed as connected right after pairing, but no key press
+  reached the editor until the keyboard was switched off and on. The
+  device now notices this within 10 seconds and reconnects to the
+  keyboard by itself.
+
 ## [1.0.21] - 2026-11-01
 
 ### Added
