@@ -45,14 +45,14 @@
  * early in boot to keep itself on"). Neither pin is RTC-capable
  * (outside the ESP32-S3's GPIO0-21 RTC-IO range), so without an
  * explicit gpio_hold_en() + gpio_deep_sleep_hold_en() the pad would
- * lose its driven level -- and therefore the whole board's power --
- * the instant deep sleep powers down the digital IOMUX domain. main.cpp
- * re-arms the hold at every boot and re-latches it before every deep
- * sleep. Releasing these pins instead of holding them would be a real
- * software power-off; Draftling deliberately never does that (deep
- * sleep is this board's "off" state, matching every other board in
- * this repo) so the capability is unused but documented here for
- * anyone who wants it later. */
+ * lose its driven level the instant deep sleep powers down the
+ * digital IOMUX domain. main.cpp drives both HIGH first thing in
+ * app_main(), and its pre-sleep hook drives them LOW: a real power-off
+ * on battery (the Power button then cold-boots the board and has to
+ * be held until app_main() runs), deep sleep on USB. Holding the
+ * latch through deep sleep instead, as Draftling once did, slowly
+ * drained the cell; once it was empty the chip hung, the Power button
+ * did nothing and only the RESET pinhole brought it back. */
 #define PWR_HOLD_PIN    45
 #define PWR_LOCK_PIN    46
 

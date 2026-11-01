@@ -8,6 +8,19 @@ in the git log.
 
 ### Fixed
 
+- **Seeed reTerminal Sticky would not start after the battery ran
+  empty**: switching off only put the device to sleep, which slowly
+  drained the battery; once it was empty, the Power button did nothing
+  until the RESET pinhole was pressed. On battery, switching off (the
+  Power button, Ctrl+P, or the inactivity timeout) now powers the
+  Sticky off completely. To switch it on, hold the Power button until
+  the screen changes. On USB power it still sleeps as before.
+
+- **Seeed reTerminal Sticky with the SSD2677 screen**: newer Sticky
+  units, whose screen uses an SSD2677 controller, could fail to start.
+  Draftling now reads the controller's ID, and if it still picks the
+  wrong one, it notices within seconds and switches to the other.
+
 - **Bluetooth keyboard that connects but does not type**: rarely, a
   keyboard showed as connected right after pairing, but no key press
   reached the editor until the keyboard was switched off and on. The

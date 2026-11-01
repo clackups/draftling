@@ -20,7 +20,8 @@
  *
  * Controller: Sticky units ship with either an SSD1677 or an SSD2677
  * (Seeed_GFX2's Driver_Sticky_Auto); sticky_detect_controller() tells
- * them apart by BUSY polarity after reset.
+ * them apart by a chip-ID read (command 0x70) or, where the panel SDO
+ * is not wired to MISO, by BUSY polarity after reset.
  *
  *   - SSD1677 (tested on physical hardware): the same reset timing,
  *     booster, borders and 0xFC refresh sequences as
@@ -281,13 +282,18 @@ static void sticky_set_ram_area_full(void)
     epd_data1((uint8_t)((y_win + h - 1) & 0xFF)); epd_data1((uint8_t)(((y_win + h - 1) >> 8) & 0xFF));
 }
 
-static void sticky_ctrl_init(void)
+/* BUSY bound for the controller init sequences. Each step takes a few
+ * ms to tens of ms; a timeout means the other controller is fitted
+ * (see display_init()). */
+#define STICKY_INIT_BUSY_MS 2000
+
+static bool sticky_ctrl_init(void)
 {
     static const uint8_t booster[5] = { 0xAE, 0xC7, 0xC3, 0xC0, 0x80 };
 
     epd_cmd(0x12); /* SOFT_RESET */
     vTaskDelay(pdMS_TO_TICKS(10));
-    epd_wait_busy();
+    if (!epd_wait_busy_ms(STICKY_INIT_BUSY_MS)) return false;
 
     epd_cmd(0x18); epd_data1(0x80); /* TEMP_SENSOR_CONTROL: internal */
 
@@ -303,8 +309,10 @@ static void sticky_ctrl_init(void)
 
     sticky_set_ram_area_full();
 
-    epd_cmd(0x46); epd_data1(0xF7); epd_wait_busy(); /* AUTO_WRITE_BW_RAM */
-    epd_cmd(0x47); epd_data1(0xF7); epd_wait_busy(); /* AUTO_WRITE_RED_RAM */
+    epd_cmd(0x46); epd_data1(0xF7); /* AUTO_WRITE_BW_RAM */
+    if (!epd_wait_busy_ms(STICKY_INIT_BUSY_MS)) return false;
+    epd_cmd(0x47); epd_data1(0xF7); /* AUTO_WRITE_RED_RAM */
+    return epd_wait_busy_ms(STICKY_INIT_BUSY_MS);
 }
 
 /* Both full and fast refreshes use CTRL1 normal, border 0xC0 and the
@@ -458,13 +466,13 @@ static void ssd2677_power_off(void)
     s_ssd2677_powered = false;
 }
 
-static void ssd2677_ctrl_init(void)
+static bool ssd2677_ctrl_init(void)
 {
     static const uint8_t timing[8] = { 0x76, 0x76, 0x76, 0x5A, 0x9D, 0x8A, 0x76, 0x62 };
 
-    epd_wait_busy();
+    if (!epd_wait_busy_ms(STICKY_INIT_BUSY_MS)) return false;
     epd_cmd(0x00); epd_data1(0x2F); epd_data1(0x0E); /* PSR */
-    epd_wait_busy();
+    if (!epd_wait_busy_ms(STICKY_INIT_BUSY_MS)) return false;
     epd_cmd(0x06); /* booster */
     epd_data1(0x0F); epd_data1(0x8B); epd_data1(0x93); epd_data1(0xC1);
     epd_cmd(0xE7); epd_data1(0xC1);
@@ -478,10 +486,11 @@ static void ssd2677_ctrl_init(void)
     epd_cmd(0x65); /* GSST */
     epd_data1(0x00); epd_data1(0x00); epd_data1(0x00); epd_data1(0x00);
     epd_cmd(0xE9); epd_data1(0x01);
-    epd_wait_busy();
+    bool ok = epd_wait_busy_ms(STICKY_INIT_BUSY_MS);
 
     s_ssd2677_latched = 0;
     s_ssd2677_powered = false;
+    return ok;
 }
 
 static void ssd2677_display_full(const uint8_t *fb)
@@ -513,14 +522,36 @@ static void ssd2677_deep_sleep(void)
     epd_cmd(0x07); epd_data1(0xA5); /* DSLP */
 }
 
-/* Seeed_GFX2 Driver_Sticky_Auto::probeByBusyPolarity(): after a reset
- * each controller is busy in its own polarity and then settles at its
- * ready level (SSD1677 ready LOW, SSD2677 ready HIGH), so the first
- * BUSY transition -- or the level once it has been stable for 200 ms
- * -- names the chip. (Seeed's first-stage SPI read of command 0x70 is
- * skipped: MISO is not wired to the panel SDO on every unit.) */
+/* Seeed_GFX2 Driver_Sticky_Auto::init(), in two stages.
+ *
+ * Stage 1, the Sticky product firmware's probe: reset (low 20 ms,
+ * high 10 ms), command 0x70, read one byte. 0x07 is an SSD2677, any
+ * other actively driven value an SSD1677. 0x00 / 0xFF means nothing
+ * drives MISO (the panel SDO is not wired on every unit).
+ *
+ * Stage 2, probeByBusyPolarity(): after a reset each controller is
+ * busy in its own polarity and then settles at its ready level
+ * (SSD1677 ready LOW, SSD2677 ready HIGH), so the first BUSY
+ * transition -- or the level once it has been stable for 200 ms --
+ * names the chip.
+ *
+ * display_init() retries with the other controller if the init
+ * sequence of the detected one times out. */
 static sticky_ctrl_t sticky_detect_controller(void)
 {
+    gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    uint8_t id = 0;
+    esp_err_t err = esp_lcd_panel_io_rx_param(s_io, 0x70, &id, 1);
+    ESP_LOGI(TAG, "Controller ID probe (0x70): 0x%02x (%s)", id,
+             esp_err_to_name(err));
+    if (err == ESP_OK) {
+        if (id == 0x07) return STICKY_CTRL_SSD2677;
+        if (id != 0x00 && id != 0xFF) return STICKY_CTRL_SSD1677;
+    }
+
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
     vTaskDelay(pdMS_TO_TICKS(1));
     gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
@@ -538,7 +569,32 @@ static sticky_ctrl_t sticky_detect_controller(void)
         if (++stable >= 100) break;
         if (esp_timer_get_time() - start >= 1500 * 1000) break;
     }
+    ESP_LOGI(TAG, "BUSY polarity probe: ready level %s", level ? "HIGH" : "LOW");
     return level ? STICKY_CTRL_SSD2677 : STICKY_CTRL_SSD1677;
+}
+
+/* Reset and initialize the controller in s_ctrl. False when one of
+ * its BUSY waits timed out. */
+static bool sticky_start_controller(void)
+{
+    if (s_ctrl == STICKY_CTRL_SSD2677) {
+        if (!s_tx) {
+            s_tx = (uint8_t *)heap_caps_malloc(SSD2677_TX_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!s_tx) {
+                ESP_LOGE(TAG, "SSD2677 transfer buffer allocation failed");
+                return false;
+            }
+        }
+        /* Seeed's SSD2677 reset timing: low 20 ms, then 50 ms settle. */
+        gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        memset(s_prev, 0xFF, FRAMEBUFFER_BYTES);
+        return ssd2677_ctrl_init();
+    }
+    epd_reset_pulse();
+    return sticky_ctrl_init();
 }
 
 /* The 0xFC sequence leaves analog and clock on, so power them off
@@ -656,22 +712,19 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     gpio_config(&busy_cfg);
 
     s_ctrl = sticky_detect_controller();
-    if (s_ctrl == STICKY_CTRL_SSD2677) {
-        s_tx = (uint8_t *)heap_caps_malloc(SSD2677_TX_BYTES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!s_tx) {
-            ESP_LOGE(TAG, "SSD2677 transfer buffer allocation failed");
-            return;
+    if (!sticky_start_controller()) {
+        /* A wrong guess shows up as a BUSY timeout (each controller is
+         * busy in the other's ready level), as in Seeed's
+         * Driver_Sticky_Auto safety net. */
+        ESP_LOGW(TAG, "%s init timed out; trying %s",
+                 s_ctrl == STICKY_CTRL_SSD2677 ? "SSD2677" : "SSD1677",
+                 s_ctrl == STICKY_CTRL_SSD2677 ? "SSD1677" : "SSD2677");
+        s_ctrl = (s_ctrl == STICKY_CTRL_SSD2677) ? STICKY_CTRL_SSD1677
+                                                 : STICKY_CTRL_SSD2677;
+        if (!sticky_start_controller()) {
+            ESP_LOGE(TAG, "Panel controller init timed out for both "
+                          "SSD1677 and SSD2677");
         }
-        /* Seeed's SSD2677 reset timing: low 20 ms, then 50 ms settle. */
-        gpio_set_level((gpio_num_t)EPD_RST_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(20));
-        gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        ssd2677_ctrl_init();
-        memset(s_prev, 0xFF, FRAMEBUFFER_BYTES);
-    } else {
-        epd_reset_pulse();
-        sticky_ctrl_init();
     }
 
     s_needs_initial_full = true;

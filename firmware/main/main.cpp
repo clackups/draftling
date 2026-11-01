@@ -1213,16 +1213,30 @@ static void pre_sleep_reterminal_sticky_deinit(void)
     (void)sd_card_deinit();
     display_deep_sleep_prepare();
 
-    /* PWR_HOLD/PWR_LOCK (neither is RTC-capable) and CHARGE_EN must
-     * keep their currently-driven levels through the digital IOMUX
-     * power-down that deep sleep performs, or the board loses power
-     * / stops charging the instant it sleeps -- see the board header
-     * comment. gpio_deep_sleep_hold_en() below arms the holds latched
-     * here. */
-    gpio_hold_en((gpio_num_t)PWR_HOLD_PIN);
-    gpio_hold_en((gpio_num_t)PWR_LOCK_PIN);
+    /* CHARGE_EN must keep its LOW level through the digital IOMUX
+     * power-down that deep sleep performs, or charging stops while
+     * asleep on USB -- see the board header comment.
+     * gpio_deep_sleep_hold_en() below arms the hold latched here. */
     gpio_hold_en((gpio_num_t)CHARGE_EN_PIN);
     gpio_deep_sleep_hold_en();
+
+    /* Real power-off: release the power latch (PWR_HOLD / PWR_LOCK
+     * LOW). On battery the rail drops here and nothing below runs;
+     * the Power button then cold-boots the board. Holding the latch
+     * through deep sleep instead (as before) slowly drained the cell,
+     * and once it was empty the chip hung: the Power button did
+     * nothing and only the RESET pinhole recovered it. On USB the
+     * rail stays up, standby_enter_sleep() falls through to deep
+     * sleep as before, and unplugging USB later switches the board
+     * off. The pins are held LOW (also the safe strapping level of
+     * GPIO45 / GPIO46) so they cannot float back up while asleep. */
+    ESP_LOGI(TAG, "Releasing power latch (power off on battery)");
+    gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 0);
+    gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 0);
+    gpio_hold_en((gpio_num_t)PWR_HOLD_PIN);
+    gpio_hold_en((gpio_num_t)PWR_LOCK_PIN);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    ESP_LOGI(TAG, "Still powered (USB?) -- falling back to deep sleep");
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
 
@@ -1964,12 +1978,12 @@ static void wakeup_btn_poll_cb(void *arg)
     defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
         /* Unlike the shared BOOT-as-wake convention on every other
          * board, this button is silkscreened "Power" (or, on the
-         * Seeed reTerminal Sticky, "Power/AI") -- and there is no
-         * hardware latch this firmware uses to physically cut power
-         * (see XTEINK_POWER_LATCH_PIN / PWR_HOLD_PIN+PWR_LOCK_PIN in
-         * app_config.h; they only gate peripheral rails or keep the
-         * board's own power switch closed, not something Draftling
-         * ever releases), so deep sleep IS this board's power-off. A
+         * Seeed reTerminal Sticky, "Power/AI"). On the X4 Pro there
+         * is no hardware latch this firmware uses to physically cut
+         * power (XTEINK_POWER_LATCH_PIN only gates peripheral rails),
+         * so deep sleep IS that board's power-off; on the Sticky the
+         * pre-sleep hook releases PWR_HOLD / PWR_LOCK, a real
+         * power-off on battery. A
          * short press (release before the 2 s hold below) triggers it
          * instead of waiting for the inactivity timeout, matching what
          * a button labeled Power should do -- through the editor, like
@@ -2163,6 +2177,50 @@ static void pre_sleep_tab5_deinit(void)
 
 extern "C" void app_main(void)
 {
+#if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
+    /* Power-rail latch (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46): must both
+     * be driven HIGH as early as possible. The pre-sleep hook releases
+     * the latch (a real power-off on battery), so on power-on the
+     * Power button keeps the rail up only while it is held; the
+     * sooner the latch is set, the shorter the press can be -- see
+     * the board header comment. Release any hold left by
+     * pre_sleep_reterminal_sticky_deinit() from before this wake
+     * first.
+     *
+     * gpio_deep_sleep_hold_dis() releases the chip-wide digital-pad
+     * autohold that pre_sleep_reterminal_sticky_deinit() armed. On the
+     * ESP32-S3 that autohold survives the wake reset and keeps every
+     * digital pad (GPIO22-48) frozen until it is disabled. Without it
+     * the e-paper power-enable (GPIO47, on the VDD_SPI domain, which
+     * is powered down in deep sleep) stays stuck in its unpowered
+     * state, display_init() cannot drive it, and the panel never
+     * shows anything after the first wake. It only disarms the global
+     * latch, not each individual pin's hold, hence the gpio_hold_dis()
+     * calls below.
+     *
+     * Charger enable (CHARGE_EN=GPIO39, active-LOW): driven LOW here
+     * so the BQ25616 charges normally while awake, not just once
+     * asleep -- see the board header comment for why the JTAG-group
+     * reset-default pull-up would otherwise leave it effectively
+     * disabled. */
+    {
+        gpio_deep_sleep_hold_dis();
+        gpio_hold_dis((gpio_num_t)PWR_HOLD_PIN);
+        gpio_hold_dis((gpio_num_t)PWR_LOCK_PIN);
+        gpio_hold_dis((gpio_num_t)CHARGE_EN_PIN);
+
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << PWR_HOLD_PIN) | (1ULL << PWR_LOCK_PIN) |
+                         (1ULL << CHARGE_EN_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 1);
+        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);
+        gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 0);
+    }
+#endif
+
     ESP_LOGI(TAG, "Draftling - %s", BOARD_NAME);
 
     /* Boot diagnostics: reset reason + wake-up cause.
@@ -2312,45 +2370,6 @@ extern "C" void app_main(void)
     }
 #endif
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
-    /* Power-rail latch (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46): must both
-     * be driven HIGH before any SPI/display/SD bring-up, or the
-     * board's own power switch drops the rail as soon as the case
-     * button is released -- see the board header comment. Release any
-     * hold left by pre_sleep_reterminal_sticky_deinit() from before
-     * this wake first.
-     *
-     * gpio_deep_sleep_hold_dis() releases the chip-wide digital-pad
-     * autohold that pre_sleep_reterminal_sticky_deinit() armed. On the
-     * ESP32-S3 that autohold survives the wake reset and keeps every
-     * digital pad (GPIO22-48) frozen until it is disabled. Without it
-     * the e-paper power-enable (GPIO47, on the VDD_SPI domain, which
-     * is powered down in deep sleep) stays stuck in its unpowered
-     * state, display_init() cannot drive it, and the panel never
-     * shows anything after the first wake. It only disarms the global
-     * latch, not each individual pin's hold, hence the gpio_hold_dis()
-     * calls below.
-     *
-     * Charger enable (CHARGE_EN=GPIO39, active-LOW): driven LOW here
-     * so the BQ25616 charges normally while awake, not just once
-     * asleep -- see the board header comment for why the JTAG-group
-     * reset-default pull-up would otherwise leave it effectively
-     * disabled. */
-    {
-        gpio_deep_sleep_hold_dis();
-        gpio_hold_dis((gpio_num_t)PWR_HOLD_PIN);
-        gpio_hold_dis((gpio_num_t)PWR_LOCK_PIN);
-        gpio_hold_dis((gpio_num_t)CHARGE_EN_PIN);
-
-        gpio_config_t g = {};
-        g.intr_type    = GPIO_INTR_DISABLE;
-        g.mode         = GPIO_MODE_OUTPUT;
-        g.pin_bit_mask = (1ULL << PWR_HOLD_PIN) | (1ULL << PWR_LOCK_PIN) |
-                         (1ULL << CHARGE_EN_PIN);
-        gpio_config(&g);
-        gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 1);
-        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);
-        gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 0);
-    }
     /* The MicroSD card shares the e-paper SPI bus. Power it and park
      * its CS high before display_init() sends anything: an unpowered
      * card loads SCLK/MOSI through its protection diodes, and a

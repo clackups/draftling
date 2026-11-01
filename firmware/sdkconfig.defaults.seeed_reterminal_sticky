@@ -25,3 +25,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_seeed_reterminal_sticky.csv"
 # 20, this board instead uses for its PDM microphone). CONFIG_TINYUSB_
 # MSC_ENABLED is therefore left unset, unlike every other e-paper
 # board's sdkconfig.defaults.<board>.
+
+# Shorter boot: the pre-sleep hook switches the board off for real on
+# battery, so powering on needs the Power button held until app_main()
+# sets the power latch (main/boards/seeed_reterminal_sticky.h). Skipping
+# the PSRAM test at start-up shortens that press.
+# CONFIG_SPIRAM_MEMTEST is not set

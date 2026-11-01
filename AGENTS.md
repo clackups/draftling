@@ -620,9 +620,13 @@ Per-board display backends behind a single C API:
   backend for the Seeed reTerminal Sticky, gated on
   `CONFIG_DRAFTLING_DISPLAY_RETERMINAL_STICKY`. Sticky units carry
   either an SSD1677 or an SSD2677 controller; `display_init()` tells
-  them apart by BUSY polarity after reset (the SSD1677 holds BUSY
-  high while busy, the SSD2677 low), as Seeed_GFX2's
-  `Driver_Sticky_Auto` does. The SSD1677 path (dual-RAM differential
+  them apart as Seeed_GFX2's `Driver_Sticky_Auto` does: a chip-ID
+  read (command 0x70, 0x07 = SSD2677; 0x00 / 0xFF = panel SDO not
+  wired), else BUSY polarity after reset (the SSD1677 holds BUSY high
+  while busy, the SSD2677 low). Init BUSY waits are bounded to 2 s,
+  and a timeout retries with the other controller -- a wrong guess
+  otherwise ran every 30 s BUSY wait to its end and the device seemed
+  not to boot. The SSD1677 path (dual-RAM differential
   refresh) is tested on physical hardware and uses the same
   sequences as `display_ws_epd397.cpp` (see "SSD1677 refresh method"
   below). Its earlier sticky-micronotes sequences (full CTRL2 0xF7,
@@ -2408,7 +2412,15 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   resets the GT911 itself (INT held LOW across the RST rising edge
   and for 50 ms after it, then `tcfg.rst = -1`), like on the X4 Pro:
   with INT floating the chip came up at 0x14 and never reported a
-  touch.
+  touch. Switching off is a real power-off on battery:
+  `pre_sleep_reterminal_sticky_deinit()` drives the power latch
+  (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46) LOW and holds it there, and only
+  on USB does `standby_enter_sleep()` go on to deep sleep. The Power
+  button keeps the rail up while held, so `app_main()` sets the latch
+  HIGH in its very first lines, and the board's sdkconfig skips the
+  PSRAM test to shorten the press. Holding the latch through deep
+  sleep, as before, drained the cell; once it was empty the chip
+  hung, and only the RESET pinhole brought it back.
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_M5STACK_PAPERMONO** -- M5Stack PaperMono /
   PaperMono-Lite (one build for both; the full PaperMono's NFC and
