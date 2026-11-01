@@ -39,6 +39,15 @@ access to the SD card and USB port:
 
 ![Waveshare ESP32-S3-RLCD-4.2 in a 3D-printed enclosure, SD card slot and USB port](Waveshare_RLCD_04.jpg)
 
+
+## Freenove FNK0104S in a 3D-printed enclosure
+
+![Freenove FNK0104S](Freenove_fnk0104s_01.jpg)
+
+[More details on the 3D model](../3D_Prints/Freenove_fnk0104s/).
+
+
+
 ## LilyGO T5 E-Paper S3 Pro
 
 5% backlight, 11px font:
