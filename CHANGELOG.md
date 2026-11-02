@@ -6,6 +6,13 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Keyboard battery level on the hardware information page**: when a
+  Bluetooth keyboard reports its battery level, F1 -> Hardware
+  information now shows it under "Keyboard". Keyboards that do not
+  report a level show no battery row.
+
 ### Fixed
 
 - **Seeed reTerminal Sticky would not start after the battery ran

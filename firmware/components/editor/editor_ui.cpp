@@ -7438,6 +7438,13 @@ static void build_hwinfo_text(std::string &out, int cols)
             format_mac(buf, sizeof(buf), kb_mac);
             help_row(out, cols, kc, "Keyboard MAC", buf);
         }
+        /* -1 when the keyboard has no Battery Service (or has not
+         * reported yet) -- the row is left out then. */
+        int kb_batt = ble_keyboard_get_battery_level();
+        if (kb_batt >= 0 && kb_batt <= 100) {
+            snprintf(buf, sizeof(buf), "%d%%", kb_batt);
+            help_row(out, cols, kc, "Battery", buf);
+        }
         any_kbd = true;
     }
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
