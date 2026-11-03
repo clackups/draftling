@@ -104,6 +104,22 @@ esp_err_t git_repo_open(const char *workdir)
     return ESP_OK;
 }
 
+void git_repo_clean_tmp(void)
+{
+    char dir[320];
+    snprintf(dir, sizeof(dir), "%s/tmp", s_gitdir);
+    DIR *d = opendir(dir);
+    if (!d) return;
+    struct dirent *de;
+    char p[600];
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.') continue;
+        snprintf(p, sizeof(p), "%s/%s", dir, de->d_name);
+        remove(p);
+    }
+    closedir(d);
+}
+
 void git_repo_close(void)
 {
     s_open = false;
@@ -138,78 +154,294 @@ void git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
     git_oid_from_raw(out, raw);
 }
 
+#define IO_CHUNK 4096
+
+static long file_size_of(FILE *f)
+{
+    if (fseek(f, 0, SEEK_END) != 0) return -1;
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    return n;
+}
+
+esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return ESP_ERR_NOT_FOUND;
+    long size = file_size_of(f);
+    uint8_t *buf = malloc(IO_CHUNK);
+    git_sha1_ctx *c = git_sha1_new();
+    esp_err_t ret = (size >= 0 && buf && c) ? ESP_OK : ESP_ERR_NO_MEM;
+    if (ret == ESP_OK) {
+        char hdr[32];
+        int hlen = snprintf(hdr, sizeof(hdr), "%s %ld", git_obj_type_name(type), size);
+        git_sha1_update(c, hdr, (size_t)hlen + 1);
+        size_t r, total = 0;
+        while ((r = fread(buf, 1, IO_CHUNK, f)) > 0) {
+            git_sha1_update(c, buf, r);
+            total += r;
+        }
+        if (total != (size_t)size) ret = ESP_FAIL;
+    }
+    uint8_t raw[GIT_OID_RAWSZ];
+    git_sha1_final(c, raw);       /* frees c (NULL-safe) */
+    if (ret == ESP_OK) git_oid_from_raw(out, raw);
+    free(buf);
+    fclose(f);
+    return ret;
+}
+
+void git_odb_tmp_path(char *out, size_t osz, const char *name)
+{
+    snprintf(out, osz, "%s/tmp/%s", s_gitdir, name);
+}
+
+/* ---- object writer ---- */
+
+static unsigned s_tmp_seq;
+
+esp_err_t git_odb_writer_open(git_odb_writer *w, git_obj_type type, size_t size)
+{
+    memset(w, 0, sizeof(*w));
+    char name[24];
+    snprintf(name, sizeof(name), "obj%u", s_tmp_seq++);
+    git_odb_tmp_path(w->tmp, sizeof(w->tmp), name);
+    w->fp = fopen(w->tmp, "wb");
+    if (!w->fp) return ESP_FAIL;
+    w->zw = git_zwriter_new();
+    w->sha = git_sha1_new();
+    if (!w->zw || !w->sha || git_zwriter_start(w->zw, w->fp, NULL) != ESP_OK) {
+        git_odb_writer_abort(w);
+        return ESP_ERR_NO_MEM;
+    }
+    char hdr[32];
+    int hlen = snprintf(hdr, sizeof(hdr), "%s %zu", git_obj_type_name(type), size);
+    git_sha1_update(w->sha, hdr, (size_t)hlen + 1);
+    if (git_zwriter_write(w->zw, hdr, (size_t)hlen + 1) != ESP_OK) {
+        git_odb_writer_abort(w);
+        return ESP_FAIL;
+    }
+    w->left = size;
+    return ESP_OK;
+}
+
+esp_err_t git_odb_writer_write(git_odb_writer *w, const void *p, size_t n)
+{
+    if (n > w->left) return ESP_FAIL;
+    w->left -= n;
+    git_sha1_update(w->sha, p, n);
+    return git_zwriter_write(w->zw, p, n);
+}
+
+void git_odb_writer_abort(git_odb_writer *w)
+{
+    if (w->fp) { fclose(w->fp); w->fp = NULL; remove(w->tmp); }
+    if (w->zw) { git_zwriter_free(w->zw); w->zw = NULL; }
+    if (w->sha) {
+        uint8_t raw[GIT_OID_RAWSZ];
+        git_sha1_final(w->sha, raw);
+        w->sha = NULL;
+    }
+}
+
+esp_err_t git_odb_writer_finish(git_odb_writer *w, git_oid *out_oid)
+{
+    esp_err_t ret = (w->left == 0) ? git_zwriter_finish(w->zw) : ESP_FAIL;
+    git_zwriter_free(w->zw);
+    w->zw = NULL;
+    uint8_t raw[GIT_OID_RAWSZ];
+    git_sha1_final(w->sha, raw);
+    w->sha = NULL;
+    if (fclose(w->fp) != 0) ret = ESP_FAIL;
+    w->fp = NULL;
+    if (ret != ESP_OK) { remove(w->tmp); return ret; }
+
+    git_oid oid;
+    git_oid_from_raw(&oid, raw);
+    if (out_oid) *out_oid = oid;
+    if (git_odb_exists(&oid)) { remove(w->tmp); return ESP_OK; }
+
+    char dir[352], p[352];
+    snprintf(dir, sizeof(dir), "%s/objects/%c%c", s_gitdir, oid.hex[0], oid.hex[1]);
+    mkdir(dir, 0777);
+    object_path(&oid, p, sizeof(p));
+    if (rename(w->tmp, p) != 0) { remove(w->tmp); return ESP_FAIL; }
+    return ESP_OK;
+}
+
 esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
                         git_oid *out_oid)
 {
     git_oid oid;
     git_odb_hash(type, data, len, &oid);
     if (out_oid) *out_oid = oid;
-
     if (git_odb_exists(&oid)) return ESP_OK;
 
-    char hdr[32];
-    int hlen = snprintf(hdr, sizeof(hdr), "%s %zu", git_obj_type_name(type), len);
+    git_odb_writer w;
+    esp_err_t ret = git_odb_writer_open(&w, type, len);
+    if (ret != ESP_OK) return ret;
+    ret = git_odb_writer_write(&w, data, len);
+    if (ret != ESP_OK) { git_odb_writer_abort(&w); return ret; }
+    return git_odb_writer_finish(&w, NULL);
+}
 
-    git_buf raw = GIT_BUF_INIT, z = GIT_BUF_INIT;
-    esp_err_t ret = ESP_ERR_NO_MEM;
-    if (!git_buf_put(&raw, hdr, (size_t)hlen + 1)) goto out;
-    if (!git_buf_put(&raw, data, len)) goto out;
-    ret = git_zlib_deflate(raw.data, raw.len, &z);
-    if (ret != ESP_OK) goto out;
+esp_err_t git_odb_write_file(git_obj_type type, const char *path, git_oid *out_oid)
+{
+    git_oid oid;
+    esp_err_t ret = git_odb_hash_file(type, path, &oid);
+    if (ret != ESP_OK) return ret;
+    if (out_oid) *out_oid = oid;
+    if (git_odb_exists(&oid)) return ESP_OK;
 
-    char dir[352], p[352];
-    snprintf(dir, sizeof(dir), "%s/objects/%c%c", s_gitdir, oid.hex[0], oid.hex[1]);
-    mkdir(dir, 0777);
-    object_path(&oid, p, sizeof(p));
-    ret = write_whole_file(p, z.data, z.len);
-
-out:
-    git_buf_free(&raw);
-    git_buf_free(&z);
+    FILE *f = fopen(path, "rb");
+    if (!f) return ESP_ERR_NOT_FOUND;
+    long size = file_size_of(f);
+    uint8_t *buf = malloc(IO_CHUNK);
+    git_odb_writer w;
+    ret = (size >= 0 && buf) ? git_odb_writer_open(&w, type, (size_t)size) : ESP_ERR_NO_MEM;
+    if (ret == ESP_OK) {
+        size_t r;
+        while (ret == ESP_OK && (r = fread(buf, 1, IO_CHUNK, f)) > 0)
+            ret = git_odb_writer_write(&w, buf, r);
+        if (ret == ESP_OK) ret = git_odb_writer_finish(&w, &oid);
+        else git_odb_writer_abort(&w);
+        /* The file changed between the passes: report what was stored. */
+        if (ret == ESP_OK && out_oid) *out_oid = oid;
+    }
+    free(buf);
+    fclose(f);
     return ret;
+}
+
+/* ---- object reader ---- */
+
+esp_err_t git_odb_stream_open(git_odb_stream *s, const git_oid *oid)
+{
+    memset(s, 0, sizeof(*s));
+    char p[352];
+    object_path(oid, p, sizeof(p));
+    s->fp = fopen(p, "rb");
+    if (!s->fp) return ESP_ERR_NOT_FOUND;
+    s->z = git_zreader_new();
+    if (!s->z) { git_odb_stream_close(s); return ESP_ERR_NO_MEM; }
+    git_zreader_start(s->z, s->fp);
+
+    /* header: "<type> <size>\0" */
+    char hdr[32];
+    size_t n = 0;
+    for (;;) {
+        if (n >= sizeof(hdr) || git_zreader_read(s->z, hdr + n, 1) != 1) {
+            git_odb_stream_close(s);
+            return ESP_FAIL;
+        }
+        if (hdr[n] == '\0') break;
+        n++;
+    }
+    char *sp = strchr(hdr, ' ');
+    if (!sp) { git_odb_stream_close(s); return ESP_FAIL; }
+    *sp = '\0';
+    s->type = git_obj_type_from_name(hdr);
+    char *end = NULL;
+    unsigned long sz = strtoul(sp + 1, &end, 10);
+    if (s->type == GIT_OBJ_BAD || !end || *end) { git_odb_stream_close(s); return ESP_FAIL; }
+    s->size = s->left = (size_t)sz;
+    return ESP_OK;
+}
+
+long git_odb_stream_read(git_odb_stream *s, void *buf, size_t n)
+{
+    if (n > s->left) n = s->left;
+    if (n == 0) return 0;
+    long r = git_zreader_read(s->z, buf, n);
+    if (r != (long)n) return -1;           /* corrupt or truncated */
+    s->left -= n;
+    return r;
+}
+
+void git_odb_stream_close(git_odb_stream *s)
+{
+    if (s->z) { git_zreader_free(s->z); s->z = NULL; }
+    if (s->fp) { fclose(s->fp); s->fp = NULL; }
+}
+
+static long odb_src_read(void *ctx, void *buf, size_t n)
+{
+    return git_odb_stream_read((git_odb_stream *)ctx, buf, n);
+}
+
+void git_reader_odb(git_reader *r, git_odb_stream *s)
+{
+    r->read = odb_src_read;
+    r->ctx = s;
 }
 
 esp_err_t git_odb_read(const git_oid *oid, git_obj_type *type, git_buf *out)
 {
-    char p[352];
-    object_path(oid, p, sizeof(p));
-
-    git_buf comp = GIT_BUF_INIT, raw = GIT_BUF_INIT;
-    esp_err_t ret = read_whole_file(p, &comp);
-    if (ret != ESP_OK) { git_buf_free(&comp); return ret; }
-
-    ret = git_zlib_inflate_buf(comp.data, comp.len, &raw);
-    git_buf_free(&comp);
-    if (ret != ESP_OK) { git_buf_free(&raw); return ret; }
-
-    /* header: "<type> <size>\0" */
-    size_t sp = 0;
-    while (sp < raw.len && raw.data[sp] != ' ') sp++;
-    size_t nul = sp;
-    while (nul < raw.len && raw.data[nul] != '\0') nul++;
-    if (sp >= raw.len || nul >= raw.len) { git_buf_free(&raw); return ESP_FAIL; }
-
-    char tname[16] = {0};
-    if (sp >= sizeof(tname)) { git_buf_free(&raw); return ESP_FAIL; }
-    memcpy(tname, raw.data, sp);
-    git_obj_type t = git_obj_type_from_name(tname);
-    size_t bodylen = raw.len - (nul + 1);
-    size_t declared = strtoul((char *)raw.data + sp + 1, NULL, 10);
-    if (t == GIT_OBJ_BAD || declared != bodylen) { git_buf_free(&raw); return ESP_FAIL; }
-
-    if (type) *type = t;
-    bool ok = git_buf_put(out, raw.data + nul + 1, bodylen);
-    git_buf_free(&raw);
-    return ok ? ESP_OK : ESP_ERR_NO_MEM;
+    git_odb_stream s;
+    esp_err_t ret = git_odb_stream_open(&s, oid);
+    if (ret != ESP_OK) return ret;
+    if (!git_buf_reserve(out, out->len + s.size + 1)) {
+        git_odb_stream_close(&s);
+        return ESP_ERR_NO_MEM;
+    }
+    long r = s.size ? git_odb_stream_read(&s, out->data + out->len, s.size) : 0;
+    if (r == (long)s.size) {
+        out->len += s.size;
+        out->data[out->len] = 0;
+        if (type) *type = s.type;
+    } else {
+        ret = ESP_FAIL;
+    }
+    git_odb_stream_close(&s);
+    return ret;
 }
 
 esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size)
 {
-    git_buf b = GIT_BUF_INIT;
-    esp_err_t ret = git_odb_read(oid, type, &b);
-    if (ret == ESP_OK && size) *size = b.len;
-    git_buf_free(&b);
-    return ret;
+    git_odb_stream s;
+    esp_err_t ret = git_odb_stream_open(&s, oid);
+    if (ret != ESP_OK) return ret;
+    if (type) *type = s.type;
+    if (size) *size = s.size;
+    git_odb_stream_close(&s);
+    return ESP_OK;
+}
+
+/* "<dir>/.<base>.dtmp", the same hidden temporary sd_card_write_file()
+ * uses. */
+static bool hidden_tmp_for(const char *path, char *out, size_t osz)
+{
+    const char *slash = strrchr(path, '/');
+    int n = slash ? snprintf(out, osz, "%.*s/.%s.dtmp", (int)(slash - path), path, slash + 1)
+                  : snprintf(out, osz, ".%s.dtmp", path);
+    return n > 0 && (size_t)n < osz;
+}
+
+esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const char *path)
+{
+    char tmp[400];
+    if (!hidden_tmp_for(path, tmp, sizeof(tmp))) return ESP_FAIL;
+    git_odb_stream s;
+    esp_err_t ret = git_odb_stream_open(&s, oid);
+    if (ret != ESP_OK) return ret;
+    if (type) *type = s.type;
+    FILE *f = fopen(tmp, "wb");
+    uint8_t *buf = malloc(IO_CHUNK);
+    if (!f || !buf) ret = ESP_FAIL;
+    while (ret == ESP_OK && s.left) {
+        long r = git_odb_stream_read(&s, buf, IO_CHUNK);
+        if (r <= 0 || fwrite(buf, 1, (size_t)r, f) != (size_t)r) ret = ESP_FAIL;
+    }
+    git_odb_stream_close(&s);
+    free(buf);
+    if (f) {
+        if (fflush(f) != 0 || fsync(fileno(f)) != 0) ret = ESP_FAIL;
+        if (fclose(f) != 0) ret = ESP_FAIL;
+    }
+    if (ret != ESP_OK) { remove(tmp); return ret; }
+    remove(path);
+    if (rename(tmp, path) != 0) { remove(tmp); return ESP_FAIL; }
+    return ESP_OK;
 }
 
 /* ------------------------------------------------------------------ */

@@ -8,12 +8,14 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 
-#include "miniz.h"
 
 static const char *TAG = "git.pack";
 
-/* Largest single object we will materialise in RAM while unpacking. */
-#define GIT_PACK_MAX_OBJ (3 * 1024 * 1024)
+/* A delta's base object is held in RAM up to this size, else in a
+ * scratch file on the SD card (copy instructions seek into it). */
+#define DELTA_BASE_RAM_MAX (256 * 1024)
+
+#define IO_CHUNK 4096
 
 /* ------------------------------------------------------------------ */
 /* offset -> oid map (OFS_DELTA base lookup)                          */
@@ -64,115 +66,179 @@ static uint32_t rd_be32(FILE *fp)
            ((uint32_t)b[2] << 8) | b[3];
 }
 
-/* Inflate one zlib stream from the current file position, expecting
- * exactly `out_expected` bytes.  Leaves the file positioned right after
- * the compressed data. */
-static esp_err_t inflate_stream(FILE *fp, long file_end,
-                                uint8_t *out, size_t out_expected)
+/* ------------------------------------------------------------------ */
+/* buffered reads from a zlib stream (delta instructions)             */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    git_zreader *z;
+    uint8_t buf[1024];
+    size_t  pos, have;
+} zbuf;
+
+static int zb_getc(zbuf *b)
 {
-    tinfl_decompressor *d = heap_caps_malloc(sizeof(*d), MALLOC_CAP_SPIRAM);
-    if (!d) d = malloc(sizeof(*d));
-    if (!d) return ESP_ERR_NO_MEM;
-    tinfl_init(d);
-
-    uint8_t inbuf[2048];
-    size_t in_have = 0, in_pos = 0, out_pos = 0, total_consumed = 0;
-    long start = ftell(fp);
-    esp_err_t ret = ESP_FAIL;
-
-    for (;;) {
-        if (in_pos == in_have) {
-            in_have = fread(inbuf, 1, sizeof(inbuf), fp);
-            in_pos = 0;
-            if (in_have == 0) { ret = ESP_FAIL; break; }
-        }
-        size_t in_bytes = in_have - in_pos;
-        size_t out_bytes = out_expected - out_pos;
-        long consumed_pos = start + (long)total_consumed + (long)in_bytes;
-        int more = (consumed_pos < file_end) ? TINFL_FLAG_HAS_MORE_INPUT : 0;
-
-        tinfl_status st = tinfl_decompress(d, inbuf + in_pos, &in_bytes,
-                                           out, out + out_pos, &out_bytes,
-                                           TINFL_FLAG_PARSE_ZLIB_HEADER |
-                                           TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF |
-                                           more);
-        in_pos += in_bytes;
-        total_consumed += in_bytes;
-        out_pos += out_bytes;
-
-        if (st == TINFL_STATUS_DONE) {
-            ret = (out_pos == out_expected) ? ESP_OK : ESP_FAIL;
-            break;
-        }
-        if (st < TINFL_STATUS_DONE) { ret = ESP_FAIL; break; }
-        if (st == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos == in_have && feof(fp)) {
-            ret = ESP_FAIL;
-            break;
-        }
+    if (b->pos == b->have) {
+        long r = git_zreader_read(b->z, b->buf, sizeof(b->buf));
+        if (r <= 0) return -1;
+        b->have = (size_t)r;
+        b->pos = 0;
     }
-
-    free(d);
-    if (ret == ESP_OK)
-        fseek(fp, start + (long)total_consumed, SEEK_SET);
-    return ret;
+    return b->buf[b->pos++];
 }
 
-/* ------------------------------------------------------------------ */
-/* delta application                                                  */
-/* ------------------------------------------------------------------ */
+/* Copy n bytes of the stream to the object writer. */
+static esp_err_t zb_copy(zbuf *b, size_t n, git_odb_writer *w)
+{
+    while (n) {
+        if (b->pos == b->have) {
+            long r = git_zreader_read(b->z, b->buf, sizeof(b->buf));
+            if (r <= 0) return ESP_FAIL;
+            b->have = (size_t)r;
+            b->pos = 0;
+        }
+        size_t c = b->have - b->pos;
+        if (c > n) c = n;
+        esp_err_t ret = git_odb_writer_write(w, b->buf + b->pos, c);
+        if (ret != ESP_OK) return ret;
+        b->pos += c;
+        n -= c;
+    }
+    return ESP_OK;
+}
 
-static uint64_t delta_varint(const uint8_t **p, const uint8_t *end)
+/* The delta stream is fully consumed: no buffered bytes left over and
+ * the zlib stream ends. */
+static bool zb_finish(zbuf *b)
+{
+    return b->pos == b->have && git_zreader_finish(b->z);
+}
+
+static bool zb_varint(zbuf *b, uint64_t *out)
 {
     uint64_t v = 0;
     int shift = 0;
-    while (*p < end) {
-        uint8_t b = *(*p)++;
-        v |= (uint64_t)(b & 0x7f) << shift;
+    for (;;) {
+        int c = zb_getc(b);
+        if (c < 0 || shift > 56) return false;
+        v |= (uint64_t)(c & 0x7f) << shift;
         shift += 7;
-        if (!(b & 0x80)) break;
+        if (!(c & 0x80)) break;
     }
-    return v;
+    *out = v;
+    return true;
 }
 
-static esp_err_t apply_delta(const uint8_t *base, size_t base_len,
-                             const uint8_t *delta, size_t delta_len,
-                             git_buf *out)
-{
-    const uint8_t *p = delta, *end = delta + delta_len;
-    uint64_t src = delta_varint(&p, end);
-    uint64_t dst = delta_varint(&p, end);
-    if (src != base_len) return ESP_FAIL;
-    if (dst > GIT_PACK_MAX_OBJ) return ESP_FAIL;
-    if (!git_buf_reserve(out, dst + 1)) return ESP_ERR_NO_MEM;
+/* ------------------------------------------------------------------ */
+/* delta base: in RAM when small, else a scratch file                 */
+/* ------------------------------------------------------------------ */
 
-    while (p < end) {
-        uint8_t op = *p++;
-        if (op & 0x80) {
-            /* up to 7 following bytes select copy offset/size */
-            int nb = ((op & 1) != 0) + ((op & 2) != 0) + ((op & 4) != 0) +
-                     ((op & 8) != 0) + ((op & 16) != 0) + ((op & 32) != 0) +
-                     ((op & 64) != 0);
-            if (p + nb > end) return ESP_FAIL;
-            uint32_t cp_off = 0, cp_size = 0;
-            if (op & 0x01) cp_off |= (uint32_t)(*p++);
-            if (op & 0x02) cp_off |= (uint32_t)(*p++) << 8;
-            if (op & 0x04) cp_off |= (uint32_t)(*p++) << 16;
-            if (op & 0x08) cp_off |= (uint32_t)(*p++) << 24;
-            if (op & 0x10) cp_size |= (uint32_t)(*p++);
-            if (op & 0x20) cp_size |= (uint32_t)(*p++) << 8;
-            if (op & 0x40) cp_size |= (uint32_t)(*p++) << 16;
-            if (cp_size == 0) cp_size = 0x10000;
-            if ((uint64_t)cp_off + cp_size > base_len) return ESP_FAIL;
-            if (!git_buf_put(out, base + cp_off, cp_size)) return ESP_ERR_NO_MEM;
-        } else if (op) {
-            if (p + op > end) return ESP_FAIL;
-            if (!git_buf_put(out, p, op)) return ESP_ERR_NO_MEM;
-            p += op;
-        } else {
-            return ESP_FAIL;   /* op == 0 is reserved */
+typedef struct {
+    git_oid      oid;           /* zero = nothing loaded */
+    git_obj_type type;
+    size_t       size;
+    git_buf      mem;           /* small bases */
+    FILE        *fp;            /* large bases */
+    char         path[320];
+} delta_base;
+
+static void base_reset(delta_base *b)
+{
+    git_buf_free(&b->mem);
+    if (b->fp) { fclose(b->fp); b->fp = NULL; remove(b->path); }
+    git_oid_clear(&b->oid);
+}
+
+static esp_err_t base_load(delta_base *b, const git_oid *oid)
+{
+    if (!git_oid_is_zero(&b->oid) && git_oid_eq(&b->oid, oid)) return ESP_OK;
+    base_reset(b);
+
+    git_odb_stream s;
+    esp_err_t ret = git_odb_stream_open(&s, oid);
+    if (ret != ESP_OK) return ret;
+    b->type = s.type;
+    b->size = s.size;
+    if (s.size <= DELTA_BASE_RAM_MAX) {
+        if (!git_buf_reserve(&b->mem, s.size + 1)) ret = ESP_ERR_NO_MEM;
+        else if (s.size && git_odb_stream_read(&s, b->mem.data, s.size) != (long)s.size) ret = ESP_FAIL;
+        else b->mem.len = s.size;
+    } else {
+        git_odb_tmp_path(b->path, sizeof(b->path), "delta-base");
+        b->fp = fopen(b->path, "w+b");
+        uint8_t *buf = malloc(IO_CHUNK);
+        if (!b->fp || !buf) ret = ESP_FAIL;
+        while (ret == ESP_OK && s.left) {
+            long r = git_odb_stream_read(&s, buf, IO_CHUNK);
+            if (r <= 0 || fwrite(buf, 1, (size_t)r, b->fp) != (size_t)r) ret = ESP_FAIL;
         }
+        free(buf);
     }
-    return out->len == dst ? ESP_OK : ESP_FAIL;
+    git_odb_stream_close(&s);
+    if (ret != ESP_OK) { base_reset(b); return ret; }
+    b->oid = *oid;
+    return ESP_OK;
+}
+
+static esp_err_t base_copy(delta_base *b, size_t off, size_t n, git_odb_writer *w,
+                           uint8_t *scratch)
+{
+    if (!b->fp) return git_odb_writer_write(w, b->mem.data + off, n);
+    if (fseek(b->fp, (long)off, SEEK_SET) != 0) return ESP_FAIL;
+    while (n) {
+        size_t c = n < IO_CHUNK ? n : IO_CHUNK;
+        if (fread(scratch, 1, c, b->fp) != c) return ESP_FAIL;
+        esp_err_t ret = git_odb_writer_write(w, scratch, c);
+        if (ret != ESP_OK) return ret;
+        n -= c;
+    }
+    return ESP_OK;
+}
+
+/* Apply the delta read from zb to base, storing the result. */
+static esp_err_t apply_delta(delta_base *base, zbuf *zb, uint8_t *scratch, git_oid *out)
+{
+    uint64_t src, dst;
+    if (!zb_varint(zb, &src) || !zb_varint(zb, &dst)) return ESP_FAIL;
+    if (src != base->size) return ESP_FAIL;
+
+    git_odb_writer w;
+    esp_err_t ret = git_odb_writer_open(&w, base->type, (size_t)dst);
+    if (ret != ESP_OK) return ret;
+
+    for (;;) {
+        int op = zb_getc(zb);
+        if (op < 0) break;                     /* end of the delta */
+        if (op & 0x80) {
+            uint32_t cp_off = 0, cp_size = 0;
+            for (int i = 0; i < 4; i++) {
+                if (op & (1 << i)) {
+                    int c = zb_getc(zb);
+                    if (c < 0) { ret = ESP_FAIL; break; }
+                    cp_off |= (uint32_t)c << (8 * i);
+                }
+            }
+            for (int i = 0; ret == ESP_OK && i < 3; i++) {
+                if (op & (0x10 << i)) {
+                    int c = zb_getc(zb);
+                    if (c < 0) { ret = ESP_FAIL; break; }
+                    cp_size |= (uint32_t)c << (8 * i);
+                }
+            }
+            if (ret != ESP_OK) break;
+            if (cp_size == 0) cp_size = 0x10000;
+            if ((uint64_t)cp_off + cp_size > base->size) { ret = ESP_FAIL; break; }
+            ret = base_copy(base, cp_off, cp_size, &w, scratch);
+        } else if (op) {
+            ret = zb_copy(zb, (size_t)op, &w);
+        } else {
+            ret = ESP_FAIL;                    /* op == 0 is reserved */
+        }
+        if (ret != ESP_OK) break;
+    }
+    if (ret == ESP_OK && !zb_finish(zb)) ret = ESP_FAIL;
+    if (ret != ESP_OK) { git_odb_writer_abort(&w); return ret; }
+    return git_odb_writer_finish(&w, out);     /* fails if the size is off */
 }
 
 /* ------------------------------------------------------------------ */
@@ -181,10 +247,6 @@ static esp_err_t apply_delta(const uint8_t *base, size_t base_len,
 
 esp_err_t git_pack_unpack_file(FILE *fp)
 {
-    fseek(fp, 0, SEEK_END);
-    long file_end = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
     uint8_t magic[4];
     if (rd_exact(fp, magic, 4) != ESP_OK || memcmp(magic, "PACK", 4) != 0) {
         ESP_LOGE(TAG, "not a packfile");
@@ -199,7 +261,12 @@ esp_err_t git_pack_unpack_file(FILE *fp)
     ESP_LOGI(TAG, "unpacking %u objects", count);
 
     off_map omap = {0};
-    esp_err_t ret = ESP_OK;
+    delta_base base = {0};
+    zbuf *zb = calloc(1, sizeof(*zb));
+    uint8_t *scratch = malloc(IO_CHUNK);
+    git_zreader *z = git_zreader_new();
+    esp_err_t ret = (zb && scratch && z) ? ESP_OK : ESP_ERR_NO_MEM;
+    if (zb) zb->z = z;
 
     for (uint32_t i = 0; i < count && ret == ESP_OK; i++) {
         long obj_off = ftell(fp);
@@ -216,70 +283,68 @@ esp_err_t git_pack_unpack_file(FILE *fp)
             shift += 7;
         }
         if (ret != ESP_OK) break;
-        if (size > GIT_PACK_MAX_OBJ) {
-            ESP_LOGE(TAG, "object too large: %llu", (unsigned long long)size);
-            ret = ESP_FAIL;
-            break;
-        }
-
-        git_obj_type base_type = GIT_OBJ_BAD;
-        git_buf base = GIT_BUF_INIT;
-
-        if (type == GIT_OBJ_OFS_DELTA) {
-            int b = rd_u8(fp);
-            uint64_t off = (uint64_t)(b & 0x7f);
-            while (b & 0x80) {
-                b = rd_u8(fp);
-                off = ((off + 1) << 7) | (uint64_t)(b & 0x7f);
-            }
-            long base_off = obj_off - (long)off;
-            const off_ent *be = off_map_get(&omap, base_off);
-            if (!be) { ESP_LOGE(TAG, "ofs-delta base %ld missing", base_off); ret = ESP_FAIL; break; }
-            base_type = be->type;
-            git_obj_type t2;
-            ret = git_odb_read(&be->oid, &t2, &base);
-        } else if (type == GIT_OBJ_REF_DELTA) {
-            uint8_t raw[GIT_OID_RAWSZ];
-            if (rd_exact(fp, raw, GIT_OID_RAWSZ) != ESP_OK) { ret = ESP_FAIL; break; }
-            git_oid base_oid;
-            git_oid_from_raw(&base_oid, raw);
-            ret = git_odb_read(&base_oid, &base_type, &base);
-            if (ret != ESP_OK)
-                ESP_LOGE(TAG, "ref-delta base %s missing", base_oid.hex);
-        }
-
-        if (ret != ESP_OK) { git_buf_free(&base); break; }
-
-        /* inflate this object's zlib payload (`size` bytes) */
-        uint8_t *raw = heap_caps_malloc(size ? size : 1, MALLOC_CAP_SPIRAM);
-        if (!raw) raw = malloc(size ? size : 1);
-        if (!raw) { git_buf_free(&base); ret = ESP_ERR_NO_MEM; break; }
-
-        ret = inflate_stream(fp, file_end, raw, size);
-        if (ret != ESP_OK) { free(raw); git_buf_free(&base); break; }
 
         git_oid oid;
         if (type == GIT_OBJ_OFS_DELTA || type == GIT_OBJ_REF_DELTA) {
-            git_buf result = GIT_BUF_INIT;
-            ret = apply_delta(base.data, base.len, raw, size, &result);
-            git_buf_free(&base);
-            free(raw);
-            if (ret != ESP_OK) { git_buf_free(&result); break; }
-            ret = git_odb_write(base_type, result.data, result.len, &oid);
-            if (ret == ESP_OK) off_map_add(&omap, obj_off, &oid, base_type);
-            git_buf_free(&result);
+            git_oid base_oid;
+            if (type == GIT_OBJ_OFS_DELTA) {
+                int b = rd_u8(fp);
+                if (b < 0) { ret = ESP_FAIL; break; }
+                uint64_t off = (uint64_t)(b & 0x7f);
+                while (b & 0x80) {
+                    b = rd_u8(fp);
+                    if (b < 0) { ret = ESP_FAIL; break; }
+                    off = ((off + 1) << 7) | (uint64_t)(b & 0x7f);
+                }
+                if (ret != ESP_OK) break;
+                const off_ent *be = off_map_get(&omap, obj_off - (long)off);
+                if (!be) {
+                    ESP_LOGE(TAG, "ofs-delta base %ld missing", obj_off - (long)off);
+                    ret = ESP_FAIL;
+                    break;
+                }
+                base_oid = be->oid;
+            } else {
+                uint8_t raw[GIT_OID_RAWSZ];
+                if (rd_exact(fp, raw, GIT_OID_RAWSZ) != ESP_OK) { ret = ESP_FAIL; break; }
+                git_oid_from_raw(&base_oid, raw);
+            }
+            ret = base_load(&base, &base_oid);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "delta base %s missing", base_oid.hex);
+                break;
+            }
+            git_zreader_start(z, fp);
+            zb->pos = zb->have = 0;
+            ret = apply_delta(&base, zb, scratch, &oid);
+            if (ret == ESP_OK) off_map_add(&omap, obj_off, &oid, base.type);
         } else if (type == GIT_OBJ_COMMIT || type == GIT_OBJ_TREE ||
                    type == GIT_OBJ_BLOB || type == GIT_OBJ_TAG) {
-            ret = git_odb_write(type, raw, size, &oid);
-            free(raw);
+            git_odb_writer w;
+            ret = git_odb_writer_open(&w, type, (size_t)size);
+            if (ret != ESP_OK) break;
+            git_zreader_start(z, fp);
+            uint64_t left = size;
+            while (ret == ESP_OK && left) {
+                size_t want = left < IO_CHUNK ? (size_t)left : IO_CHUNK;
+                if (git_zreader_read(z, scratch, want) != (long)want) ret = ESP_FAIL;
+                else ret = git_odb_writer_write(&w, scratch, want);
+                left -= want;
+            }
+            if (ret == ESP_OK && !git_zreader_finish(z)) ret = ESP_FAIL;
+            if (ret == ESP_OK) ret = git_odb_writer_finish(&w, &oid);
+            else git_odb_writer_abort(&w);
             if (ret == ESP_OK) off_map_add(&omap, obj_off, &oid, type);
         } else {
-            free(raw);
             ESP_LOGE(TAG, "unknown pack object type %d", type);
             ret = ESP_FAIL;
         }
     }
 
+    base_reset(&base);
+    git_zreader_free(z);
+    free(scratch);
+    free(zb);
     if (omap.v) heap_caps_free(omap.v);
     return ret;
 }
@@ -288,17 +353,16 @@ esp_err_t git_pack_unpack_file(FILE *fp)
 /* write                                                              */
 /* ------------------------------------------------------------------ */
 
-static void put_be32(FILE *f, git_sha1_ctx *sha, uint32_t v)
-{
-    uint8_t b[4] = { v >> 24, v >> 16, v >> 8, v };
-    fwrite(b, 1, 4, f);
-    git_sha1_update(sha, b, 4);
-}
-
 static void put_bytes(FILE *f, git_sha1_ctx *sha, const void *p, size_t n)
 {
     fwrite(p, 1, n, f);
     git_sha1_update(sha, p, n);
+}
+
+static void put_be32(FILE *f, git_sha1_ctx *sha, uint32_t v)
+{
+    uint8_t b[4] = { v >> 24, v >> 16, v >> 8, v };
+    put_bytes(f, sha, b, 4);
 }
 
 esp_err_t git_pack_write_file(const char *path, const git_oidset *set)
@@ -307,24 +371,26 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set)
     if (!f) return ESP_FAIL;
 
     git_sha1_ctx *sha = git_sha1_new();
-    if (!sha) { fclose(f); return ESP_ERR_NO_MEM; }
+    git_zwriter *zw = git_zwriter_new();
+    uint8_t *buf = malloc(IO_CHUNK);
+    esp_err_t ret = (sha && zw && buf) ? ESP_OK : ESP_ERR_NO_MEM;
 
-    put_bytes(f, sha, "PACK", 4);
-    put_be32(f, sha, 2);
-    put_be32(f, sha, (uint32_t)set->n);
+    if (ret == ESP_OK) {
+        put_bytes(f, sha, "PACK", 4);
+        put_be32(f, sha, 2);
+        put_be32(f, sha, (uint32_t)set->n);
+    }
 
-    esp_err_t ret = ESP_OK;
     for (int i = 0; i < set->n && ret == ESP_OK; i++) {
-        git_obj_type type;
-        git_buf body = GIT_BUF_INIT;
-        ret = git_odb_read(&set->v[i], &type, &body);
-        if (ret != ESP_OK) { git_buf_free(&body); break; }
+        git_odb_stream s;
+        ret = git_odb_stream_open(&s, &set->v[i]);
+        if (ret != ESP_OK) break;
 
         /* variable-length object header */
         uint8_t hdr[16];
         int hn = 0;
-        uint64_t sz = body.len;
-        hdr[hn++] = (uint8_t)((type << 4) | (sz & 0x0f)) | (sz >> 4 ? 0x80 : 0);
+        uint64_t sz = s.size;
+        hdr[hn++] = (uint8_t)((s.type << 4) | (sz & 0x0f)) | (sz >> 4 ? 0x80 : 0);
         sz >>= 4;
         while (sz) {
             hdr[hn++] = (uint8_t)(sz & 0x7f) | (sz >> 7 ? 0x80 : 0);
@@ -332,18 +398,22 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set)
         }
         put_bytes(f, sha, hdr, hn);
 
-        git_buf z = GIT_BUF_INIT;
-        ret = git_zlib_deflate(body.data, body.len, &z);
-        git_buf_free(&body);
-        if (ret != ESP_OK) { git_buf_free(&z); break; }
-        put_bytes(f, sha, z.data, z.len);
-        git_buf_free(&z);
+        ret = git_zwriter_start(zw, f, sha);
+        while (ret == ESP_OK && s.left) {
+            long r = git_odb_stream_read(&s, buf, IO_CHUNK);
+            ret = (r > 0) ? git_zwriter_write(zw, buf, (size_t)r) : ESP_FAIL;
+        }
+        if (ret == ESP_OK) ret = git_zwriter_finish(zw);
+        git_odb_stream_close(&s);
     }
 
     uint8_t trailer[GIT_OID_RAWSZ];
     git_sha1_final(sha, trailer);
-    fwrite(trailer, 1, sizeof(trailer), f);
+    if (ret == ESP_OK && fwrite(trailer, 1, sizeof(trailer), f) != sizeof(trailer))
+        ret = ESP_FAIL;
 
+    git_zwriter_free(zw);
+    free(buf);
     if (fclose(f) != 0) ret = ESP_FAIL;
     if (ret != ESP_OK) remove(path);
     return ret;

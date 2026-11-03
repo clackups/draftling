@@ -456,6 +456,13 @@ extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t 
 
 extern "C" esp_err_t sd_card_write_file(const char *path, const char *data, size_t len)
 {
+    return sd_card_write_file_parts(path, data, len, NULL, 0);
+}
+
+extern "C" esp_err_t sd_card_write_file_parts(const char *path,
+                                              const char *a, size_t alen,
+                                              const char *b, size_t blen)
+{
     if (!s_card) return ESP_ERR_INVALID_STATE;
 
     /* Atomic write: stream the new contents into a temporary file next
@@ -489,7 +496,9 @@ extern "C" esp_err_t sd_card_write_file(const char *path, const char *data, size
 
     FILE *f = fopen(tmp, "wb");
     if (!f) { ESP_LOGE(TAG, "Open for write failed: %s", tmp); return ESP_FAIL; }
-    size_t wr = fwrite(data, 1, len, f);
+    size_t len = alen + blen;
+    size_t wr = alen ? fwrite(a, 1, alen, f) : 0;
+    if (wr == alen && blen) wr += fwrite(b, 1, blen, f);
     bool ok = (wr == len);
     if (fflush(f) != 0) ok = false;
     if (ok && fsync(fileno(f)) != 0) ok = false;

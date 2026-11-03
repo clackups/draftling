@@ -72,22 +72,42 @@ void git_sha1_update(git_sha1_ctx *c, const void *data, size_t n);
 void git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]); /* frees c */
 void git_sha1_hex(const void *data, size_t n, git_oid *out);
 
-/* ---- zlib (miniz in ROM) ------------------------------------------- */
+/* ---- streaming zlib (miniz in ROM) ------------------------------- */
 
-/* Inflate a complete zlib stream whose decompressed length is known.
- * Returns bytes consumed from `in` via *in_consumed (so the caller can
- * advance to the next packed object). `out` must be `out_expected`
- * bytes. */
-esp_err_t git_zlib_inflate(const uint8_t *in, size_t in_avail,
-                           uint8_t *out, size_t out_expected,
-                           size_t *in_consumed);
+/* Object data never has to fit in RAM: it is inflated / deflated
+ * through fixed-size buffers between files on the SD card. */
 
-/* Inflate an object of unknown length, growing `out`. Used for loose
- * objects. */
-esp_err_t git_zlib_inflate_buf(const uint8_t *in, size_t in_avail, git_buf *out);
+/* Inflates one zlib stream read from a FILE (~48 KB, PSRAM). */
+typedef struct git_zreader git_zreader;
+git_zreader *git_zreader_new(void);
+void git_zreader_free(git_zreader *z);
+/* Start a stream at the current position of fp. */
+void git_zreader_start(git_zreader *z, FILE *fp);
+/* Read up to n decompressed bytes: the count (< n only at the end of
+ * the stream), -1 on corrupt data. */
+long git_zreader_read(git_zreader *z, void *buf, size_t n);
+/* All data read: check that the stream ends here and leave fp right
+ * after its compressed bytes (the next object of a pack). */
+bool git_zreader_finish(git_zreader *z);
 
-/* Deflate `in` into `out` (zlib wrapped). Appends to `out`. */
-esp_err_t git_zlib_deflate(const uint8_t *in, size_t in_len, git_buf *out);
+/* Deflates into a FILE, optionally hashing the compressed bytes. */
+typedef struct git_zwriter git_zwriter;
+git_zwriter *git_zwriter_new(void);
+void git_zwriter_free(git_zwriter *w);
+esp_err_t git_zwriter_start(git_zwriter *w, FILE *fp, git_sha1_ctx *sha);
+esp_err_t git_zwriter_write(git_zwriter *w, const void *p, size_t n);
+esp_err_t git_zwriter_finish(git_zwriter *w);
+
+/* A pull source of bytes: read() returns the count (0 = end), < 0 on
+ * error. */
+typedef struct {
+    long (*read)(void *ctx, void *buf, size_t n);
+    void *ctx;
+} git_reader;
+
+typedef struct { const uint8_t *p; size_t len, pos; } git_mem_src;
+void git_reader_mem(git_reader *r, git_mem_src *m, const void *p, size_t len);
+void git_reader_file(git_reader *r, FILE *fp);
 
 /* ---- repository / odb --------------------------------------------- */
 
@@ -108,10 +128,15 @@ git_obj_type git_obj_type_from_name(const char *s);
  * holds the "*.md" / "*.fountain" / "*.txt" working tree (e.g. "/sdcard"). */
 esp_err_t git_repo_open(const char *workdir);
 void      git_repo_close(void);
+/* Delete leftover scratch files (an interrupted sync). */
+void      git_repo_clean_tmp(void);
 const char *git_repo_gitdir(void);   /* "<workdir>/.git" */
 const char *git_repo_workdir(void);
 
-/* Loose object store. Content is the raw object payload (no header). */
+/* Loose object store. Content is the raw object payload (no header).
+ * git_odb_read() / git_odb_write() hold the whole object in RAM: use
+ * them for trees and commits only. Blobs go through the streaming
+ * calls below. */
 bool      git_odb_exists(const git_oid *oid);
 esp_err_t git_odb_read(const git_oid *oid, git_obj_type *type, git_buf *out);
 esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size);
@@ -120,6 +145,45 @@ esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
 /* Hash without writing (used to test the working tree against HEAD). */
 void      git_odb_hash(git_obj_type type, const void *data, size_t len,
                        git_oid *out_oid);
+/* Hash a file's content as an object of the given type. */
+esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out_oid);
+/* Store a file's content as an object (two passes: hash, then deflate
+ * if the object is new). */
+esp_err_t git_odb_write_file(git_obj_type type, const char *path, git_oid *out_oid);
+/* Write an object's content to path, atomically (a hidden temporary
+ * in the same folder, then rename). */
+esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const char *path);
+
+/* Read an object piece by piece. */
+typedef struct {
+    FILE        *fp;
+    git_zreader *z;
+    git_obj_type type;
+    size_t       size;          /* payload size from the header */
+    size_t       left;          /* payload bytes not read yet */
+} git_odb_stream;
+esp_err_t git_odb_stream_open(git_odb_stream *s, const git_oid *oid);
+/* Payload bytes (0 at the end), -1 on error. */
+long      git_odb_stream_read(git_odb_stream *s, void *buf, size_t n);
+void      git_odb_stream_close(git_odb_stream *s);
+/* A git_reader over an open stream. */
+void      git_reader_odb(git_reader *r, git_odb_stream *s);
+
+/* Write an object piece by piece; the size must be known up front. */
+typedef struct {
+    FILE         *fp;
+    git_zwriter  *zw;
+    git_sha1_ctx *sha;
+    size_t        left;
+    char          tmp[320];
+} git_odb_writer;
+esp_err_t git_odb_writer_open(git_odb_writer *w, git_obj_type type, size_t size);
+esp_err_t git_odb_writer_write(git_odb_writer *w, const void *p, size_t n);
+/* Check the size, store the object (dropped if it exists already). */
+esp_err_t git_odb_writer_finish(git_odb_writer *w, git_oid *out_oid);
+void      git_odb_writer_abort(git_odb_writer *w);
+/* Path of a scratch file in .git/tmp. */
+void      git_odb_tmp_path(char *out, size_t osz, const char *name);
 
 /* refs. `name` is e.g. "HEAD", "refs/heads/main". Returns ESP_ERR_NOT_FOUND
  * if the ref does not exist. HEAD is resolved through one symref level. */
@@ -272,9 +336,9 @@ esp_err_t git_merge_trees_flat(const git_oid *base,
 
 /* Count the lines added to and deleted from `a` to get `b` (an LCS
  * line diff, as `git diff --numstat` reports). Above the merge size
- * limit the whole changed region counts as deleted + added. */
-esp_err_t git_diff_line_counts(const char *a, size_t a_len,
-                               const char *b, size_t b_len,
+ * limit the whole changed region counts as deleted + added. Lines are
+ * compared by hash, so only 8 bytes per line are held in RAM. */
+esp_err_t git_diff_line_counts(git_reader *a, git_reader *b,
                                int *added, int *deleted);
 
 #ifdef __cplusplus

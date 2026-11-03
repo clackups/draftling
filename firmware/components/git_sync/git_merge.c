@@ -2,6 +2,7 @@
  * textual conflict markers. */
 #include "git_core.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,104 +11,303 @@
 
 static const char *TAG = "git.merge";
 
-/* Above this many lines on any side we skip the line-level merge and
- * fall back to a whole-file conflict. Keeps the O(N*M) LCS matrix within
- * ~2 MB of PSRAM. */
-#define MERGE_MAX_LINES 1400
+#define IO_CHUNK 4096
+
+/* Myers' search gives up on the optimal alignment of a region after
+ * this many edit steps and splits it heuristically (as GNU diff does),
+ * which bounds the time on two very different texts. */
+#define DIFF_TOO_EXPENSIVE 2048
+
+/* Lines of the shared tail still merged line by line (see
+ * common_ends()). */
+#define SUFFIX_MARGIN 64
 
 /* ------------------------------------------------------------------ */
-/* line splitting                                                     */
+/* line tables                                                        */
 /* ------------------------------------------------------------------ */
 
-typedef struct { const char *p; size_t n; } line_t;
+/* Lines are compared by a 64-bit hash of their bytes (newline
+ * included), so only the hashes -- and for the merge each line's
+ * offset in its file -- are kept in RAM; the text stays on the SD card
+ * or wherever the source reads it from. */
+typedef struct {
+    uint64_t *h;            /* per-line hash */
+    uint32_t *off;          /* per-line start offset (NULL = not kept) */
+    int       n, cap;
+} lines_t;
 
-typedef struct { line_t *v; int n; } lines_t;
-
-static void lines_free(lines_t *L) { if (L->v) free(L->v); L->v = NULL; L->n = 0; }
-
-static bool lines_split(const char *data, size_t len, lines_t *out)
+static void lines_free(lines_t *L)
 {
-    out->v = NULL;
-    out->n = 0;
-    int cap = 0;
-    size_t i = 0;
-    while (i < len) {
-        size_t j = i;
-        while (j < len && data[j] != '\n') j++;
-        size_t end = (j < len) ? j + 1 : j;   /* include the '\n' */
-        if (out->n >= cap) {
-            cap = cap ? cap * 2 : 64;
-            line_t *nv = realloc(out->v, (size_t)cap * sizeof(*nv));
-            if (!nv) { lines_free(out); return false; }
-            out->v = nv;
+    free(L->h);
+    free(L->off);
+    memset(L, 0, sizeof(*L));
+}
+
+static bool lines_push(lines_t *L, uint64_t h, uint32_t off, bool keep_off)
+{
+    if (L->n >= L->cap) {
+        int cap = L->cap ? L->cap * 2 : 64;
+        uint64_t *nh = heap_caps_realloc(L->h, (size_t)cap * sizeof(*nh), MALLOC_CAP_SPIRAM);
+        if (!nh) nh = realloc(L->h, (size_t)cap * sizeof(*nh));
+        if (!nh) return false;
+        L->h = nh;
+        if (keep_off) {
+            uint32_t *no = heap_caps_realloc(L->off, (size_t)cap * sizeof(*no), MALLOC_CAP_SPIRAM);
+            if (!no) no = realloc(L->off, (size_t)cap * sizeof(*no));
+            if (!no) return false;
+            L->off = no;
         }
-        out->v[out->n].p = data + i;
-        out->v[out->n].n = end - i;
-        out->n++;
-        i = end;
+        L->cap = cap;
     }
+    L->h[L->n] = h;
+    if (keep_off) L->off[L->n] = off;
+    L->n++;
     return true;
 }
 
-static bool line_eq(const line_t *a, const line_t *b)
+#define FNV_OFF 0xcbf29ce484222325ULL
+#define FNV_PRIME 0x100000001b3ULL
+
+/* Read the whole source, hashing each line; line offsets start at
+ * base. A final line without a newline is a line of its own (it
+ * differs from the same text with one). */
+static esp_err_t lines_scan(git_reader *src, lines_t *L, bool keep_off, uint32_t base)
 {
-    return a->n == b->n && memcmp(a->p, b->p, a->n) == 0;
+    memset(L, 0, sizeof(*L));
+    uint8_t *buf = malloc(IO_CHUNK);
+    if (!buf) return ESP_ERR_NO_MEM;
+    esp_err_t ret = ESP_OK;
+    uint64_t h = FNV_OFF;
+    uint32_t start = base, pos = base;
+    bool open = false;
+    long r;
+    while ((r = src->read(src->ctx, buf, IO_CHUNK)) > 0) {
+        for (long i = 0; i < r; i++) {
+            h = (h ^ buf[i]) * FNV_PRIME;
+            open = true;
+            pos++;
+            if (buf[i] == '\n') {
+                if (!lines_push(L, h ^ (pos - start), start, keep_off)) { ret = ESP_ERR_NO_MEM; goto out; }
+                h = FNV_OFF;
+                start = pos;
+                open = false;
+            }
+        }
+    }
+    if (r < 0) { ret = ESP_FAIL; goto out; }
+    if (open && !lines_push(L, h ^ (pos - start) ^ 0x8000000000000000ULL, start, keep_off))
+        ret = ESP_ERR_NO_MEM;
+out:
+    free(buf);
+    return ret;
 }
 
-static bool region_eq(const line_t *a, int a0, int a1,
-                      const line_t *b, int b0, int b1)
+static bool region_eq(const uint64_t *a, int a0, int a1,
+                      const uint64_t *b, int b0, int b1)
 {
     if (a1 - a0 != b1 - b0) return false;
     for (int i = 0; i < a1 - a0; i++)
-        if (!line_eq(&a[a0 + i], &b[b0 + i])) return false;
+        if (a[a0 + i] != b[b0 + i]) return false;
     return true;
 }
 
 /* ------------------------------------------------------------------ */
-/* LCS alignment: match_a[i] = index in b matched to a[i], or -1        */
+/* line alignment: Myers' O(ND) diff in linear space                  */
 /* ------------------------------------------------------------------ */
 
-static bool lcs_align(const line_t *a, int na, const line_t *b, int nb,
+/* Find the midpoint of the shortest edit script of x[xoff, xlim) and
+ * y[yoff, ylim) (whose first and last lines differ), after gnulib's
+ * diffseq.h. fd / bd are indexed by diagonal (x - y). */
+static void diag(const uint64_t *xv, int xoff, int xlim,
+                 const uint64_t *yv, int yoff, int ylim,
+                 int *fd, int *bd, int *pxmid, int *pymid)
+{
+    const int dmin = xoff - ylim;
+    const int dmax = xlim - yoff;
+    const int fmid = xoff - yoff;
+    const int bmid = xlim - ylim;
+    int fmin = fmid, fmax = fmid;
+    int bmin = bmid, bmax = bmid;
+    const bool odd = (fmid - bmid) & 1;
+    fd[fmid] = xoff;
+    bd[bmid] = xlim;
+
+    for (int c = 1;; ++c) {
+        int d;
+        /* extend the forward search by one edit */
+        if (fmin > dmin) fd[--fmin - 1] = -1; else ++fmin;
+        if (fmax < dmax) fd[++fmax + 1] = -1; else --fmax;
+        for (d = fmax; d >= fmin; d -= 2) {
+            int tlo = fd[d - 1], thi = fd[d + 1];
+            int x = tlo >= thi ? tlo + 1 : thi;
+            int y = x - d;
+            while (x < xlim && y < ylim && xv[x] == yv[y]) { x++; y++; }
+            fd[d] = x;
+            if (odd && bmin <= d && d <= bmax && bd[d] <= x) {
+                *pxmid = x; *pymid = y;
+                return;
+            }
+        }
+        /* and the backward search */
+        if (bmin > dmin) bd[--bmin - 1] = INT_MAX; else ++bmin;
+        if (bmax < dmax) bd[++bmax + 1] = INT_MAX; else --bmax;
+        for (d = bmax; d >= bmin; d -= 2) {
+            int tlo = bd[d - 1], thi = bd[d + 1];
+            int x = tlo < thi ? tlo : thi - 1;
+            int y = x - d;
+            while (x > xoff && y > yoff && xv[x - 1] == yv[y - 1]) { x--; y--; }
+            bd[d] = x;
+            if (!odd && fmin <= d && d <= fmax && x <= fd[d]) {
+                *pxmid = x; *pymid = y;
+                return;
+            }
+        }
+        if (c >= DIFF_TOO_EXPENSIVE) {
+            /* Too costly: split at the furthest point either search
+             * has reached. */
+            int fxybest = -1, fxbest = xoff;
+            for (d = fmax; d >= fmin; d -= 2) {
+                int x = fd[d] < xlim ? fd[d] : xlim;
+                int y = x - d;
+                if (ylim < y) { x = ylim + d; y = ylim; }
+                if (fxybest < x + y) { fxybest = x + y; fxbest = x; }
+            }
+            int bxybest = INT_MAX, bxbest = xlim;
+            for (d = bmax; d >= bmin; d -= 2) {
+                int x = bd[d] > xoff ? bd[d] : xoff;
+                int y = x - d;
+                if (y < yoff) { x = yoff + d; y = yoff; }
+                if (x + y < bxybest) { bxybest = x + y; bxbest = x; }
+            }
+            if ((xlim + ylim) - bxybest < fxybest - (xoff + yoff)) {
+                *pxmid = fxbest; *pymid = fxybest - fxbest;
+            } else {
+                *pxmid = bxbest; *pymid = bxybest - bxbest;
+            }
+            return;
+        }
+    }
+}
+
+typedef struct { int xoff, xlim, yoff, ylim; } diff_range;
+
+/* match_a[i] = index in b matched to a[i], or -1. Memory is linear in
+ * na + nb. Returns false when out of memory. */
+static bool lcs_align(const uint64_t *a, int na, const uint64_t *b, int nb,
                       int *match_a)
 {
     for (int i = 0; i < na; i++) match_a[i] = -1;
     if (na == 0 || nb == 0) return true;
 
-    /* dp is (na+1) x (nb+1) of uint16_t */
-    size_t rows = (size_t)na + 1, cols = (size_t)nb + 1;
-    uint16_t *dp = heap_caps_malloc(rows * cols * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    if (!dp) dp = malloc(rows * cols * sizeof(uint16_t));
-    if (!dp) return false;
-#define DP(i, j) dp[(size_t)(i) * cols + (j)]
+    size_t ndiag = (size_t)na + nb + 3;
+    int *fbuf = heap_caps_malloc(ndiag * sizeof(int), MALLOC_CAP_SPIRAM);
+    if (!fbuf) fbuf = malloc(ndiag * sizeof(int));
+    int *bbuf = heap_caps_malloc(ndiag * sizeof(int), MALLOC_CAP_SPIRAM);
+    if (!bbuf) bbuf = malloc(ndiag * sizeof(int));
+    int scap = 64, sn = 0;
+    diff_range *stack = malloc((size_t)scap * sizeof(*stack));
+    bool ok = fbuf && bbuf && stack;
+    int *fd = fbuf + nb + 1, *bd = bbuf + nb + 1;
 
-    for (int j = 0; j <= nb; j++) DP(na, j) = 0;
-    for (int i = 0; i <= na; i++) DP(i, nb) = 0;
+    if (ok) stack[sn++] = (diff_range){ 0, na, 0, nb };
+    while (ok && sn) {
+        diff_range r = stack[--sn];
+        /* common lines at both ends need no search */
+        while (r.xoff < r.xlim && r.yoff < r.ylim && a[r.xoff] == b[r.yoff])
+            match_a[r.xoff++] = r.yoff++;
+        while (r.xlim > r.xoff && r.ylim > r.yoff && a[r.xlim - 1] == b[r.ylim - 1])
+            match_a[--r.xlim] = --r.ylim;
+        if (r.xoff == r.xlim || r.yoff == r.ylim) continue;
 
-    for (int i = na - 1; i >= 0; i--) {
-        for (int j = nb - 1; j >= 0; j--) {
-            if (line_eq(&a[i], &b[j]))
-                DP(i, j) = (uint16_t)(DP(i + 1, j + 1) + 1);
-            else {
-                uint16_t d = DP(i + 1, j);
-                uint16_t r = DP(i, j + 1);
-                DP(i, j) = d > r ? d : r;
-            }
+        int xmid, ymid;
+        diag(a, r.xoff, r.xlim, b, r.yoff, r.ylim, fd, bd, &xmid, &ymid);
+        /* A split that does not divide the region (the heuristic can do
+         * that) leaves it unmatched: still a valid alignment. */
+        if ((xmid == r.xoff && ymid == r.yoff) || (xmid == r.xlim && ymid == r.ylim))
+            continue;
+        if (sn + 2 > scap) {
+            scap *= 2;
+            diff_range *ns = realloc(stack, (size_t)scap * sizeof(*ns));
+            if (!ns) { ok = false; break; }
+            stack = ns;
         }
+        stack[sn++] = (diff_range){ r.xoff, xmid, r.yoff, ymid };
+        stack[sn++] = (diff_range){ xmid, r.xlim, ymid, r.ylim };
     }
+    free(fbuf);
+    free(bbuf);
+    free(stack);
+    return ok;
+}
 
-    int i = 0, j = 0;
-    while (i < na && j < nb) {
-        if (line_eq(&a[i], &b[j])) {
-            match_a[i] = j;
-            i++; j++;
-        } else if (DP(i + 1, j) >= DP(i, j + 1)) {
-            i++;
-        } else {
-            j++;
+/* Canonical form of an alignment, after git's xdl_change_compact().
+ * Several alignments are often equally short -- which of two blank
+ * lines was deleted? -- and the two sides of a merge must describe the
+ * same edit the same way, or they conflict for nothing. A block of
+ * changed lines can slide along lines equal to it; each block is moved
+ * to the lowest position where it faces a change in the other text
+ * (so a replaced line stays one deletion plus one insertion), else as
+ * far down as it goes. Blocks never slide into one another.
+ *
+ * The alignment is the list of matched pairs P[0..K); gap k lies
+ * before pair k, and each text has a (possibly empty) block of
+ * changed lines in every gap. */
+typedef struct { int i[2]; } line_pair;
+
+static void compact_side(line_pair *P, int K, const uint64_t *h, int n, int me,
+                         int n_other)
+{
+    int other = !me;
+#define IX(k)  ((k) < 0 ? -1 : (k) >= K ? n : P[k].i[me])
+#define OX(k)  ((k) < 0 ? -1 : (k) >= K ? n_other : P[k].i[other])
+#define OTHER_CHANGED(gg) (OX(gg) > OX((gg) - 1) + 1)
+    for (int k = 0; k <= K; k++) {
+        int start = IX(k - 1) + 1, end = IX(k);
+        if (start >= end) continue;            /* no block in this gap */
+        int g = k;
+        /* up as far as possible */
+        while (g > 0 && IX(g - 1) == IX(g - 2) + 1 && h[end - 1] == h[IX(g - 1)]) {
+            P[g - 1].i[me] = end - 1;
+            g--;
+            start = IX(g - 1) + 1;
+            end = IX(g);
         }
+        /* then down, noting where the other text has a change too */
+        int best = OTHER_CHANGED(g) ? g : -1;
+        while (g < K && IX(g + 1) == IX(g) + 1 && h[start] == h[IX(g)]) {
+            P[g].i[me] = start;
+            g++;
+            start = IX(g - 1) + 1;
+            end = IX(g);
+            if (OTHER_CHANGED(g)) best = g;
+        }
+        /* back up to the best spot facing a change */
+        while (best >= 0 && g > best) {
+            P[g - 1].i[me] = end - 1;
+            g--;
+            start = IX(g - 1) + 1;
+            end = IX(g);
+        }
+        k = g;                                  /* gaps above are done */
     }
-#undef DP
-    free(dp);
+#undef OTHER_CHANGED
+#undef IX
+#undef OX
+}
+
+static bool compact(const uint64_t *a, int na, const uint64_t *b, int nb, int *match_a)
+{
+    int K = 0;
+    for (int i = 0; i < na; i++) if (match_a[i] >= 0) K++;
+    line_pair *P = malloc((size_t)(K ? K : 1) * sizeof(*P));
+    if (!P) return false;
+    for (int i = 0, k = 0; i < na; i++)
+        if (match_a[i] >= 0) { P[k].i[0] = i; P[k].i[1] = match_a[i]; k++; }
+    compact_side(P, K, a, na, 0, nb);
+    compact_side(P, K, b, nb, 1, na);
+    for (int i = 0; i < na; i++) match_a[i] = -1;
+    for (int k = 0; k < K; k++) match_a[P[k].i[0]] = P[k].i[1];
+    free(P);
     return true;
 }
 
@@ -115,35 +315,28 @@ static bool lcs_align(const line_t *a, int na, const line_t *b, int nb,
 /* line diff statistics                                               */
 /* ------------------------------------------------------------------ */
 
-esp_err_t git_diff_line_counts(const char *a, size_t a_len,
-                               const char *b, size_t b_len,
+esp_err_t git_diff_line_counts(git_reader *a, git_reader *b,
                                int *added, int *deleted)
 {
     *added = 0;
     *deleted = 0;
     lines_t A = {0}, B = {0};
     int *match = NULL;
-    esp_err_t ret = ESP_ERR_NO_MEM;
-    if (!lines_split(a, a_len, &A)) goto done;
-    if (!lines_split(b, b_len, &B)) goto done;
+    esp_err_t ret = lines_scan(a, &A, false, 0);
+    if (ret == ESP_OK) ret = lines_scan(b, &B, false, 0);
+    if (ret != ESP_OK) goto done;
 
-    /* Common leading and trailing lines need no LCS. */
+    /* Common leading and trailing lines need no search. */
     int lo = 0;
-    while (lo < A.n && lo < B.n && line_eq(&A.v[lo], &B.v[lo])) lo++;
+    while (lo < A.n && lo < B.n && A.h[lo] == B.h[lo]) lo++;
     int ea = A.n, eb = B.n;
-    while (ea > lo && eb > lo && line_eq(&A.v[ea - 1], &B.v[eb - 1])) { ea--; eb--; }
+    while (ea > lo && eb > lo && A.h[ea - 1] == B.h[eb - 1]) { ea--; eb--; }
     int na = ea - lo, nb = eb - lo;
 
-    if (na > MERGE_MAX_LINES || nb > MERGE_MAX_LINES) {
-        /* Too large for the LCS matrix: count the whole changed region. */
-        *deleted = na;
-        *added = nb;
-        ret = ESP_OK;
-        goto done;
-    }
+    ret = ESP_ERR_NO_MEM;
     match = malloc(((size_t)na + 1) * sizeof(int));
     if (!match) goto done;
-    if (!lcs_align(A.v + lo, na, B.v + lo, nb, match)) goto done;
+    if (!lcs_align(A.h + lo, na, B.h + lo, nb, match)) goto done;
     int common = 0;
     for (int i = 0; i < na; i++)
         if (match[i] >= 0) common++;
@@ -159,62 +352,201 @@ done:
 }
 
 /* ------------------------------------------------------------------ */
-/* diff3 merge                                                        */
+/* diff3 merge, file to file                                          */
 /* ------------------------------------------------------------------ */
 
-static void emit_lines(git_buf *out, const line_t *v, int a, int b)
+typedef struct {
+    FILE    *f;
+    uint32_t len;           /* file size */
+    uint32_t end;           /* end of the region being merged */
+    lines_t  L;
+} side_t;
+
+typedef struct {
+    FILE    *f;
+    uint8_t *buf;
+    int      last;          /* last byte written, -1 = none */
+    bool     err;
+} out_t;
+
+static void out_put(out_t *o, const void *p, size_t n)
 {
-    for (int i = a; i < b; i++) git_buf_put(out, v[i].p, v[i].n);
+    if (!n || o->err) return;
+    if (fwrite(p, 1, n, o->f) != n) o->err = true;
+    o->last = ((const uint8_t *)p)[n - 1];
 }
 
-/* Ensure the buffer ends with a newline before we add a marker line. */
-static void ensure_nl(git_buf *out)
+static void out_puts(out_t *o, const char *s) { out_put(o, s, strlen(s)); }
+
+/* Ensure the output ends with a newline before a marker line. */
+static void ensure_nl(out_t *o)
 {
-    if (out->len && out->data[out->len - 1] != '\n') git_buf_putc(out, '\n');
+    if (o->last >= 0 && o->last != '\n') out_put(o, "\n", 1);
 }
 
-static esp_err_t diff3_merge(const char *base, size_t base_len,
-                             const char *ours, size_t ours_len,
-                             const char *theirs, size_t theirs_len,
+static void out_marker(out_t *o, const char *m, const char *label)
+{
+    ensure_nl(o);
+    out_puts(o, m);
+    if (label) { out_puts(o, " "); out_puts(o, label); }
+    out_puts(o, "\n");
+}
+
+/* Copy bytes [from, to) of a side's file. */
+static void out_copy(out_t *o, FILE *f, uint32_t from, uint32_t to)
+{
+    if (o->err || from >= to) return;
+    if (fseek(f, (long)from, SEEK_SET) != 0) { o->err = true; return; }
+    while (from < to) {
+        size_t c = to - from < IO_CHUNK ? to - from : IO_CHUNK;
+        if (fread(o->buf, 1, c, f) != c) { o->err = true; return; }
+        out_put(o, o->buf, c);
+        from += (uint32_t)c;
+    }
+}
+
+/* Lines [a, b) of a side. */
+static void emit_lines(out_t *o, const side_t *s, int a, int b)
+{
+    if (a >= b) return;
+    uint32_t to = (b < s->L.n) ? s->L.off[b] : s->end;
+    out_copy(o, s->f, s->L.off[a], to);
+}
+
+/* Reads [pos, end) of a file. */
+typedef struct { FILE *f; uint32_t left; } range_src;
+
+static long range_read(void *ctx, void *buf, size_t n)
+{
+    range_src *r = (range_src *)ctx;
+    if (n > r->left) n = r->left;
+    if (n == 0) return 0;
+    size_t got = fread(buf, 1, n, r->f);
+    if (got != n) return -1;
+    r->left -= (uint32_t)n;
+    return (long)n;
+}
+
+/* Hash the lines of [from, s->end). */
+static esp_err_t side_scan(side_t *s, uint32_t from)
+{
+    if (fseek(s->f, (long)from, SEEK_SET) != 0) return ESP_FAIL;
+    range_src rs = { s->f, s->end - from };
+    git_reader r = { range_read, &rs };
+    return lines_scan(&r, &s->L, true, from);
+}
+
+/* Bytes that all three files share at the start (*pre) and at the end
+ * (*suf), both cut back to whole lines and not overlapping. Only the
+ * part in between needs a line table. */
+static esp_err_t common_ends(side_t *sd[3], uint8_t *buf, uint32_t *pre, uint32_t *suf)
+{
+    uint32_t minlen = sd[0]->len;
+    for (int i = 1; i < 3; i++) if (sd[i]->len < minlen) minlen = sd[i]->len;
+    uint8_t *b[3] = { buf, buf + IO_CHUNK, buf + 2 * IO_CHUNK };
+
+    /* prefix: up to the last newline before the first difference */
+    uint32_t p = 0, last_nl = 0;
+    bool diff = false;
+    for (int i = 0; i < 3; i++) fseek(sd[i]->f, 0, SEEK_SET);
+    while (!diff && p < minlen) {
+        size_t c = minlen - p < IO_CHUNK ? minlen - p : IO_CHUNK;
+        for (int i = 0; i < 3; i++)
+            if (fread(b[i], 1, c, sd[i]->f) != c) return ESP_FAIL;
+        for (size_t k = 0; k < c; k++) {
+            if (b[0][k] != b[1][k] || b[0][k] != b[2][k]) { diff = true; break; }
+            p++;
+            if (b[0][k] == '\n') last_nl = p;
+        }
+    }
+    *pre = last_nl;
+
+    /* suffix: never into the prefix; it must start right after a
+     * newline, so it is cut back to just past its first one */
+    uint32_t maxs = minlen - *pre;
+    uint32_t sfx = 0;
+    diff = false;
+    while (!diff && sfx < maxs) {
+        size_t c = maxs - sfx < IO_CHUNK ? maxs - sfx : IO_CHUNK;
+        for (int i = 0; i < 3; i++) {
+            if (fseek(sd[i]->f, (long)(sd[i]->len - sfx - c), SEEK_SET) != 0 ||
+                fread(b[i], 1, c, sd[i]->f) != c) return ESP_FAIL;
+        }
+        for (size_t k = c; k-- > 0;) {
+            if (b[0][k] != b[1][k] || b[0][k] != b[2][k]) { diff = true; break; }
+            sfx++;
+        }
+    }
+    /* The suffix starts after its first newline, plus SUFFIX_MARGIN
+     * more lines, so that changes can still slide down into the
+     * region (see slide_down()). */
+    uint32_t cut = sfx;            /* sfx = not enough newlines */
+    uint32_t start = sd[0]->len - sfx, done = 0;
+    int nls = 0;
+    while (done < sfx && cut == sfx) {
+        size_t c = sfx - done < IO_CHUNK ? sfx - done : IO_CHUNK;
+        if (fseek(sd[0]->f, (long)(start + done), SEEK_SET) != 0 ||
+            fread(b[0], 1, c, sd[0]->f) != c) return ESP_FAIL;
+        for (size_t k = 0; k < c; k++) {
+            if (b[0][k] == '\n' && ++nls > SUFFIX_MARGIN) { cut = done + (uint32_t)k + 1; break; }
+        }
+        done += (uint32_t)c;
+    }
+    *suf = sfx - cut;
+    return ESP_OK;
+}
+
+/* diff3 of the files at base / ours / theirs into out. */
+static esp_err_t diff3_merge(const char *base, const char *ours, const char *theirs,
                              const char *ours_label, const char *theirs_label,
-                             git_buf *out, bool *conflict)
+                             out_t *out, bool *conflict)
 {
     *conflict = false;
-    lines_t O = {0}, A = {0}, B = {0};
-    esp_err_t ret = ESP_ERR_NO_MEM;
-    if (!lines_split(base, base_len, &O)) goto done;
-    if (!lines_split(ours, ours_len, &A)) goto done;
-    if (!lines_split(theirs, theirs_len, &B)) goto done;
+    side_t O, A, B;
+    memset(&O, 0, sizeof(O)); memset(&A, 0, sizeof(A)); memset(&B, 0, sizeof(B));
+    side_t *sd[3] = { &O, &A, &B };
+    const char *paths[3] = { base, ours, theirs };
+    int *ma = NULL, *mb = NULL;
+    uint8_t *cbuf = NULL;
+    uint32_t pre = 0, suf = 0;
+    esp_err_t ret = ESP_OK;
 
-    if (O.n > MERGE_MAX_LINES || A.n > MERGE_MAX_LINES || B.n > MERGE_MAX_LINES) {
-        /* coarse whole-file conflict */
-        ensure_nl(out);
-        git_buf_printf(out, "<<<<<<< %s\n", ours_label);
-        git_buf_put(out, ours, ours_len);
-        ensure_nl(out);
-        git_buf_puts(out, "=======\n");
-        git_buf_put(out, theirs, theirs_len);
-        ensure_nl(out);
-        git_buf_printf(out, ">>>>>>> %s\n", theirs_label);
-        *conflict = true;
-        ret = ESP_OK;
-        goto done;
+    for (int i = 0; i < 3 && ret == ESP_OK; i++) {
+        sd[i]->f = fopen(paths[i], "rb");
+        if (!sd[i]->f || fseek(sd[i]->f, 0, SEEK_END) != 0) { ret = ESP_FAIL; break; }
+        sd[i]->len = (uint32_t)ftell(sd[i]->f);
     }
+    if (ret != ESP_OK) goto done;
+    cbuf = malloc(3 * IO_CHUNK);
+    if (!cbuf) { ret = ESP_ERR_NO_MEM; goto whole; }
+    ret = common_ends(sd, cbuf, &pre, &suf);
+    free(cbuf);
+    if (ret != ESP_OK) goto done;
 
-    int *ma = calloc((size_t)(O.n ? O.n : 1), sizeof(int));
-    int *mb = calloc((size_t)(O.n ? O.n : 1), sizeof(int));
-    if (!ma || !mb) { free(ma); free(mb); goto done; }
-    if (!lcs_align(O.v, O.n, A.v, A.n, ma) ||
-        !lcs_align(O.v, O.n, B.v, B.n, mb)) {
-        free(ma); free(mb);
-        goto done;
+    for (int i = 0; i < 3 && ret == ESP_OK; i++) {
+        sd[i]->end = sd[i]->len - suf;
+        ret = side_scan(sd[i], pre);
     }
+    if (ret == ESP_OK) {
+        ma = calloc((size_t)(O.L.n ? O.L.n : 1), sizeof(int));
+        mb = calloc((size_t)(O.L.n ? O.L.n : 1), sizeof(int));
+        if (!ma || !mb ||
+            !lcs_align(O.L.h, O.L.n, A.L.h, A.L.n, ma) ||
+            !lcs_align(O.L.h, O.L.n, B.L.h, B.L.n, mb) ||
+            !compact(O.L.h, O.L.n, A.L.h, A.L.n, ma) ||
+            !compact(O.L.h, O.L.n, B.L.h, B.L.n, mb))
+            ret = ESP_ERR_NO_MEM;
+    }
+    if (ret == ESP_ERR_NO_MEM) goto whole;
+    if (ret != ESP_OK) goto done;
+
+    out_copy(out, O.f, 0, pre);
 
     /* sync points: o indices matched in BOTH A and B (+ sentinels) */
     int op = -1, ap = -1, bp = -1;
-    for (int k = 0; k <= O.n; k++) {
+    for (int k = 0; k <= O.L.n; k++) {
         int oc, ac, bc;
-        if (k == O.n) { oc = O.n; ac = A.n; bc = B.n; }
+        if (k == O.L.n) { oc = O.L.n; ac = A.L.n; bc = B.L.n; }
         else if (ma[k] >= 0 && mb[k] >= 0 && ma[k] > ap && mb[k] > bp) {
             oc = k; ac = ma[k]; bc = mb[k];
         } else {
@@ -222,53 +554,64 @@ static esp_err_t diff3_merge(const char *base, size_t base_len,
         }
 
         int o0 = op + 1, a0 = ap + 1, b0 = bp + 1;
-        bool a_changed = !region_eq(A.v, a0, ac, O.v, o0, oc);
-        bool b_changed = !region_eq(B.v, b0, bc, O.v, o0, oc);
+        bool a_changed = !region_eq(A.L.h, a0, ac, O.L.h, o0, oc);
+        bool b_changed = !region_eq(B.L.h, b0, bc, O.L.h, o0, oc);
 
         if (!a_changed && !b_changed) {
-            emit_lines(out, O.v, o0, oc);
+            emit_lines(out, &O, o0, oc);
         } else if (a_changed && !b_changed) {
-            emit_lines(out, A.v, a0, ac);
+            emit_lines(out, &A, a0, ac);
         } else if (!a_changed && b_changed) {
-            emit_lines(out, B.v, b0, bc);
-        } else if (region_eq(A.v, a0, ac, B.v, b0, bc)) {
-            emit_lines(out, A.v, a0, ac);     /* same change on both sides */
+            emit_lines(out, &B, b0, bc);
+        } else if (region_eq(A.L.h, a0, ac, B.L.h, b0, bc)) {
+            emit_lines(out, &A, a0, ac);     /* same change on both sides */
         } else {
-            ensure_nl(out);
-            git_buf_printf(out, "<<<<<<< %s\n", ours_label);
-            emit_lines(out, A.v, a0, ac);
-            ensure_nl(out);
-            git_buf_puts(out, "=======\n");
-            emit_lines(out, B.v, b0, bc);
-            ensure_nl(out);
-            git_buf_printf(out, ">>>>>>> %s\n", theirs_label);
+            out_marker(out, "<<<<<<<", ours_label);
+            emit_lines(out, &A, a0, ac);
+            out_marker(out, "=======", NULL);
+            emit_lines(out, &B, b0, bc);
+            out_marker(out, ">>>>>>>", theirs_label);
             *conflict = true;
         }
 
-        if (oc < O.n) git_buf_put(out, O.v[oc].p, O.v[oc].n);
+        if (oc < O.L.n) emit_lines(out, &O, oc, oc + 1);
         op = oc; ap = ac; bp = bc;
     }
+    out_copy(out, O.f, O.end, O.len);
+    goto done;
 
-    free(ma);
-    free(mb);
+whole:
+    /* Out of memory for the line tables: a whole-file conflict. */
+    ESP_LOGW(TAG, "merge: out of memory, whole-file conflict");
     ret = ESP_OK;
+    out_marker(out, "<<<<<<<", ours_label);
+    out_copy(out, A.f, 0, A.len);
+    out_marker(out, "=======", NULL);
+    out_copy(out, B.f, 0, B.len);
+    out_marker(out, ">>>>>>>", theirs_label);
+    *conflict = true;
 
 done:
-    lines_free(&O);
-    lines_free(&A);
-    lines_free(&B);
+    free(ma);
+    free(mb);
+    for (int i = 0; i < 3; i++) {
+        if (sd[i]->f) fclose(sd[i]->f);
+        lines_free(&sd[i]->L);
+    }
+    if (ret == ESP_OK && out->err) ret = ESP_FAIL;
     return ret;
 }
 
-/* ------------------------------------------------------------------ */
-/* flat tree merge                                                    */
-/* ------------------------------------------------------------------ */
-
-static esp_err_t load_blob(const git_oid *oid, git_buf *out)
+/* Write a blob to a scratch file (an absent blob: an empty file). */
+static esp_err_t blob_to_file(const git_oid *oid, const char *path)
 {
-    if (!oid || git_oid_is_zero(oid)) return ESP_OK;   /* absent => empty */
+    if (!oid || git_oid_is_zero(oid)) {
+        FILE *f = fopen(path, "wb");
+        if (!f) return ESP_FAIL;
+        return fclose(f) == 0 ? ESP_OK : ESP_FAIL;
+    }
     git_obj_type t;
-    esp_err_t ret = git_odb_read(oid, &t, out);
+    esp_err_t ret = git_odb_read_to_file(oid, &t, path);
     if (ret == ESP_OK && t != GIT_OBJ_BLOB) return ESP_FAIL;
     return ret;
 }
@@ -334,24 +677,26 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
                 r->conflict = true;
                 (*out_nconflicts)++;
             } else {
-                /* content conflict: diff3 line merge */
-                git_buf bb = GIT_BUF_INIT, ob = GIT_BUF_INIT, tb = GIT_BUF_INIT;
-                git_buf merged = GIT_BUF_INIT;
+                /* content conflict: diff3 line merge, through scratch
+                 * files on the SD card */
+                char pb[320], po[320], pt[320], pm[320];
+                git_odb_tmp_path(pb, sizeof(pb), "merge-base");
+                git_odb_tmp_path(po, sizeof(po), "merge-ours");
+                git_odb_tmp_path(pt, sizeof(pt), "merge-theirs");
+                git_odb_tmp_path(pm, sizeof(pm), "merge-out");
                 bool conflict = false;
-                ret = load_blob(&bo, &bb);
-                if (ret == ESP_OK) ret = load_blob(&oo, &ob);
-                if (ret == ESP_OK) ret = load_blob(&to, &tb);
-                if (ret == ESP_OK)
-                    ret = diff3_merge((char *)bb.data, bb.len,
-                                      (char *)ob.data, ob.len,
-                                      (char *)tb.data, tb.len,
-                                      ours_label, theirs_label,
-                                      &merged, &conflict);
-                git_buf_free(&bb); git_buf_free(&ob); git_buf_free(&tb);
-                if (ret != ESP_OK) { git_buf_free(&merged); goto done_res; }
-
-                ret = git_odb_write(GIT_OBJ_BLOB, merged.data, merged.len, &r->oid);
-                git_buf_free(&merged);
+                ret = blob_to_file(&bo, pb);
+                if (ret == ESP_OK) ret = blob_to_file(&oo, po);
+                if (ret == ESP_OK) ret = blob_to_file(&to, pt);
+                if (ret == ESP_OK) {
+                    out_t o = { .f = fopen(pm, "wb"), .buf = malloc(IO_CHUNK), .last = -1 };
+                    if (!o.f || !o.buf) ret = ESP_ERR_NO_MEM;
+                    else ret = diff3_merge(pb, po, pt, ours_label, theirs_label, &o, &conflict);
+                    if (o.f && fclose(o.f) != 0 && ret == ESP_OK) ret = ESP_FAIL;
+                    free(o.buf);
+                }
+                if (ret == ESP_OK) ret = git_odb_write_file(GIT_OBJ_BLOB, pm, &r->oid);
+                remove(pb); remove(po); remove(pt); remove(pm);
                 if (ret != ESP_OK) goto done_res;
                 r->conflict = conflict;
                 if (conflict) (*out_nconflicts)++;

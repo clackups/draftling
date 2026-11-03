@@ -165,7 +165,12 @@ This is deliberately a minimal client:
   worth knowing.
 - The initial sync fetches full history; for a large repository that can
   be slow and use significant SD space.
-- Line-level merges above ~1400 lines on any side fall back to a
-  whole-file conflict block.
+- Merges work line by line on documents of any length. Only if the
+  device runs out of memory while merging (very long documents edited
+  all over on both sides) does a file become a single whole-file
+  conflict block.
+- A sync keeps its temporary data on the SD card (in the project's
+  `.git/tmp` folder), so it needs some free space there: during the
+  first sync, about twice the size of the downloaded history.
 - Authentication is HTTP Basic only (token in `git.cfg`); SSH is not
   supported.

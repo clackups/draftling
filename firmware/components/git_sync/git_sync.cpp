@@ -38,6 +38,7 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 #include <esp_netif_sntp.h>
+#include <esp_wifi.h>
 #include <mbedtls/base64.h>
 
 #include "git_sync.h"
@@ -141,21 +142,6 @@ static void repo_name_of(const char *url, char *out, size_t osz)
 static void remote_host(char *out, size_t osz)
 {
     remote_host_of(s_cfg.repo_url, out, osz);
-}
-
-/* See the doc comment in include/git_sync.h. The native client streams
- * blobs through the SD card, so the transient PSRAM peak during a sync
- * is dominated by a single file plus the LCS merge matrix (~2 MB cap).
- * Keep the historical 2x factor and 512 KB reserve. */
-extern "C" size_t git_sync_max_file_size(void)
-{
-    const size_t MIN_CAP = 64 * 1024;
-    const size_t RESERVE = 512 * 1024;
-    size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
-    size_t usable = (free_psram > RESERVE) ? (free_psram - RESERVE) : (free_psram / 2);
-    size_t cap = usable / 2;
-    if (cap < MIN_CAP) cap = MIN_CAP;
-    return cap;
 }
 
 /* ---- best-effort wall-clock ------------------------------------- */
@@ -262,13 +248,9 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
 
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, entries[i].name);
-        char *data = NULL;
-        size_t len = 0;
-        if (sd_card_read_file(path, &data, &len) != ESP_OK) continue;
-
         git_oid blob;
-        ret = git_odb_write(GIT_OBJ_BLOB, data, len, &blob);
-        free(data);
+        ret = git_odb_write_file(GIT_OBJ_BLOB, path, &blob);
+        if (ret == ESP_ERR_NOT_FOUND) { ret = ESP_OK; continue; }
         if (ret != ESP_OK) break;
 
         if (!git_tree_set(&t, 0100644, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
@@ -296,28 +278,19 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
         const git_tree_entry *e = &t.entries[i];
         if ((e->mode & 040000) == 040000) continue;    /* skip sub-dirs */
 
-        git_obj_type ot;
-        git_buf blob = GIT_BUF_INIT;
-        if (git_odb_read(&e->oid, &ot, &blob) != ESP_OK || ot != GIT_OBJ_BLOB) {
-            git_buf_free(&blob);
-            continue;
-        }
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, e->name);
 
         /* Skip the write if the on-disk content already matches. */
-        char *cur = NULL;
-        size_t curlen = 0;
-        bool same = false;
-        if (sd_card_read_file(path, &cur, &curlen) == ESP_OK) {
-            same = (curlen == blob.len) && (memcmp(cur, blob.data, curlen) == 0);
-            free(cur);
-        }
-        if (!same) {
-            sd_card_write_file(path, (const char *)blob.data, blob.len);
-            if (out_written) (*out_written)++;
-        }
-        git_buf_free(&blob);
+        git_oid cur;
+        if (git_odb_hash_file(GIT_OBJ_BLOB, path, &cur) == ESP_OK &&
+            git_oid_eq(&cur, &e->oid))
+            continue;
+        git_obj_type ot;
+        if (git_odb_read_type(&e->oid, &ot, NULL) != ESP_OK || ot != GIT_OBJ_BLOB)
+            continue;
+        if (git_odb_read_to_file(&e->oid, NULL, path) == ESP_OK && out_written)
+            (*out_written)++;
     }
 
     /* Delete local document files that are gone from the tree. */
@@ -441,6 +414,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         set_error("Cannot create .git on SD card");
         return ESP_FAIL;
     }
+    git_repo_clean_tmp();
     git_head_set_symbolic(localref);
 
     char host[96];
@@ -710,13 +684,28 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         git_oidset_free(&set);
         if (ret != ESP_OK) { remove(pack); set_error("Cannot build packfile"); return ret; }
 
+        /* A connection that breaks while sending (a weak WiFi signal)
+         * is retried. If the server did apply a push whose answer was
+         * lost, the retry is refused as stale and the next sync finds
+         * the server up to date. */
         git_buf report = GIT_BUF_INIT;
-        ret = git_http_push(&remote, server_ref, &remote_baseline, &local_head, pack, &report);
+        for (int attempt = 1;; attempt++) {
+            ret = git_http_push(&remote, server_ref, &remote_baseline, &local_head, pack, &report);
+            if (ret != ESP_ERR_TIMEOUT || attempt >= 3) break;
+            ESP_LOGW(TAG, "push attempt %d lost the connection, retrying", attempt);
+            snprintf(msg, sizeof(msg), "Connection lost, pushing to %s again...", host);
+            notify(GIT_SYNC_IN_PROGRESS, msg);
+            git_buf_free(&report);
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
         remove(pack);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "push report: %.*s", (int)report.len, (char *)report.data);
             git_buf_free(&report);
-            snprintf(msg, sizeof(msg), "%s rejected the push", host);
+            if (ret == ESP_ERR_TIMEOUT)
+                snprintf(msg, sizeof(msg), "Connection to %s lost while pushing", host);
+            else
+                snprintf(msg, sizeof(msg), "%s rejected the push", host);
             set_error(msg);
             return ret;
         }
@@ -742,8 +731,16 @@ static void sync_task(void *arg)
         return;
     }
 
+    /* Modem sleep makes a weak link drop more packets; keep the radio
+     * awake for the duration of the sync. */
+    wifi_ps_type_t old_ps = WIFI_PS_MIN_MODEM;
+    bool ps_saved = esp_wifi_get_ps(&old_ps) == ESP_OK;
+    if (ps_saved) esp_wifi_set_ps(WIFI_PS_NONE);
+
     sync_stats st;
     esp_err_t ret = do_sync(dir, &st);
+
+    if (ps_saved) esp_wifi_set_ps(old_ps);
 
     git_repo_close();
 
@@ -1074,6 +1071,31 @@ static git_sync_file_status_t file_diff_cfg(git_cfg_t *c, const char *project_di
                                             const char *data, size_t len,
                                             int *added, int *deleted);
 
+/* Lines added / deleted from the server's blob to the new content (in
+ * memory, or the file at path when data is NULL). Both are streamed:
+ * only a hash per line is kept. */
+static void line_counts(const git_oid *old_oid, const char *data, size_t len,
+                        const char *path, int *added, int *deleted)
+{
+    git_odb_stream s;
+    if (git_odb_stream_open(&s, old_oid) != ESP_OK) return;
+    if (s.type == GIT_OBJ_BLOB) {
+        git_reader ra, rb;
+        git_reader_odb(&ra, &s);
+        git_mem_src m;
+        FILE *f = NULL;
+        if (data) git_reader_mem(&rb, &m, data, len);
+        else if ((f = fopen(path, "rb")) != NULL) git_reader_file(&rb, f);
+        int a, d;
+        if ((data || f) && git_diff_line_counts(&ra, &rb, &a, &d) == ESP_OK) {
+            *added = a;
+            *deleted = d;
+        }
+        if (f) fclose(f);
+    }
+    git_odb_stream_close(&s);
+}
+
 extern "C" git_sync_file_status_t git_sync_file_diff(const char *project_dir,
                                                     const char *name,
                                                     const char *data, size_t len,
@@ -1112,18 +1134,15 @@ static git_sync_file_status_t file_diff_cfg(git_cfg_t *c, const char *project_di
     snprintf(refpath, sizeof(refpath), "%s/.git/%s", c->local_path, remoteref);
     if (!sd_card_file_exists(refpath)) return GIT_SYNC_FILE_NOT_PUSHED;
 
-    char *file_data = NULL;
-    if (!data) {
-        char path[400];
-        joinp(path, sizeof(path), c->local_path, name);
-        if (sd_card_read_file(path, &file_data, &len) != ESP_OK) return GIT_SYNC_FILE_ERROR;
-        data = file_data;
-    }
+    char path[400];
+    joinp(path, sizeof(path), c->local_path, name);
     git_oid work_blob;
-    git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob);
+    if (data) git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob);
+    else if (git_odb_hash_file(GIT_OBJ_BLOB, path, &work_blob) != ESP_OK)
+        return GIT_SYNC_FILE_ERROR;
 
     git_sync_file_status_t result = GIT_SYNC_FILE_ERROR;
-    if (git_repo_open(c->local_path) != ESP_OK) { free(file_data); return result; }
+    if (git_repo_open(c->local_path) != ESP_OK) return result;
     git_oid pushed, sub;
     if (git_ref_read(remoteref, &pushed) != ESP_OK) {
         result = GIT_SYNC_FILE_NOT_PUSHED;
@@ -1137,25 +1156,13 @@ static git_sync_file_status_t file_diff_cfg(git_cfg_t *c, const char *project_di
                 if (!e)                              result = GIT_SYNC_FILE_NOT_PUSHED;
                 else if (git_oid_eq(&e->oid, &work_blob)) result = GIT_SYNC_FILE_PUSHED;
                 else                                 result = GIT_SYNC_FILE_MODIFIED;
-                if (result == GIT_SYNC_FILE_MODIFIED && added && deleted) {
-                    git_buf old = GIT_BUF_INIT;
-                    git_obj_type type;
-                    int a, d;
-                    if (git_odb_read(&e->oid, &type, &old) == ESP_OK &&
-                        type == GIT_OBJ_BLOB &&
-                        git_diff_line_counts((const char *)old.data, old.len,
-                                             data, len, &a, &d) == ESP_OK) {
-                        *added = a;
-                        *deleted = d;
-                    }
-                    git_buf_free(&old);
-                }
+                if (result == GIT_SYNC_FILE_MODIFIED && added && deleted)
+                    line_counts(&e->oid, data, len, path, added, deleted);
                 git_tree_free(&t);
             }
         }
     }
     git_repo_close();
-    free(file_data);
     ESP_LOGI(TAG, "file status %s: %d", name, (int)result);
     return result;
 }
@@ -1202,12 +1209,8 @@ static void project_status_cfg(git_cfg_t *c, const char *project_dir,
         seen_on_server++;
         char path[400];
         joinp(path, sizeof(path), project_dir, entries[i].name);
-        char *data = NULL;
-        size_t len = 0;
-        if (sd_card_read_file(path, &data, &len) != ESP_OK) { st->error = true; continue; }
         git_oid blob;
-        git_odb_hash(GIT_OBJ_BLOB, data, len, &blob);
-        free(data);
+        if (git_odb_hash_file(GIT_OBJ_BLOB, path, &blob) != ESP_OK) { st->error = true; continue; }
         if (git_oid_eq(&e->oid, &blob)) st->pushed++;
         else st->modified++;
     }

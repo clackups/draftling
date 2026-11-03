@@ -13,10 +13,8 @@ extern "C" {
  *
  * Sized dynamically at startup from the free PSRAM available when
  * editor_init() runs (after the display, LVGL widget heap, and
- * editor UI have taken their share). Two buffers of this size are
- * allocated from PSRAM -- the gap buffer and a flattened text cache
- * used by the UI refresh path -- so the editor's total SPIRAM cost
- * is roughly 2x this value.
+ * editor UI have taken their share). The gap buffer is the only
+ * per-document allocation of that size.
  *
  * Returns 0 before editor_init() has run. */
 size_t editor_get_max_doc_size(void);
@@ -29,10 +27,10 @@ typedef enum {
 /* ---- Multi-document support ----
  *
  * The text engine keeps a small fixed pool of documents. Each document
- * (an editor_doc_t) owns its own gap buffer, flattened text cache, file
+ * (an editor_doc_t) owns its own gap buffer, file
  * path, modified flag, cursor, scroll line, and selection. The entire
  * existing public API below (editor_open_file, editor_move_*,
- * editor_get_text, ...) operates on the single "active" document, so the
+ * editor_get_line, ...) operates on the single "active" document, so the
  * current single-pane UI keeps working unchanged.
  *
  * To present two documents side by side, a UI acquires documents from
@@ -40,7 +38,7 @@ typedef enum {
  *
  *   editor_doc_t *d = editor_doc_acquire("/sdcard/notes.md");
  *   editor_set_active(d);
- *   ... editor_move_down(); editor_get_text(...); ...
+ *   ... editor_move_down(); editor_get_line(...); ...
  *   editor_doc_release(d);
  *
  * The clipboard is shared across all documents (a single system
@@ -161,11 +159,33 @@ bool editor_dir_has_open_doc(const char *dir);
 void editor_save_meta(void);
 const char *editor_get_file_path(void);
 bool editor_is_modified(void);
-const char *editor_get_text(size_t *out_len);
 size_t editor_get_cursor(void);
 void editor_get_cursor_pos(int *line, int *col);
 int editor_get_line_count(void);
+
+/* Reading the text. There is no flat copy of the document: the text
+ * stays in the gap buffer, split at the cursor.
+ *
+ * editor_get_line() returns line line_num (without its '\n') and its
+ * length; editor_get_line_off() also its byte offset in the document.
+ * The pointer usually points into the gap buffer; the cursor line,
+ * which the gap splits, is copied to a per-document scratch buffer.
+ * It stays valid until the next edit, cursor move or document switch
+ * -- copy the line out before any of those. Do not use pointer
+ * arithmetic between two lines: use the offsets. */
 const char *editor_get_line(int line_num, size_t *out_len);
+const char *editor_get_line_off(int line_num, size_t *out_len, size_t *out_off);
+/* Length of the document in bytes. */
+size_t editor_get_length(void);
+/* Byte at offset off, '\0' at or past the end. */
+char editor_char_at(size_t off);
+/* The whole text as one contiguous block (not NUL-terminated), for a
+ * rare whole-document job (Alt+I statistics). Moves the gap to the end
+ * of the text -- a memmove of everything after the cursor -- so call
+ * editor_text_end() as soon as possible, with no other editor call in
+ * between, to put the cursor back. */
+const char *editor_text_begin(size_t *out_len);
+void editor_text_end(void);
 
 /* Change marks for caches kept outside the editor (one per UI pane).
  * editor_change_mark_get(slot) returns the lowest byte offset of the

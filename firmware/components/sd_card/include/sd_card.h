@@ -58,6 +58,10 @@ esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t *out_len);
  * file and flushed to the card, then renamed over `path`. A crash or
  * power loss mid-write leaves the previous contents of `path` intact. */
 esp_err_t sd_card_write_file(const char *path, const char *data, size_t len);
+/* Like sd_card_write_file(), the content being a[0, alen) followed by
+ * b[0, blen) (the editor saves the two halves of its gap buffer). */
+esp_err_t sd_card_write_file_parts(const char *path, const char *a, size_t alen,
+                                   const char *b, size_t blen);
 esp_err_t sd_card_append_file(const char *path, const char *data, size_t len);
 bool sd_card_file_exists(const char *path);
 esp_err_t sd_card_delete_file(const char *path);

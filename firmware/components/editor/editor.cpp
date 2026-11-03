@@ -9,7 +9,6 @@
 
 #include "editor.h"
 #include "sd_card.h"
-#include "git_sync.h"
 
 static const char *TAG = "Editor";
 
@@ -28,17 +27,18 @@ struct editor_doc_s {
     int    refcount;      /* number of panes referencing this doc */
 
     char  *buf;           /* gap buffer (NULL until first use) */
-    char  *flat;          /* flattened text cache */
     size_t gap_start;     /* gap start == cursor position */
     size_t gap_end;
-    size_t buf_size;      /* allocated size of buf (and flat - 1) */
+    size_t buf_size;      /* allocated size of buf */
+    /* editor_get_line() copies a line that the gap splits (only ever
+     * the cursor line) here; every other line is returned in place. */
+    char  *line_buf;
+    size_t line_buf_cap;
+    /* Cursor saved by editor_text_begin(), restored by _end(). */
+    size_t text_cursor;
 
     char   path[256];     /* backing file path, "" when untitled */
     bool   modified;
-    /* flat[0, flat_valid) matches the document; the rest is rebuilt
-     * by editor_get_text(). An edit at offset p lowers it to p, so
-     * typing near the end only copies the bytes after the edit. */
-    size_t flat_valid;
     editor_doc_format_t format; /* Markdown, Fountain or plain text */
     editor_mode_t mode;
     int    scroll_line;
@@ -76,13 +76,11 @@ static size_t s_doc_buf_size = 0;
  * field of the active document. Every existing function body is then
  * unchanged and automatically operates on s_active. */
 #define s_buf               (s_active->buf)
-#define s_flat              (s_active->flat)
 #define s_gap_start         (s_active->gap_start)
 #define s_gap_end           (s_active->gap_end)
 #define s_buf_size          (s_active->buf_size)
 #define s_path              (s_active->path)
 #define s_modified          (s_active->modified)
-#define s_flat_valid        (s_active->flat_valid)
 #define s_format            (s_active->format)
 #define s_mode              (s_active->mode)
 #define s_scroll_line       (s_active->scroll_line)
@@ -95,6 +93,12 @@ static size_t s_doc_buf_size = 0;
 /* Shared system clipboard (not per-document). */
 static char  *s_clipboard  = NULL;
 static size_t s_clip_len   = 0;
+/* A selection too large for a PSRAM block is kept in this hidden file
+ * instead (s_clip_in_file); paste reads it straight into the gap. */
+static bool   s_clip_in_file = false;
+#ifndef CLIPBOARD_FILE
+#define CLIPBOARD_FILE "/sdcard/.clipboard"
+#endif
 
 /* Content length (excluding gap) */
 static inline size_t content_len(void) { return s_buf_size - (s_gap_end - s_gap_start); }
@@ -120,9 +124,8 @@ static int count_nl(const char *p, size_t n)
 
 /* The whole document was replaced (open, new, close, discard): drop
  * every cache and recount the newlines. */
-static void doc_invalidate_flat(editor_doc_t *d)
+static void doc_invalidate_caches(editor_doc_t *d)
 {
-    d->flat_valid        = 0;
     d->line_cache_num    = -1;
     d->line_cache_offset = 0;
     for (int i = 0; i < EDITOR_CHANGE_MARKS; i++) d->change_mark[i] = 0;
@@ -135,9 +138,9 @@ static void doc_invalidate_flat(editor_doc_t *d)
     }
 }
 
-static void invalidate_flat(void)
+static void invalidate_caches(void)
 {
-    doc_invalidate_flat(s_active);
+    doc_invalidate_caches(s_active);
 }
 
 /* The text changed at logical byte offset pos and after it; everything
@@ -145,7 +148,6 @@ static void invalidate_flat(void)
  * caller. */
 static void content_changed(size_t pos)
 {
-    if (s_flat_valid > pos) s_flat_valid = pos;
     if (s_line_cache_num >= 0 && s_line_cache_offset > pos) {
         s_line_cache_num = -1;
         s_line_cache_offset = 0;
@@ -204,36 +206,29 @@ static void doc_reset_empty(editor_doc_t *d)
     d->mode        = EDITOR_MODE_NORMAL;
     d->scroll_line = 0;
     d->sel_anchor  = -1;
-    doc_invalidate_flat(d);
+    doc_invalidate_caches(d);
 }
 
 /* Compute the per-document gap-buffer size from the PSRAM that is free
- * right now. Mirrors the original single-buffer sizing so a single open
- * document keeps exactly the same maximum size as before. */
+ * right now. */
 static size_t compute_doc_buf_size(void)
 {
     /* ---- Dynamic sizing from free PSRAM ----
      *
-     * Use roughly half of the PSRAM that is still free at this point in
-     * boot, split evenly between the gap buffer and the flat text cache.
-     * The other half is reserved for the rest of the system that
-     * initializes after the editor: BLE/Bluedroid
-     * (CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST), the WiFi/LWIP dynamic
-     * pools (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP), the Git client's
-     * task stack / object buffers / diff3 matrix, the LVGL widget heap growth, and
-     * ad-hoc heap_caps_malloc(SPIRAM) allocations during editing
-     * (clipboard, file I/O staging, Markdown re-rendering, etc.).
+     * Above a 2 MB reserve, three quarters of the PSRAM that is still
+     * free go to the gap buffer. The rest is for the system that
+     * initializes after the editor and for runtime allocations:
+     * BLE/Bluedroid (CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST), the
+     * WiFi/LWIP dynamic pools (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP),
+     * TLS, the LVGL widget heap growth, the clipboard and cursor-line
+     * copy, and the Git client: its object data goes through the SD
+     * card, so it only needs fixed buffers plus a merge's per-line
+     * tables (a merge that does not fit becomes a whole-file conflict).
+     * Before the flat text copy was dropped, the gap buffer and the copy
+     * took all of it, leaving only the reserve.
      *
-     * Clamped to a sensible min/max so very small or very large PSRAM
-     * configurations still get a usable editor:
-     *   - Min 64 KB per buffer keeps editor_open_file() useful.
-     *   - Max git_sync_max_file_size() per buffer: a sync cannot process
-     *     a file larger than what fits (with its object buffers and the
-     *     diff3 matrix) into the currently-free PSRAM. Git is the tighter
-     *     of the two constraints, so it determines the effective maximum
-     *     file size for the whole application. */
+     * Min 64 KB keeps editor_open_file() useful on a tight PSRAM. */
     const size_t MIN_BUF = 64  * 1024;
-    const size_t MAX_BUF = git_sync_max_file_size();
     const size_t RUNTIME_RESERVE = 2 * 1024 * 1024;
     const size_t ALIGN   = 4 * 1024;
 
@@ -248,14 +243,13 @@ static size_t compute_doc_buf_size(void)
          * which is the same behaviour as before. */
         usable = free_psram / 2;
     }
-    size_t per_buf = usable / 2;
+    size_t per_buf = usable / 4 * 3;
     per_buf &= ~(ALIGN - 1);
     if (per_buf < MIN_BUF) per_buf = MIN_BUF;
-    if (per_buf > MAX_BUF) per_buf = MAX_BUF;
     return per_buf;
 }
 
-/* Lazily allocate a slot's gap buffer and flat cache. The first slot is
+/* Lazily allocate a slot's gap buffer. The first slot is
  * sized from the PSRAM free at editor_init() time (so a single document
  * keeps the historical maximum size); a second concurrently-opened
  * document is sized from whatever PSRAM remains free when it is first
@@ -271,13 +265,8 @@ static bool doc_ensure_buffers(editor_doc_t *d)
     size_t sz = s_doc_buf_size;
     size_t now = compute_doc_buf_size();
     if (now < sz) sz = now;
-    d->buf  = (char *)heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
-    d->flat = (char *)heap_caps_malloc(sz + 1, MALLOC_CAP_SPIRAM);
-    if (!d->buf || !d->flat) {
-        free(d->buf);  d->buf  = NULL;
-        free(d->flat); d->flat = NULL;
-        return false;
-    }
+    d->buf = (char *)heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
+    if (!d->buf) return false;
     d->buf_size = sz;
     ESP_LOGI(TAG, "Document buffer allocated (%u KB, PSRAM; %u KB free remaining)",
              (unsigned)(sz / 1024),
@@ -490,106 +479,145 @@ static bool append_utf8_cp(char *dst, size_t dst_cap, size_t *dpos, uint32_t cp)
     return true;
 }
 
-/* Transcode a UTF-16 buffer (LE if little_endian, BE otherwise) into
- * UTF-8 directly into s_buf. Surrogate pairs are decoded; unpaired
- * surrogates are emitted as U+FFFD. Returns the number of UTF-8 bytes
- * written, or (size_t)-1 if the output would not fit. */
-static size_t transcode_utf16_to_utf8(const uint8_t *src, size_t src_len,
-                                      bool little_endian,
-                                      char *dst, size_t dst_cap)
+/* Reads UTF-16 code units from a file through a small buffer, with
+ * one unit of push-back (a high surrogate not followed by a low one). */
+typedef struct {
+    FILE    *f;
+    bool     le;
+    uint8_t  buf[1024];
+    size_t   pos, have;
+    int      pushed;          /* -1 = none */
+} u16_reader_t;
+
+static int u16_byte(u16_reader_t *r)
 {
-    size_t i = 0;
+    if (r->pos == r->have) {
+        r->have = fread(r->buf, 1, sizeof(r->buf), r->f);
+        r->pos = 0;
+        if (r->have == 0) return -1;
+    }
+    return r->buf[r->pos++];
+}
+
+/* Next code unit, or -1 at the end (an odd trailing byte is dropped). */
+static int u16_unit(u16_reader_t *r)
+{
+    if (r->pushed >= 0) { int u = r->pushed; r->pushed = -1; return u; }
+    int a = u16_byte(r);
+    if (a < 0) return -1;
+    int b = u16_byte(r);
+    if (b < 0) return -1;
+    return r->le ? (a | (b << 8)) : ((a << 8) | b);
+}
+
+/* Transcode the rest of a UTF-16 file (LE or BE) to UTF-8 in dst.
+ * Surrogate pairs are decoded; unpaired surrogates become U+FFFD; CR
+ * (U+000D) is dropped, since the editor stores LF-only lines. Returns
+ * the number of bytes written, or (size_t)-1 if they would not fit. */
+static size_t transcode_utf16_file(FILE *f, bool little_endian,
+                                   char *dst, size_t dst_cap)
+{
+    u16_reader_t *r = (u16_reader_t *)malloc(sizeof(u16_reader_t));
+    if (!r) return (size_t)-1;
+    r->f = f;
+    r->le = little_endian;
+    r->pos = r->have = 0;
+    r->pushed = -1;
+
     size_t out = 0;
-    /* Round odd trailing byte off -- we cannot decode half a code unit. */
-    if (src_len & 1) src_len--;
-
-    while (i + 1 < src_len) {
-        uint16_t u = little_endian
-            ? (uint16_t)(src[i] | (src[i + 1] << 8))
-            : (uint16_t)((src[i] << 8) | src[i + 1]);
-        i += 2;
-
+    int u;
+    while ((u = u16_unit(r)) >= 0) {
         uint32_t cp;
-        if (u >= 0xD800 && u <= 0xDBFF && i + 1 < src_len) {
+        if (u >= 0xD800 && u <= 0xDBFF) {
             /* High surrogate -- combine with the following low surrogate. */
-            uint16_t lo = little_endian
-                ? (uint16_t)(src[i] | (src[i + 1] << 8))
-                : (uint16_t)((src[i] << 8) | src[i + 1]);
+            int lo = u16_unit(r);
             if (lo >= 0xDC00 && lo <= 0xDFFF) {
                 cp = 0x10000u + ((uint32_t)(u - 0xD800) << 10)
                               + (uint32_t)(lo - 0xDC00);
-                i += 2;
             } else {
                 cp = 0xFFFD;        /* lone high surrogate */
+                r->pushed = lo;     /* -1 (end) stays "none" */
             }
         } else if (u >= 0xDC00 && u <= 0xDFFF) {
             cp = 0xFFFD;            /* lone low surrogate */
         } else {
-            cp = u;
+            cp = (uint32_t)u;
         }
-
-        /* Drop UTF-16 line-separator and the rare CR (U+000D) that
-         * Windows files use ahead of LF -- the editor stores LF-only
-         * lines. We leave the LF itself in place. */
         if (cp == 0x000D) continue;
-
-        if (!append_utf8_cp(dst, dst_cap, &out, cp)) {
-            return (size_t)-1;
-        }
+        if (!append_utf8_cp(dst, dst_cap, &out, cp)) { out = (size_t)-1; break; }
     }
+    free(r);
     return out;
 }
 
 extern "C" esp_err_t editor_open_file(const char *path)
 {
-    /* Cheap size pre-check: avoid loading hundreds of KB into a
-     * temporary heap allocation just to discover that the file does
-     * not fit in the editor buffer. UTF-16 sources expand by at most
-     * 1.5x when transcoded to UTF-8 (BMP chars: 2 -> up to 3 bytes;
-     * surrogate pairs: 4 -> 4 bytes), so we still want a generous
-     * upper bound here. */
-    long fsize = sd_card_file_size(path);
-    if (fsize >= 0 && (size_t)fsize > (s_buf_size - 64) * 2 / 3) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize < 0) { fclose(f); return ESP_FAIL; }
+
+    /* Detect a Unicode BOM. The editor stores text as UTF-8; files
+     * saved as UTF-16 (Windows Notepad's "Unicode") are transcoded,
+     * otherwise they would render as random Latin-1 bytes. A UTF-8
+     * BOM is dropped so it does not show as a stray glyph. */
+    uint8_t bom[3] = { 0, 0, 0 };
+    size_t nb = fread(bom, 1, 3, f);
+    enum { ENC_UTF8, ENC_UTF16LE, ENC_UTF16BE } enc = ENC_UTF8;
+    long skip = 0;
+    if (nb >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)      { enc = ENC_UTF16LE; skip = 2; }
+    else if (nb >= 2 && bom[0] == 0xFE && bom[1] == 0xFF) { enc = ENC_UTF16BE; skip = 2; }
+    else if (nb >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF) skip = 3;
+    fseek(f, skip, SEEK_SET);
+    size_t payload = (size_t)(fsize - skip);
+
+    /* Same limit as editing: the buffer less a 64-byte margin. A UTF-16
+     * file's UTF-8 size is only known once transcoded. */
+    size_t cap = s_buf_size - 64;
+    if (enc == ENC_UTF8 && payload > cap) {
         ESP_LOGW(TAG, "Refusing to open %s: %ld bytes > editor buffer (%u KB)",
                  path, fsize, (unsigned)(s_buf_size / 1024));
+        fclose(f);
         return ESP_ERR_NO_MEM;
     }
 
-    char *data = NULL;
-    size_t len = 0;
-    esp_err_t ret = sd_card_read_file(path, &data, &len);
-    if (ret != ESP_OK) return ret;
-
-    /* Detect a Unicode BOM and transcode if needed. The editor stores
-     * text as UTF-8 internally; files saved as UTF-16 (common on
-     * Windows -- Notepad still writes UTF-16 LE for "Unicode") would
-     * otherwise be interpreted as random Latin-1 / continuation bytes
-     * and render as garbage. */
-    const uint8_t *u = (const uint8_t *)data;
-    size_t written;
-    if (len >= 2 && u[0] == 0xFF && u[1] == 0xFE) {
-        /* UTF-16 LE BOM */
-        written = transcode_utf16_to_utf8(u + 2, len - 2, true,
-                                          s_buf, s_buf_size - 64);
-        if (written == (size_t)-1) { free(data); return ESP_ERR_NO_MEM; }
-    } else if (len >= 2 && u[0] == 0xFE && u[1] == 0xFF) {
-        /* UTF-16 BE BOM */
-        written = transcode_utf16_to_utf8(u + 2, len - 2, false,
-                                          s_buf, s_buf_size - 64);
-        if (written == (size_t)-1) { free(data); return ESP_ERR_NO_MEM; }
-    } else {
-        /* Plain UTF-8 (with or without an optional UTF-8 BOM). Strip a
-         * leading EF BB BF so it does not show up as a stray glyph at
-         * the top of the buffer. */
-        size_t off = 0;
-        if (len >= 3 && u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF) off = 3;
-        if (len - off > s_buf_size - 64) { free(data); return ESP_ERR_NO_MEM; }
-        memcpy(s_buf, data + off, len - off);
-        written = len - off;
+    /* The file is read straight into the gap buffer, with no temporary
+     * copy. When the gap can hold it, it goes into the gap, so the
+     * current text survives a failure; otherwise the document is
+     * emptied first (its text is being replaced anyway) and, should
+     * the read fail, left empty and untitled. */
+    size_t gap = s_gap_end - s_gap_start;
+    size_t need = (enc == ENC_UTF8) ? payload : payload / 2 * 3;
+    bool in_gap = gap >= need && gap >= 1;
+    char *dst = in_gap ? s_buf + s_gap_start : s_buf;
+    size_t room = in_gap ? (gap < cap ? gap : cap) : cap;
+    if (!in_gap) {
+        s_gap_start = 0;
+        s_gap_end = s_buf_size;
+        s_active->modified = false;
     }
+
+    size_t written;
+    if (enc == ENC_UTF8) {
+        written = fread(dst, 1, payload, f) == payload ? payload : (size_t)-1;
+    } else {
+        written = transcode_utf16_file(f, enc == ENC_UTF16LE, dst, room);
+    }
+    bool read_error = ferror(f);
+    fclose(f);
+    if (written == (size_t)-1 || read_error) {
+        esp_err_t err = (written == (size_t)-1 && !read_error && enc != ENC_UTF8)
+                        ? ESP_ERR_NO_MEM : ESP_FAIL;
+        ESP_LOGW(TAG, "Open %s failed (%s)", path,
+                 err == ESP_ERR_NO_MEM ? "too large" : "read error");
+        if (!in_gap) doc_reset_empty(s_active);
+        return err;
+    }
+    if (in_gap) memmove(s_buf, dst, written);
     s_gap_start = written;
     s_gap_end   = s_buf_size;
-    free(data);
 
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
@@ -598,24 +626,23 @@ extern "C" esp_err_t editor_open_file(const char *path)
     editor_path_format(path, &s_format);
     s_scroll_line = 0;
     s_sel_anchor = -1;
-    invalidate_flat();
+    invalidate_caches();
     s_mode = EDITOR_MODE_EDITING;
 
     /* Restore cursor position and scroll line from the metadata
      * sidecar (no-op if the file was never opened before). */
     editor_load_meta();
 
-    ESP_LOGI(TAG, "Opened: %s (%zu bytes on disk, %zu stored)",
-             path, len, s_gap_start);
+    ESP_LOGI(TAG, "Opened: %s (%ld bytes on disk, %zu stored)",
+             path, fsize, s_gap_start);
     return ESP_OK;
 }
 
 extern "C" esp_err_t editor_save_file(void)
 {
     if (s_path[0] == '\0') return ESP_ERR_INVALID_STATE;
-    size_t len;
-    const char *text = editor_get_text(&len);
-    esp_err_t ret = sd_card_write_file(s_path, text, len);
+    esp_err_t ret = sd_card_write_file_parts(s_path, s_buf, s_gap_start,
+                                             s_buf + s_gap_end, s_buf_size - s_gap_end);
     if (ret == ESP_OK) { s_modified = false; ESP_LOGI(TAG, "Saved: %s", s_path); }
     return ret;
 }
@@ -774,7 +801,7 @@ extern "C" void editor_new_file(void)
     s_format    = EDITOR_DOC_MARKDOWN;
     s_scroll_line = 0;
     s_sel_anchor = -1;
-    invalidate_flat();
+    invalidate_caches();
     s_mode = EDITOR_MODE_EDITING;
 }
 
@@ -789,7 +816,7 @@ extern "C" void editor_close_file(void)
     s_modified  = false;
     s_scroll_line = 0;
     s_sel_anchor = -1;
-    invalidate_flat();
+    invalidate_caches();
     s_mode = EDITOR_MODE_NORMAL;
 }
 
@@ -864,7 +891,7 @@ extern "C" void editor_doc_release(editor_doc_t *doc)
     if (doc->refcount > 0) return;   /* still referenced by another pane */
 
     /* Last reference: persist resume metadata, then free the slot. The
-     * gap buffer and flat cache are kept allocated for reuse by a future
+     * gap buffer is kept allocated for reuse by a future
      * acquire so we do not thrash large PSRAM allocations. */
     editor_doc_save_meta(doc);
     doc->in_use   = false;
@@ -927,24 +954,75 @@ extern "C" void editor_discard_all_changes(void)
         }
     }
     s_active = (prev && prev->in_use) ? prev : pick_any_active();
-    invalidate_flat();
+    invalidate_caches();
 }
 
-extern "C" const char *editor_get_text(size_t *out_len)
+static void move_gap_to(size_t pos);
+
+/* ---- Reading the text ----
+ *
+ * The text lives only in the gap buffer: [0, gap_start) before the gap
+ * and [gap_end, buf_size) after it. Logical offsets skip the gap. */
+
+/* Pointer to the byte at logical offset p (p < content_len()). */
+static inline const char *phys(size_t p)
+{
+    return (p < s_gap_start) ? s_buf + p : s_buf + p + (s_gap_end - s_gap_start);
+}
+
+/* Logical offset of the first byte c at or after from, or the content
+ * length when there is none. */
+static size_t find_byte_fwd(size_t from, char c)
 {
     size_t len = content_len();
-    size_t v = s_flat_valid;
-    if (v < len) {
-        if (v < s_gap_start) {
-            memcpy(s_flat + v, s_buf + v, s_gap_start - v);
-            v = s_gap_start;
-        }
-        memcpy(s_flat + v, s_buf + s_gap_end + (v - s_gap_start), len - v);
+    if (from < s_gap_start) {
+        const char *q = (const char *)memchr(s_buf + from, c, s_gap_start - from);
+        if (q) return (size_t)(q - s_buf);
+        from = s_gap_start;
     }
-    s_flat[len] = '\0';
-    s_flat_valid = len;
+    if (from >= len) return len;
+    const char *base = s_buf + s_gap_end - s_gap_start;   /* base + p = phys(p) */
+    const char *q = (const char *)memchr(base + from, c, len - from);
+    return q ? (size_t)(q - base) : len;
+}
+
+/* Copy the logical range [from, to) to dst. */
+static void copy_range(size_t from, size_t to, char *dst)
+{
+    if (from < s_gap_start) {
+        size_t e = to < s_gap_start ? to : s_gap_start;
+        memcpy(dst, s_buf + from, e - from);
+        dst += e - from;
+        from = e;
+    }
+    if (from < to) memcpy(dst, phys(from), to - from);
+}
+
+extern "C" size_t editor_get_length(void)
+{
+    return s_active && s_buf ? content_len() : 0;
+}
+
+extern "C" char editor_char_at(size_t off)
+{
+    if (off >= content_len()) return '\0';
+    return char_at(off);
+}
+
+extern "C" const char *editor_text_begin(size_t *out_len)
+{
+    s_active->text_cursor = s_gap_start;
+    size_t len = content_len();
+    move_gap_to(len);
     if (out_len) *out_len = len;
-    return s_flat;
+    return s_buf;
+}
+
+extern "C" void editor_text_end(void)
+{
+    size_t c = s_active->text_cursor;
+    if (c > content_len()) c = content_len();
+    move_gap_to(c);
 }
 
 extern "C" size_t editor_get_cursor(void) { return s_gap_start; }
@@ -970,12 +1048,13 @@ extern "C" int editor_get_line_count(void)
     return s_nl_total + 1;
 }
 
-extern "C" const char *editor_get_line(int line_num, size_t *out_len)
+extern "C" const char *editor_get_line_off(int line_num, size_t *out_len,
+                                           size_t *out_off)
 {
-    size_t total;
-    const char *text = editor_get_text(&total);
+    size_t total = content_len();
     if (line_num < 0 || line_num > s_nl_total) {
         if (out_len) *out_len = 0;
+        if (out_off) *out_off = total;
         return "";
     }
 
@@ -993,27 +1072,50 @@ extern "C" const char *editor_get_line(int line_num, size_t *out_len)
         cur = s_line_cache_num;
         off = s_line_cache_offset;
     }
-    const char *p = text + off;
     while (cur < line_num) {
-        const char *nl = (const char *)memchr(p, '\n', (size_t)(text + total - p));
-        if (!nl) break;   /* cannot happen: line_num <= s_nl_total */
-        p = nl + 1;
+        size_t nl = find_byte_fwd(off, '\n');
+        if (nl >= total) break;   /* cannot happen: line_num <= s_nl_total */
+        off = nl + 1;
         cur++;
     }
     while (cur > line_num) {
-        /* p is a line start after a '\n'; find the start of the line
+        /* off is a line start after a '\n'; find the start of the line
          * before it. */
-        const char *q = p - 1;
-        while (q > text && q[-1] != '\n') q--;
-        p = q;
+        size_t q = off - 1;
+        while (q > 0 && char_at(q - 1) != '\n') q--;
+        off = q;
         cur--;
     }
     s_line_cache_num    = line_num;
-    s_line_cache_offset = (size_t)(p - text);
-    const char *end = (const char *)memchr(p, '\n', (size_t)(text + total - p));
-    if (!end) end = text + total;
-    if (out_len) *out_len = (size_t)(end - p);
-    return p;
+    s_line_cache_offset = off;
+    size_t end = find_byte_fwd(off, '\n');
+    size_t n = end - off;
+    if (out_len) *out_len = n;
+    if (out_off) *out_off = off;
+
+    if (end <= s_gap_start || off >= s_gap_start) return n ? phys(off) : "";
+
+    /* The gap splits this line (it is the cursor line): copy it. */
+    if (n + 1 > s_active->line_buf_cap) {
+        size_t cap = n + 1 + 256;
+        char *nb = (char *)heap_caps_realloc(s_active->line_buf, cap, MALLOC_CAP_SPIRAM);
+        if (!nb) nb = (char *)heap_caps_realloc(s_active->line_buf, cap, MALLOC_CAP_DEFAULT);
+        if (!nb) {
+            /* Out of memory: show the part before the cursor. */
+            if (out_len) *out_len = s_gap_start - off;
+            return s_buf + off;
+        }
+        s_active->line_buf = nb;
+        s_active->line_buf_cap = cap;
+    }
+    copy_range(off, end, s_active->line_buf);
+    s_active->line_buf[n] = '\0';
+    return s_active->line_buf;
+}
+
+extern "C" const char *editor_get_line(int line_num, size_t *out_len)
+{
+    return editor_get_line_off(line_num, out_len, NULL);
 }
 
 extern "C" void editor_change_mark_reset(int slot)
@@ -1193,12 +1295,12 @@ extern "C" void editor_move_page_down(int visible_lines)
 
 extern "C" void editor_move_doc_start(void)
 {
-    while (s_gap_start > 0) editor_move_left();
+    move_gap_to(0);
 }
 
 extern "C" void editor_move_doc_end(void)
 {
-    while (s_gap_end < s_buf_size) editor_move_right();
+    move_gap_to(content_len());
 }
 
 extern "C" void editor_move_word_left(void)
@@ -1253,9 +1355,9 @@ extern "C" bool editor_insert_text(const char *text, size_t len)
                  (unsigned)(s_buf_size / 1024), len);
         return false;
     }
-    for (size_t i = 0; i < len; i++) {
-        if (!editor_insert_char(text[i])) return false;
-    }
+    size_t pos = s_gap_start;
+    insert_at_gap(text, len);
+    content_changed(pos);
     return true;
 }
 
@@ -1342,14 +1444,18 @@ extern "C" void editor_set_cursor(size_t pos)
 extern "C" int editor_find(const char *needle, size_t from_pos)
 {
     if (!needle || needle[0] == '\0') return -1;
-    size_t total;
-    const char *text = editor_get_text(&total);
+    size_t total = content_len();
     size_t nlen = strlen(needle);
     if (nlen > total) return -1;
     if (from_pos > total - nlen) return -1;
-    /* Plain memmem-style scan over the flat buffer. */
+    /* Jump between occurrences of the first byte, then compare the
+     * rest across the gap. */
     for (size_t i = from_pos; i + nlen <= total; i++) {
-        if (memcmp(text + i, needle, nlen) == 0) return (int)i;
+        i = find_byte_fwd(i, needle[0]);
+        if (i + nlen > total) return -1;
+        size_t k = 1;
+        while (k < nlen && char_at(i + k) == needle[k]) k++;
+        if (k == nlen) return (int)i;
     }
     return -1;
 }
@@ -1444,14 +1550,28 @@ extern "C" bool editor_copy(void)
     editor_get_selection_range(&sel_s, &sel_e);
     size_t len = sel_e - sel_s;
 
-    const char *text = editor_get_text(NULL);
-
-    if (s_clipboard) { free(s_clipboard); s_clipboard = NULL; s_clip_len = 0; }
+    if (s_clipboard) { free(s_clipboard); s_clipboard = NULL; }
+    s_clip_len = 0;
+    s_clip_in_file = false;
     s_clipboard = (char *)heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM);
-    if (!s_clipboard) return false;
-    memcpy(s_clipboard, text + sel_s, len);
-    s_clipboard[len] = '\0';
+    if (s_clipboard) {
+        copy_range(sel_s, sel_e, s_clipboard);
+        s_clipboard[len] = '\0';
+        s_clip_len = len;
+        return true;
+    }
+    /* Not enough PSRAM: the selection goes to the SD card, as the part
+     * before the gap and the part after it. */
+    size_t a_end = sel_e < s_gap_start ? sel_e : s_gap_start;
+    size_t alen = sel_s < a_end ? a_end - sel_s : 0;
+    size_t bstart = sel_s + alen;
+    if (sd_card_write_file_parts(CLIPBOARD_FILE, alen ? s_buf + sel_s : NULL, alen,
+                                 bstart < sel_e ? phys(bstart) : NULL, sel_e - bstart) != ESP_OK) {
+        ESP_LOGW(TAG, "Copy of %zu bytes failed: no memory and no SD card", len);
+        return false;
+    }
     s_clip_len = len;
+    s_clip_in_file = true;
     return true;
 }
 
@@ -1464,14 +1584,37 @@ extern "C" bool editor_cut(void)
 
 extern "C" bool editor_paste(void)
 {
-    if (!s_clipboard || s_clip_len == 0) return true;
+    if (s_clip_len == 0) return true;
+    if (!s_clip_in_file) {
+        editor_delete_selection();
+        return editor_insert_text(s_clipboard, s_clip_len);
+    }
+    /* Read the clipboard file straight into the gap. */
+    size_t sel_s = s_gap_start, sel_e = s_gap_start;
+    if (editor_selection_active()) editor_get_selection_range(&sel_s, &sel_e);
+    if (content_len() - (sel_e - sel_s) + s_clip_len > s_buf_size - 64) {
+        ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte paste",
+                 (unsigned)(s_buf_size / 1024), s_clip_len);
+        return false;
+    }
+    FILE *f = fopen(CLIPBOARD_FILE, "rb");
+    if (!f) return false;
     editor_delete_selection();
-    return editor_insert_text(s_clipboard, s_clip_len);
+    size_t pos = s_gap_start;
+    size_t got = fread(s_buf + s_gap_start, 1, s_clip_len, f);
+    fclose(f);
+    if (got == 0) return false;
+    int n = count_nl(s_buf + s_gap_start, got);
+    s_nl_before += n;
+    s_nl_total  += n;
+    s_gap_start += got;
+    content_changed(pos);
+    return got == s_clip_len;
 }
 
 extern "C" bool editor_has_clipboard(void)
 {
-    return s_clipboard != NULL && s_clip_len > 0;
+    return s_clip_len > 0;
 }
 
 extern "C" editor_mode_t editor_get_mode(void) { return s_mode; }

@@ -716,28 +716,41 @@ The largest component. Contains:
 
 - **editor.cpp** -- gap-buffer text engine with a document size limit
   sized dynamically at `editor_init()` from the PSRAM that is free
-  when the editor starts (the gap buffer and flat cache are each
-  allocated at that size, so the editor's SPIRAM cost is ~2x the
-  limit; the value is clamped to a minimum of 64 KB and an upper
-  bound returned by `git_sync_max_file_size()` -- so the editor never
-  produces a document larger than what git_sync can push -- and a
-  ~512 KB headroom is reserved inside git_sync_max_file_size() for
-  BLE / WiFi / Git sync / LVGL widget growth). Exposes `editor_get_max_doc_size()` for the UI,
-  which surfaces the value read-only in F1 -> Settings. Provides
-  cursor movement, selection, clipboard, insert/delete, and file I/O.
-  Per-keystroke cost does not grow with the document: the newline
-  counts before the gap and in total are kept up to date by every gap
-  move and edit (line count and cursor line are O(1)); the flat text
-  cache is valid up to `flat_valid`, which an edit lowers to its
-  offset, so `editor_get_text()` only re-copies the bytes after the
-  edit; `editor_get_line()` walks from the nearest known line start
-  (the cached line, the cursor line or line 0), forward or backward.
-  Gap moves never invalidate the flat cache (the text is unchanged).
+  when the editor starts (three quarters of it after a 2 MB reserve,
+  at least 64 KB; the gap buffer is the only allocation of that size
+  -- there is no flat copy of the text, and `editor_open_file()` reads
+  the file straight into the buffer: into the gap when it fits there,
+  so a failed open keeps the old text, and UTF-16 files are transcoded
+  from the file in a stream). A copy too large for a PSRAM block goes
+  to `/sdcard/.clipboard` and is pasted from there into the gap. Exposes `editor_get_max_doc_size()`
+  for the UI, which surfaces the value read-only in F1 -> Settings.
+  Provides cursor movement, selection, clipboard, insert/delete, and
+  file I/O. Per-keystroke cost does not grow with the document: the
+  newline counts before the gap and in total are kept up to date by
+  every gap move and edit (line count and cursor line are O(1)).
+  Readers go to the gap buffer directly: `editor_get_line()` /
+  `editor_get_line_off()` walk from the nearest known line start (the
+  cached line, the cursor line or line 0), forward or backward, and
+  return a pointer into the buffer -- only the cursor line, which the
+  gap splits, is copied to a per-document scratch buffer (`line_buf`).
+  Such a pointer is valid until the next edit or cursor move, and
+  two lines' pointers must not be subtracted: use the offsets.
+  `editor_get_length()`, `editor_char_at()`, `editor_find()` (gap-aware
+  search), `editor_copy()` and `editor_save_file()` (the two halves via
+  `sd_card_write_file_parts()`) need no copy either. The rare
+  whole-text job (Alt+I counts and Git diff) uses `editor_text_begin()`
+  / `editor_text_end()`, which move the gap to the end and back.
   `editor_change_mark_get()` / `_reset()` (one slot per pane) report
   the lowest offset changed since a reset; `refresh_active_pane()` in
   `editor_ui.cpp` uses it to keep a per-pane checkpoint of the
   format's scan state at the scroll line (`pane_t::scan_ck_*`), so the
-  lines above the screen are not re-parsed on every refresh.
+  lines above the screen are not re-parsed on every refresh; a table
+  of the same state every 128 lines (`pane_t::scan_tab`) covers
+  scrolling up, which otherwise re-parsed from line 0 on every PgUp
+  (seconds on a 3 MB document, enough to trip the task watchdog). The scan
+  (`fmt_scan_t`) carries the index of the line being parsed; a format
+  that needs the next line (Markdown hard breaks, Fountain elements)
+  fetches it with `editor_get_line(sc->line + 1)`.
 - **editor_ui.cpp** -- LVGL-based user interface: title bar with battery
   and layout indicators, scrollable text area with Markdown rendering,
   status bar, file browser dialog, and settings menu (F1).
@@ -1231,25 +1244,59 @@ Source layout (all in-tree, no managed components):
   file filter (`is_doc()`: `*.md`, `*.fountain` and `*.txt`), and the orchestration
   (advertise -> clone -> local commit -> fetch -> fast-forward/rebase ->
   three-way merge -> checkout -> push). Keeps the historical public API.
-- `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA), and
-  zlib inflate/deflate via the ROM miniz (`tinfl_*` / `tdefl_*` from
-  `esp_rom/include/miniz.h`).
+- `git_util.c` -- oids, growable `git_buf`, SHA-1 (Mbed TLS / PSA),
+  streaming zlib via the ROM miniz (`tinfl_*` / `tdefl_*` from
+  `esp_rom/include/miniz.h`): `git_zreader` inflates from a FILE
+  through a 32 KB window, `git_zwriter` deflates into a FILE, and
+  `git_reader` is a pull source (memory, FILE, object stream).
+  `git_zreader_finish()` positions the FILE right after the stream:
+  tinfl's bit buffer may have read whole bytes past its end, which are
+  given back from `m_num_bits` (miniz 1.x does not do that itself; the
+  host test of a real pack failed without it).
 - `git_odb.c` -- repo layout, loose object store, refs, tree/commit
   parse+build, subtree splicing, merge-base and reachability walks.
+  Object payloads are streamed: `git_odb_stream_*` (read),
+  `git_odb_writer_*` (write; hashed and deflated into `.git/tmp`, then
+  renamed into place), `git_odb_hash_file()`, `git_odb_write_file()`
+  and `git_odb_read_to_file()` (atomic, via a hidden `.dtmp`).
+  `git_odb_read()` / `git_odb_write()` hold an object in RAM and are
+  only for trees and commits. `git_repo_clean_tmp()` empties
+  `.git/tmp` at the start of each sync.
 - `git_pack.c` -- packfile v2 reader (incl. OFS_DELTA / REF_DELTA and
-  delta application) and a non-delta packfile writer.
+  delta application) and a non-delta packfile writer, both streaming.
+  A delta's base is kept in RAM up to 256 KB (`DELTA_BASE_RAM_MAX`),
+  else in a scratch file that copy instructions seek into; the result
+  goes straight into an object writer.
 - `git_net.c` -- pkt-line framing and the `esp_http_client`-based
   transport (`info/refs`, `git-upload-pack`, `git-receive-pack`), HTTP
-  Basic auth. Every request goes through `http_open()`, which prefers
+  Basic auth. The upload-pack response is written to a scratch file
+  (`<pack>.resp`) and the packfile demultiplexed out of it into
+  another, so no part of it is held in RAM. Every request goes through `http_open()`, which prefers
   the server's `AAAA` record (`esp_http_client_config_t::addr_type =
   HTTP_ADDR_TYPE_INET6`) whenever `wifi_manager_has_global_ipv6()` is
   true, and transparently retries with default (`A`-or-whatever)
   resolution if that connection attempt fails -- esp-tls's address
   family hint is a hard filter, not a preference, so there is no
   automatic fallback lower in the stack.
-- `git_merge.c` -- flat three-way tree merge with an LCS-based diff3 line
-  merge; overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
-  markers and **committed as-is** (never discarded).
+- `git_merge.c` -- flat three-way tree merge with a diff3 line merge;
+  overlapping edits are written with `<<<<<<< / ======= />>>>>>>`
+  markers and **committed as-is** (never discarded). The three versions
+  of a conflicting file and the merged result are scratch files in
+  `.git/tmp`. `common_ends()` streams the files to skip the bytes all
+  three share at the start and at the end (whole lines; the tail keeps
+  a `SUFFIX_MARGIN` of 64 lines); only the middle gets a line table: a
+  64-bit hash and an offset per line, all that is kept in RAM. Lines
+  are aligned by Myers' O(ND) diff in linear space (`diag()`, after
+  gnulib's diffseq.h, with GNU's "too expensive" cut-off,
+  `DIFF_TOO_EXPENSIVE`), then `compact()` puts the alignment in git's
+  canonical form (xdl_change_compact(): a block of changed lines slides
+  along equal lines to the lowest spot facing a change in the other
+  text, else to the bottom). Without that step the two sides could
+  describe one edit differently and conflict for nothing; with it,
+  host tests against `git merge-file` agree on every random case.
+  There is no line limit; if the tables do not fit in memory the file
+  becomes a whole-file conflict. `git_diff_line_counts()` (Alt+I) uses
+  the same diff on hashes of the whole texts.
 
 Convention: a `const git_oid *` parameter that represents an optional
 commit/tree ("no parent", "no base", "not cloned yet") is passed as a
@@ -1297,12 +1344,11 @@ Behaviour:
   correct it after the device's very first boot.
 
 Scope limits: one branch, no tags/submodules/signing, no shallow clone,
-flat `*.md` / `*.fountain` / `*.txt` working tree only, HTTP Basic auth only (no SSH). LCS merge
-falls back to a whole-file conflict above ~1400 lines per side.
+flat `*.md` / `*.fountain` / `*.txt` working tree only, HTTP Basic auth only (no SSH).
 
 Public API: `git_sync_init()`, `git_sync_start()`,
 `git_sync_get_state()`, `git_sync_is_configured()`,
-`git_sync_get_last_error()`, `git_sync_max_file_size()`,
+`git_sync_get_last_error()`,
 `git_sync_file_status()` (local-only check whether a file's current
 content is in the last commit known to be on the server; used by the
 file browser's delete command), `git_sync_file_diff()` (the same
@@ -2788,8 +2834,9 @@ PSRAM is required on every supported board. The editor gap buffer
 `editor_init()` runs -- typically a few hundred KB up to a few MB
 depending on the board), the display
 framebuffers, the LVGL widget heap (`CONFIG_LV_USE_CUSTOM_MALLOC` routes
-through PSRAM), the Git client's object buffers, ~24 KB task stack and
-diff3 LCS matrix, and
+through PSRAM), the Git client's ~24 KB task stack, zlib state and
+diff3 LCS matrix (object data itself goes through scratch files on the
+SD card), and
 the Bluedroid host environment (`CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY` plus
 `CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST`) all assume `MALLOC_CAP_SPIRAM`
 is available. The top-level `CMakeLists.txt` aborts the configure step

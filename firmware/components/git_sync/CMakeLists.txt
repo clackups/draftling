@@ -17,6 +17,6 @@ idf_component_register(
         "draftbox.c"
     INCLUDE_DIRS "include"
     PRIV_INCLUDE_DIRS "."
-    PRIV_REQUIRES esp_http_client esp-tls mbedtls esp_rom esp_netif
+    PRIV_REQUIRES esp_http_client esp-tls mbedtls esp_rom esp_netif esp_timer esp_wifi
                   sd_card wifi_manager nvs_flash
 )

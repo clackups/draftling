@@ -16,16 +16,16 @@
  * cursor counts as not blank: it is the line being typed, so e.g. a
  * Character cue keeps its formatting while the user writes its first
  * line of Dialogue. */
-static bool next_line_blank(const fmt_scan_t *sc, const char *lt, size_t ll)
+static bool next_line_blank(const fmt_scan_t *sc)
 {
-    size_t p = (size_t)(lt - sc->flat) + ll;
-    if (p >= sc->flat_len) return true;   /* no next line */
-    p++;                                  /* skip the '\n' */
-    size_t q = p;
-    while (q < sc->flat_len && sc->flat[q] != '\n') q++;
-    if (q == p) return !(q == sc->flat_len || sc->cursor == p);
-    for (size_t i = p; i < q; i++) {
-        if (sc->flat[i] != ' ' && sc->flat[i] != '\t') return false;
+    int next = sc->line + 1;
+    int count = editor_get_line_count();
+    if (next >= count) return true;       /* no next line */
+    size_t nl, off;
+    const char *nt = editor_get_line_off(next, &nl, &off);
+    if (nl == 0) return !(next == count - 1 || sc->cursor == off);
+    for (size_t i = 0; i < nl; i++) {
+        if (nt[i] != ' ' && nt[i] != '\t') return false;
     }
     return true;
 }
@@ -37,7 +37,9 @@ static void ftn_scan_init(fmt_scan_t *sc)
 
 static void ftn_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t *mi)
 {
-    fountain_parse_line(lt, ll, next_line_blank(sc, lt, ll), &sc->ftn, mi);
+    bool blank = next_line_blank(sc);
+    sc->line++;
+    fountain_parse_line(lt, ll, blank, &sc->ftn, mi);
 }
 
 static void ftn_mark(const md_line_info_t *mi, bool reveal, fmt_marks_t *m)
@@ -260,8 +262,8 @@ static bool ftn_tab(bool append_only)
     const char *lt;
     size_t ll;
     if (!cursor_at_line_end(&line, &lt, &ll)) return false;
-    size_t text_len;
-    size_t ls = (size_t)(lt - editor_get_text(&text_len));
+    size_t ls;
+    lt = editor_get_line_off(line, &ll, &ls);
     std::string cur(lt, ll);
 
     if (!s_tab_cands.empty() && ls == s_tab_line_start &&

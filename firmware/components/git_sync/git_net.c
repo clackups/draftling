@@ -9,6 +9,8 @@
 #include <esp_heap_caps.h>
 #include <esp_http_client.h>
 #include <esp_crt_bundle.h>
+#include <esp_timer.h>
+#include <esp_wifi.h>
 
 #include "wifi_manager.h"
 
@@ -241,8 +243,12 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
     char url[380];
     snprintf(url, sizeof(url), "%s/git-upload-pack", r->base_url);
 
-    git_buf resp = GIT_BUF_INIT;
-    FILE *fp = NULL;
+    /* The response goes to a scratch file on the SD card, then the
+     * packfile is demultiplexed out of it: neither is held in RAM. */
+    char resp_path[160];
+    snprintf(resp_path, sizeof(resp_path), "%s.resp", out_pack_path);
+    FILE *rf = NULL, *fp = NULL;
+    uint8_t *pkt = NULL;
 
     esp_http_client_handle_t c;
     esp_err_t ret = http_open(&c, r, url, HTTP_METHOD_POST, (int)req.len, fetch_pack_headers);
@@ -265,45 +271,58 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
         goto cleanup;
     }
 
-    /* Buffer the whole response (our repos are small), then parse. */
+    /* pkt-line payloads are at most 65516 bytes */
+    pkt = heap_caps_malloc(65536, MALLOC_CAP_SPIRAM);
+    if (!pkt) pkt = malloc(65536);
+    if (!pkt) { ret = ESP_ERR_NO_MEM; goto cleanup; }
+
+    rf = fopen(resp_path, "w+b");
+    if (!rf) { ret = ESP_FAIL; goto cleanup; }
     {
-        const size_t RESP_CAP = 12 * 1024 * 1024;
-        char rb[2048];
+        size_t total = 0;
         int n;
-        while ((n = esp_http_client_read(c, rb, sizeof(rb))) > 0) {
-            if (resp.len + (size_t)n > RESP_CAP) { ret = ESP_FAIL; goto cleanup; }
-            if (!git_buf_put(&resp, rb, (size_t)n)) { ret = ESP_ERR_NO_MEM; goto cleanup; }
+        while ((n = esp_http_client_read(c, (char *)pkt, 4096)) > 0) {
+            if (fwrite(pkt, 1, (size_t)n, rf) != (size_t)n) { ret = ESP_FAIL; goto cleanup; }
+            if (total == 0) dump_head("fetch response", pkt, (size_t)n);
+            total += (size_t)n;
         }
+        if (n < 0 || total == 0) { ret = ESP_FAIL; goto cleanup; }
+        ESP_LOGI(TAG, "fetch response: %u bytes", (unsigned)total);
     }
-    if (resp.len == 0) { ret = ESP_FAIL; goto cleanup; }
-    dump_head("fetch response", resp.data, resp.len);
+    esp_http_client_close(c);
+    esp_http_client_cleanup(c);
+    c = NULL;
+    rewind(rf);
 
     fp = fopen(out_pack_path, "wb");
     if (!fp) { ret = ESP_FAIL; goto cleanup; }
 
     {
-        const uint8_t *b = resp.data;
-        size_t len = resp.len, pos = 0;
         enum { SEC_NONE, SEC_PACKFILE, SEC_SKIP } sec = SEC_NONE;
         bool wrote = false, err = false, seen_ack = false;
 
-        while (pos + 4 <= len) {
-            int plen = hex4((const char *)b + pos);
+        for (;;) {
+            long pos = ftell(rf);
+            char h[4];
+            if (fread(h, 1, 4, rf) != 4) break;
+            int plen = hex4(h);
             if (plen < 0) {
                 /* not pkt-framed here: v0 raw packfile tail */
                 if (seen_ack || sec == SEC_PACKFILE) {
-                    fwrite(b + pos, 1, len - pos, fp);
+                    fseek(rf, pos, SEEK_SET);
+                    size_t k;
+                    while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
                     wrote = true;
                 }
                 break;
             }
-            if (plen == 0) { pos += 4; if (sec == SEC_PACKFILE) sec = SEC_NONE; continue; }
-            if (plen >= 1 && plen <= 3) { pos += 4; continue; }  /* delim / keepalive / end */
-            if (pos + (size_t)plen > len) break;
+            if (plen == 0) { if (sec == SEC_PACKFILE) sec = SEC_NONE; continue; }
+            if (plen >= 1 && plen <= 3) continue;  /* delim / keepalive / end */
+            if (plen < 4) break;
 
-            const uint8_t *pl = b + pos + 4;
+            const uint8_t *pl = pkt;
             int pll = plen - 4;
-            pos += (size_t)plen;
+            if (fread(pkt, 1, (size_t)pll, rf) != (size_t)pll) break;
 
             if (sec != SEC_PACKFILE) {
                 if (pll >= 8 && memcmp(pl, "packfile", 8) == 0) { sec = SEC_PACKFILE; continue; }
@@ -317,8 +336,10 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
             if (sec == SEC_PACKFILE || (pll >= 1 && (pl[0] == 1 || pl[0] == 2 || pl[0] == 3))) {
                 if (pll < 1) continue;
                 uint8_t band = pl[0];
-                if (band == 1) { fwrite(pl + 1, 1, pll - 1, fp); wrote = true; }
-                else if (band == 3) {
+                if (band == 1) {
+                    if (fwrite(pl + 1, 1, pll - 1, fp) != (size_t)(pll - 1)) { err = true; break; }
+                    wrote = true;
+                } else if (band == 3) {
                     ESP_LOGE(TAG, "remote: %.*s", pll - 1, (const char *)pl + 1);
                     err = true;
                     break;
@@ -339,14 +360,28 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
 
         /* last-ditch: locate the packfile signature directly */
         if (!wrote && !err) {
-            for (size_t i = 0; i + 8 <= len; i++) {
-                if (b[i] == 'P' && b[i+1] == 'A' && b[i+2] == 'C' && b[i+3] == 'K' &&
-                    b[i+4] == 0 && b[i+5] == 0 && b[i+6] == 0 &&
-                    (b[i+7] == 2 || b[i+7] == 3)) {
-                    fwrite(b + i, 1, len - i, fp);
-                    wrote = true;
-                    break;
+            static const uint8_t sig[7] = { 'P', 'A', 'C', 'K', 0, 0, 0 };
+            rewind(rf);
+            long base = 0;
+            size_t keep = 0, k;
+            long found = -1;
+            /* chunks overlap by 7 bytes so a split signature is seen */
+            while (found < 0 && (k = fread(pkt + keep, 1, 4096, rf)) > 0) {
+                size_t n = keep + k;
+                for (size_t i = 0; i + 8 <= n; i++) {
+                    if (memcmp(pkt + i, sig, 7) == 0 && (pkt[i + 7] == 2 || pkt[i + 7] == 3)) {
+                        found = base + (long)i;
+                        break;
+                    }
                 }
+                keep = n < 7 ? n : 7;
+                memmove(pkt, pkt + n - keep, keep);
+                base += (long)(n - keep);
+            }
+            if (found >= 0) {
+                fseek(rf, found, SEEK_SET);
+                while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
+                wrote = true;
             }
         }
 
@@ -361,10 +396,13 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
 
 cleanup:
     if (fp) fclose(fp);
-    esp_http_client_close(c);
-    esp_http_client_cleanup(c);
+    if (rf) { fclose(rf); remove(resp_path); }
+    if (c) {
+        esp_http_client_close(c);
+        esp_http_client_cleanup(c);
+    }
+    free(pkt);
     git_buf_free(&req);
-    git_buf_free(&resp);
     return ret;
 }
 
@@ -409,22 +447,46 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
     esp_err_t ret = http_open(&c, r, url, HTTP_METHOD_POST, total, push_headers);
     if (ret != ESP_OK) { fclose(pf); git_buf_free(&cmds); return ret; }
 
+    ESP_LOGI(TAG, "push: sending %d bytes (pack %ld)", total, pack_size);
     if (esp_http_client_write(c, (char *)cmds.data, (int)cmds.len) != (int)cmds.len) {
-        ret = ESP_FAIL;
+        ret = ESP_ERR_TIMEOUT;
         goto cleanup;
     }
     {
+        /* Connection trouble while sending is reported as
+         * ESP_ERR_TIMEOUT (not a rejection), with how far it got. */
         char chunk[2048];
         size_t rd;
+        long sent = 0, next_log = 64 * 1024;
+        int64_t t0 = esp_timer_get_time();
         while ((rd = fread(chunk, 1, sizeof(chunk), pf)) > 0) {
             if (esp_http_client_write(c, chunk, (int)rd) != (int)rd) {
-                ret = ESP_FAIL;
+                wifi_ap_record_t ap;
+                int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
+                ESP_LOGE(TAG, "push: connection lost after %ld of %ld pack bytes, "
+                         "%lld ms, RSSI %d dBm, free PSRAM %u, internal %u",
+                         sent, pack_size, (esp_timer_get_time() - t0) / 1000, rssi,
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+                ret = ESP_ERR_TIMEOUT;
                 goto cleanup;
             }
+            sent += (long)rd;
+            if (sent >= next_log) {
+                ESP_LOGI(TAG, "push: %ld / %ld bytes, %lld ms", sent, pack_size,
+                         (esp_timer_get_time() - t0) / 1000);
+                next_log += 64 * 1024;
+            }
         }
+        ESP_LOGI(TAG, "push: all %ld bytes sent in %lld ms, waiting for the server",
+                 sent, (esp_timer_get_time() - t0) / 1000);
     }
 
-    esp_http_client_fetch_headers(c);
+    if (esp_http_client_fetch_headers(c) < 0) {
+        ESP_LOGE(TAG, "push: no answer from the server");
+        ret = ESP_ERR_TIMEOUT;
+        goto cleanup;
+    }
     int status = esp_http_client_get_status_code(c);
     if (status != 200) {
         ESP_LOGE(TAG, "receive-pack HTTP %d", status);

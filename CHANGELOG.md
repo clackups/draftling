@@ -13,7 +13,47 @@ in the git log.
   information now shows it under "Keyboard". Keyboards that do not
   report a level show no battery row.
 
+### Changed
+
+- **Git sync no longer needs memory for whole files**: the data
+  downloaded from the server, the history being unpacked and the files
+  being merged are now kept in temporary files on the SD card instead
+  of in memory. Syncing a long history or large documents no longer
+  fails for lack of memory.
+
+- **Larger documents**: the editor no longer keeps a second copy of
+  the text, so the largest document size (shown in F1 -> Settings) is
+  about one and a half times what it was -- on a board with 8 MB of
+  PSRAM, around 4.3 MB instead of 2.9 MB.
+
+- **Git sync merges long documents line by line**: when a document of
+  more than about 1400 lines was changed both on the device and on the
+  server, the whole file used to become one conflict. Now only the
+  lines that were really changed on both sides are marked, however long
+  the document is.
+
+- **Copying a very large selection**: when there is not enough memory
+  for it, the copied text is kept on the SD card instead, so Ctrl+C /
+  Ctrl+X no longer silently fail. If even that is not possible, the
+  status bar says so.
+
 ### Fixed
+
+- **Device restart when paging up in a long document**: pressing PgUp
+  near the end of a very long document could freeze the editor long
+  enough for the device to restart. Paging up is now fast anywhere in a
+  document, and Ctrl+Home / Ctrl+End jump instantly.
+
+- **Git push on a weak WiFi signal**: when the connection to the
+  server broke during a push, the status bar said the server "rejected
+  the push". The push is now tried up to three times, WiFi power saving
+  is off while a sync runs (it makes a weak link lose more data), and
+  if all attempts fail the status bar says the connection was lost.
+
+- **Documents larger than about two thirds of the size limit could not
+  be opened again**: a document that grew big while typing was saved,
+  but opening it later failed with "File too large". Any document that
+  fits the limit now opens.
 
 - **Seeed reTerminal Sticky would not start after the battery ran
   empty**: switching off only put the device to sleep, which slowly

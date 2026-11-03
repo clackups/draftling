@@ -18,7 +18,6 @@
 
 #include "miniz.h"
 
-static const char *TAG = "git.util";
 
 /* ------------------------------------------------------------------ */
 /* oids                                                               */
@@ -186,104 +185,202 @@ void git_sha1_hex(const void *data, size_t n, git_oid *out)
 }
 
 /* ------------------------------------------------------------------ */
-/* zlib via ROM miniz                                                 */
+/* streaming zlib via ROM miniz                                       */
 /* ------------------------------------------------------------------ */
 
-esp_err_t git_zlib_inflate(const uint8_t *in, size_t in_avail,
-                           uint8_t *out, size_t out_expected,
-                           size_t *in_consumed)
+/* Everything is streamed through fixed-size buffers, so the memory a
+ * Git operation needs does not depend on the size of the objects. */
+
+#define ZR_INBUF 4096
+
+struct git_zreader {
+    tinfl_decompressor d;
+    uint8_t  win[TINFL_LZ_DICT_SIZE];   /* wrapping output window */
+    uint8_t  in[ZR_INBUF];
+    FILE    *fp;
+    long     start;                     /* file offset of the stream */
+    size_t   in_pos, in_have;
+    size_t   consumed;                  /* compressed bytes used */
+    size_t   win_pos;                   /* next output position */
+    size_t   pend_off, pend_len;        /* output not delivered yet */
+    bool     eof, done, error;
+};
+
+git_zreader *git_zreader_new(void)
 {
-    tinfl_decompressor *d = heap_caps_malloc(sizeof(*d), MALLOC_CAP_SPIRAM);
-    if (!d) d = malloc(sizeof(*d));
-    if (!d) return ESP_ERR_NO_MEM;
-    tinfl_init(d);
+    git_zreader *z = heap_caps_malloc(sizeof(*z), MALLOC_CAP_SPIRAM);
+    if (!z) z = malloc(sizeof(*z));
+    return z;
+}
 
-    size_t in_bytes = in_avail;
-    size_t out_bytes = out_expected;
-    tinfl_status st = tinfl_decompress(d, in, &in_bytes,
-                                       out, out, &out_bytes,
-                                       TINFL_FLAG_PARSE_ZLIB_HEADER |
-                                       TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
-    free(d);
+void git_zreader_free(git_zreader *z)
+{
+    free(z);
+}
 
-    if (st != TINFL_STATUS_DONE || out_bytes != out_expected) {
-        ESP_LOGE(TAG, "inflate failed st=%d out=%u/%u", (int)st,
-                 (unsigned)out_bytes, (unsigned)out_expected);
-        return ESP_FAIL;
+void git_zreader_start(git_zreader *z, FILE *fp)
+{
+    tinfl_init(&z->d);
+    z->fp = fp;
+    z->start = ftell(fp);
+    z->in_pos = z->in_have = 0;
+    z->consumed = 0;
+    z->win_pos = 0;
+    z->pend_off = z->pend_len = 0;
+    z->eof = z->done = z->error = false;
+}
+
+long git_zreader_read(git_zreader *z, void *buf, size_t n)
+{
+    uint8_t *out = (uint8_t *)buf;
+    size_t total = 0;
+    while (total < n) {
+        if (z->pend_len) {
+            size_t c = z->pend_len < n - total ? z->pend_len : n - total;
+            memcpy(out + total, z->win + z->pend_off, c);
+            z->pend_off += c;
+            z->pend_len -= c;
+            total += c;
+            continue;
+        }
+        if (z->done) break;
+        if (z->error) return -1;
+        if (z->in_pos == z->in_have && !z->eof) {
+            z->in_have = fread(z->in, 1, sizeof(z->in), z->fp);
+            z->in_pos = 0;
+            if (z->in_have == 0) z->eof = true;
+        }
+        size_t in_bytes = z->in_have - z->in_pos;
+        size_t out_bytes = TINFL_LZ_DICT_SIZE - z->win_pos;
+        int flags = TINFL_FLAG_PARSE_ZLIB_HEADER |
+                    (z->eof ? 0 : TINFL_FLAG_HAS_MORE_INPUT);
+        tinfl_status st = tinfl_decompress(&z->d, z->in + z->in_pos, &in_bytes,
+                                           z->win, z->win + z->win_pos,
+                                           &out_bytes, flags);
+        z->in_pos += in_bytes;
+        z->consumed += in_bytes;
+        z->pend_off = z->win_pos;
+        z->pend_len = out_bytes;
+        z->win_pos = (z->win_pos + out_bytes) & (TINFL_LZ_DICT_SIZE - 1);
+        if (st == TINFL_STATUS_DONE) z->done = true;
+        else if (st < TINFL_STATUS_DONE) z->error = true;
+        else if (st == TINFL_STATUS_NEEDS_MORE_INPUT && z->eof) z->error = true;
     }
-    if (in_consumed) *in_consumed = in_bytes;
+    return (long)total;
+}
+
+bool git_zreader_finish(git_zreader *z)
+{
+    uint8_t extra;
+    if (git_zreader_read(z, &extra, 1) != 0) return false;   /* trailing data */
+    if (!z->done) return false;
+    /* tinfl's bit buffer may have read whole bytes past the end of the
+     * stream (newer miniz versions hand them back themselves, leaving
+     * m_num_bits below 8); the stream ends byte-aligned after the
+     * Adler-32, so those bytes belong to the next object. */
+    size_t extra_bytes = z->d.m_num_bits >> 3;
+    if (extra_bytes > z->consumed) return false;
+    fseek(z->fp, z->start + (long)(z->consumed - extra_bytes), SEEK_SET);
+    return true;
+}
+
+#define ZW_OUTBUF 4096
+
+struct git_zwriter {
+    tdefl_compressor c;
+    uint8_t  out[ZW_OUTBUF];
+    FILE    *fp;
+    git_sha1_ctx *sha;                  /* hashes the compressed bytes */
+    bool     error;
+};
+
+git_zwriter *git_zwriter_new(void)
+{
+    git_zwriter *w = heap_caps_malloc(sizeof(*w), MALLOC_CAP_SPIRAM);
+    if (!w) w = malloc(sizeof(*w));
+    return w;
+}
+
+void git_zwriter_free(git_zwriter *w)
+{
+    free(w);
+}
+
+esp_err_t git_zwriter_start(git_zwriter *w, FILE *fp, git_sha1_ctx *sha)
+{
+    w->fp = fp;
+    w->sha = sha;
+    w->error = false;
+    /* 128 probes, zlib header. */
+    if (tdefl_init(&w->c, NULL, NULL, TDEFL_WRITE_ZLIB_HEADER | 128) != TDEFL_STATUS_OKAY)
+        return ESP_FAIL;
     return ESP_OK;
 }
 
-esp_err_t git_zlib_inflate_buf(const uint8_t *in, size_t in_avail, git_buf *out)
+static esp_err_t zw_run(git_zwriter *w, const uint8_t *p, size_t n, tdefl_flush flush)
 {
-    tinfl_decompressor *d = heap_caps_malloc(sizeof(*d), MALLOC_CAP_SPIRAM);
-    if (!d) d = malloc(sizeof(*d));
-    if (!d) return ESP_ERR_NO_MEM;
-    tinfl_init(d);
-
-    /* miniz needs a 32 KiB wrapping dictionary window as the output. */
-    uint8_t *win = heap_caps_malloc(TINFL_LZ_DICT_SIZE, MALLOC_CAP_SPIRAM);
-    if (!win) { free(d); return ESP_ERR_NO_MEM; }
-
-    esp_err_t ret = ESP_OK;
-    size_t in_pos = 0, out_pos = 0;
+    if (w->error) return ESP_FAIL;
     for (;;) {
-        size_t in_bytes = in_avail - in_pos;
-        size_t out_bytes = TINFL_LZ_DICT_SIZE - out_pos;
-        tinfl_status st = tinfl_decompress(d, in + in_pos, &in_bytes,
-                                           win, win + out_pos, &out_bytes,
-                                           TINFL_FLAG_PARSE_ZLIB_HEADER);
-        in_pos += in_bytes;
-        if (out_bytes && !git_buf_put(out, win + out_pos, out_bytes)) {
-            ret = ESP_ERR_NO_MEM;
-            break;
+        size_t in_bytes = n;
+        size_t out_bytes = sizeof(w->out);
+        tdefl_status st = tdefl_compress(&w->c, p, &in_bytes, w->out, &out_bytes, flush);
+        p += in_bytes;
+        n -= in_bytes;
+        if (out_bytes) {
+            if (fwrite(w->out, 1, out_bytes, w->fp) != out_bytes) { w->error = true; return ESP_FAIL; }
+            if (w->sha) git_sha1_update(w->sha, w->out, out_bytes);
         }
-        out_pos = (out_pos + out_bytes) & (TINFL_LZ_DICT_SIZE - 1);
-        if (st == TINFL_STATUS_DONE) break;
-        if (st < TINFL_STATUS_DONE) { ret = ESP_FAIL; break; }
-        if (st == TINFL_STATUS_NEEDS_MORE_INPUT && in_pos >= in_avail) {
-            ret = ESP_FAIL;
-            break;
-        }
+        if (st == TDEFL_STATUS_DONE) return ESP_OK;
+        if (st != TDEFL_STATUS_OKAY) { w->error = true; return ESP_FAIL; }
+        if (flush == TDEFL_NO_FLUSH && n == 0 && out_bytes < sizeof(w->out)) return ESP_OK;
     }
-
-    free(win);
-    free(d);
-    return ret;
 }
 
-esp_err_t git_zlib_deflate(const uint8_t *in, size_t in_len, git_buf *out)
+esp_err_t git_zwriter_write(git_zwriter *w, const void *p, size_t n)
 {
-    tdefl_compressor *c = heap_caps_malloc(sizeof(*c), MALLOC_CAP_SPIRAM);
-    if (!c) c = malloc(sizeof(*c));
-    if (!c) return ESP_ERR_NO_MEM;
+    if (!n) return w->error ? ESP_FAIL : ESP_OK;
+    return zw_run(w, (const uint8_t *)p, n, TDEFL_NO_FLUSH);
+}
 
-    /* 1150 probes ~= default compression, TDEFL_WRITE_ZLIB_HEADER. */
-    if (tdefl_init(c, NULL, NULL, TDEFL_WRITE_ZLIB_HEADER | 128) != TDEFL_STATUS_OKAY) {
-        free(c);
-        return ESP_FAIL;
-    }
+esp_err_t git_zwriter_finish(git_zwriter *w)
+{
+    return zw_run(w, NULL, 0, TDEFL_FINISH);
+}
 
-    uint8_t chunk[2048];
-    size_t in_pos = 0;
-    esp_err_t ret = ESP_OK;
-    for (;;) {
-        size_t in_bytes = in_len - in_pos;
-        size_t out_bytes = sizeof(chunk);
-        tdefl_status st = tdefl_compress(c, in + in_pos, &in_bytes,
-                                         chunk, &out_bytes, TDEFL_FINISH);
-        in_pos += in_bytes;
-        if (out_bytes && !git_buf_put(out, chunk, out_bytes)) {
-            ret = ESP_ERR_NO_MEM;
-            break;
-        }
-        if (st == TDEFL_STATUS_DONE) break;
-        if (st != TDEFL_STATUS_OKAY) { ret = ESP_FAIL; break; }
-    }
+/* ------------------------------------------------------------------ */
+/* byte sources                                                       */
+/* ------------------------------------------------------------------ */
 
-    free(c);
-    return ret;
+static long mem_read(void *ctx, void *buf, size_t n)
+{
+    git_mem_src *m = (git_mem_src *)ctx;
+    size_t left = m->len - m->pos;
+    if (n > left) n = left;
+    memcpy(buf, m->p + m->pos, n);
+    m->pos += n;
+    return (long)n;
+}
+
+static long file_read(void *ctx, void *buf, size_t n)
+{
+    size_t r = fread(buf, 1, n, (FILE *)ctx);
+    if (r == 0 && ferror((FILE *)ctx)) return -1;
+    return (long)r;
+}
+
+void git_reader_mem(git_reader *r, git_mem_src *m, const void *p, size_t len)
+{
+    m->p = (const uint8_t *)p;
+    m->len = len;
+    m->pos = 0;
+    r->read = mem_read;
+    r->ctx = m;
+}
+
+void git_reader_file(git_reader *r, FILE *fp)
+{
+    r->read = file_read;
+    r->ctx = fp;
 }
 
 /* ------------------------------------------------------------------ */

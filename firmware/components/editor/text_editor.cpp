@@ -12,7 +12,7 @@ static void txt_scan_init(fmt_scan_t *sc)
 
 static void txt_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t *mi)
 {
-    (void)sc;
+    sc->line++;
     if (!mi) return;
     mi->type = ll ? MD_LINE_PARAGRAPH : MD_LINE_EMPTY;
     mi->content = lt;

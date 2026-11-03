@@ -8,20 +8,12 @@ extern "C" {
 #include <stdbool.h>
 #include <stddef.h>
 
-/* Maximum size (in bytes) of a single file that git_sync can currently
- * handle during a sync.
- *
- * Not a fixed constant: derived at call time from the SPIRAM that is
- * free *right now*. The native Git client streams objects through the SD
- * card, so the transient PSRAM peak during a sync is dominated by a
- * single file's content plus the diff3 LCS matrix; headroom is reserved
- * for the TLS buffers and other concurrent allocations.
- *
- * The editor uses this same function at editor_init() time to clamp
- * its own per-buffer ceiling, so the editor never produces a document
- * larger than what a sync can process. Git is the tighter constraint
- * and therefore the determining factor for the maximum file size. */
-size_t git_sync_max_file_size(void);
+/* The Git client keeps object data on the SD card (scratch files in
+ * <project>/.git/tmp) and streams it through fixed-size buffers, so a
+ * sync has no file-size limit tied to free PSRAM. Only the line-level
+ * merge holds data in RAM: a hash and an offset per line of the part
+ * the three versions do not share, plus a Myers diff in linear space.
+ * Should even that not fit, the file becomes a whole-file conflict. */
 
 typedef enum {
     GIT_SYNC_IDLE,

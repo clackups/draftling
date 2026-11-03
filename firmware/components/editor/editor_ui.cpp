@@ -759,9 +759,7 @@ static int find_margin_option(int px)
  * editing is active). */
 static bool cursor_at_doc_end(void)
 {
-    size_t len = 0;
-    editor_get_text(&len);
-    return editor_get_cursor() >= len;
+    return editor_get_cursor() >= editor_get_length();
 }
 
 /* Recalculate derived layout values from the current body font. */
@@ -1541,7 +1539,24 @@ typedef struct {
     size_t                 scan_ck_off;
     bool                   scan_ck_in_code;
     ftn_state_t            scan_ck_ftn;
+
+    /* The same state every SCAN_TAB_STEP lines (entry k: line
+     * (k + 1) * SCAN_TAB_STEP), so that a scroll up -- PgUp -- starts
+     * from the nearest entry above instead of line 0, which took
+     * seconds on a long document. Same validity rules as the
+     * checkpoint; scan_tab_n entries are valid. */
+    struct scan_tab_ent {
+        int         line;
+        size_t      off;
+        bool        in_code;
+        ftn_state_t ftn;
+    }                     *scan_tab;
+    int                    scan_tab_n, scan_tab_cap;
+    editor_doc_t          *scan_tab_doc;
+    const editor_format_t *scan_tab_fmt;
 } pane_t;
+
+#define SCAN_TAB_STEP 128
 
 static_assert(EDITOR_MAX_PANES <= EDITOR_CHANGE_MARKS,
               "one editor change mark per pane");
@@ -2784,8 +2799,7 @@ static void line_deco_draw_cb(lv_event_t *e)
 static void refresh_active_pane(bool draw_cursor)
 {
     /* Show logo when no file is loaded and buffer is empty */
-    size_t text_len = 0;
-    const char *flat_text = editor_get_text(&text_len);
+    size_t text_len = editor_get_length();
     bool show_logo = (editor_get_file_path() == NULL && text_len == 0);
     if (s_img_logo) {
         if (show_logo) {
@@ -2797,7 +2811,7 @@ static void refresh_active_pane(bool draw_cursor)
 
     int total  = editor_get_line_count();
 
-    /* Selection range (byte offsets in flat text) */
+    /* Selection range (byte offsets in the document) */
     size_t sel_start = 0, sel_end = 0;
     bool has_sel = editor_selection_active();
     if (has_sel) editor_get_selection_range(&sel_start, &sel_end);
@@ -2826,25 +2840,65 @@ static void refresh_active_pane(bool draw_cursor)
          * starting from the pane's checkpoint when it is still valid */
         int mark = (int)(s_rp - s_panes);
         int first = 0;
+
+        /* The table: drop entries at or after a change, then start from
+         * the nearest usable entry above the scroll line. */
+        if (s_rp->scan_tab_doc != s_rp->doc || s_rp->scan_tab_fmt != fmt) {
+            s_rp->scan_tab_doc = s_rp->doc;
+            s_rp->scan_tab_fmt = fmt;
+            s_rp->scan_tab_n = 0;
+        }
+        size_t changed = editor_change_mark_get(mark);
+        while (s_rp->scan_tab_n > 0 && s_rp->scan_tab[s_rp->scan_tab_n - 1].off >= changed)
+            s_rp->scan_tab_n--;
+        for (int k = s_rp->scan_tab_n - 1; k >= 0; k--) {
+            const pane_t::scan_tab_ent *e = &s_rp->scan_tab[k];
+            if (e->line <= scroll && scan.cursor > e->off) {
+                first = e->line;
+                scan.line    = first;
+                scan.in_code = e->in_code;
+                scan.ftn     = e->ftn;
+                break;
+            }
+        }
+
         if (scroll > 0 && s_rp->scan_ck_doc == s_rp->doc &&
             s_rp->scan_ck_fmt == fmt && s_rp->scan_ck_line > 0 &&
-            s_rp->scan_ck_line <= scroll &&
+            s_rp->scan_ck_line <= scroll && s_rp->scan_ck_line > first &&
             editor_change_mark_get(mark) > s_rp->scan_ck_off &&
             scan.cursor > s_rp->scan_ck_off) {
             first = s_rp->scan_ck_line;
+            scan.line    = first;
             scan.in_code = s_rp->scan_ck_in_code;
             scan.ftn     = s_rp->scan_ck_ftn;
         }
         for (int i = first; i < scroll && i < total; i++) {
-            size_t ll;
-            const char *lt = editor_get_line(i, &ll);
+            size_t ll, off;
+            const char *lt = editor_get_line_off(i, &ll, &off);
+            /* Record the next table entry when passing its line. */
+            int n = s_rp->scan_tab_n;
+            if (i > 0 && i == (n + 1) * SCAN_TAB_STEP && scan.cursor > off) {
+                if (n == s_rp->scan_tab_cap) {
+                    int cap = n ? n * 2 : 64;
+                    void *nt = heap_caps_realloc(s_rp->scan_tab,
+                                                 (size_t)cap * sizeof(*s_rp->scan_tab),
+                                                 MALLOC_CAP_SPIRAM);
+                    if (nt) {
+                        s_rp->scan_tab = (pane_t::scan_tab_ent *)nt;
+                        s_rp->scan_tab_cap = cap;
+                    }
+                }
+                if (n < s_rp->scan_tab_cap) {
+                    s_rp->scan_tab[n] = { i, off, scan.in_code, scan.ftn };
+                    s_rp->scan_tab_n = n + 1;
+                }
+            }
             fmt->parse_line(&scan, lt, ll, NULL);
         }
         s_rp->scan_ck_doc = NULL;
         if (scroll > 0 && scroll < total) {
-            size_t ll;
-            const char *lt = editor_get_line(scroll, &ll);
-            size_t off = (size_t)(lt - scan.flat);
+            size_t ll, off;
+            editor_get_line_off(scroll, &ll, &off);
             if (scan.cursor > off) {
                 s_rp->scan_ck_doc     = s_rp->doc;
                 s_rp->scan_ck_fmt     = fmt;
@@ -2913,8 +2967,8 @@ static void refresh_active_pane(bool draw_cursor)
                 continue;
             }
 
-            size_t ll;
-            const char *lt = editor_get_line(line_idx, &ll);
+            size_t ll, loff;
+            const char *lt = editor_get_line_off(line_idx, &ll, &loff);
 
             md_line_info_t mi;
             fmt->parse_line(&scan, lt, ll, &mi);
@@ -2937,12 +2991,11 @@ static void refresh_active_pane(bool draw_cursor)
              * full re-evaluation). */
             bool line_intersects_sel = false;
             if (has_sel) {
-                size_t loff = (size_t)(lt - flat_text);
                 size_t leoff = loff + ll;
                 if (sel_start < leoff && sel_end > loff) {
                     line_intersects_sel = true;
                 } else if (leoff < text_len &&
-                           flat_text[leoff] == '\n' &&
+                           editor_char_at(leoff) == '\n' &&
                            sel_start < leoff + 1 && sel_end > loff) {
                     line_intersects_sel = true;
                 }
@@ -3058,7 +3111,7 @@ static void refresh_active_pane(bool draw_cursor)
              * over-highlighted (and mis-reported to the user as fully
              * selected) any selection spanning more than one row. */
             if (has_sel) {
-                size_t line_off = (size_t)(lt - flat_text);
+                size_t line_off = loff;
                 size_t line_end_off = line_off + ll;
                 bool fully = (sel_start <= line_off &&
                               sel_end >= line_end_off);
@@ -3066,7 +3119,7 @@ static void refresh_active_pane(bool draw_cursor)
                     (sel_start < line_end_off && sel_end > line_off);
                 /* Include trailing newline for overlap check */
                 if (!fully && !partial && line_end_off < text_len &&
-                    flat_text[line_end_off] == '\n') {
+                    editor_char_at(line_end_off) == '\n') {
                     partial = (sel_start < line_end_off + 1 &&
                                sel_end > line_off);
                 }
@@ -3313,7 +3366,7 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel);
  * driver is enabled. */
 
 /* Convert a point (in s_cont_edit local coordinates) to a byte
- * offset within the editor's flat text buffer. Returns true on
+ * offset within the document. Returns true on
  * success and fills *out_off; returns false if the point landed on
  * empty space below the last rendered line. */
 static bool ui_point_to_offset(int x, int y, size_t *out_off)
@@ -3335,28 +3388,20 @@ static bool ui_point_to_offset(int x, int y, size_t *out_off)
     }
     if (slot < 0) {
         /* Point lies below the last visible line -- map to end-of-document. */
-        size_t total = 0;
-        (void)editor_get_text(&total);
-        *out_off = total;
+        *out_off = editor_get_length();
         return true;
     }
 
     int line_idx = editor_get_scroll_line() + slot;
     int total_lines = editor_get_line_count();
     if (line_idx >= total_lines) {
-        size_t total = 0;
-        editor_get_text(&total);
-        *out_off = total;
+        *out_off = editor_get_length();
         return true;
     }
 
-    size_t ll = 0;
-    const char *lt = editor_get_line(line_idx, &ll);
+    size_t ll = 0, line_off = 0;
+    const char *lt = editor_get_line_off(line_idx, &ll, &line_off);
     if (!lt) return false;
-
-    size_t flat_len = 0;
-    const char *flat = editor_get_text(&flat_len);
-    size_t line_off = (size_t)(lt - flat);
 
     /* Translate (x_in_container) into (x_in_label). Each label is
      * positioned at x=2 in the container (see build_editor_screen). */
@@ -3659,11 +3704,11 @@ static int  s_drag_total_dy   = 0;
 #define TOUCH_DRAG_SUPPRESS_PX 8   /* clicks within this radius still count as taps */
 
 /* Convert a tap point (in s_cont_edit local coordinates) to a byte
- * offset within the editor's flat text buffer. Returns true on
+ * offset within the document. Returns true on
  * success and fills *out_off; returns false if the tap landed on
  * empty space below the last rendered line. */
 /* Convert a tap point (in s_cont_edit local coordinates) to a byte
- * offset within the editor's flat text buffer. Implemented as a
+ * offset within the document. Implemented as a
  * thin wrapper around ui_point_to_offset(), which is also reused
  * by keyboard-driven visual-line cursor movement. */
 static bool touch_point_to_offset(int x, int y, size_t *out_off)
@@ -3675,19 +3720,18 @@ static bool touch_point_to_offset(int x, int y, size_t *out_off)
  * word containing it. */
 static void touch_select_word_at(size_t off)
 {
-    size_t flat_len = 0;
-    const char *flat = editor_get_text(&flat_len);
-    if (!flat || flat_len == 0) return;
-    if (off > flat_len) off = flat_len;
+    size_t text_len = editor_get_length();
+    if (text_len == 0) return;
+    if (off > text_len) off = text_len;
 
     /* Walk left until non-word byte (UTF-8-safe: continuation bytes
      * test as word chars so multi-byte codepoints are not split). */
     size_t start = off;
-    while (start > 0 && touch_is_word_byte((unsigned char)flat[start - 1])) {
+    while (start > 0 && touch_is_word_byte((unsigned char)editor_char_at(start - 1))) {
         start--;
     }
     size_t end = off;
-    while (end < flat_len && touch_is_word_byte((unsigned char)flat[end])) {
+    while (end < text_len && touch_is_word_byte((unsigned char)editor_char_at(end))) {
         end++;
     }
     if (start == end) return;  /* tapped on whitespace */
@@ -7536,36 +7580,60 @@ static void show_hwinfo(help_origin_t origin)
  * digit (any non-ASCII byte counts as a letter), so Markdown markers
  * like "#", "-" or "---" are not counted. A paragraph is a block of
  * non-blank lines between blank lines that holds at least one word. */
-static void count_text(const char *t, size_t len, unsigned *words,
-                       unsigned *paras, unsigned *lines, unsigned *chars)
+/* Word / paragraph / line / character counts, fed piece by piece
+ * (a file in the browser is read in chunks, never whole). */
+typedef struct {
+    unsigned words, paras, lines, chars;
+    size_t   size;
+    bool     in_word, word_ok, line_blank, para_counted;
+    char     last;
+} text_counts_t;
+
+static void counts_init(text_counts_t *c)
 {
-    *words = *paras = *lines = *chars = 0;
-    bool in_word = false, word_ok = false;
-    bool line_blank = true, para_counted = false;
-    for (size_t i = 0; i <= len; i++) {
-        unsigned char c = i < len ? (unsigned char)t[i] : '\n';
-        if (i < len && (c & 0xC0) != 0x80) (*chars)++;
-        bool space = c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
-                     c == '\f' || c == '\v';
-        if (space) {
-            if (in_word && word_ok) {
-                (*words)++;
-                if (!para_counted) { (*paras)++; para_counted = true; }
-            }
-            in_word = word_ok = false;
-        } else {
-            in_word = true;
-            if (c >= 0x80 || isalnum(c)) word_ok = true;
-            line_blank = false;
+    memset(c, 0, sizeof(*c));
+    c->line_blank = true;
+}
+
+static void counts_byte(text_counts_t *c, unsigned char ch)
+{
+    bool space = ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
+                 ch == '\f' || ch == '\v';
+    if (space) {
+        if (c->in_word && c->word_ok) {
+            c->words++;
+            if (!c->para_counted) { c->paras++; c->para_counted = true; }
         }
-        if (c == '\n') {
-            /* The final pseudo-newline ends the last line unless the
-             * text is empty or already ended with a newline. */
-            if (i < len || (len && t[len - 1] != '\n')) (*lines)++;
-            if (line_blank) para_counted = false;
-            line_blank = true;
-        }
+        c->in_word = c->word_ok = false;
+    } else {
+        c->in_word = true;
+        if (ch >= 0x80 || isalnum(ch)) c->word_ok = true;
+        c->line_blank = false;
     }
+    if (ch == '\n') {
+        if (c->line_blank) c->para_counted = false;
+        c->line_blank = true;
+    }
+}
+
+static void counts_feed(text_counts_t *c, const char *t, size_t len)
+{
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)t[i];
+        if ((ch & 0xC0) != 0x80) c->chars++;
+        if (ch == '\n') c->lines++;
+        counts_byte(c, ch);
+    }
+    if (len) c->last = t[len - 1];
+    c->size += len;
+}
+
+/* A word needs a letter or digit; a paragraph is a blank-line-separated
+ * block with a word; the last line counts even without a newline. */
+static void counts_finish(text_counts_t *c)
+{
+    counts_byte(c, '\n');                  /* ends the last word */
+    if (c->size && c->last != '\n') c->lines++;
 }
 
 /* project is the document's project and name its bare file name, or
@@ -7659,20 +7727,22 @@ static void build_projectinfo_text(std::string &out, int cols, const char *name)
     }
 }
 
+/* data/len is the content to compare with the server, or NULL to let
+ * Git sync read the saved file itself. */
 static void build_fileinfo_text(std::string &out, int cols, const char *name,
                                 const char *fmt_name, bool unsaved,
+                                const text_counts_t *tc,
                                 const char *data, size_t len,
                                 const char *project, const char *git_name)
 {
     const int kc = 15;
     char buf[64];
-    unsigned words, paras, lines, chars;
-    count_text(data, len, &words, &paras, &lines, &chars);
+    unsigned words = tc->words, paras = tc->paras, lines = tc->lines, chars = tc->chars;
 
     help_heading(out, "File");
     help_row(out, cols, kc, "Name", name);
     help_row(out, cols, kc, "Format", fmt_name);
-    snprintf(buf, sizeof(buf), "%u bytes", (unsigned)len);
+    snprintf(buf, sizeof(buf), "%u bytes", (unsigned)tc->size);
     help_row(out, cols, kc, "Size", buf);
     if (unsaved) help_row(out, cols, kc, "Unsaved", "yes (counts include the changes)");
 
@@ -7721,12 +7791,17 @@ static void show_editor_fileinfo(void)
         if (project_of_path(path, proj, sizeof(proj))) git_name = name;
     }
     size_t len = 0;
-    const char *data = editor_get_text(&len);
+    const char *data = editor_text_begin(&len);
+    text_counts_t tc;
+    counts_init(&tc);
+    counts_feed(&tc, data, len);
+    counts_finish(&tc);
     std::string text;
     build_fileinfo_text(text, help_cols(), name,
                         fileinfo_format_name(editor_get_format()),
-                        editor_is_modified(), data ? data : "", len,
+                        editor_is_modified(), &tc, data ? data : "", len,
                         git_name ? proj : NULL, git_name);
+    editor_text_end();
     show_fileinfo_page(HELP_FROM_EDITOR, text);
 }
 
@@ -7756,18 +7831,33 @@ static void show_browser_fileinfo(void)
     project_dir(s_cur_project, dir, sizeof(dir));
     char path[320];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
-    char *data = NULL;
-    size_t len = 0;
-    if (sd_card_read_file(path, &data, &len) != ESP_OK) {
+    /* Counted in chunks: the file is never loaded whole. Git sync
+     * reads it again itself for the server comparison. */
+    FILE *f = fopen(path, "rb");
+    char *chunk = (char *)malloc(4096);
+    if (!f || !chunk) {
+        if (f) fclose(f);
+        free(chunk);
         editor_ui_set_status("Cannot read the file");
         return;
     }
+    text_counts_t tc;
+    counts_init(&tc);
+    size_t n;
+    while ((n = fread(chunk, 1, 4096, f)) > 0) counts_feed(&tc, chunk, n);
+    bool rd_err = ferror(f);
+    fclose(f);
+    free(chunk);
+    if (rd_err) {
+        editor_ui_set_status("Cannot read the file");
+        return;
+    }
+    counts_finish(&tc);
     editor_doc_format_t fmt = EDITOR_DOC_MARKDOWN;
     editor_path_format(name, &fmt);
     std::string text;
     build_fileinfo_text(text, help_cols(), name, fileinfo_format_name(fmt),
-                        false, data, len, s_cur_project, name);
-    free(data);
+                        false, &tc, NULL, 0, s_cur_project, name);
     show_fileinfo_page(origin, text);
 }
 
@@ -9826,6 +9916,8 @@ static void handle_editor_key(const kb_event_t *ev)
         case 'c':
             if (editor_copy())
                 editor_ui_set_status("Copied");
+            else if (editor_selection_active())
+                editor_ui_set_status("Copy failed: no memory or SD card");
             ensure_cursor_visible();
             editor_ui_refresh();
             return;
@@ -9836,6 +9928,8 @@ static void handle_editor_key(const kb_event_t *ev)
             }
             if (editor_cut())
                 editor_ui_set_status("Cut");
+            else if (editor_selection_active())
+                editor_ui_set_status("Cut failed: no memory or SD card");
             ensure_cursor_visible();
             editor_ui_refresh();
             return;

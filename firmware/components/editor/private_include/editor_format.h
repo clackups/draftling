@@ -35,9 +35,8 @@ enum {
 
 /* State threaded through a document's lines from the top. */
 typedef struct {
-    const char *flat;       /* flattened document text */
-    size_t      flat_len;
-    size_t      cursor;     /* cursor byte offset in flat */
+    int         line;       /* index of the line parse_line() sees next */
+    size_t      cursor;     /* cursor byte offset in the document */
     bool        in_code;    /* Markdown: inside a fenced code block */
     ftn_state_t ftn;        /* Fountain: element state */
 } fmt_scan_t;
@@ -66,8 +65,10 @@ typedef struct {
 
 typedef struct {
     void (*scan_init)(fmt_scan_t *sc);
-    /* Classify lt[0, ll) -- the next line, lying inside sc->flat --
-     * and advance sc past it. mi may be NULL. */
+    /* Classify lt[0, ll) -- line sc->line of the active document --
+     * and advance sc past it (sc->line++). mi may be NULL. Lines are
+     * parsed in order; a format may look at the next line with
+     * editor_get_line(sc->line + 1), which leaves lt valid. */
     void (*parse_line)(fmt_scan_t *sc, const char *lt, size_t ll,
                        md_line_info_t *mi);
     /* Hide the line's markers (unless reveal: the focused cursor line)
@@ -107,7 +108,7 @@ static inline const editor_format_t *editor_format_active(void)
 /* Start a top-to-bottom scan of the active document. */
 static inline void editor_format_scan_begin(const editor_format_t *f, fmt_scan_t *sc)
 {
-    sc->flat = editor_get_text(&sc->flat_len);
+    sc->line = 0;
     sc->cursor = editor_get_cursor();
     f->scan_init(sc);
 }

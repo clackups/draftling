@@ -10,6 +10,7 @@ static void md_scan_init(fmt_scan_t *sc)
 
 static void md_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t *mi)
 {
+    int line = sc->line++;
     if (!mi) {
         if (md_is_code_fence(lt, ll)) sc->in_code = !sc->in_code;
         return;
@@ -24,11 +25,9 @@ static void md_parse(fmt_scan_t *sc, const char *lt, size_t ll, md_line_info_t *
      * blockquote. */
     if (mi->type != MD_LINE_PARAGRAPH && mi->type != MD_LINE_BLOCKQUOTE &&
         mi->type != MD_LINE_BULLET && mi->type != MD_LINE_NUMBERED) return;
-    const char *end = sc->flat + sc->flat_len;
-    const char *nx = lt + ll + 1;
-    if (lt + ll >= end || nx > end) return;
-    const char *nl = (const char *)memchr(nx, '\n', (size_t)(end - nx));
-    size_t nll = nl ? (size_t)(nl - nx) : (size_t)(end - nx);
+    if (line + 1 >= editor_get_line_count()) return;
+    size_t nll;
+    const char *nx = editor_get_line(line + 1, &nll);
     static md_line_info_t next;     /* too large for the LVGL task stack */
     md_parse_line(nx, nll, &next, sc->in_code);
     mi->next_continues = next.type == MD_LINE_PARAGRAPH ||
