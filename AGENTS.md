@@ -646,7 +646,16 @@ Per-board display backends behind a single C API:
   waveform stopped touch polling, so the second tap of a double-tap
   was lost); `sticky_wait_idle()` waits before the next panel command
   and then re-syncs both RAM planes from `s_shown`, the driver's copy
-  of the frame on the glass.
+  of the frame on the glass. Only the first refresh after power-on is
+  a full one; every later refresh (whole-screen changes, Ctrl+R, the
+  pre-sleep screen) is a fast one, on both controllers, and
+  `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` is ignored. On hardware
+  (SSD1677) a full refresh made the following fast refreshes darken
+  the whole screen within a few keystrokes -- the same in every
+  release since the board was added, found by comparing v1.0.20 /
+  v1.0.21 with and without a Ctrl+R before typing -- while fast
+  refreshes alone keep it clean. The SSD2677 path follows suit
+  untested.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
@@ -2677,7 +2686,8 @@ is defined.
 
 `int` used by e-paper backends only (gated on
 `DRAFTLING_DISPLAY_EPD`). Number of partial refreshes between
-full refreshes; default 30.
+full refreshes; default 30. The Seeed reTerminal Sticky backend
+ignores it (fast refreshes only, see `display_reterminal_sticky.cpp`).
 
 #### Derived feature flags (no menuconfig prompt)
 

@@ -39,6 +39,13 @@ in the git log.
 
 ### Fixed
 
+- **Seeed reTerminal Sticky screen darkening while typing**: after
+  every full screen refresh (Ctrl+R, and one every 30 updates), typing
+  made the whole screen grow darker and dirtier within a few
+  keystrokes. The Sticky now only uses the fast screen update, which
+  keeps the screen clean; the only full refresh is the one when the
+  device starts. Ctrl+R no longer flashes the screen.
+
 - **Device restart when paging up in a long document**: pressing PgUp
   near the end of a very long document could freeze the editor long
   enough for the device to restart. Paging up is now fast anywhere in a

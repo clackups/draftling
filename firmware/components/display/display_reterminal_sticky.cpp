@@ -30,7 +30,8 @@
  *     ghosts much less here than the sticky-micronotes sequences
  *     (full 0xF7, fast 0xFF) used before. An earlier 0xFC attempt
  *     showed nothing, but the panel was blank then anyway because of
- *     the unpowered SD card.
+ *     the unpowered SD card. Only the first refresh after power-on is
+ *     a full one; every later refresh is a fast one (display_flush()).
  *   - SSD2677 (untested, no such unit available): ported from
  *     Seeed_GFX2's Driver_SSD2677.cpp; see the section below.
  *
@@ -91,12 +92,6 @@ static const char *TAG = "DisplayReterminalSticky";
 #define EPD_MARGIN_LEFT      display_margin_left()
 #define EPD_MARGIN_TOP       display_margin_top()
 
-#ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
-#define STICKY_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
-#else
-#define STICKY_FULL_REFRESH_INTERVAL 30
-#endif
-
 static esp_lcd_panel_io_handle_t s_io = NULL;
 static uint8_t  *s_fb = NULL;
 /* SSD1677: inverted frame for a full refresh, see
@@ -133,22 +128,15 @@ static uint8_t  *s_tx = NULL;
 static uint8_t   s_ssd2677_latched = 0;
 static bool      s_ssd2677_powered = false;
 static bool      s_needs_initial_full = true;
-static bool      s_force_full = true;
-static int       s_partial_count = 0;
 static int       s_width = PANEL_WIDTH;
 static int       s_height = PANEL_HEIGHT;
 
 static int s_dirty_x0 = -1, s_dirty_y0 = -1, s_dirty_x1 = -1, s_dirty_y1 = -1;
 static int s_clip_x0 = -1, s_clip_y0 = -1, s_clip_x1 = -1, s_clip_y1 = -1;
-/* See display_ws_epd397.cpp's comment on the equivalent field: the
- * sum of pushed-region areas, not the bounding box's area, drives the
- * fast-vs-full waveform choice in display_flush(). */
-static long s_dirty_area_sum = 0;
 
 static inline void clear_dirty(void)
 {
     s_dirty_x0 = s_dirty_y0 = s_dirty_x1 = s_dirty_y1 = -1;
-    s_dirty_area_sum = 0;
 }
 
 static inline void mark_dirty_rect(int x, int y, int w, int h)
@@ -159,7 +147,6 @@ static inline void mark_dirty_rect(int x, int y, int w, int h)
     int x1 = std::min(s_width,  x + w);
     int y1 = std::min(s_height, y + h);
     if (x1 <= x0 || y1 <= y0) return;
-    s_dirty_area_sum += (long)(x1 - x0) * (long)(y1 - y0);
     if (s_dirty_x0 < 0) {
         s_dirty_x0 = x0; s_dirty_y0 = y0;
         s_dirty_x1 = x1 - 1; s_dirty_y1 = y1 - 1;
@@ -509,7 +496,8 @@ static void ssd2677_display_fast(const uint8_t *fb)
     ssd2677_latch_waveform(SSD2677_WAVEFORM_PARTIAL);
     ssd2677_send_frame(fb, s_prev);
     /* The firmware keeps the panel powered across consecutive partial
-     * refreshes; the next full refresh or deep sleep powers it off. */
+     * refreshes; deep sleep powers it off (after the first refresh
+     * there are only partial ones, see display_flush()). */
     ssd2677_power_on();
     epd_cmd(0x12); epd_data1(0x00); /* DRF */
     epd_wait_busy();
@@ -728,8 +716,6 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     }
 
     s_needs_initial_full = true;
-    s_force_full = true;
-    s_partial_count = 0;
     clear_dirty();
     s_initialized = true;
 
@@ -743,7 +729,6 @@ extern "C" void display_clear(uint8_t color)
     if (!s_initialized || !s_fb) return;
     memset(s_fb, color ? 0xFF : 0x00, FRAMEBUFFER_BYTES);
     mark_dirty_rect(0, 0, s_width, s_height);
-    s_force_full = true;
 }
 
 extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
@@ -805,7 +790,6 @@ extern "C" void display_flush(void)
     if (s_dirty_x0 < 0) return;
 
     int x0 = s_dirty_x0, y0 = s_dirty_y0, x1 = s_dirty_x1, y1 = s_dirty_y1;
-    long dirty_area_sum = s_dirty_area_sum;
     clear_dirty();
 
     if (s_clip_x0 >= 0 && s_clip_y0 >= 0 && s_clip_x1 >= s_clip_x0 && s_clip_y1 >= s_clip_y0) {
@@ -817,48 +801,45 @@ extern "C" void display_flush(void)
     }
 
     if (x1 < x0 || y1 < y0) {
-        s_force_full = false;
         s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
         return;
     }
 
-    /* "huge" drives the fast-vs-full waveform choice below, so it
-     * should reflect how much content actually changed -- use the sum
-     * of the individual pushed regions (dirty_area_sum), not the area
-     * of the bounding box that merely encloses them (x0..y1). See the
-     * comment on s_dirty_area_sum. */
-    bool huge = dirty_area_sum * 4 > (long)s_width * s_height * 3;
-    bool do_full = s_needs_initial_full || s_force_full || huge ||
-                   s_partial_count >= STICKY_FULL_REFRESH_INTERVAL;
-
-    if (do_full) {
+    /* Only the first refresh after power-on is a full one -- what
+     * the glass still shows from before is unknown, and a fast
+     * refresh only drives pixels that differ from the previous frame.
+     * Every other refresh, a whole-screen change, Ctrl+R and the
+     * pre-sleep screen included, is a fast refresh: on hardware
+     * (SSD1677) a full refresh made the following fast refreshes
+     * darken the whole screen much sooner -- the same in every release
+     * since the board was added -- while fast refreshes alone keep it
+     * clean. The SSD2677 path does the same (untested). */
+    if (s_needs_initial_full) {
         if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_full(s_fb);
         else                               sticky_display(s_fb, true);
-        s_partial_count = 0;
         s_needs_initial_full = false;
     } else {
         if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_fast(s_fb);
         else                               sticky_display(s_fb, false);
-        s_partial_count++;
     }
 
     s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
-    s_force_full = false;
 }
 
+/* Redraws the whole screen, with a fast refresh like everything else
+ * (see display_flush()). */
 extern "C" void display_full_refresh(void)
 {
     if (!s_initialized) return;
-    s_force_full = true;
     s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
     mark_dirty_rect(0, 0, s_width, s_height);
     display_flush();
 }
 
+/* No-op: this backend never does a full refresh after the first one
+ * (see display_flush()). */
 extern "C" void display_request_full_refresh(void)
 {
-    if (!s_initialized) return;
-    s_force_full = true;
 }
 
 extern "C" uint8_t *display_get_buffer(void)
