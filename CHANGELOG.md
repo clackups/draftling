@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.22] - 2026-11-03
+
 ### Added
 
 - **Keyboard battery level on the hardware information page**: when a
