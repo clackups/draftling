@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
+  Espressif's ESP32-S31-Korvo-1 board with the
+  ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
+  in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
+  board Draftling supports. Not yet tested on the device.
+
 ## [1.0.22] - 2026-11-03
 
 ### Added

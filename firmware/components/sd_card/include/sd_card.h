@@ -11,6 +11,10 @@ extern "C" {
 #include <sdmmc_cmd.h>
 
 /* Initialize the SD card on a 1-bit SDMMC slot. */
+/* SDMMC host slot sd_card_init() uses (-1, the default: the driver's
+ * default slot). Needed on chips whose SDMMC pins are fixed per slot
+ * (IOMUX only, e.g. the ESP32-S31). Call before sd_card_init(). */
+void sd_card_set_sdmmc_slot(int slot);
 esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point);
 
 /*

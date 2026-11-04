@@ -11,7 +11,8 @@ saves flash space.
 ## Building
 
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
-v6.0.2 or later.
+v6.0.2 or later (v6.1 or later for the ESP32-S31 board,
+`espressif_s31_korvo1`).
 
 All firmware sources and build files live under [`firmware/`](firmware),
 which ships a [`CMakePresets.json`](firmware/CMakePresets.json) with one
@@ -37,7 +38,8 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `microjournal_rev5`,
 `xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
 `waveshare_epaper_397`, `seeed_reterminal_e1001`,
-`seeed_reterminal_sticky`, `m5stack_papermono`, `nicemcu_c5_28ips`.
+`seeed_reterminal_sticky`, `m5stack_papermono`, `nicemcu_c5_28ips`,
+`espressif_s31_korvo1`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:
