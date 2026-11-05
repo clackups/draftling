@@ -21,8 +21,8 @@
 
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
-/* Default "Active language layouts" set: US and UA when compiled in,
- * plus the input-method layout (VI, KO, JA, ZH) of a pack, else the first
+/* Default "Active language layouts" set: US when compiled in, plus the
+ * input-method layout (VI, KO, JA, ZH) of a pack, else the first
  * compiled-in layout so the set is never empty. */
 static uint32_t default_active_mask(void)
 {
@@ -41,9 +41,6 @@ static uint32_t default_active_mask(void)
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
     mask |= (1u << KB_LAYOUT_US);
-#endif
-#ifdef CONFIG_KB_LAYOUT_ENABLE_UA
-    mask |= (1u << KB_LAYOUT_UA);
 #endif
     if (mask == 0) mask = 1u;
     return mask;

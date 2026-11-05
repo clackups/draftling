@@ -13,6 +13,13 @@ in the git log.
   same button whose 2-second hold puts it to sleep. The BOOT button
   still wakes it too.
 
+### Changed
+
+- **Only US-English layout active by default**: on a fresh install of
+  the default firmware, Ctrl+L no longer cycles through Ukrainian.
+  Turn other layouts on in F1 -> Settings -> Active layouts. Devices
+  that already have a saved layout selection keep it.
+
 ## [1.0.22] - 2026-11-03
 
 ### Added

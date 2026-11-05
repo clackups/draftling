@@ -1495,7 +1495,7 @@ user-configurable "active set" -- see `kb_layout_set_active()` /
 `kb_layout_is_active()` / `kb_layout_get_active_mask()` /
 `kb_layout_set_active_mask()`. `components/editor/editor_ui.cpp` owns
 persisting this set to NVS and exposes it as the "Active layouts" row
-in the F1 -> Settings menu; it defaults to US + UA, plus the
+in the F1 -> Settings menu; it defaults to US only, plus the
 input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 

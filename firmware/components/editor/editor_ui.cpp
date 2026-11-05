@@ -649,8 +649,8 @@ static void save_append_only_to_nvs(void)
  * which of the compiled-in keyboard layouts (see kb_layout.h) Ctrl+L /
  * Win+Space rotate through -- a build with several layouts enabled in
  * Kconfig does not force every user to page through all of them just
- * to get back to the one or two they actually use. Defaults to US and
- * UA (see kb_layout.cpp's default_active_mask()). The mask itself is
+ * to get back to the one or two they actually use. Defaults to US
+ * only (see kb_layout.cpp's default_active_mask()). The mask itself is
  * owned by kb_layout.cpp; this is just the NVS load/save wrapper. */
 /* The bit order of the mask follows the compiled-in layouts, so each
  * language pack keeps its own key: flashing a different pack must not

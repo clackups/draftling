@@ -433,9 +433,10 @@ The editor supports five keyboard layouts that can be switched with
 | FR | French (AZERTY with accents) |
 | HE | Hebrew (Israeli standard) |
 
-The current layout is shown in the title bar. By default, only
-US-English and Ukrainian are compiled into the firmware. Other layouts
-need to be enabled in firmware configuration.
+All five are compiled into the default firmware, but only US-English
+is active at first. Turn the others on in F1 -> Settings -> Active
+layouts; Ctrl+L cycles through the active ones. The current layout is
+shown in the title bar when more than one is active.
 
 Vietnamese, Korean, Japanese and Simplified Chinese come in separate
 firmware images, the language packs, each with US-English and the
