@@ -1449,6 +1449,19 @@ config DRAFTLING_WAKEUP_GPIO
     default 28 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default 0
 
+# DRAFTLING_WAKEUP_GPIO_EXTRA is an optional second active-low
+# RTC-capable GPIO that also wakes the device from deep sleep, armed
+# through EXT1 (ESP_EXT1_WAKEUP_ANY_LOW) next to the EXT0 wake on
+# DRAFTLING_WAKEUP_GPIO. -1 (default) arms nothing extra.
+config DRAFTLING_WAKEUP_GPIO_EXTRA
+    int
+    # Waveshare ESP32-S3-ePaper-3.97: the Function button (GPIO5, the
+    # center press of the rocker) puts the device to sleep on a 2 s
+    # hold (DRAFTLING_SLEEP_BUTTON_GPIO) and wakes it as well; BOOT
+    # stays the main wake button.
+    default 5  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default -1
+
 # DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
 # that enters deep sleep (via standby_enter_sleep()) on a
 # BTN_LONG_PRESS_MS hold, independent of DRAFTLING_WAKEUP_GPIO above.

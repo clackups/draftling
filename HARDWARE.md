@@ -632,6 +632,9 @@ Up/Down inject the arrow keys and Function injects Enter
 (`ws_epaper397_nav_init()` in `main/main.cpp`), mirroring the Elecrow
 CrowPanel 5.79"'s Back/dial-switch convention; BOOT is the standard
 deep-sleep wake / BLE-forget button every other board already gets.
+A 2 s hold of Function (the rocker's center press) enters deep sleep,
+and pressing it wakes the board again: it is armed as an EXT1 wake
+source (`DRAFTLING_WAKEUP_GPIO_EXTRA`) next to the EXT0 wake on BOOT.
 On-board MicroSD wired to a full 4-bit SDMMC bus, of which Draftling
 only uses 1-bit mode (CLK/CMD/D0), matching every other SDMMC board
 in this repo.

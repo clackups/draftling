@@ -1709,6 +1709,13 @@ workaround; both woke the device immediately, the latter because
 the e-paper backend initialises only the panel (not the touch
 controller), so the GT911 is left uninitialised and holds INT low.
 
+A board may name a second active-low wake button,
+`CONFIG_DRAFTLING_WAKEUP_GPIO_EXTRA` (-1 = none): it is armed through
+EXT1 (any-low) next to EXT0, with the same pull-up and
+wait-for-release treatment (a pin still LOW after 10 s is just not
+armed). The Waveshare ESP32-S3-ePaper-3.97 sets it to the Function
+button (GPIO5), whose 2 s hold is also its sleep trigger.
+
 On targets that have no EXT0 support (the ESP32-P4 / M5Stack Tab5,
 where `SOC_PM_SUPPORT_EXT0_WAKEUP` is undefined), the EXT0 arming
 is compiled out entirely. The Tab5 has no user button or touch INT

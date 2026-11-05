@@ -6,6 +6,13 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Waveshare ESP32-S3-ePaper-3.97: wake with the rocker**: pressing
+  the center of the rocker wheel now wakes the device from sleep, the
+  same button whose 2-second hold puts it to sleep. The BOOT button
+  still wakes it too.
+
 ## [1.0.22] - 2026-11-03
 
 ### Added
