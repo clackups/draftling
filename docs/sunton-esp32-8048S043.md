@@ -108,11 +108,10 @@ so no axis swap or mirror is needed
 
 ## Keyboard layouts
 
-This author of this port works with a German BLE keyboard, so the
-`sdkconfig.defaults.sunton_8048s043` overlay enables only the US (QWERTY)
-and DE (QWERTZ) layouts (cycle with `Ctrl+L` or `Win+Space`) and
-disables the Ukrainian, French and Hebrew layouts that the common
-Kconfig would otherwise pull in.
+The board builds with the same layouts as every other board. Only
+US-English is active at first; turn on others (for example German
+QWERTZ) in F1 -> Settings -> Active layouts and cycle with `Ctrl+L` or
+`Win+Space`.
 
 The author's keyboard has no dedicated ESC key, so `Ctrl+Q` is wired as an
 Escape substitute. `process_key_event()` in
@@ -165,7 +164,7 @@ idf.py --preset sunton_8048s043 -p /dev/ttyUSB0 flash monitor
 
 `sdkconfig.defaults.sunton_8048s043` selects
 `CONFIG_DRAFTLING_MODEL_SUNTON_8048S043`, forces DIO flash mode,
-enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
+and enables the GT911 touchscreen.
 
 ## Cross-references
 
@@ -175,5 +174,5 @@ enables the GT911 touchscreen, and sets the US + DE keyboard layouts.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
 - `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+Q -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
 - `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` / `draftling_lvgl_port_get_flip180()` runtime 180-degree flip.
-- `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable + US/DE keyboard layouts.
+- `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable.
 - `docs/sunton-esp32-8048S070c.md` -- the 7" sibling board.

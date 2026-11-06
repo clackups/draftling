@@ -2903,11 +2903,10 @@ of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
 component reads these symbols at compile time to conditionally compile
-only the enabled layout tables. A board-specific `sdkconfig.defaults.*`
-can override individual symbols (see `sdkconfig.defaults.sunton_8048s043`,
-which keeps only US + DE for that author's German keyboard); the
-`sdkconfig.defaults.lang_<pack>` files set every layout explicitly, so
-they win over such board lines.
+only the enabled layout tables. Board `sdkconfig.defaults.*` files do
+not set layout symbols: every board builds the pack's full layout set,
+and users pick theirs with the runtime "Active layouts" setting below.
+The `sdkconfig.defaults.lang_<pack>` files set every layout explicitly.
 
 Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->

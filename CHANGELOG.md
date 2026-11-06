@@ -34,6 +34,11 @@ in the git log.
   the default firmware, Ctrl+L no longer cycles through Ukrainian.
   Turn other layouts on in F1 -> Settings -> Active layouts. Devices
   that already have a saved layout selection keep it.
+- **Sunton ESP32-8048S043: all layouts of the language pack**: this
+  board used to build with only the US and German layouts; it now has
+  the same layouts as every other board. Devices that had German
+  active show Ukrainian in its place after the update: pick German
+  again once in F1 -> Settings -> Active layouts.
 
 ### Fixed
 
