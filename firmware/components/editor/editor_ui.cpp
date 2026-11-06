@@ -5271,12 +5271,16 @@ static void refresh_settings_items(void)
     /* Active language layouts -- comma-separated summary of the
      * layouts Ctrl+L / Win+Space currently rotate through. */
     {
-        char names[64] = "";
+        char names[200] = "";
         for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
             kb_layout_id_t id = (kb_layout_id_t)i;
             if (!kb_layout_is_active(id)) continue;
             if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
             strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
+        }
+        /* A long list would not fit the row: give the count instead. */
+        if (strlen(names) > 40) {
+            snprintf(names, sizeof(names), "%d layouts", kb_layout_active_count());
         }
         snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
         lv_list_add_btn(s_settings_list, NULL, buf);
@@ -6254,8 +6258,12 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         if (s_dbx_step == DBX_STEP_SITE) {
             text_field_key(s_dbx_site, sizeof(s_dbx_site), &s_dbx_site_pos, ev);
         } else {
-            /* Digits only; editing keys pass through. */
+            /* Digits only; editing keys pass through. A dead key
+             * (translate returned NULL and left an accent pending)
+             * must not reach text_field_key(), which would translate
+             * the key again and type the accent. */
             const char *text = kb_layout_translate(ev->keycode, ev->modifier);
+            if (!text && kb_layout_dead_key_pending()) break;
             bool printable = text && (unsigned char)text[0] >= 0x20;
             if (!printable || (text[0] >= '0' && text[0] <= '9' && !text[1]))
                 text_field_key(s_dbx_otp, sizeof(s_dbx_otp), &s_dbx_otp_pos, ev);
@@ -9807,7 +9815,11 @@ static void handle_editor_key(const kb_event_t *ev)
         show_help(HELP_FROM_EDITOR);
         return;
     }
-    if ((ev->modifier & (KB_MOD_LALT | KB_MOD_RALT)) && !ctrl &&
+    /* Right Alt is AltGr on layouts that have one (AltGr + i types
+     * i-acute on the UK layout), so only Left Alt is Alt there. */
+    uint8_t alt_mask = kb_layout_has_altgr() ? KB_MOD_LALT
+                                             : (KB_MOD_LALT | KB_MOD_RALT);
+    if ((ev->modifier & alt_mask) && !ctrl &&
         kb_layout_shortcut_char(ev->keycode) == 'i') {
         /* Alt+I: file information for the focused document. */
         show_editor_fileinfo();

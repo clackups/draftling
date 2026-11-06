@@ -1480,9 +1480,50 @@ Public API: `pca9557_init()`, `pca9557_is_present()`,
 Translates HID keycodes and modifier flags into UTF-8 character strings
 for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
 (Cyrillic), German (QWERTZ), French (AZERTY), Hebrew (SI 1452, RTL
-via LVGL's bidi engine), Korean (Dubeolsik; the letter keys give
-Hangul Compatibility Jamo) and the US-based Vietnamese, Japanese and
-Chinese layouts. Each layout can be independently enabled or disabled
+via LVGL's bidi engine), Swiss German / Swiss French (QWERTZ), Italian,
+Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
+Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
+Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q, Korean
+(Dubeolsik; the letter keys give Hangul Compatibility Jamo) and the
+US-based Vietnamese, Japanese and Chinese layouts.
+
+Each layout (`layout_table_t` in `kb_layout.cpp`) has full normal /
+shift tables for keycodes 0x04..0x38 (`static_assert`ed to 53
+entries) and a sparse `key_entry_t` list (`extra`) for the AltGr and
+Shift+AltGr layers, the Caps Lock layer (`L_CAPS`: keys whose Shift
+output is not the letter's capital, e.g. the Czech number row, where
+Shift gives digits and Caps Lock the capital accented letter) and keys
+past 0x38 -- the ISO `<>` key left of Z is HID 0x64 (`KC_ISO`).
+Caps Lock otherwise inverts Shift where the Shift output is a capital
+letter (`is_upper_letter()`: Latin-1, Latin Extended-A, Romanian
+comma-below, Cyrillic), on the AltGr layers too (Polish AltGr + a).
+The tables of SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI and TR were
+generated from per-key Unicode lists, with `L_CAPS` entries added for
+every lowercase-letter key whose Shift output is not a capital; their
+comments name every non-ASCII character. The Turkish dotless-i key
+counts as I for Ctrl / Alt shortcuts (`kb_layout_shortcut_char()`).
+`kb_layout_has_altgr()` tells the editor that Right Alt is AltGr, so
+the editor's Alt+I accepts only Left Alt on such layouts (AltGr + i
+types a letter on some of them); the file browser, which has no text
+entry, still accepts either Alt. The ISO key left of Enter is 0x32 in the HID spec
+but 0x31 on many keyboards, so ISO layouts put it on both. New layout
+ids go after HE in `kb_layout_id_t`, so the bits of the existing
+layouts in the persisted active-layout mask do not move.
+
+Dead keys: a table entry starting with `\x01` (`DK_GRAVE`, `DK_ACUTE`,
+`DK_CIRC`, `DK_TILDE`, `DK_DIAER`, `DK_CEDIL`, `DK_CARON`, `DK_BREVE`,
+`DK_DOT`, `DK_RING`, `DK_OGONEK`, `DK_DACUTE`) types nothing;
+`kb_layout_translate()` remembers it and combines it with the next key
+into a Latin-1 or Latin Extended-A letter (`s_dead_keys`, built with
+`DK_TABLE()`, which checks the letter and result lists match), types the accent alone after Space or the same dead
+key, or the accent plus the key when they do not combine; a key with
+no character drops it, and so does a layout change.
+`kb_layout_translate()` is therefore stateful: call it once per key
+press. The Draftbox OTP field, which translates a key and then hands
+it to `text_field_key()` (which translates again), checks
+`kb_layout_dead_key_pending()` first.
+
+Each layout can be independently enabled or disabled
 at build time via Kconfig (see `components/kb_layout/Kconfig.projbuild`);
 the language pack sets the defaults. `kb_layout_ime()` tells the
 editor which input method (`components/ime/`) the active layout uses
@@ -2017,6 +2058,7 @@ for builds that do not need a given script.
 | `greybeard_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
 | `greybeard_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
 | `greybeard_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
+| `greybeard_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
 
 The base font is generated with `--lv-fallback greybeard_NN_ext` and
 the Hebrew subset with `--lv-fallback greybeard_NN_he_next`. Both
@@ -2142,6 +2184,7 @@ layout options:
 | `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
 | `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
+| `hack_latina_NN.c` | same as `greybeard_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
 Greybeard TTFs. For slots 11-30, that's at twice the corresponding
@@ -2182,7 +2225,9 @@ since HIDPI's base font sizes top out at 20 px.
 ## Language packs
 
 A language pack is the set of layouts, input methods and font subsets
-of one firmware image: `default` (US, UA, DE, FR, HE), `vietnamese`
+of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
+IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR),
+`vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
 ZH). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
@@ -2215,10 +2260,21 @@ the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
 **Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
-base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin extension
+base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
+Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
 (`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Cyrillic
 (generated without a fallback, so always last). Missing subsets are
 skipped (`slot_chain_t` table).
+
+**Latin Extended-A** (`greybeard_latina_NN.c`, `hack_latina_NN.c`,
+compiled with `DRAFTLING_HAS_LATIN_EXT_A`, i.e. any of the PL, CZ, SK,
+HU, RO, HR/SI, TR layouts): the whole Latin Extended-A block, the
+Romanian s / t with comma below, the spacing accents the dead keys
+type alone and the low / high double quotes. Generated by
+`components/fonts/tools/gen_latina.sh` with the pinned lv_font_conv,
+Greybeard v1.0.0 and Hack v3.003 (both cover all of it; same sizes,
+`--autohint-off` slots and Hack advance snapping as the Latin
+extension below).
 
 **Latin extension** (`greybeard_latinx_NN.c`, `hack_latinx_NN.c`,
 compiled with KB_LAYOUT_ENABLE_VI or DRAFTLING_HAS_CJK): the
@@ -2817,12 +2873,30 @@ follows the pack:
 | KB_LAYOUT_ENABLE_DE | German (QWERTZ) | y in the default pack |
 | KB_LAYOUT_ENABLE_FR | French (AZERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_HE | Hebrew (SI 1452) | y in the default pack |
+| KB_LAYOUT_ENABLE_DE_CH | Swiss German (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_FR_CH | Swiss French (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_IT | Italian (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_PT | Portuguese, Portugal (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_ES | Spanish, Spain (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_GB | United Kingdom (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_SE_FI | Swedish / Finnish (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_NO | Norwegian (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_DK | Danish (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_PL | Polish, programmers (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_CZ | Czech (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_SK | Slovak (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_HU | Hungarian (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_RO | Romanian, standard (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_HR | Croatian / Slovenian (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_TR | Turkish Q (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_VI | Vietnamese (Telex) | y in the vietnamese pack |
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
 | KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
 
-Derived: `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
+Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR or TR
+enabled) compiles the Latin Extended-A font subset;
+`DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
 fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
 of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
 

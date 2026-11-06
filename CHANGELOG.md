@@ -8,6 +8,21 @@ in the git log.
 
 ### Added
 
+- **16 more European keyboard layouts**: the default firmware now
+  includes Swiss German, Swiss French, Italian, Portuguese, Spanish,
+  UK, Swedish / Finnish, Norwegian, Danish, Polish (programmers),
+  Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian and Turkish
+  Q, and the screen fonts now show the Central and Eastern European
+  and Turkish letters (Latin Extended-A). Turn them on in F1 -> Settings -> Active layouts, then
+  switch with Ctrl+L. Accents are typed as on a computer: press the
+  accent key, then the letter.
+- **Caps Lock on accented-letter keys**: on the Swiss and Italian
+  layouts Caps Lock now types the capital of the accented letters too.
+- **Accent keys on the German and French layouts**: the accent keys
+  (^ and the acute / grave key on German, ^ and the diaeresis on
+  French) now combine with the next letter, so French can type
+  e-circumflex and the like. Press Space after the accent to type the
+  accent alone.
 - **Waveshare ESP32-S3-ePaper-3.97: wake with the rocker**: pressing
   the center of the rocker wheel now wakes the device from sleep, the
   same button whose 2-second hold puts it to sleep. The BOOT button
@@ -19,6 +34,13 @@ in the git log.
   the default firmware, Ctrl+L no longer cycles through Ukrainian.
   Turn other layouts on in F1 -> Settings -> Active layouts. Devices
   that already have a saved layout selection keep it.
+
+### Fixed
+
+- **The `<` `>` key on German and French keyboards**: the key left of
+  Z typed nothing on the German layout and is now `<` `>` (AltGr: `|`)
+  on both. On the French layout the key left of Enter now types `*`
+  and the micro sign, as printed on it.
 
 ## [1.0.22] - 2026-11-03
 

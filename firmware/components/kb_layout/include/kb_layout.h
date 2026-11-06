@@ -29,6 +29,56 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
     KB_LAYOUT_HE,
 #endif
+    /* Added after HE so that the bits of the layouts above keep their
+     * positions in the persisted "Active layouts" mask. */
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
+    KB_LAYOUT_DE_CH,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
+    KB_LAYOUT_FR_CH,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_IT
+    KB_LAYOUT_IT,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_PT
+    KB_LAYOUT_PT,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_ES
+    KB_LAYOUT_ES,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_GB
+    KB_LAYOUT_GB,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_SE_FI
+    KB_LAYOUT_SE_FI,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NO
+    KB_LAYOUT_NO,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DK
+    KB_LAYOUT_DK,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_PL
+    KB_LAYOUT_PL,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CZ
+    KB_LAYOUT_CZ,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_SK
+    KB_LAYOUT_SK,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HU
+    KB_LAYOUT_HU,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_RO
+    KB_LAYOUT_RO,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HR
+    KB_LAYOUT_HR,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TR
+    KB_LAYOUT_TR,
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
     KB_LAYOUT_VI,
 #endif
@@ -62,8 +112,25 @@ kb_ime_t kb_layout_ime(void);
 /* Returns the UTF-8 string for a given HID keycode + modifier.
  * The returned pointer is valid until the next call.
  * Returns NULL if the keycode does not produce a character.
- * Caps Lock (kb_layout_set_caps_lock()) is applied here. */
+ * Caps Lock (kb_layout_set_caps_lock()) is applied here.
+ *
+ * Dead keys (the accent keys of the European layouts) are handled
+ * here too, so this call has state: a dead key returns NULL and is
+ * remembered; the next character key returns the accented letter
+ * ("a" after the acute dead key -> a-acute), the accent itself after
+ * Space or the same dead key, or the accent followed by the
+ * character when the two do not combine. A key that produces no
+ * character drops a pending accent. Call it once per key press. */
 const char *kb_layout_translate(uint8_t keycode, uint8_t modifier);
+
+/* True while a dead key waits for the next character (the last
+ * kb_layout_translate() call returned NULL for a dead key). */
+bool kb_layout_dead_key_pending(void);
+
+/* True when the active layout has an AltGr layer. Right Alt is then
+ * AltGr (it types characters) and must not act as Alt for Alt+letter
+ * shortcuts; on other layouts either Alt key works. */
+bool kb_layout_has_altgr(void);
 
 /* HID keycode of the Caps Lock key. */
 #define KB_KEYCODE_CAPS_LOCK 0x39
@@ -83,7 +150,7 @@ void kb_layout_set(kb_layout_id_t layout);
 /* Get the active keyboard layout */
 kb_layout_id_t kb_layout_get(void);
 
-/* Get the display name for a layout (e.g. "US", "UA", "DE", "FR") */
+/* Get the display name for a layout (e.g. "US", "UA", "DE", "DE-CH") */
 const char *kb_layout_name(kb_layout_id_t layout);
 
 /* Cycle to the next active layout (see kb_layout_set_active()) and

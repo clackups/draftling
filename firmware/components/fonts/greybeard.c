@@ -16,6 +16,7 @@
  *
  *   base --> greybeard_NN_ext (router)
  *        --> greybeard_hebrew_NN   --> greybeard_NN_he_next (router)   [Hebrew]
+ *        --> greybeard_latina_NN   --> greybeard_NN_la_next (router)   [Latin Extended-A]
  *        --> greybeard_latinx_NN   --> greybeard_NN_lx_next (router)   [Vietnamese / CJK]
  *        --> CJK runtime font (cjk_font.c)                  [Korean / Japanese / Chinese]
  *        --> greybeard_cyrillic_NN                                [Ukrainian]
@@ -23,7 +24,9 @@
  * Subsets that are not compiled in are skipped; the Cyrillic subset is
  * generated without a fallback, so it always ends the chain. The
  * Latin-extension subset (Vietnamese letters, curly quotes, dashes)
- * is compiled in with the Vietnamese layout or the CJK fonts.
+ * is compiled in with the Vietnamese layout or the CJK fonts; the
+ * Latin Extended-A subset (Polish, Czech, Turkish, ... letters) with
+ * any layout that needs it (CONFIG_DRAFTLING_HAS_LATIN_EXT_A).
  *
  * If no subset font is enabled the router's fallback stays NULL and
  * LVGL's glyph lookup terminates after the base font with the usual
@@ -116,6 +119,15 @@ ROUTER(greybeard_26_lx_next, 25, 5);
 ROUTER(greybeard_30_lx_next, 30, 6);
 ROUTER(greybeard_34_lx_next, 34, 6);
 
+ROUTER(greybeard_11_la_next, 11, 2);
+ROUTER(greybeard_14_la_next, 13, 2);
+ROUTER(greybeard_16_la_next, 15, 3);
+ROUTER(greybeard_18_la_next, 17, 3);
+ROUTER(greybeard_22_la_next, 21, 4);
+ROUTER(greybeard_26_la_next, 25, 5);
+ROUTER(greybeard_30_la_next, 30, 6);
+ROUTER(greybeard_34_la_next, 34, 6);
+
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;
 extern const lv_font_t greybeard_cyrillic_14;
@@ -138,6 +150,17 @@ extern const lv_font_t greybeard_hebrew_30;
 extern const lv_font_t greybeard_hebrew_34;
 #endif
 
+#ifdef CONFIG_DRAFTLING_HAS_LATIN_EXT_A
+extern const lv_font_t greybeard_latina_11;
+extern const lv_font_t greybeard_latina_14;
+extern const lv_font_t greybeard_latina_16;
+extern const lv_font_t greybeard_latina_18;
+extern const lv_font_t greybeard_latina_22;
+extern const lv_font_t greybeard_latina_26;
+extern const lv_font_t greybeard_latina_30;
+extern const lv_font_t greybeard_latina_34;
+#endif
+
 #ifdef HAS_LATINX
 extern const lv_font_t greybeard_latinx_11;
 extern const lv_font_t greybeard_latinx_14;
@@ -153,8 +176,10 @@ typedef struct {
     const lv_font_t *base;
     lv_font_t *ext;
     lv_font_t *he_next;
+    lv_font_t *la_next;
     lv_font_t *lx_next;
     const lv_font_t *hebrew;
+    const lv_font_t *latina;
     const lv_font_t *latinx;
     const lv_font_t *cyrillic;
 } slot_chain_t;
@@ -163,6 +188,11 @@ typedef struct {
 #define HE(n) &greybeard_hebrew_##n
 #else
 #define HE(n) NULL
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_LATIN_EXT_A
+#define LA(n) &greybeard_latina_##n
+#else
+#define LA(n) NULL
 #endif
 #ifdef HAS_LATINX
 #define LX(n) &greybeard_latinx_##n
@@ -175,7 +205,8 @@ typedef struct {
 #define CY(n) NULL
 #endif
 
-#define SLOT(n) { &greybeard_##n, &greybeard_##n##_ext, &greybeard_##n##_he_next, &greybeard_##n##_lx_next, HE(n), LX(n), CY(n) }
+#define SLOT(n) { &greybeard_##n, &greybeard_##n##_ext, &greybeard_##n##_he_next, &greybeard_##n##_la_next, \
+                  &greybeard_##n##_lx_next, HE(n), LA(n), LX(n), CY(n) }
 
 static const slot_chain_t s_slots[] = {
     SLOT(11),
@@ -196,6 +227,7 @@ void greybeard_init(void)
          * receives the next subset in the chain. */
         lv_font_t *tail = c->ext;
         if (c->hebrew) { tail->fallback = c->hebrew; tail = c->he_next; }
+        if (c->latina) { tail->fallback = c->latina; tail = c->la_next; }
         if (c->latinx) { tail->fallback = c->latinx; tail = c->lx_next; }
 #ifdef CONFIG_DRAFTLING_HAS_CJK
         lv_font_t *cjk = cjk_font_create(c->base->line_height,

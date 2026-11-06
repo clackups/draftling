@@ -421,7 +421,7 @@ boot or power button, or on touchscreen tap where hardware allows it.
 
 ## Keyboard Layouts
 
-The editor supports five keyboard layouts that can be switched with
+The editor supports 21 keyboard layouts that can be switched with
 **Ctrl+L** (or **Win+Space**) or through the **F1 menu**:
 
 | Code | Layout |
@@ -431,9 +431,31 @@ The editor supports five keyboard layouts that can be switched with
 | DE | German (QWERTZ with umlauts) |
 | FR | French (AZERTY with accents) |
 | HE | Hebrew (Israeli standard) |
+| DE-CH | Swiss German (QWERTZ) |
+| FR-CH | Swiss French (QWERTZ) |
+| IT | Italian (QWERTY with accents) |
+| PT | Portuguese, Portugal (QWERTY) |
+| ES | Spanish, Spain (QWERTY) |
+| GB | United Kingdom (QWERTY) |
+| SE/FI | Swedish / Finnish (QWERTY) |
+| NO | Norwegian (QWERTY) |
+| DK | Danish (QWERTY) |
+| PL | Polish, programmers (QWERTY, Polish letters on AltGr) |
+| CZ | Czech (QWERTZ) |
+| SK | Slovak (QWERTZ) |
+| HU | Hungarian (QWERTZ) |
+| RO | Romanian, standard (QWERTY) |
+| HR/SI | Croatian / Slovenian (QWERTZ) |
+| TR | Turkish Q (QWERTY) |
 
-All five are compiled into the default firmware, but only US-English
-is active at first. Turn the others on in F1 -> Settings -> Active
+The accent keys of the European layouts are dead keys, as on a
+computer: press the accent, then the
+letter (acute + e gives e-acute). The accent followed by Space types
+the accent alone. The key left of Z on European keyboards (`<` `>`)
+works on all of these layouts.
+
+All of them are compiled into the default firmware, but only
+US-English is active at first. Turn the others on in F1 -> Settings -> Active
 layouts; Ctrl+L cycles through the active ones. The current layout is
 shown in the title bar when more than one is active.
 
