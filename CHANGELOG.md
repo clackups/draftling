@@ -39,6 +39,12 @@ in the git log.
   the same layouts as every other board. Devices that had German
   active show Ukrainian in its place after the update: pick German
   again once in F1 -> Settings -> Active layouts.
+- **ESP-IDF 6.1 is the minimum version for building**: building the
+  firmware yourself now needs ESP-IDF v6.1 or later; older versions
+  stop with an error. After updating, delete your existing build
+  directories once (`rm -rf firmware/build/<board>`), since an old one
+  would otherwise stop the build with a "Bluetooth is off" error.
+  Prebuilt images from the web flasher are not affected.
 
 ### Fixed
 
