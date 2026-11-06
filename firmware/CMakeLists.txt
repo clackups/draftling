@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/version.cmake)
+
+# ESP-IDF 6.1 is the minimum: the Kconfig defaults files use its option
+# names, and the managed components (esp_lvgl_port 2.9+) need it.
+if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_LESS "6.1")
+    message(FATAL_ERROR
+        "Draftling needs ESP-IDF v6.1 or later; this is "
+        "v${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}.")
+endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 # Draftling release version, shown in the F1 menu and embedded in the
@@ -30,6 +38,19 @@ if(NOT CONFIG_SPIRAM)
         "PSRAM -> Support for external, SPI-connected RAM', then rebuild. "
         "If your target chip has no PSRAM support at all (e.g. ESP32-S2, "
         "bare ESP32-C3 modules without PSRAM), it is not supported.")
+endif()
+
+# Bluetooth comes from sdkconfig.defaults.bluetooth, which the board's
+# preset lists in SDKCONFIG_DEFAULTS. A build directory configured
+# before that file existed keeps the old list in its CMake cache, so
+# deleting only sdkconfig would give a firmware without the BLE
+# keyboard. Stop instead.
+if(NOT CONFIG_BT_ENABLED AND NOT CONFIG_DRAFTLING_NO_BLUETOOTH)
+    message(FATAL_ERROR
+        "Bluetooth is off in ${SDKCONFIG}, but this board uses a BLE "
+        "keyboard. The build directory is probably stale (its CMake cache "
+        "holds an old SDKCONFIG_DEFAULTS list). Delete the whole build "
+        "directory (e.g. rm -rf build/<board>) and build again.")
 endif()
 
 # Language pack consistency: idf.py --lang-pack (idf_ext.py) passes

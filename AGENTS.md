@@ -65,7 +65,7 @@ they differ. Never commit under any other identity.
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
 development boards with reflective LCD displays (plus one ESP32-P4 and
 one ESP32-C5 board). It is built with the
-ESP-IDF framework (v6.0.2+) and uses LVGL v9 for the graphical
+ESP-IDF framework (v6.1+) and uses LVGL v9 for the graphical
 interface.
 
 The user connects a Bluetooth keyboard and edits Markdown files stored on
@@ -158,9 +158,14 @@ partitions_xteink_x4_classic.csv  Same dual-OTA layout for the Xteink
 partitions_seeed_reterminal_sticky.csv  Same dual-OTA layout for the
                             Seeed reTerminal Sticky (32 MB flash)
 sdkconfig.defaults          Common Kconfig defaults for all targets
-sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
-sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, BLE,
-                            WiFi)
+sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, WiFi)
+sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, WiFi)
+sdkconfig.defaults.bluetooth  BLE keyboard host (Bluedroid) defaults, in
+                            every preset except boards without Bluetooth
+                            (MicroJournal Rev 5); .bluetooth.esp32s3 /
+                            .bluetooth.esp32c5 add the target-specific
+                            options (ESP-IDF loads <file>.<target> right
+                            after each defaults file)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
@@ -2917,7 +2922,8 @@ order follows the compiled-in layouts.
 
 ## Building
 
-Requires ESP-IDF v6.0.2 or later.
+Requires ESP-IDF v6.1 or later (the top-level `CMakeLists.txt` stops
+with a `FATAL_ERROR` on older versions).
 
 PSRAM is required on every supported board. The editor gap buffer
 (sized dynamically at startup from the PSRAM that is free when
@@ -2944,8 +2950,10 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `nicemcu_c5_28ips`). Each
-preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
-`sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
+preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
+`sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,
+so no Bluetooth option is set for a disabled stack -- ESP-IDF 6.1
+reports such settings) and its own `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
 `SDKCONFIG` under `build/<board>` so every board's build output stays
 isolated. Run these from inside `firmware/`:
@@ -2966,7 +2974,12 @@ idf.py --preset waveshare_rlcd42 --lang-pack japanese build
 
 If you pull new changes that touch `sdkconfig.defaults` or a board's
 `sdkconfig.defaults.<board>` file, delete the preset's generated
-`sdkconfig` so the defaults are re-applied:
+`sdkconfig` so the defaults are re-applied. After a change to a
+preset's `SDKCONFIG_DEFAULTS` list in `CMakePresets.json`, delete the
+whole `build/<board>` directory: its CMake cache keeps the old list.
+The top-level `CMakeLists.txt` stops a build whose sdkconfig has
+Bluetooth off on a board without `CONFIG_DRAFTLING_NO_BLUETOOTH`,
+which is what such a stale build directory produces.
 
 ```bash
 rm -f build/waveshare_rlcd42/sdkconfig    # from inside firmware/

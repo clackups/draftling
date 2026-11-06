@@ -71,7 +71,7 @@ def action_extensions(base_actions: dict, project_path: str) -> dict:
         if global_args.get('preset'):
             base = _preset_cache_variable(project_dir, global_args.preset, 'SDKCONFIG_DEFAULTS')
         if not base:
-            base = 'sdkconfig.defaults'
+            base = 'sdkconfig.defaults;sdkconfig.defaults.bluetooth'
         defines.append(f'SDKCONFIG_DEFAULTS={base};sdkconfig.defaults.lang_{pack}')
 
     return {

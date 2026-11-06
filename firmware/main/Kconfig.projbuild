@@ -1195,6 +1195,15 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 # physically attached USB keyboard preempts BLE pairing. If a USB
 # keyboard is detected within DRAFTLING_USB_KBD_PROBE_MS at boot,
 # the ble_keyboard component is left uninitialised.
+# Boards built without Bluetooth (their preset leaves out
+# sdkconfig.defaults.bluetooth). Every other board needs the BLE
+# keyboard host; the top-level CMakeLists.txt stops a build of such a
+# board whose sdkconfig has Bluetooth off.
+config DRAFTLING_NO_BLUETOOTH
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default n
+
 config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5

@@ -6,7 +6,7 @@
 ## the bool itself, which sdkconfig.json omits when it is n.
 dependencies:
   idf:
-    version: ">=5.5"
+    version: ">=6.1.0"
   espressif/usb_host_hid:
     version: "^1.0.1"
     rules:

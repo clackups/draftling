@@ -11,7 +11,7 @@ saves flash space.
 ## Building
 
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
-v6.0.2 or later.
+v6.1 or later.
 
 All firmware sources and build files live under [`firmware/`](firmware),
 which ships a [`CMakePresets.json`](firmware/CMakePresets.json) with one
@@ -50,10 +50,14 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 If you pull new changes that touch `sdkconfig.defaults` or any of the
 per-board `sdkconfig.defaults.<board>` files, delete the preset's
-generated `sdkconfig` so the defaults are re-applied:
+generated `sdkconfig` so the defaults are re-applied. If the change
+also edits `CMakePresets.json` (a preset's list of defaults files),
+delete the whole build directory instead, since its CMake cache keeps
+the old list:
 
 ```bash
 rm -f firmware/build/waveshare_rlcd42/sdkconfig
+# or, after CMakePresets.json changes: rm -rf firmware/build/waveshare_rlcd42
 cd firmware
 idf.py --preset waveshare_rlcd42 build
 ```

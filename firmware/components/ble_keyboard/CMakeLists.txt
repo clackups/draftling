@@ -64,7 +64,7 @@ if(CONFIG_BT_BLUEDROID_ENABLED)
     endif()
 endif()
 
-## ESP-IDF 6.0's esp32c5 esp_bt.h leaves the cca_drop_mode /
+## ESP-IDF's esp32c5 esp_bt.h (6.0 and still 6.1) leaves the cca_drop_mode /
 ## cca_low_tx_pwr members out of BT_CONTROLLER_INIT_CONFIG_DEFAULT(),
 ## which trips -Wmissing-field-initializers (an error with -Werror)
 ## where ble_keyboard.cpp expands the macro. The gap is in the IDF
