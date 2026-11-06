@@ -83,12 +83,12 @@
             }
         },
         {
-            "name": "guition_jc4827w543",
+            "name": "guition_jc4827w543c",
             "displayName": "Guition JC4827W543C",
-            "binaryDir": "build/guition_jc4827w543",
+            "binaryDir": "build/guition_jc4827w543c",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.guition_jc4827w543",
-                "SDKCONFIG": "build/guition_jc4827w543/sdkconfig"
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.guition_jc4827w543c",
+                "SDKCONFIG": "build/guition_jc4827w543c/sdkconfig"
             }
         },
         {

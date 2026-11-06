@@ -2344,8 +2344,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   releases the SD card, stops the panel and latches the backlight
   off. Tested on physical hardware (standby about 30 mA).
   *Requires ESP32-S3.*
-- **DRAFTLING_MODEL_GUITION_JC4827W543** -- Guition JC4827W543C
-  (`main/boards/guition_jc4827w543.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
+- **DRAFTLING_MODEL_GUITION_JC4827W543C** -- Guition JC4827W543C
+  (`main/boards/guition_jc4827w543c.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
   flash, `partitions_4mb.csv`), 4.3" 480x272 NV3041A QSPI panel
   (`display_nv3041a.cpp`; CS=45, SCK=47, D0-D3=21/48/40/39, same QSPI
   pins as the JC3248W535), LEDC backlight on GPIO1 at 5 kHz, GT911
@@ -2354,9 +2354,9 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   BOOT (GPIO0) wake, no battery level indication (IP5306 charger only,
   no battery voltage meter wired to the ESP32-S3). The
   unused NS4168 I2S amplifier (LRCLK=2, BCLK=42, DIN=41; no enable
-  GPIO) has its lines driven LOW at boot (`jc4827w543_quiet_speaker()`
+  GPIO) has its lines driven LOW at boot (`jc4827w543c_quiet_speaker()`
   in main.cpp) and held LOW through deep sleep.
-  `pre_sleep_jc4827w543_deinit()` puts the GT911 to sleep, releases
+  `pre_sleep_jc4827w543c_deinit()` puts the GT911 to sleep, releases
   the SD card, holds the amplifier lines and calls
   `display_deep_sleep_prepare()`. No USB MSC / Kermit (native USB vs.
   bridge not confirmed). Tested on physical hardware.
@@ -2865,7 +2865,7 @@ PSRAM) are not supported.
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
-`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,

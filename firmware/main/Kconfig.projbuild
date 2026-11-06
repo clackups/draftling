@@ -137,7 +137,7 @@ config DRAFTLING_MODEL_VIEWE_UEDX80480043
         USB through a CH340C USB-to-UART bridge. USB-powered, no
         battery input.
 
-config DRAFTLING_MODEL_GUITION_JC4827W543
+config DRAFTLING_MODEL_GUITION_JC4827W543C
     bool "Guition JC4827W543C (ESP32-S3, NV3041A, 4.3\" QSPI color LCD, 480x272, touch)"
     depends on IDF_TARGET_ESP32S3
     help
@@ -149,6 +149,9 @@ config DRAFTLING_MODEL_GUITION_JC4827W543
         meter). The BOOT button (GPIO0) is the
         deep-sleep wakeup source. Pins from the vendor IO pin table
         (github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
+        Capacitive-touch JC4827W543C only; the resistive-touch
+        (JC4827W543R) and no-touch (JC4827W543N) variants are not
+        supported.
         Tested on physical hardware.
 
 config DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
@@ -457,7 +460,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -636,7 +639,7 @@ config DRAFTLING_DISPLAY_ST77922
 # this board.
 config DRAFTLING_DISPLAY_NV3041A
     bool
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default n
 
 # DRAFTLING_DISPLAY_ST7365 is set automatically when the selected
@@ -1404,7 +1407,7 @@ config DRAFTLING_WAKEUP_GPIO
     # Guition JC4827W543C: BOOT button. GPIO0 is also the panel's TE
     # output on this board; TE is never enabled (no TEON), see
     # display_nv3041a.cpp.
-    default 0  if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 0  if DRAFTLING_MODEL_GUITION_JC4827W543C
     # Elecrow CrowPanel 5.0": no GPIO wake. BOOT (GPIO0) is wired
     # straight to the LCD's pixel clock input with no pull-up resistor,
     # and the panel stays powered in deep sleep and holds the line LOW
@@ -1546,7 +1549,7 @@ config DRAFTLING_TOUCHSCREEN
     # VIEWE UEDX80480043E-WB: GT911 with RST on GPIO38, polled.
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     # Guition JC4827W543C: GT911 with INT on GPIO3, RST on GPIO38.
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
@@ -1585,7 +1588,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
@@ -1647,7 +1650,7 @@ config DRAFTLING_TOUCH_INT_GPIO
     depends on DRAFTLING_TOUCHSCREEN
     range -1 54
     default 3  if DRAFTLING_MODEL_JC3248W535
-    default 3  if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 3  if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 48 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 3  if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 15 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
@@ -1711,7 +1714,7 @@ config DRAFTLING_TOUCH_RST_GPIO
     default 38 if DRAFTLING_MODEL_SUNTON_8048S070
     default 38 if DRAFTLING_MODEL_SUNTON_8048S043
     default 38 if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default 38 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 38 if DRAFTLING_MODEL_GUITION_JC4827W543C
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -1806,7 +1809,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
     default 800 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 800 if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default 480 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 480 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: native 320x820 portrait panel; the
     # 270-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
@@ -1853,7 +1856,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
     default 480 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default 272 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 272 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A

@@ -245,9 +245,11 @@ Tested on physical hardware.
 is a 4.3" smart display: ESP32-S3 with 4 MB flash and 8 MB PSRAM, a
 480x272 IPS color LCD (NV3041A, QSPI) with GT911 capacitive touch, a
 MicroSD slot, a speaker amplifier and an IP5306 battery charger. Build
-preset `guition_jc4827w543`. Pins are taken from the vendor IO table
+preset `guition_jc4827w543c`. Pins are taken from the vendor IO table
 in [profi-max/JC4827W543_4.3inch_ESP32S3_board](https://github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
-The resistive-touch JC4827W543R is not supported.
+This profile is for the capacitive-touch JC4827W543C only; the
+vendor's resistive-touch (JC4827W543R) and no-touch (JC4827W543N)
+variants of this board are not supported.
 
 - BOOT (GPIO0) wakes the device from sleep; holding it for 2 seconds
   forgets the paired keyboards.

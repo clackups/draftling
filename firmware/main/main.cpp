@@ -1139,12 +1139,12 @@ static void pre_sleep_viewe_uedx80480043_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043 */
 
-#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
+#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C)
 /* The NS4168 speaker amplifier is unused and its enable is not wired
  * to a GPIO. Drive its I2S lines LOW so it sees no clock and no
  * floating inputs. Called at boot (which also releases the holds set
  * by the pre-sleep hook) and before deep sleep with hold = true. */
-static void jc4827w543_quiet_speaker(bool hold = false)
+static void jc4827w543c_quiet_speaker(bool hold = false)
 {
     const int pins[] = { SPK_I2S_LRCLK_PIN, SPK_I2S_BCLK_PIN, SPK_I2S_DIN_PIN };
     for (int pin : pins) {
@@ -1156,7 +1156,7 @@ static void jc4827w543_quiet_speaker(bool hold = false)
     }
 }
 
-static void pre_sleep_jc4827w543_deinit(void)
+static void pre_sleep_jc4827w543c_deinit(void)
 {
     ESP_LOGI(TAG, "Pre-sleep: Guition JC4827W543C peripheral teardown");
 
@@ -1167,7 +1167,7 @@ static void pre_sleep_jc4827w543_deinit(void)
     /* The SD card stays powered in deep sleep: release it so it drops
      * to its idle state. */
     (void)sd_card_deinit();
-    jc4827w543_quiet_speaker(true);
+    jc4827w543c_quiet_speaker(true);
 
     /* Backlight off (held LOW) and the NV3041A in SLPIN. Take the
      * LVGL lock so no flush is in progress. */
@@ -1175,7 +1175,7 @@ static void pre_sleep_jc4827w543_deinit(void)
     display_deep_sleep_prepare();
     if (locked) draftling_lvgl_port_unlock();
 }
-#endif /* CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543 */
+#endif /* CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C */
 
 #if defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
@@ -2834,7 +2834,7 @@ extern "C" void app_main(void)
         nv.bl_pwm_hz    = LCD_BL_PWM_HZ;
         display_nv3041a_config(&nv);
     }
-    jc4827w543_quiet_speaker();
+    jc4827w543c_quiet_speaker();
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1683)
     /* Elecrow CrowPanel 5.79in E-Paper HMI. Dual-SSD1683 SPI panel;
@@ -3653,8 +3653,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)
     standby_set_pre_sleep_cb(pre_sleep_viewe_uedx80480043_deinit);
-#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
-    standby_set_pre_sleep_cb(pre_sleep_jc4827w543_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C)
+    standby_set_pre_sleep_cb(pre_sleep_jc4827w543c_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
