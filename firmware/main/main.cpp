@@ -14,6 +14,9 @@
 #include <driver/uart.h>
 #include <esp_sleep.h>
 #include <driver/rmt_tx.h>
+#include <esp_adc/adc_oneshot.h>
+#include <esp_adc/adc_cali.h>
+#include <esp_adc/adc_cali_scheme.h>
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY) || defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || \
     defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD) || defined(CONFIG_DRAFTLING_HAS_CH422G) || \
     defined(CONFIG_DRAFTLING_DISPLAY_WS_EPD397) || \
@@ -1789,6 +1792,104 @@ static void ws_epaper397_nav_init(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1)
+/* ---- ESP32-S31-Korvo-1 ADC button ladder ----
+ *
+ * SET, MODE, VOL- and VOL+ pull GPIO42 (ADC1 channel 0) through a
+ * resistor ladder to ~380 / 820 / 1340 / 1870 mV; idle is above ~2 V
+ * (Espressif's esp_boards board_devices.yaml). The thresholds below
+ * sit half-way between those levels. VOL+ / VOL- inject Up / Down,
+ * SET Enter and MODE Esc, so the file browser and menus can be driven
+ * without a keyboard, on release, like the other boards' buttons. BOOT
+ * (WAKEUP_GPIO_NUM) keeps the generic handler (2 s hold forgets
+ * keyboards). */
+
+static adc_oneshot_unit_handle_t s_korvo_adc = NULL;
+static adc_cali_handle_t         s_korvo_cali = NULL;
+static adc_channel_t             s_korvo_chan;
+
+static void korvo_inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
+/* Index of the pressed button (0 SET, 1 MODE, 2 VOL-, 3 VOL+), -1 none. */
+static int korvo_read_button(void)
+{
+    int raw = 0, mv;
+    if (adc_oneshot_read(s_korvo_adc, s_korvo_chan, &raw) != ESP_OK) return -1;
+    if (!s_korvo_cali || adc_cali_raw_to_voltage(s_korvo_cali, raw, &mv) != ESP_OK)
+        mv = raw * 3100 / 4095;   /* uncalibrated, 12 dB attenuation */
+    if (mv < 600)  return 0;
+    if (mv < 1080) return 1;
+    if (mv < 1600) return 2;
+    if (mv < 2100) return 3;
+    return -1;
+}
+
+static void korvo_btn_poll_cb(void *arg)
+{
+    (void)arg;
+    static const uint8_t kKeys[4] = { KB_KEY_ENTER, KB_KEY_ESCAPE, KB_KEY_DOWN, KB_KEY_UP };
+    static int down = -1, cand = -1, stable = 0;
+    int b = korvo_read_button();
+    if (b == down) { stable = 0; return; }
+    if (b != cand) { cand = b; stable = 0; }
+    if (++stable < 2) return;            /* two equal reads in a row */
+    stable = 0;
+    int released = down;
+    down = b;
+    if (released >= 0 && down < 0) korvo_inject_key(kKeys[released]);
+}
+
+static void korvo_btn_init(void)
+{
+    adc_unit_t unit;
+    if (adc_oneshot_io_to_channel(BTN_ADC_PIN, &unit, &s_korvo_chan) != ESP_OK) {
+        ESP_LOGW(TAG, "GPIO%d is not an ADC pin; buttons disabled", BTN_ADC_PIN);
+        return;
+    }
+    adc_oneshot_unit_init_cfg_t ucfg = {};
+    ucfg.unit_id = unit;
+    if (adc_oneshot_new_unit(&ucfg, &s_korvo_adc) != ESP_OK) {
+        ESP_LOGW(TAG, "ADC unit init failed; buttons disabled");
+        return;
+    }
+    adc_oneshot_chan_cfg_t ccfg = {};
+    ccfg.atten    = ADC_ATTEN_DB_12;
+    ccfg.bitwidth = ADC_BITWIDTH_12;
+    adc_oneshot_config_channel(s_korvo_adc, s_korvo_chan, &ccfg);
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+    adc_cali_curve_fitting_config_t cal = {};
+    cal.unit_id  = unit;
+    cal.chan     = s_korvo_chan;
+    cal.atten    = ADC_ATTEN_DB_12;
+    cal.bitwidth = ADC_BITWIDTH_12;
+    if (adc_cali_create_scheme_curve_fitting(&cal, &s_korvo_cali) != ESP_OK) s_korvo_cali = NULL;
+#elif ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
+    adc_cali_line_fitting_config_t cal = {};
+    cal.unit_id  = unit;
+    cal.atten    = ADC_ATTEN_DB_12;
+    cal.bitwidth = ADC_BITWIDTH_12;
+    if (adc_cali_create_scheme_line_fitting(&cal, &s_korvo_cali) != ESP_OK) s_korvo_cali = NULL;
+#endif
+
+    esp_timer_create_args_t targs = {};
+    targs.callback = korvo_btn_poll_cb;
+    targs.name     = "korvo_btn";
+    esp_timer_handle_t t = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&targs, &t));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(t, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+    ESP_LOGI(TAG, "Korvo-1 ADC buttons on GPIO%d (%s)", BTN_ADC_PIN,
+             s_korvo_cali ? "calibrated" : "uncalibrated");
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
 /* ---- Seeed reTerminal Sticky Up/Down page-turn buttons ----
  *
@@ -2358,6 +2459,19 @@ extern "C" void app_main(void)
 
 #if defined(BOARD_WS2812_PIN)
     ws2812_off();
+#endif
+#if defined(BOARD_PA_CTRL_PIN)
+    /* Unused speaker amplifier(s): enable LOW, held through deep sleep
+     * (the hold survives the wake reset, so release it first). */
+    {
+        gpio_hold_dis((gpio_num_t)BOARD_PA_CTRL_PIN);
+        gpio_config_t pa = {};
+        pa.pin_bit_mask = 1ULL << BOARD_PA_CTRL_PIN;
+        pa.mode         = GPIO_MODE_OUTPUT;
+        gpio_config(&pa);
+        gpio_set_level((gpio_num_t)BOARD_PA_CTRL_PIN, 0);
+        gpio_hold_en((gpio_num_t)BOARD_PA_CTRL_PIN);
+    }
 #endif
 
 #if defined(CONFIG_DRAFTLING_HAS_POWER_LATCH)
@@ -3146,8 +3260,9 @@ extern "C" void app_main(void)
      * is the actual fix.) */
     bool sd_lvgl_held = draftling_lvgl_port_lock(-1);
 #endif
-#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4)
+#if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4) || defined(CONFIG_DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1)
     /* SD slot power-enable, active-low. Drive it before mounting.
+     * ESP32-S31-Korvo-1: SD_CTRL on GPIO39, driven straight LOW.
      * X4 Pro: GPIO5, driven straight LOW. X4 Classic: GPIO6, which
      * wants a power-cycle first (HIGH ~80 ms to drain the rail, then
      * LOW and held LOW while the card is mounted -- FreeInk SDK
@@ -3169,6 +3284,9 @@ extern "C" void app_main(void)
     /* Boards with the SD slot wired to the on-chip SDMMC peripheral
      * (Waveshare RLCD-4.2). Uses 1-bit mode to keep the pin count
      * down. */
+#if defined(SD_SDMMC_SLOT)
+    sd_card_set_sdmmc_slot(SD_SDMMC_SLOT);
+#endif
     sd_ret = sd_card_init(SD_CLK_PIN, SD_CMD_PIN, SD_D0_PIN, SD_MOUNT_POINT);
 #else
 #if defined(BOARD_LORA_CS_PIN) && (BOARD_LORA_CS_PIN >= 0)
@@ -3817,6 +3935,9 @@ extern "C" void app_main(void)
      * generic handler above (A held 2 s forgets BLE keyboards) and the
      * sleep-button handler below (B held 2 s sleeps). */
     papermono_btn_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1)
+    /* ADC-ladder buttons: Up / Down / Enter / Esc. */
+    korvo_btn_init();
 #endif
 #endif
 

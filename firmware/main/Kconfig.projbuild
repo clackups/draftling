@@ -443,6 +443,25 @@ config DRAFTLING_MODEL_NICEMCU_C5_28IPS
         RESET button. Tested on physical hardware.
         See https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS
 
+config DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
+    bool "Espressif ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3 (ESP32-S31, 4.3\" RGB color LCD, 800x480)"
+    depends on IDF_TARGET_ESP32S31
+    help
+        Espressif ESP32-S31-Korvo-1 multimedia board (ESP32-S31-WROOM-3:
+        16 MB flash, 16 MB octal PSRAM) with the ESP32-S3-LCD-EV-Board-
+        SUB3 4.3" LCD subboard on its LCD connector: 800x480 color panel
+        on a 16-bit parallel RGB565 interface, GT1151 capacitive touch
+        on I2C (shared with the ES8389 audio codec), microSD on the
+        SDMMC host (slot 0), a USB 2.0 Type-A host port for a USB
+        keyboard (Bluetooth LE keyboards work too) and a USB-to-UART
+        bridge for flashing and the console. Four buttons on an ADC
+        resistor ladder (VOL+ / VOL- = Up / Down, SET = Enter,
+        MODE = Esc) and BOOT (2 s hold forgets keyboards). The
+        backlight is not software-controlled and nothing can wake the
+        chip from deep sleep except RESET. No battery. Pins and panel
+        timings from Espressif's esp_boards component
+        (esp32_s31_korvo_1). UNTESTED on physical hardware.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -460,6 +479,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
@@ -526,6 +546,7 @@ config DRAFTLING_DISPLAY_RGB
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default n
@@ -568,6 +589,15 @@ config DRAFTLING_RGB_BOARD_CROWPANEL_50
 config DRAFTLING_RGB_BOARD_UEDX80480043
     bool
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default n
+
+# DRAFTLING_RGB_BOARD_S31_KORVO1 switches components/display/display_rgb.cpp
+# to the ESP32-S3-LCD-EV-Board-SUB3 panel on the ESP32-S31-Korvo-1's LCD
+# connector (pins and timings from Espressif's esp_boards component).
+# There is no backlight control.
+config DRAFTLING_RGB_BOARD_S31_KORVO1
+    bool
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default n
 
 # DRAFTLING_HAS_PCA9557 compiles in the PCA9557 I2C IO-expander driver
@@ -889,7 +919,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     bool
     default y if DRAFTLING_DISPLAY_AXS15231B
     default y if DRAFTLING_DISPLAY_MIPI_DSI
-    default y if DRAFTLING_DISPLAY_RGB
+    # ESP32-S31-Korvo-1: the LCD subboard's backlight is always on.
+    default y if DRAFTLING_DISPLAY_RGB && !DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     # MicroJournal Rev 5.0 / 5.1 have no backlight control.
     default y if DRAFTLING_DISPLAY_ILI9341 && !DRAFTLING_MODEL_MICROJOURNAL_REV5
     default y if DRAFTLING_DISPLAY_ST7796
@@ -1210,6 +1241,9 @@ config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    # ESP32-S31-Korvo-1: USB 2.0 Type-A host port on the chip's
+    # USB-OTG; BLE keyboards are supported as well.
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default n
 
 # Some USB host ports are initialized by a board support package rather
@@ -1384,6 +1418,9 @@ config DRAFTLING_SD_SDMMC
     # M5Stack PaperMono: 4-bit wired, used in 1-bit mode. The card's
     # supply is switched by the M5IOE1 expander (main.cpp turns it on).
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # ESP32-S31-Korvo-1: microSD on SDMMC slot 0 (IOMUX pins CLK=24,
+    # CMD=25, D0=20); Draftling uses 1-bit mode.
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default n
 
 # DRAFTLING_WAKEUP_GPIO is the per-board RTC-capable GPIO used as
@@ -1461,6 +1498,11 @@ config DRAFTLING_WAKEUP_GPIO
     # has no EXT0, so standby arms no GPIO wake and the RESET button
     # wakes the device.
     default 28 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
+    # ESP32-S31-Korvo-1: BOOT button on GPIO61 (active-low). Only
+    # polled for the 2 s "forget keyboards" hold: it is not one of the
+    # ESP32-S31's eight LP IO pins, which has no EXT0 either, so the
+    # RESET button wakes the device.
+    default 61 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default 0
 
 # DRAFTLING_WAKEUP_GPIO_EXTRA is an optional second active-low
@@ -1559,6 +1601,9 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     # VIEWE UEDX80480043E-WB: GT911 with RST on GPIO38, polled.
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    # ESP32-S31-Korvo-1: GT1151 on the LCD subboard (GT911-compatible
+    # register map), polled, no INT / RST lines.
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     # Guition JC4827W543C: GT911 with INT on GPIO3, RST on GPIO38.
     default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
@@ -1599,6 +1644,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
@@ -1820,6 +1866,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_SUNTON_8048S043
     default 800 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 800 if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default 800 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default 480 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: native 320x820 portrait panel; the
@@ -1867,6 +1914,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_SUNTON_8048S043
     default 480 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default 480 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default 272 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
@@ -1953,6 +2001,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default y if DRAFTLING_MODEL_XTEINK_X4
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: 320x820 on a 3.16" panel is ~280

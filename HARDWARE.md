@@ -912,6 +912,41 @@ ESP32-C5 limits the usability.
 Pin numbers come from the vendor's example sketch and the schematic in
 its repository.
 
+## Espressif ESP32-S31-Korvo-1 with ESP32-S3-LCD-EV-Board-SUB3
+
+UNTESTED on physical hardware.
+
+The [ESP32-S31-Korvo-1](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp32-s31-korvo-1/index.html)
+is Espressif's multimedia development board for the ESP32-S31
+(ESP32-S31-WROOM-3 module: 16 MB flash, 16 MB PSRAM, Wi-Fi 6,
+Bluetooth 5.4). Draftling uses it with the ESP32-S3-LCD-EV-Board-SUB3
+4.3" LCD subboard on its LCD connector. Build with the
+`espressif_s31_korvo1` preset; it needs ESP-IDF v6.1 or later.
+
+- **Display**: 4.3" 800x480 color panel on a 16-bit parallel RGB
+  interface. The backlight is not software-controlled, so there is no
+  Backlight setting, and the panel stays lit while the device sleeps.
+- **Touch**: GT1151 capacitive touch controller on I2C (SDA=0, SCL=1,
+  address 0x14), shared with the audio codec. The firmware polls it.
+- **Keyboards**: a USB keyboard in the USB-A port, or a Bluetooth LE
+  keyboard. When a USB keyboard is plugged in at start-up, Bluetooth
+  stays idle until it is unplugged.
+- **MicroSD**: on the SDMMC host (slot 0: CLK=24, CMD=25, D0=20), used
+  in 1-bit mode. GPIO39 switches the card's power on.
+- **USB**: use the USB-C port marked UART (a USB-to-UART bridge) for
+  flashing and for the serial console. "SD card via USB" and "Sync via
+  browser" are not available on this board.
+- **Buttons**: VOL+ / VOL- move up and down, SET is Enter and MODE is
+  Esc. Hold BOOT for 2 s to forget all paired BLE keyboards. Nothing
+  but the RESET button can wake the ESP32-S31 from deep sleep on this
+  board, so after the device goes to sleep, press RESET.
+- **Other**: the on-board RGB LED is switched off and the speaker
+  amplifiers are disabled at boot. The microphones, speakers and the
+  camera are not used. There is no battery.
+
+Pins and panel timings come from Espressif's `esp_boards` component
+(board `esp32_s31_korvo_1`) and the board's user guide.
+
 
 ## Other hardware
 

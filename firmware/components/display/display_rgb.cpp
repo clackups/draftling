@@ -17,6 +17,9 @@
  *   - Elecrow CrowPanel ESP32 HMI 5.0" (5.0", 800x480, 16-bit RGB;
  *     PCLK is GPIO0, the BOOT button net -- see
  *     CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50 below)
+ *   - Espressif ESP32-S31-Korvo-1 with the ESP32-S3-LCD-EV-Board-SUB3
+ *     (4.3", 800x480, 16-bit RGB; no backlight control -- see
+ *     CONFIG_DRAFTLING_RGB_BOARD_S31_KORVO1 below)
  *   - Waveshare ESP32-S3-LCD-3.16 (3.16", 320x820 portrait, ST7701,
  *     16-bit RGB; the controller needs a vendor init sequence over a
  *     bit-banged 3-wire SPI bus before it shows anything -- see
@@ -243,6 +246,35 @@ static const int kDataGpios[16] = {
     8, 3, 46, 9, 1,       /* B0-B4 */
     5, 6, 7, 15, 16, 4,   /* G0-G5 */
     45, 48, 47, 21, 14    /* R0-R4 */
+};
+
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_S31_KORVO1)
+/* ---- ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3 (4.3") ----
+ * Pins and timings from Espressif's esp_boards component
+ * (esp32_s31_korvo_1/board_devices.yaml, display_lcd). The subboard's
+ * backlight is not software-controlled (RGB_BL_GPIO -1: no Settings
+ * entry, no PWM). */
+#define RGB_BL_GPIO         -1
+#define RGB_PCLK_HZ         (18 * 1000 * 1000)   /* 18 MHz */
+#define RGB_HSYNC_GPIO      44
+#define RGB_VSYNC_GPIO      45
+#define RGB_DE_GPIO         43
+#define RGB_PCLK_GPIO       40
+#define RGB_HSYNC_PULSE     1
+#define RGB_HSYNC_BACK      40
+#define RGB_HSYNC_FRONT     20
+#define RGB_VSYNC_PULSE     1
+#define RGB_VSYNC_BACK      10
+#define RGB_VSYNC_FRONT     5
+#define RGB_PCLK_ACTIVE_NEG 1
+#define RGB_PCLK_IDLE_HIGH  0
+
+/* data_gpio_nums[0] is the RGB565 LSB: B0-B4, G0-G5, R0-R4 (the
+ * connector's DB0..DB15 = B3-B7, G2-G7, R3-R7). */
+static const int kDataGpios[16] = {
+    8, 9, 10, 11, 12,          /* B0-B4 */
+    13, 14, 15, 16, 17, 18,    /* G0-G5 */
+    19, 33, 34, 35, 36         /* R0-R4 */
 };
 
 #elif defined(CONFIG_DRAFTLING_RGB_BOARD_S043)
@@ -854,6 +886,8 @@ const char *display_controller_name(void)
     return "ST7262 (RGB)";
 #elif defined(CONFIG_DRAFTLING_RGB_BOARD_CROWPANEL_50)
     return "ILI6122 / ILI5960 (RGB)";
+#elif defined(CONFIG_DRAFTLING_RGB_BOARD_S31_KORVO1)
+    return "ESP32-S3-LCD-EV-Board-SUB3 (RGB)";
 #else
     return "RGB parallel TFT";
 #endif

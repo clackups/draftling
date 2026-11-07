@@ -69,7 +69,10 @@ endif()
 ## cca_low_tx_pwr members out of BT_CONTROLLER_INIT_CONFIG_DEFAULT(),
 ## which trips -Wmissing-field-initializers (an error with -Werror)
 ## where ble_keyboard.cpp expands the macro. The gap is in the IDF
-## header, so silence that warning for this component on the C5 only.
-if(CONFIG_IDF_TARGET_ESP32C5)
+## header, so silence that warning for this component on the chips
+## concerned: the C5, and the ESP32-S31 (ESP-IDF 6.1), whose
+## BT_CONTROLLER_INIT_CONFIG_DEFAULT() also leaves the whole BR/EDR
+## sub-structure out.
+if(CONFIG_IDF_TARGET_ESP32C5 OR CONFIG_IDF_TARGET_ESP32S31)
     target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-missing-field-initializers)
 endif()

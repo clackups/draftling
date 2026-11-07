@@ -65,8 +65,8 @@ they differ. Never commit under any other identity.
 ## Project Overview
 
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
-development boards with reflective LCD displays (plus one ESP32-P4 and
-one ESP32-C5 board). It is built with the
+development boards with reflective LCD displays (plus one ESP32-P4, one
+ESP32-C5 and one ESP32-S31 board). It is built with the
 ESP-IDF framework (v6.1+) and uses LVGL v9 for the graphical
 interface.
 
@@ -101,6 +101,7 @@ card).
 | Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677/SSD2677, auto-detected), 800x480, GT911 touch |
 | M5Stack PaperMono / PaperMono-Lite | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 | NiceMCU-C5E-DEV_2.8IPS (ESP32-C5) | 2.8-inch ST7789 IPS color LCD over PARLIO, 320x240, CST816D / FT6336G touch |
+| Espressif ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3 (ESP32-S31) | 4.3-inch RGB parallel color LCD, 800x480, GT1151 touch, USB-A keyboard host (untested) |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
 monochrome e-paper panel driven by an UltraChip UC8179 controller over
@@ -217,12 +218,15 @@ partitions_seeed_reterminal_sticky.csv  Same dual-OTA layout for the
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, WiFi)
 sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, WiFi)
+sdkconfig.defaults.esp32s31 ESP32-S31-specific defaults (320 MHz, octal
+                            PSRAM at 200 MHz, WiFi)
 sdkconfig.defaults.bluetooth  BLE keyboard host (Bluedroid) defaults, in
                             every preset except boards without Bluetooth
                             (MicroJournal Rev 5); .bluetooth.esp32s3 /
-                            .bluetooth.esp32c5 add the target-specific
-                            options (ESP-IDF loads <file>.<target> right
-                            after each defaults file)
+                            .bluetooth.esp32c5 / .bluetooth.esp32s31 add
+                            the target-specific options (ESP-IDF loads
+                            <file>.<target> right after each defaults
+                            file)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
@@ -509,7 +513,11 @@ Per-board display backends behind a single C API:
   latches the backlight off, and `display_init()` calls
   `gpio_deep_sleep_hold_dis()` because the digital-pad autohold
   survives the wake reset and would freeze the sync / data pads),
-  the Waveshare ESP32-S3-LCD-3.16
+  the ESP32-S31-Korvo-1 with the ESP32-S3-LCD-EV-Board-SUB3
+  (`CONFIG_DRAFTLING_RGB_BOARD_S31_KORVO1`: pins and timings from
+  Espressif's `esp_boards` component, 18 MHz; `RGB_BL_GPIO` is -1, as
+  the subboard's backlight is not software-controlled, so the panel is
+  left running in deep sleep), the Waveshare ESP32-S3-LCD-3.16
   (`CONFIG_DRAFTLING_RGB_PANEL_ST7701`: an ST7701 controller that is
   first configured over a bit-banged 3-wire SPI bus -- CS=GPIO0 (BOOT),
   SCK=GPIO2, SDA=GPIO1, which are the SDMMC CMD / CLK lines -- inside
@@ -1788,7 +1796,13 @@ and `sd_card_remove_tree()` (a folder with everything in it, hidden
 files included; entries are unlinked while the folder is read) serve
 the project operations.
 
-Public API: `sd_card_init()`, `sd_card_read_file()`,
+`sd_card_set_sdmmc_slot()` picks the SDMMC host slot for
+`sd_card_init()` (default: the driver's). The ESP32-S31's SDMMC pins
+are fixed per slot (IOMUX only), and its default slot 1 sits on pins
+the Korvo-1 uses for the LCD, so that board selects slot 0
+(`SD_SDMMC_SLOT` in its board header).
+
+Public API: `sd_card_init()`, `sd_card_set_sdmmc_slot()`, `sd_card_read_file()`,
 `sd_card_write_file()`, `sd_card_list_dir()`, `sd_card_file_exists()`,
 `sd_card_format()`, `sd_card_get_fs_space()`, and others.
 
@@ -2673,6 +2687,35 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   vendor's upright portrait: swap + mirror Y (mirror X, as on the
   FNK0104B, put lower-right taps in the upper-left corner). Tested on
   physical hardware. *Requires ESP32-C5.*
+- **DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1** -- Espressif
+  ESP32-S31-Korvo-1 (`main/boards/espressif_s31_korvo1.h`) with the
+  ESP32-S3-LCD-EV-Board-SUB3 4.3" subboard: ESP32-S31-WROOM-3 (16 MB
+  flash, 16 MB octal PSRAM, 320 MHz), 800x480 RGB panel
+  (`display_rgb.cpp`, `DRAFTLING_RGB_BOARD_S31_KORVO1`; HSYNC=44,
+  VSYNC=45, DE=43, PCLK=40, data on GPIO8-19 / 33-36), no backlight
+  control. GT1151
+  touch at 0x14 on I2C SDA=0 / SCL=1 (shared with the ES8389 codec),
+  polled, no INT / RST: the GT1151 has the GT911's register map, so it
+  runs on `DRAFTLING_TOUCH_GT911`. Because no INT line reaches the
+  chip, the touch controller is not put to sleep before deep sleep (a
+  GT911-family chip leaves sleep only on an INT pulse). MicroSD on
+  SDMMC slot 0 (CLK=24, CMD=25, D0=20; 1-bit), its power switch
+  SD_CTRL=GPIO39 driven LOW before mounting. USB-A host port on the
+  S31's USB-OTG (`DRAFTLING_HAS_USB_HOST`, `usb_kbd_init()` installs
+  the USB Host library; BLE keyboards as on every board), console on
+  UART0 through the USB-to-UART bridge. Four buttons on an ADC ladder
+  (GPIO42, ADC1 channel 0; `korvo_btn_init()` in main.cpp: VOL+ / VOL-
+  = Up / Down, SET = Enter, MODE = Esc) and BOOT on GPIO61
+  (`DRAFTLING_WAKEUP_GPIO`, polled for the 2 s forget-keyboards hold
+  only: it is not an LP IO pin and the S31 has no EXT0, so RESET wakes
+  the device). The WS2812 LED (GPIO37) is switched off and the NS4150B
+  speaker amplifiers' enable (GPIO7) held LOW at boot. The S31 port
+  needed `-Wno-missing-field-initializers` in `components/ble_keyboard`
+  (its `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` leaves fields out, as on
+  the C5) and a curve-fitting guard in `battery.cpp` (no such ADC
+  calibration scheme). Pins and timings from Espressif's `esp_boards`
+  component 0.7.2 (`esp32_s31_korvo_1`). UNTESTED on physical
+  hardware. *Requires ESP32-S31 (ESP-IDF v6.1).*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
@@ -2680,13 +2723,13 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
-  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
+  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, ESP32-S31-Korvo-1), 792 (Elecrow CrowPanel 5.79"),
   480 (Guition JC4827W543C).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
-  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79",
+  Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, ESP32-S31-Korvo-1), 272 (Elecrow CrowPanel 5.79",
   Guition JC4827W543C).
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
@@ -2859,18 +2902,19 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT | Compiles both the ILI9341 and the ST7789 init sequences into `display_ili9341.cpp` and picks one at boot from a bit-banged controller-ID read (needs the panel's SDO on MISO, or a bidirectional SDA); ILI9341 if nothing answers | MicroJournal Rev 5 |
 | DRAFTLING_LCD_BUS_PARLIO          | `display_ili9341.cpp` sends its SPI traffic through PARLIO TX in 1-bit mode (`esp_lcd_new_panel_io_parl()`) instead of a GP-SPI host, leaving the C5's only GP-SPI controller to the SD card | NiceMCU-C5E-DEV_2.8IPS |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
-| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
+| DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, ESP32-S31-Korvo-1 |
 | DRAFTLING_RGB_PANEL_ST7701        | Switches `display_rgb.cpp` to the ST7701 branch: own pins / timings, direct-GPIO reset, active-low PWM backlight, and the vendor init sequence over a bit-banged 3-wire SPI bus (CS=0/BOOT, SCK=2, SDA=1) that is released afterwards for the BOOT button and the SDMMC slot | Waveshare LCD-3.16 |
 | DRAFTLING_HAS_CH422G              | Enables the `io_expander` component (CH422G I2C IO-expander) and switches `display_rgb.cpp` to the CH422G-based backlight / LCD-reset path instead of a direct GPIO | Waveshare Touch-LCD-7 |
 | DRAFTLING_RGB_BOARD_CROWPANEL_50  | Switches `display_rgb.cpp` to the CrowPanel 5.0" pin map / timings (PCLK on GPIO0) and stops the panel and latches the backlight off before deep sleep | Elecrow CrowPanel 5.0" |
 | DRAFTLING_RGB_BOARD_UEDX80480043 | Switches `display_rgb.cpp` to the VIEWE UEDX80480043E-WB timings (Sunton 8048S043C pin map, 16 MHz) and stops the panel and latches the backlight off before deep sleep | VIEWE UEDX80480043E-WB |
+| DRAFTLING_RGB_BOARD_S31_KORVO1    | Switches `display_rgb.cpp` to the ESP32-S3-LCD-EV-Board-SUB3 panel on the ESP32-S31-Korvo-1 (18 MHz, no backlight control; also excludes the board from DRAFTLING_DISPLAY_HAS_BACKLIGHT) | ESP32-S31-Korvo-1 |
 | DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0", ESP32-S31-Korvo-1), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, ESP32-S31-Korvo-1 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
@@ -2878,11 +2922,11 @@ in C / C++ code:
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
 | DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
-| DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, MicroJournal Rev 5 |
+| DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, MicroJournal Rev 5, ESP32-S31-Korvo-1 |
 | DRAFTLING_USB_HOST_BSP_MANAGED    | USB PHY, VBUS and the USB Host library task are owned by the board BSP (`bsp_usb_host_start()`); otherwise `usb_kbd_init()` installs the host library and its task itself (ESP32-S3 native USB-OTG) | M5Stack Tab5 |
 | DRAFTLING_USB_HOST_DEP            | `int` mirror (0/1) of DRAFTLING_HAS_USB_HOST, tested by the `espressif/usb_host_hid` rule in `components/usb_kbd/idf_component.yml` (the component manager reads `sdkconfig.json`, which omits hidden bool symbols that are n); `components/usb_kbd/` registers as an empty component when DRAFTLING_HAS_USB_HOST is unset, so neither it nor `usb_host_hid` is compiled on other boards | M5Stack Tab5, MicroJournal Rev 5 |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
-| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono |
+| DRAFTLING_SD_SDMMC                | Routes SD init through the on-chip SDMMC peripheral (1-bit) instead of generic SPI | RLCD-4.2, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, M5Stack PaperMono, ESP32-S31-Korvo-1 |
 | DRAFTLING_WAKEUP_GPIO             | RTC-capable EXT0 wake-up GPIO; consumed by `components/standby/standby.cpp` | per-model defaults |
 | DRAFTLING_TOUCH_ST77922           | Adds the ST77922 TDDI touch poll routine to `components/touchscreen/touchscreen.cpp` (16-bit register addresses, info at 0x0010, point 0 at 0x0014) | Freenove FNK0104N |
 | DRAFTLING_TOUCH_FT6336U           | Adds the FT6336U poll routine to `components/touchscreen/touchscreen.cpp` (8-bit register protocol) | Freenove FNK0104B / FNK0104S, M5Stack PaperMono (FT6336G), NiceMCU-C5E-DEV_2.8IPS (CST816D or FT6336G) |
@@ -3020,7 +3064,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono`, `nicemcu_c5_28ips`). Each
+`m5stack_papermono`, `nicemcu_c5_28ips`, `espressif_s31_korvo1`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
 `sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,
 so no Bluetooth option is set for a disabled stack -- ESP-IDF 6.1
