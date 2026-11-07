@@ -921,9 +921,11 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
 # 25 kHz; 15 kHz gave the best result on hardware.
 config DRAFTLING_BACKLIGHT_PWM_HZ
     int "Backlight PWM frequency (Hz)"
-    depends on DRAFTLING_DISPLAY_RGB && !DRAFTLING_HAS_CH422G
+    depends on (DRAFTLING_DISPLAY_RGB && !DRAFTLING_HAS_CH422G) || DRAFTLING_DISPLAY_MIPI_DSI
     range 100 100000
     default 15000 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    # M5Stack Tab5: the BSP's 5 kHz flickers visibly when dimmed.
+    default 25000 if DRAFTLING_MODEL_M5STACK_TAB5
     # VIEWE UEDX80480043E-WB: VIEWE's BSP uses 5 kHz, which whined
     # audibly on hardware.
     default 15000 if DRAFTLING_MODEL_VIEWE_UEDX80480043

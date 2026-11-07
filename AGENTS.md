@@ -5,8 +5,10 @@ All firmware sources and build files live under `firmware/` (see
 document -- `main/...`, `components/...`, `CMakeLists.txt`,
 `CMakePresets.json`, `sdkconfig.defaults*`, `partitions*.csv`,
 `build/<board>` -- is relative to `firmware/` unless stated otherwise.
-The repository root also has `docs/`, `images/`, `3D_Prints/`, and the
-top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
+The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
+(separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
+and the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this
+file.
 
 ## Git Author
 
@@ -135,6 +137,61 @@ and deep-sleep wake only on GPIO0-6 (the board wakes by RESET), the
 and IDF's C5 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` needs
 `-Wno-missing-field-initializers` in `components/ble_keyboard`. On
 the board, everything is tested on physical hardware.
+
+## M5Stack Tab5 and ESP-Hosted
+
+The Tab5 (ESP32-P4) reaches its Wi-Fi / BLE radio, an on-board
+ESP32-C6, over SDIO with `espressif/esp_hosted ~3.1.0`
+(`main/idf_component.yml`, `target == esp32p4`). The P4 settings are in
+`sdkconfig.defaults.esp32p4`: ESP-Hosted's Tab5 profile
+`CONFIG_ESP32P4_TAB5_C6_BOARD` fixes the pins and the C6 reset line;
+`CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n`, because the C6
+has no supply until `main.cpp` enables WLAN_PWR_EN through the BSP and
+then calls `esp_hosted_init()` itself. `main.cpp` then reads the C6's
+version (`esp_hosted_get_coprocessor_fwversion()`), shows it on the
+F1 -> Hardware information page (`editor_ui_set_coprocessor()`) and
+halts with an on-screen message below 3.1: ESP-Hosted 3.x keeps the link up with
+older C6 firmware, but the Bluetooth bring-up in `ble_keyboard.cpp`
+(`esp_hosted_bt_host_stack_setup()`, `CONFIG_ESP_HOSTED_HOST_FEAT_BT`)
+needs 3.1 and would otherwise abort in a reboot loop.
+
+`misc/p4_upgrade_cp/` installs esp-hosted 3.1 on a P4 board's radio
+co-processor from the P4 (user docs: its `README.md` and
+`docs/tab5-esp-hosted.md`). Both projects are built per board with
+`idf.py --preset <board>` (`m5stack_tab5` is the only one so far;
+`build.sh <board>` builds both, `cp` first); the README lists what a
+new board needs:
+
+- `cp/`: the co-processor image (esp_hosted 3.1.0 co-processor, Wi-Fi
+  + BLE controller over hosted HCI, SDIO packet mode), output
+  `cp/build/<board>/cp_hosted.bin`. `sdkconfig.defaults` is common,
+  `sdkconfig.defaults.<board>` sets the target, flash and partition
+  table. The app version is taken from the esp_hosted pin in
+  `cp/main/idf_component.yml`; the build fails above the preset's
+  `CP_MAX_APP_SIZE` (Tab5: 1536 KB, the C6 app slot of the
+  esp-hosted-mcu 1.x partition table; OTA keeps the old table).
+- `p4/`: the upgrade tool. The board is a Kconfig choice
+  (`P4UP_BOARD_*`, `main/Kconfig.projbuild`, selected by
+  `sdkconfig.defaults.<board>`); `main/board.h` includes the board's
+  header from `main/boards/` (names shown on screen, the image's chip
+  id, SDIO slot and pins, reset line, `board_cp_power_on()`, display
+  start / lock), and the board's BSP comes in through a
+  `$CONFIG{P4UP_BOARD_*}` rule in `main/idf_component.yml`. It embeds
+  `../cp/build/<P4UP_BOARD_ID>/cp_hosted.bin`, shows progress on the
+  screen (LVGL, `ui.c`), and does not use the esp_hosted component:
+  `cp_sdio.c` is a minimal host for the co-processor's SDIO slave (the
+  `esp_serial_slave_link` register protocol, the same in every
+  esp-hosted version), and `hosted_proto.c` speaks the frame header,
+  the serial TLV framing and the few RPCs needed (hand-encoded
+  protobuf) in two dialects: esp-hosted-mcu (`RPCRsp`, ids 0x1xx,
+  0.0.x - 3.x; OTA ids and message layouts are the same in all of
+  them) and ESP-Hosted-FG (`ctrlResp`, ids 1xx, legacy interface
+  numbers). `upgrader.c` tries bus settings from fast to slow, picks
+  the dialect from the INIT event and a GetMACAddress probe, reads
+  the version (INIT TLV 0x17 on 2.x+, GetCoprocessorFwVersion
+  otherwise), runs OTA begin / write (1 KB chunks) / end / activate
+  (activate is required on 2.6+; 1.x and FG switch the boot slot in
+  OTA end), then resets the C6 and checks the new version.
 
 ## Repository Layout
 
@@ -986,6 +1043,9 @@ shows `build_hwinfo_text()` on the help screen (`show_hwinfo()`, which
 shares `show_help_page()` and the key / touch handling with the help
 page): the board name main.cpp passes in through
 `editor_ui_set_board_name(BOARD_NAME)`, the chip (`esp_chip_info()`),
+the radio co-processor where there is one (`editor_ui_set_coprocessor()`:
+on the Tab5, main.cpp passes the ESP32-C6's esp-hosted version read at
+boot),
 internal RAM and PSRAM heap totals / free space (`heap_caps_*`), the
 PSRAM size (`esp_psram_get_size()`), the flash size
 (`esp_flash_get_physical_size()`), `display_controller_name()`
@@ -1765,9 +1825,18 @@ button (GPIO5), whose 2 s hold is also its sleep trigger.
 On targets that have no EXT0 support (the ESP32-P4 / M5Stack Tab5,
 where `SOC_PM_SUPPORT_EXT0_WAKEUP` is undefined), the EXT0 arming
 is compiled out entirely. The Tab5 has no user button or touch INT
-on an LP_IO pin (GPIO 0-15) either, so the only wake path is the
-hardware RESET button: the chip cold-boots and the editor restores
-from autosave on the next run. See `docs/tab5-esp-hosted.md`.
+on an LP_IO pin (GPIO 0-15) either. On battery its pre-sleep hook
+(`pre_sleep_tab5_deinit()`) stops BLE for good
+(`ble_keyboard_shutdown()`, so a USB keyboard losing its 5 V cannot
+restart it) and ESP-Hosted (`esp_hosted_deinit()`), then switches
+off every rail it can reach
+through the two PI4IOE5V6408 expanders (C6, USB-A 5 V, speaker,
+camera, EXT5V, touch held in reset; CHG_EN stays on), puts the panel
+and INA226 to sleep, then powers the board off with M5Unified's PWROFF_PULSE
+sequence (0x44 P4, ten toggles 50 ms apart); the side power button
+turns it on. On USB the supply stays up and it deep-sleeps, woken by
+RESET. Either way the chip cold-boots and the editor restores from
+autosave. See `docs/tab5-esp-hosted.md`.
 
 On the LilyGO T5 E-Paper S3 Pro / Pro Lite, the standby pre-sleep
 callback is replaced with `pre_sleep_t5_deinit()` (`main/main.cpp`),
@@ -2377,7 +2446,9 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   SDA=19/SCL=20 polled without INT (RST/INT on a PCA9557 at 0x18 on
   v3.0), MicroSD on SPI (CS=10, MOSI=11, SCK=12, MISO=13), LEDC
   backlight on GPIO2 at 15 kHz (`DRAFTLING_BACKLIGHT_PWM_HZ`, a
-  prompted int for every direct-GPIO RGB board, 1 kHz elsewhere: the
+  prompted int for every direct-GPIO RGB board and the Tab5 (25 kHz:
+  the BSP's 5 kHz flickered; `display_mipi_dsi.cpp` sets it after
+  `bsp_display_new_with_handles()`), 1 kHz elsewhere: the
   MT9201 LED driver whined at 1 kHz and flickered at 25 kHz), CH340 USB-UART (no USB MSC / Kermit), no battery
   monitor. No GPIO wake (`DRAFTLING_WAKEUP_GPIO` -1, wake by RESET):
   BOOT (GPIO0) is wired through a 0 ohm link to the LCD's pixel clock

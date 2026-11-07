@@ -101,27 +101,11 @@ int64_t ble_keyboard_last_pairing_activity_us(void)                      { retur
 #include <nvs.h>
 
 #if defined(CONFIG_BT_CONTROLLER_DISABLED)
-/* Bluedroid HCI driver attachment API
- * (esp_bluedroid_attach_hci_driver +
- * esp_bluedroid_hci_driver_operations_t). Available in ESP-IDF's
- * bt component when the Bluedroid host is built without its
- * default on-chip HCI transport. */
-#include <esp_bluedroid_hci.h>
-/* ESP-Hosted hosted-VHCI driver (esp_hosted_bt_controller_*,
- * hosted_hci_bluedroid_*). Only pulled in when ESP-Hosted is in
- * use, i.e. on the ESP32-P4 build.
- *
- * NOTE: upstream esp_hosted_bluedroid.h (and the esp_hosted_bt.h
- * it transitively pulls in) ship WITHOUT an `extern "C"` guard,
- * so we must wrap them ourselves; otherwise this C++ TU looks for
- * the C++-mangled name `hosted_hci_bluedroid_open()` while the
- * actual symbol defined in espressif/esp_hosted's vhci_drv.c has
- * plain C linkage, producing an undefined-reference at link time.
- * esp_hosted.h itself is already C-guarded. */
+/* ESP-Hosted 3.x Bluetooth adapter: brings up the BLE controller on
+ * the C6 and binds Bluedroid to the hosted HCI. Only on the ESP32-P4
+ * build, where ESP-Hosted is in use. */
 #include <esp_hosted.h>
-extern "C" {
-#include <esp_hosted_bluedroid.h>
-}
+#include <esp_hosted_bt_host_stack.h>
 #endif
 
 static const char *TAG = "BLEKeyboard";
@@ -202,6 +186,8 @@ static bool s_dev_bda_valid = false;
  * (which sit above the rest of the state block) can test it.  All
  * other state lives lower down, in the "State" block. */
 static volatile bool s_disabled = false;
+/* Set by ble_keyboard_shutdown(): BLE stays off until the next boot. */
+static volatile bool s_shutdown = false;
 
 /* Helper: notify the UI of a human-readable status message */
 static void notify_status(const char *fmt, ...)
@@ -2425,7 +2411,7 @@ extern "C" void ble_keyboard_init(void)
      * transport. CONFIG_BT_CONTROLLER_DISABLED tells ESP-IDF to omit
      * the native esp_bt_controller_* code, so we must:
      *   1. bring up the hosted BT controller via the C6;
-     *   2. open the hosted-VHCI HCI driver;
+     *   2. open the hosted HCI channel;
      *   3. attach it to Bluedroid as its HCI transport;
      * before the standard esp_bluedroid_init/enable calls below.
      *
@@ -2435,20 +2421,15 @@ extern "C" void ble_keyboard_init(void)
      * is logged once with full context rather than aborting the BLE
      * stack here.
      *
-     * Mirrors examples/host_bluedroid_ble_compatibility_test/main
-     * from espressif/esp-hosted-mcu. */
-    ESP_ERROR_CHECK(esp_hosted_bt_controller_init());
-    ESP_ERROR_CHECK(esp_hosted_bt_controller_enable());
-    ESP_LOGI(TAG, "Hosted BT controller enabled (BLE on C6)");
-
-    hosted_hci_bluedroid_open();
-    esp_bluedroid_hci_driver_operations_t hci_ops = {
-        .send                   = hosted_hci_bluedroid_send,
-        .check_send_available   = hosted_hci_bluedroid_check_send_available,
-        .register_host_callback = hosted_hci_bluedroid_register_host_callback,
-    };
-    ESP_ERROR_CHECK(esp_bluedroid_attach_hci_driver(&hci_ops));
-    ESP_LOGI(TAG, "Hosted VHCI attached to Bluedroid");
+     * ESP-Hosted 3.x does steps 1-3 in esp_hosted_bt_host_stack_setup()
+     * (examples/bluetooth/esp_hosted_bluedroid/ble_compatibility_test
+     * in espressif/esp-hosted-mcu). */
+    esp_hosted_bt_host_stack_cfg_t hosted_bt = {};
+    hosted_bt.stack = ESP_HOSTED_BT_HOST_STACK_BLUEDROID;
+    hosted_bt.bring_up_controller = true;
+    hosted_bt.controller_ready_timeout_ms = EH_BT_CTRL_DEFAULT_READY_TIMEOUT_MS;
+    ESP_ERROR_CHECK(esp_hosted_bt_host_stack_setup(&hosted_bt));
+    ESP_LOGI(TAG, "Hosted BLE controller up, Bluedroid bound to hosted HCI");
 #else
     /* Native BT controller path (ESP32-S3). */
 
@@ -2554,9 +2535,15 @@ extern "C" void ble_keyboard_disable(void)
      * waiting for another SCAN_PARAM_SET_COMPLETE_EVT. */
 }
 
+extern "C" void ble_keyboard_shutdown(void)
+{
+    s_shutdown = true;
+    ble_keyboard_disable();
+}
+
 extern "C" void ble_keyboard_enable(void)
 {
-    if (!s_disabled) return;
+    if (!s_disabled || s_shutdown) return;
     ESP_LOGI(TAG, "Re-enabling BLE keyboard (USB keyboard gone)");
     s_disabled = false;
     notify_status("Searching for BLE keyboard...");
