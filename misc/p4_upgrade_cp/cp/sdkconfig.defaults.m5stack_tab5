@@ -1,0 +1,8 @@
+# M5Stack Tab5: ESP32-C6 (4 MB flash) on SDIO slot 1 of the ESP32-P4.
+CONFIG_IDF_TARGET="esp32c6"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+# Used when the C6 is flashed over USB; an OTA upgrade keeps the C6's
+# old table.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_c6_4mb.csv"

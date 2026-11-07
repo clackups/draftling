@@ -1,0 +1,9 @@
+dependencies:
+  idf:
+    version: ">=6.1.0"
+  ## M5Stack Tab5: display (LVGL through esp_lvgl_port), touch, the I/O
+  ## expander that switches the C6 supply (bsp_feature_enable(BSP_FEATURE_WIFI)).
+  espressif/m5stack_tab5:
+    version: "^1.3.2"
+    rules:
+      - if: "$CONFIG{P4UP_BOARD_M5STACK_TAB5} == True"

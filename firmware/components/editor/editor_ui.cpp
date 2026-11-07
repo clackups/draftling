@@ -1299,6 +1299,10 @@ static help_origin_t s_help_origin = HELP_FROM_EDITOR;
  * (editor_ui_set_board_name()) for the hardware information page. */
 static const char *s_board_name  = NULL;
 
+/* Radio co-processor (editor_ui_set_coprocessor()); NULL = none. */
+static const char *s_coproc_chip = NULL;
+static const char *s_coproc_fw   = NULL;
+
 /* ---- Device battery display ----
  *
  * Boards that have a wired-up battery monitor (BATT_ADC_PIN >= 0)
@@ -4689,6 +4693,12 @@ extern "C" void editor_ui_set_board_name(const char *name)
     s_board_name = name;
 }
 
+extern "C" void editor_ui_set_coprocessor(const char *chip, const char *firmware)
+{
+    s_coproc_chip = chip;
+    s_coproc_fw = firmware;
+}
+
 extern "C" void editor_ui_set_ble_prompt_text(const char *text)
 {
     /* Update the bottom-half label on the boot "BLE prompt" screen.
@@ -7398,6 +7408,12 @@ static void build_hwinfo_text(std::string &out, int cols)
              chip.revision / 100, chip.revision % 100, chip.cores,
              chip.cores == 1 ? "" : "s");
     help_row(out, cols, kc, "Chip", buf);
+
+    if (s_coproc_chip) {
+        help_heading(out, "Radio co-processor");
+        help_row(out, cols, kc, "Chip", s_coproc_chip);
+        help_row(out, cols, kc, "Firmware", s_coproc_fw ? s_coproc_fw : "unknown");
+    }
 
     help_heading(out, "Memory");
     hwinfo_heap_row(out, cols, kc, "RAM", MALLOC_CAP_INTERNAL);

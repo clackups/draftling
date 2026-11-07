@@ -84,6 +84,8 @@
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_mipi_dsi.h>
+#include <driver/gpio.h>
+#include <driver/ledc.h>
 
 #include "bsp/display.h"
 #include "bsp/m5stack_tab5.h"
@@ -205,6 +207,11 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
         return;
     }
 
+    /* display_deep_sleep_prepare() holds the backlight pin LOW; the
+     * hold survives the deep-sleep wake reset and would keep LEDC
+     * from driving it. */
+    gpio_hold_dis(BSP_LCD_BACKLIGHT);
+
     err = bsp_display_brightness_init();
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "bsp_display_brightness_init failed: %s",
@@ -224,6 +231,19 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
     }
     s_panel = handles.panel;
     s_io    = handles.io;
+
+    /* The BSP sets up the backlight PWM (LEDC_TIMER_0, 10-bit) at
+     * 5 kHz, again inside bsp_display_new_with_handles(), so change
+     * the frequency only now. */
+    err = ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0,
+                        CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "backlight PWM %d Hz failed: %s",
+                 CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ, esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "backlight PWM %d Hz",
+                 CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ);
+    }
 
     /* Create the draw-completion semaphore and register the DPI
      * color-trans-done callback before the first draw so dsi_blit()
@@ -409,6 +429,23 @@ extern "C" void display_deep_sleep_prepare(void)
 {
     bsp_display_backlight_off();
     if (s_panel) esp_lcd_panel_disp_on_off(s_panel, false);
+    /* SLPIN (MIPI DCS 0x10): the controller stops its oscillator and
+     * charge pumps; display-off alone only blanks the output. The
+     * BSP's ILI9881C / ST7123 drivers do not implement disp_sleep(),
+     * so send the command directly. */
+    if (s_io) {
+        esp_err_t err = esp_lcd_panel_io_tx_param(s_io, 0x10, NULL, 0);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "panel SLPIN failed: %s", esp_err_to_name(err));
+        }
+    }
+    /* The backlight PWM stops with the chip in deep sleep and the pad
+     * would no longer be driven: stop LEDC with its output LOW and
+     * latch the pad (the P4 holds single pads through deep sleep from
+     * chip revision 3.0). display_init() releases the hold. */
+    ledc_stop(LEDC_LOW_SPEED_MODE,
+              (ledc_channel_t)CONFIG_BSP_DISPLAY_BRIGHTNESS_LEDC_CH, 0);
+    gpio_hold_en(BSP_LCD_BACKLIGHT);
 }
 
 extern "C" void display_set_shared_i2c_bus(void * /*bus_handle*/)

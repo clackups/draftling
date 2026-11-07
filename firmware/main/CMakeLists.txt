@@ -12,7 +12,7 @@
 ## esp_driver_gpio / esp_driver_i2c / esp_driver_uart) and
 ## `driver/rtc_io.h` (still in the legacy `driver` component).
 set(MAIN_PRIV_REQS display sd_card ble_keyboard editor wifi_manager git_sync standby battery touchscreen power io_expander nvs_flash bt esp_hid driver esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_uart esp_driver_rmt esp_event esp_pm)
-if(CONFIG_ESP_HOSTED_ENABLED)
+if(CONFIG_ESP_HOSTED_HOST)
     list(APPEND MAIN_PRIV_REQS espressif__esp_hosted)
 endif()
 

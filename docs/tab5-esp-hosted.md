@@ -1,4 +1,4 @@
-# Wi-Fi + Bluetooth on the M5Stack Tab5 (ESP-Hosted-MCU)
+# Wi-Fi + Bluetooth on the M5Stack Tab5 (ESP-Hosted 3.1)
 
 _Paths below (`main/...`, `components/...`, `sdkconfig.defaults*`) are
 relative to `firmware/`._
@@ -7,20 +7,27 @@ The ESP32-P4 has no on-chip 2.4 GHz radio. On the M5Stack Tab5 the
 P4 is paired with an on-board ESP32-C6 module that provides Wi-Fi
 and BLE; the two chips are wired together over SDIO. Draftling
 reaches the C6 through
-[ESP-Hosted-MCU](https://github.com/espressif/esp-hosted-mcu):
+[ESP-Hosted](https://github.com/espressif/esp-hosted-mcu) 3.1
+(`espressif/esp_hosted ~3.1.0`); the C6 must run esp-hosted 3.1 too
+(see "C6 firmware" below):
 
 - `wifi_manager` (Git sync) calls stock `esp_wifi_*` APIs, which
-  `espressif/esp_wifi_remote` redirects into hosted RPCs.
-- `ble_keyboard` (BLE HID host) brings up Bluedroid the usual way
-  but attaches a hosted-VHCI HCI driver instead of the native
-  `esp_bt_controller` (the latter does not exist on the P4). The
-  switch is gated on `CONFIG_BT_CONTROLLER_DISABLED`, which the
-  Tab5 sdkconfig sets.
+  ESP-IDF's esp_wifi remote layer redirects into hosted RPCs.
+- `ble_keyboard` (BLE HID host) brings up Bluedroid the usual way,
+  but first calls ESP-Hosted's `esp_hosted_bt_host_stack_setup()`,
+  which starts the BLE controller on the C6 and binds Bluedroid to
+  the hosted HCI, instead of the native `esp_bt_controller` (which
+  does not exist on the P4). The switch is gated on
+  `CONFIG_BT_CONTROLLER_DISABLED`, which the Tab5 sdkconfig sets.
 
 The P4-side wiring is automatic: it is enabled in
 `sdkconfig.defaults.esp32p4`, and `main/main.cpp` calls
 `esp_hosted_init()` + `esp_hosted_connect_to_slave()` before
-`ble_keyboard_init()` / `wifi_manager_connect()`. The host
+`ble_keyboard_init()` / `wifi_manager_connect()`
+(`CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN` is off: the C6 has
+no power until `main.cpp` enables its rail, see below). It then asks
+the C6 for its firmware version and stops with an on-screen message if
+it is older than 3.1. The host
 component is pulled in by `main/idf_component.yml` under a
 `target == esp32p4` rule, so ESP32-S3 builds are unaffected.
 
@@ -102,22 +109,11 @@ prefer not to use the curses UI.
 | C6 RESET (active LOW) | 15 |
 
 These match the M5Tab5-UserDemo reference firmware and the Tab5
-schematic. They are encoded in `sdkconfig.defaults.esp32p4` as the
-per-slot `CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_*_SLOT_1` symbols plus
-`CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE` (slot 1 is the P4 default
-and is the SDMMC slot wired to the on-board C6).
-
-> **Pitfall.** In `espressif/esp_hosted` >= 2.x the
-> `CONFIG_ESP_HOSTED_SDIO_PIN_CLK / _CMD / _D0..D3` symbols are
-> *non-promptable derived ints* whose values are computed from the
-> per-slot `_PRIV_SDIO_PIN_*_SLOT_{0,1}` defaults. Setting
-> `CONFIG_ESP_HOSTED_SDIO_PIN_CLK=12` in `sdkconfig.defaults` is
-> silently dropped by Kconfig, the upstream P4/SLOT_1 defaults
-> (CLK 18, CMD 19, D0 14, D1 15, D2 16, D3 17) win, and SDIO
-> bring-up fails with `sdmmc_init_ocr: send_op_cond (1) returned
-> 0x107` because the upstream D1 default (15) is the same pin the
-> Tab5 uses for the C6 reset line. Always override the
-> `_PRIV_SDIO_PIN_*_SLOT_1` knobs instead.
+schematic. ESP-Hosted 3.1 has a Tab5 profile for them,
+`CONFIG_ESP32P4_TAB5_C6_BOARD` (set in `sdkconfig.defaults.esp32p4`):
+it locks the `CONFIG_ESP_HOSTED_HOST_SDIO_PIN_*` values and the reset
+line (`CONFIG_ESP_HOSTED_HOST_RESET_GPIO=15`) to this wiring. Slot 1
+is the SDMMC slot wired to the C6.
 
 ## Powering the on-board C6
 
@@ -144,31 +140,37 @@ bring-up. A `vTaskDelay(200 ms)` after the enable lets the C6
 LDO settle and the ROM bootloader reach a known state before the
 host pulses `Slave_Reset`.
 
-## One-time C6 slave firmware flashing
+## C6 firmware: esp-hosted 3.1
 
-The C6 needs the ESP-Hosted slave firmware. The host side is pinned to
-`espressif/esp_hosted >=2.12,<3.0.0` in `main/idf_component.yml` (3.0
-replaced the Bluetooth Kconfig / API this project's `ble_keyboard.cpp`
-relies on -- see the comment above that dependency), so the
-slave image must be flashed with esp-hosted-mcu firmware of version
-**2.x**. The M5Stack prebuilt image that ships with M5Tab5-UserDemo
-(`ESP32C6-WiFi-SDIO-Interface-V1.4.1-96bea3a_0x0.bin`) was built
-against an older 1.x slave and its RPC interface is **not** compatible
-with `esp_hosted >= 2.x` -- using it will look exactly like "C6 not
-responding" (the SDIO bus comes up but the INIT event never
-arrives). Build a matching 2.x slave from upstream.
+The C6 needs esp-hosted **3.1** firmware with Wi-Fi and the BLE
+controller. Tab5 units come with M5Stack's
+`ESP32C6-WiFi-SDIO-Interface-V1.4.1` image (esp-hosted-mcu 1.4.1), and
+earlier versions of this document had users flash a 2.x build; neither
+works with this Draftling.
 
-### 1. Build the slave firmware
+### Upgrade from the P4 (recommended)
+
+`misc/p4_upgrade_cp/` (repository root, preset `tab5`) is a small
+firmware for the P4 that installs esp-hosted 3.1 on the C6 over the SDIO link, whatever
+esp-hosted version the C6 runs (0.0.x, 1.x, 2.x, 3.x, or an
+ESP-Hosted-FG build), with progress on the Tab5 screen. No jumper
+wires or USB-serial adapter are needed:
 
 ```bash
-git clone --recurse-submodules https://github.com/espressif/esp-hosted-mcu.git
-cd esp-hosted-mcu/slave
-idf.py set-target esp32c6
-idf.py menuconfig   # see knobs below
-idf.py build
+. $IDF_PATH/export.sh
+misc/p4_upgrade_cp/build.sh m5stack_tab5
+cd misc/p4_upgrade_cp/p4
+idf.py --preset m5stack_tab5 -p /dev/ttyACM0 flash monitor
 ```
 
-### 2. Put the C6 into download mode
+When the screen says "Done", flash Draftling again. The C6 firmware
+stays across P4 reflashes. See `misc/p4_upgrade_cp/README.md` for
+how the tool detects the C6's protocol.
+
+### Flash the C6 over its serial port (fallback)
+
+If the C6 does not answer the upgrade tool at all, flash the image
+built in `misc/p4_upgrade_cp/cp/` (preset `tab5`) directly.
 
 The C6 has no boot button on the Tab5. To enter the ROM
 download mode you must hold its **GPIO 9** strapping pin LOW
@@ -194,96 +196,83 @@ GPIO 9 is actually being held LOW for the entire duration of
 the reset pulse -- a momentary touch is not enough; the strap
 is sampled at the instant CHIP_PU goes high.
 
-### 3. Flash and clean up
-
-Here `/dev/ttyUSB0` corresponds to the USB UART adapter, so the name
-could be different (such as /dev/ttyACM0).
+Then flash (`/dev/ttyUSB0` is the USB-serial adapter; the name may
+differ):
 
 ```bash
-idf.py -p /dev/ttyUSB0 flash
+cd misc/p4_upgrade_cp/cp
+idf.py --preset m5stack_tab5 -p /dev/ttyUSB0 flash
 ```
 
-Once flashing is done, **remove the G9-to-GND short** and reset
-the C6 (cycling Tab5 power is the easiest way). On the next P4
-boot the host should reach `ESP-Hosted link up` and the
-capabilities line should include `HCI over SDIO / BLE only`.
-
-The C6 firmware persists across P4 reflashes; re-flashing it is
-only necessary if you upgrade the host-side `espressif/esp_hosted`
-component to a version whose RPC interface is incompatible with
-the slave image you currently have on the C6.
+Once flashing is done, **remove the G9-to-GND short** and power the
+Tab5 off and on.
 
 ## Expected boot log
 
-On a successful link bring-up `main` prints lines similar to:
+On a successful link bring-up Draftling prints these lines (ESP-Hosted
+adds its own transport lines in between: reset on GPIO15, SDIO card
+init, the C6's INIT event and the firmware versions of both sides):
 
 ```
 I (xxxx) Draftling: Initializing ESP-Hosted link to ESP32-C6...
-I (xxxx) transport: Attempt connection with slave: retry[0]
-I (xxxx) transport: Reset slave using GPIO[15]
-I (xxxx) sdio_wrapper: SDIO master: Data-Lines: 4-bit Freq(KHz)[40000 KHz]
-I (xxxx) sdio_wrapper: GPIOs: CLK[12] CMD[13] D0[11] D1[10] D2[9] D3[8] Slave_Reset[15]
-I (xxxx) H_SDIO_DRV: SDIO Host operating in PACKET MODE
-I (xxxx) transport: Received INIT event from ESP32 peripheral
-I (xxxx) transport: capabilities: 0xd
-I (xxxx) transport:      * WLAN
-I (xxxx) transport:        - HCI over SDIO
-I (xxxx) transport:        - BLE only
 I (xxxx) Draftling: ESP-Hosted link up
-I (xxxx) Draftling: Initializing Bluetooth keyboard...
-I (xxxx) BLEKeyboard: Hosted BT controller enabled (BLE on C6)
-I (xxxx) BLEKeyboard: Hosted VHCI attached to Bluedroid
+I (xxxx) Draftling: ESP32-C6 runs esp-hosted 3.1.0
+I (xxxx) BLEKeyboard: Hosted BLE controller up, Bluedroid bound to hosted HCI
 I (xxxx) BLEKeyboard: Bluedroid enabled
 ```
 
 ## Common bring-up failures
 
-- **`Reset slave using GPIO[15]` then a hang or
-  `Failed to communicate with slave`** -- the C6 is not running
-  slave firmware, or the slave image is incompatible with the
-  host-side `espressif/esp_hosted` version. Re-flash the C6 with
-  the image listed above.
+- **"ESP32-C6 firmware too old" on screen** -- the C6 runs esp-hosted
+  older than 3.1. Run the upgrade tool (see "C6 firmware" above).
+- **"ESP32-C6 not responding" on screen** -- the SDIO link did not come
+  up within 5 s: the C6 is not running esp-hosted firmware, or is
+  wedged. Power the Tab5 off and on; if it persists, run the upgrade
+  tool, and as a last resort flash the C6 over its serial port.
 - **`SDIO read/write error` or `CMD53 timeout`** -- usually a
   signal-integrity issue with the SDIO bus; lower
-  `CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ` (e.g. to `20000`) and
-  re-test.
-- **`esp_hosted_connect_to_slave failed (-1)`** -- the SDIO pin
-  map does not match the actual Tab5 wiring. Verify the
-  `CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_*_SLOT_1` values (CLK / CMD /
-  D0 / D1_4BIT_BUS / D2_4BIT_BUS / D3_4BIT_BUS) against the
-  schematic of your specific Tab5 revision; do **not** edit the
-  `CONFIG_ESP_HOSTED_SDIO_PIN_*` symbols (see "Pitfall" above).
-- **Wi-Fi associates but BLE never connects** -- the C6 image is
-  Wi-Fi-only. Re-flash with a build that has
-  `HCI over SDIO / BLE only` in its capabilities line (see the
-  capabilities log above).
+  `CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ` (e.g. to `20000`) and re-test.
+- **Wi-Fi associates but BLE never connects** -- the C6 image has no
+  BLE controller (the init event's capabilities lack "HCI over SDIO").
+  Install the image from `misc/p4_upgrade_cp/cp/` (preset `tab5`),
+  which has both.
 
-## Deep sleep
+## Sleep and power-off
 
-The Tab5 standby path is real ESP32-P4 deep sleep
-(`esp_deep_sleep_start()`). The GT911 touch INT (GPIO 23) and the
-on-board USER button are not wired to LP_IO pins (GPIO 0-15) on
-the P4, so no GPIO wake source is available. The chip therefore
-wakes only via the hardware **RESET** button: it cold-boots and
-the editor restores from autosave on the next run.
+On battery, going to sleep switches the Tab5 off completely; press
+the side power button to turn it on again. On USB power it goes into
+ESP32-P4 deep sleep instead, and the **RESET** button wakes it. The
+GT911 touch INT (GPIO 23) and the on-board USER button are not wired
+to LP_IO pins (GPIO 0-15) on the P4, so there is no GPIO wake
+source. Either way the chip cold-boots and the editor restores from
+autosave.
 
-Implications:
-- Editor state in PSRAM is lost across standby; rely on autosave.
-- The ESP32-C6 co-processor is dropped before deep sleep by
-  `pre_sleep_tab5_deinit()` in `main/main.cpp`, which calls
-  `bsp_feature_enable(BSP_FEATURE_WIFI, false)` to clear
-  WLAN_PWR_EN (PI4IOE5V6408 #2, address 0x44, P0). The expander
-  latches the level across the P4's deep-sleep / reset
-  transitions, so the C6 stays off until the next cold boot
-  re-runs `bsp_feature_enable(BSP_FEATURE_WIFI, true)` in
-  `app_main()`. The SDIO link to the C6 is torn down implicitly
-  when the P4's SDIO peripheral powers off, and
-  `esp_hosted_init()` re-establishes it on the next cold boot.
-  The same pre-sleep hook also puts the GT911 touch controller
-  to sleep (`touchscreen_sleep()`), blanks the MIPI-DSI panel +
-  backlight (`display_deep_sleep_prepare()`), and powers down
-  the RTC peripherals domain
-  (`esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF)`).
+`pre_sleep_tab5_deinit()` in `main/main.cpp`, with the BSP's I2C bus
+still up:
+
+| Part | Action |
+|------|--------|
+| Bluetooth / ESP-Hosted | `ble_keyboard_shutdown()` (BLE stays off even when a USB keyboard disappears as its 5 V goes), then `esp_hosted_deinit()` closes the C6's data path and stops the SDIO tasks, so nothing talks to the C6 once its supply is cut |
+| Touch controller (0x43 P5) | held in reset (`BSP_FEATURE_TOUCH`); the BSP's touch drivers have no sleep command |
+| MIPI-DSI panel | display off + SLPIN (DCS 0x10 through the panel IO; the BSP's panel drivers do not implement `disp_sleep()`) |
+| Backlight (GPIO 22) | LEDC stopped with the output LOW, pad held; `display_init()` releases the hold (single-pad hold in deep sleep needs P4 rev >= 3.0) |
+| INA226 battery monitor | power-down mode (`battery_ina226_prepare_sleep()`); `battery_init_ina226()` restores continuous mode |
+| ESP32-C6 (WLAN_PWR_EN, 0x44 P0) | off (`BSP_FEATURE_WIFI`) |
+| USB-A 5 V boost (USB5V_EN, 0x44 P3) | off (`BSP_FEATURE_USB`) |
+| Speaker amplifier (SPK_EN, 0x43 P1) | off (`BSP_FEATURE_SPEAKER`); already switched off at boot, since Draftling plays no sound |
+| Camera (0x43 P6) | off (`BSP_FEATURE_CAMERA`) |
+| External 5 V (EXT5V_EN, 0x43 P2) | off |
+| RTC peripherals domain | powered down |
+| Charger (CHG_EN, 0x44 P7) | left on, so the battery charges while the Tab5 is off |
+
+Then it toggles PWROFF_PULSE (PI4IOE5V6408 #2 at 0x44, P4) ten times,
+50 ms apart -- the sequence of M5Unified's `Power_Class::powerOff()`.
+On battery the power circuit cuts the supply during it; on USB the
+board stays powered, the hook returns and `standby_enter_sleep()`
+enters deep sleep. The expanders keep their outputs through P4 deep
+sleep, and `app_main()` turns the rails back on at the next boot.
+Editor state in PSRAM is lost either way; documents are saved first.
+
 - `DRAFTLING_STANDBY_WAKE_ON_TOUCH` must NOT be enabled on Tab5:
   GPIO 23 is not LP_IO and the EXT0 API is not available on the
   P4 at all (`SOC_PM_SUPPORT_EXT0_WAKEUP` is undefined).
@@ -296,7 +285,7 @@ for that pin.
 ## USB-A keyboard (preempts BLE)
 
 The Tab5 carries a USB-A host receptacle wired to the P4 USB OTG
-peripheral, gated by `BSP_FEATURE_USB` (PI4IOE5V6408 #2 P5) in the
+peripheral, gated by `BSP_FEATURE_USB` (PI4IOE5V6408 #2 P3) in the
 `espressif/m5stack_tab5` BSP. Draftling brings the host stack up
 just before the keyboard subsystem (`components/usb_kbd`,
 `espressif/usb_host_hid`) and waits
@@ -370,7 +359,7 @@ starts -- which is what produced the original "USB plugged in but
 the percentage never moves and the charging icon never appears"
 symptom on Tab5. The expander latches the resulting level and retains it across P4
 deep sleep (same as `WLAN_PWR_EN` on bit 0 of the same expander --
-see the *Deep sleep* section above), so the charger keeps running
+see the *Sleep and power-off* section above), so the charger keeps running
 while the MCU sleeps and the battery comes back full after a long
 idle. As a result no special "no sleep while charging" path is
 needed in `components/standby/standby.cpp`.

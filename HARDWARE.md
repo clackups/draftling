@@ -134,12 +134,12 @@ tablet with a 5" 1280x720 IPS color LCD (ILI9881C or ST7123, MIPI-DSI
 2-lane, auto-detected by the upstream `espressif/m5stack_tab5`
 BSP). GT911 capacitive touch on I2C (backup address 0x14). Li-ion
 battery + PMIC + USB-C charging.  Wi-Fi / Bluetooth are routed through
-an on-board ESP32-C6 co-processor via ESP-Hosted-MCU over SDIO; both
+an on-board ESP32-C6 co-processor via ESP-Hosted 3.1 over SDIO; both
 `wifi_manager` (Git sync) and `ble_keyboard` (BLE HID host) work the
-same as on the ESP32-S3 boards. The C6 must be flashed once with the
-matching ESP-Hosted slave firmware -- see
-[docs/tab5-esp-hosted.md](docs/tab5-esp-hosted.md)` for the
-procedure. This board has been tested on physical hardware; touch and
+same as on the ESP32-S3 boards. The C6 must run esp-hosted 3.1: the
+upgrade tool in `misc/p4_upgrade_cp/` (preset `tab5`) installs it once from the P4,
+over the SDIO link -- see
+[docs/tab5-esp-hosted.md](docs/tab5-esp-hosted.md). This board has been tested on physical hardware; touch and
 the on-board MicroSD slot both work.
 
 The M5Stack Tab5 is a much faster device than those using ESP32-S3,
@@ -148,6 +148,10 @@ a built-in fast USB charger. The device supports a USB keyboard as an
 alternative too BLE. Also, M5 produces a specialized keyboard
 ayttachment for Tab5, which is automatically supported by Draftling
 firmware.
+
+On battery, going to sleep turns the Tab5 off completely (open
+documents are saved first); press the side power button to turn it
+on. On USB power it sleeps instead, and RESET wakes it.
 
 
 ## Guition JC3248W535

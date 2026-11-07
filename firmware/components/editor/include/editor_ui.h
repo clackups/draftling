@@ -33,6 +33,12 @@ void editor_ui_set_ble_prompt_text(const char *text);
  * string must stay valid for the life of the program. */
 void editor_ui_set_board_name(const char *name);
 
+/* Radio co-processor shown on the "Hardware information" page, for
+ * boards whose Wi-Fi / Bluetooth come from a second chip (e.g. "ESP32-C6"
+ * and "esp-hosted 3.1.0"). Without a call the section is left out. The
+ * strings must stay valid for the life of the program. */
+void editor_ui_set_coprocessor(const char *chip, const char *firmware);
+
 #ifdef __cplusplus
 }
 #endif

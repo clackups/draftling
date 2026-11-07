@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "m5stack_tab5",
+      "displayName": "M5Stack Tab5 (ESP32-C6)",
+      "binaryDir": "build/m5stack_tab5",
+      "cacheVariables": {
+        "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_tab5",
+        "SDKCONFIG": "build/m5stack_tab5/sdkconfig"
+      }
+    }
+  ]
+}
