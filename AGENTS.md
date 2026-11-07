@@ -5,8 +5,10 @@ All firmware sources and build files live under `firmware/` (see
 document -- `main/...`, `components/...`, `CMakeLists.txt`,
 `CMakePresets.json`, `sdkconfig.defaults*`, `partitions*.csv`,
 `build/<board>` -- is relative to `firmware/` unless stated otherwise.
-The repository root also has `docs/`, `images/`, `3D_Prints/`, and the
-top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
+The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
+(separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
+and the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this
+file.
 
 ## Git Author
 
@@ -65,7 +67,7 @@ they differ. Never commit under any other identity.
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
 development boards with reflective LCD displays (plus one ESP32-P4, one
 ESP32-C5 and one ESP32-S31 board). It is built with the
-ESP-IDF framework (v6.0.2+) and uses LVGL v9 for the graphical
+ESP-IDF framework (v6.1+) and uses LVGL v9 for the graphical
 interface.
 
 The user connects a Bluetooth keyboard and edits Markdown files stored on
@@ -137,6 +139,61 @@ and IDF's C5 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` needs
 `-Wno-missing-field-initializers` in `components/ble_keyboard`. On
 the board, everything is tested on physical hardware.
 
+## M5Stack Tab5 and ESP-Hosted
+
+The Tab5 (ESP32-P4) reaches its Wi-Fi / BLE radio, an on-board
+ESP32-C6, over SDIO with `espressif/esp_hosted ~3.1.0`
+(`main/idf_component.yml`, `target == esp32p4`). The P4 settings are in
+`sdkconfig.defaults.esp32p4`: ESP-Hosted's Tab5 profile
+`CONFIG_ESP32P4_TAB5_C6_BOARD` fixes the pins and the C6 reset line;
+`CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n`, because the C6
+has no supply until `main.cpp` enables WLAN_PWR_EN through the BSP and
+then calls `esp_hosted_init()` itself. `main.cpp` then reads the C6's
+version (`esp_hosted_get_coprocessor_fwversion()`), shows it on the
+F1 -> Hardware information page (`editor_ui_set_coprocessor()`) and
+halts with an on-screen message below 3.1: ESP-Hosted 3.x keeps the link up with
+older C6 firmware, but the Bluetooth bring-up in `ble_keyboard.cpp`
+(`esp_hosted_bt_host_stack_setup()`, `CONFIG_ESP_HOSTED_HOST_FEAT_BT`)
+needs 3.1 and would otherwise abort in a reboot loop.
+
+`misc/p4_upgrade_cp/` installs esp-hosted 3.1 on a P4 board's radio
+co-processor from the P4 (user docs: its `README.md` and
+`docs/tab5-esp-hosted.md`). Both projects are built per board with
+`idf.py --preset <board>` (`m5stack_tab5` is the only one so far;
+`build.sh <board>` builds both, `cp` first); the README lists what a
+new board needs:
+
+- `cp/`: the co-processor image (esp_hosted 3.1.0 co-processor, Wi-Fi
+  + BLE controller over hosted HCI, SDIO packet mode), output
+  `cp/build/<board>/cp_hosted.bin`. `sdkconfig.defaults` is common,
+  `sdkconfig.defaults.<board>` sets the target, flash and partition
+  table. The app version is taken from the esp_hosted pin in
+  `cp/main/idf_component.yml`; the build fails above the preset's
+  `CP_MAX_APP_SIZE` (Tab5: 1536 KB, the C6 app slot of the
+  esp-hosted-mcu 1.x partition table; OTA keeps the old table).
+- `p4/`: the upgrade tool. The board is a Kconfig choice
+  (`P4UP_BOARD_*`, `main/Kconfig.projbuild`, selected by
+  `sdkconfig.defaults.<board>`); `main/board.h` includes the board's
+  header from `main/boards/` (names shown on screen, the image's chip
+  id, SDIO slot and pins, reset line, `board_cp_power_on()`, display
+  start / lock), and the board's BSP comes in through a
+  `$CONFIG{P4UP_BOARD_*}` rule in `main/idf_component.yml`. It embeds
+  `../cp/build/<P4UP_BOARD_ID>/cp_hosted.bin`, shows progress on the
+  screen (LVGL, `ui.c`), and does not use the esp_hosted component:
+  `cp_sdio.c` is a minimal host for the co-processor's SDIO slave (the
+  `esp_serial_slave_link` register protocol, the same in every
+  esp-hosted version), and `hosted_proto.c` speaks the frame header,
+  the serial TLV framing and the few RPCs needed (hand-encoded
+  protobuf) in two dialects: esp-hosted-mcu (`RPCRsp`, ids 0x1xx,
+  0.0.x - 3.x; OTA ids and message layouts are the same in all of
+  them) and ESP-Hosted-FG (`ctrlResp`, ids 1xx, legacy interface
+  numbers). `upgrader.c` tries bus settings from fast to slow, picks
+  the dialect from the INIT event and a GetMACAddress probe, reads
+  the version (INIT TLV 0x17 on 2.x+, GetCoprocessorFwVersion
+  otherwise), runs OTA begin / write (1 KB chunks) / end / activate
+  (activate is required on 2.6+; 1.x and FG switch the boot slot in
+  OTA end), then resets the C6 and checks the new version.
+
 ## Repository Layout
 
 Paths below are relative to `firmware/` (see the note at the top of
@@ -159,12 +216,17 @@ partitions_xteink_x4_classic.csv  Same dual-OTA layout for the Xteink
 partitions_seeed_reterminal_sticky.csv  Same dual-OTA layout for the
                             Seeed reTerminal Sticky (32 MB flash)
 sdkconfig.defaults          Common Kconfig defaults for all targets
-sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, BLE, WiFi)
-sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, BLE,
-                            WiFi)
+sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, WiFi)
+sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, WiFi)
 sdkconfig.defaults.esp32s31 ESP32-S31-specific defaults (320 MHz, octal
-                            PSRAM at 200 MHz, BLE, WiFi); needs ESP-IDF
-                            v6.1
+                            PSRAM at 200 MHz, WiFi)
+sdkconfig.defaults.bluetooth  BLE keyboard host (Bluedroid) defaults, in
+                            every preset except boards without Bluetooth
+                            (MicroJournal Rev 5); .bluetooth.esp32s3 /
+                            .bluetooth.esp32c5 / .bluetooth.esp32s31 add
+                            the target-specific options (ESP-IDF loads
+                            <file>.<target> right after each defaults
+                            file)
 sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
@@ -989,6 +1051,9 @@ shows `build_hwinfo_text()` on the help screen (`show_hwinfo()`, which
 shares `show_help_page()` and the key / touch handling with the help
 page): the board name main.cpp passes in through
 `editor_ui_set_board_name(BOARD_NAME)`, the chip (`esp_chip_info()`),
+the radio co-processor where there is one (`editor_ui_set_coprocessor()`:
+on the Tab5, main.cpp passes the ESP32-C6's esp-hosted version read at
+boot),
 internal RAM and PSRAM heap totals / free space (`heap_caps_*`), the
 PSRAM size (`esp_psram_get_size()`), the flash size
 (`esp_flash_get_physical_size()`), `display_controller_name()`
@@ -1488,9 +1553,50 @@ Public API: `pca9557_init()`, `pca9557_is_present()`,
 Translates HID keycodes and modifier flags into UTF-8 character strings
 for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
 (Cyrillic), German (QWERTZ), French (AZERTY), Hebrew (SI 1452, RTL
-via LVGL's bidi engine), Korean (Dubeolsik; the letter keys give
-Hangul Compatibility Jamo) and the US-based Vietnamese, Japanese and
-Chinese layouts. Each layout can be independently enabled or disabled
+via LVGL's bidi engine), Swiss German / Swiss French (QWERTZ), Italian,
+Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
+Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
+Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q, Korean
+(Dubeolsik; the letter keys give Hangul Compatibility Jamo) and the
+US-based Vietnamese, Japanese and Chinese layouts.
+
+Each layout (`layout_table_t` in `kb_layout.cpp`) has full normal /
+shift tables for keycodes 0x04..0x38 (`static_assert`ed to 53
+entries) and a sparse `key_entry_t` list (`extra`) for the AltGr and
+Shift+AltGr layers, the Caps Lock layer (`L_CAPS`: keys whose Shift
+output is not the letter's capital, e.g. the Czech number row, where
+Shift gives digits and Caps Lock the capital accented letter) and keys
+past 0x38 -- the ISO `<>` key left of Z is HID 0x64 (`KC_ISO`).
+Caps Lock otherwise inverts Shift where the Shift output is a capital
+letter (`is_upper_letter()`: Latin-1, Latin Extended-A, Romanian
+comma-below, Cyrillic), on the AltGr layers too (Polish AltGr + a).
+The tables of SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI and TR were
+generated from per-key Unicode lists, with `L_CAPS` entries added for
+every lowercase-letter key whose Shift output is not a capital; their
+comments name every non-ASCII character. The Turkish dotless-i key
+counts as I for Ctrl / Alt shortcuts (`kb_layout_shortcut_char()`).
+`kb_layout_has_altgr()` tells the editor that Right Alt is AltGr, so
+the editor's Alt+I accepts only Left Alt on such layouts (AltGr + i
+types a letter on some of them); the file browser, which has no text
+entry, still accepts either Alt. The ISO key left of Enter is 0x32 in the HID spec
+but 0x31 on many keyboards, so ISO layouts put it on both. New layout
+ids go after HE in `kb_layout_id_t`, so the bits of the existing
+layouts in the persisted active-layout mask do not move.
+
+Dead keys: a table entry starting with `\x01` (`DK_GRAVE`, `DK_ACUTE`,
+`DK_CIRC`, `DK_TILDE`, `DK_DIAER`, `DK_CEDIL`, `DK_CARON`, `DK_BREVE`,
+`DK_DOT`, `DK_RING`, `DK_OGONEK`, `DK_DACUTE`) types nothing;
+`kb_layout_translate()` remembers it and combines it with the next key
+into a Latin-1 or Latin Extended-A letter (`s_dead_keys`, built with
+`DK_TABLE()`, which checks the letter and result lists match), types the accent alone after Space or the same dead
+key, or the accent plus the key when they do not combine; a key with
+no character drops it, and so does a layout change.
+`kb_layout_translate()` is therefore stateful: call it once per key
+press. The Draftbox OTP field, which translates a key and then hands
+it to `text_field_key()` (which translates again), checks
+`kb_layout_dead_key_pending()` first.
+
+Each layout can be independently enabled or disabled
 at build time via Kconfig (see `components/kb_layout/Kconfig.projbuild`);
 the language pack sets the defaults. `kb_layout_ime()` tells the
 editor which input method (`components/ime/`) the active layout uses
@@ -1503,7 +1609,7 @@ user-configurable "active set" -- see `kb_layout_set_active()` /
 `kb_layout_is_active()` / `kb_layout_get_active_mask()` /
 `kb_layout_set_active_mask()`. `components/editor/editor_ui.cpp` owns
 persisting this set to NVS and exposes it as the "Active layouts" row
-in the F1 -> Settings menu; it defaults to US + UA, plus the
+in the F1 -> Settings menu; it defaults to US only, plus the
 input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
@@ -1723,12 +1829,28 @@ workaround; both woke the device immediately, the latter because
 the e-paper backend initialises only the panel (not the touch
 controller), so the GT911 is left uninitialised and holds INT low.
 
+A board may name a second active-low wake button,
+`CONFIG_DRAFTLING_WAKEUP_GPIO_EXTRA` (-1 = none): it is armed through
+EXT1 (any-low) next to EXT0, with the same pull-up and
+wait-for-release treatment (a pin still LOW after 10 s is just not
+armed). The Waveshare ESP32-S3-ePaper-3.97 sets it to the Function
+button (GPIO5), whose 2 s hold is also its sleep trigger.
+
 On targets that have no EXT0 support (the ESP32-P4 / M5Stack Tab5,
 where `SOC_PM_SUPPORT_EXT0_WAKEUP` is undefined), the EXT0 arming
 is compiled out entirely. The Tab5 has no user button or touch INT
-on an LP_IO pin (GPIO 0-15) either, so the only wake path is the
-hardware RESET button: the chip cold-boots and the editor restores
-from autosave on the next run. See `docs/tab5-esp-hosted.md`.
+on an LP_IO pin (GPIO 0-15) either. On battery its pre-sleep hook
+(`pre_sleep_tab5_deinit()`) stops BLE for good
+(`ble_keyboard_shutdown()`, so a USB keyboard losing its 5 V cannot
+restart it) and ESP-Hosted (`esp_hosted_deinit()`), then switches
+off every rail it can reach
+through the two PI4IOE5V6408 expanders (C6, USB-A 5 V, speaker,
+camera, EXT5V, touch held in reset; CHG_EN stays on), puts the panel
+and INA226 to sleep, then powers the board off with M5Unified's PWROFF_PULSE
+sequence (0x44 P4, ten toggles 50 ms apart); the side power button
+turns it on. On USB the supply stays up and it deep-sleeps, woken by
+RESET. Either way the chip cold-boots and the editor restores from
+autosave. See `docs/tab5-esp-hosted.md`.
 
 On the LilyGO T5 E-Paper S3 Pro / Pro Lite, the standby pre-sleep
 callback is replaced with `pre_sleep_t5_deinit()` (`main/main.cpp`),
@@ -2024,6 +2146,7 @@ for builds that do not need a given script.
 | `greybeard_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
 | `greybeard_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
 | `greybeard_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
+| `greybeard_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
 
 The base font is generated with `--lv-fallback greybeard_NN_ext` and
 the Hebrew subset with `--lv-fallback greybeard_NN_he_next`. Both
@@ -2149,6 +2272,7 @@ layout options:
 | `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
 | `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
 | `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
+| `hack_latina_NN.c` | same as `greybeard_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
 Greybeard TTFs. For slots 11-30, that's at twice the corresponding
@@ -2189,7 +2313,9 @@ since HIDPI's base font sizes top out at 20 px.
 ## Language packs
 
 A language pack is the set of layouts, input methods and font subsets
-of one firmware image: `default` (US, UA, DE, FR, HE), `vietnamese`
+of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
+IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR),
+`vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
 ZH). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
@@ -2222,10 +2348,21 @@ the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
 **Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
-base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin extension
+base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
+Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
 (`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Cyrillic
 (generated without a fallback, so always last). Missing subsets are
 skipped (`slot_chain_t` table).
+
+**Latin Extended-A** (`greybeard_latina_NN.c`, `hack_latina_NN.c`,
+compiled with `DRAFTLING_HAS_LATIN_EXT_A`, i.e. any of the PL, CZ, SK,
+HU, RO, HR/SI, TR layouts): the whole Latin Extended-A block, the
+Romanian s / t with comma below, the spacing accents the dead keys
+type alone and the low / high double quotes. Generated by
+`components/fonts/tools/gen_latina.sh` with the pinned lv_font_conv,
+Greybeard v1.0.0 and Hack v3.003 (both cover all of it; same sizes,
+`--autohint-off` slots and Hack advance snapping as the Latin
+extension below).
 
 **Latin extension** (`greybeard_latinx_NN.c`, `hack_latinx_NN.c`,
 compiled with KB_LAYOUT_ENABLE_VI or DRAFTLING_HAS_CJK): the
@@ -2323,7 +2460,9 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   SDA=19/SCL=20 polled without INT (RST/INT on a PCA9557 at 0x18 on
   v3.0), MicroSD on SPI (CS=10, MOSI=11, SCK=12, MISO=13), LEDC
   backlight on GPIO2 at 15 kHz (`DRAFTLING_BACKLIGHT_PWM_HZ`, a
-  prompted int for every direct-GPIO RGB board, 1 kHz elsewhere: the
+  prompted int for every direct-GPIO RGB board and the Tab5 (25 kHz:
+  the BSP's 5 kHz flickered; `display_mipi_dsi.cpp` sets it after
+  `bsp_display_new_with_handles()`), 1 kHz elsewhere: the
   MT9201 LED driver whined at 1 kHz and flickered at 25 kHz), CH340 USB-UART (no USB MSC / Kermit), no battery
   monitor. No GPIO wake (`DRAFTLING_WAKEUP_GPIO` -1, wake by RESET):
   BOOT (GPIO0) is wired through a 0 ohm link to the LCD's pixel clock
@@ -2351,8 +2490,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   releases the SD card, stops the panel and latches the backlight
   off. Tested on physical hardware (standby about 30 mA).
   *Requires ESP32-S3.*
-- **DRAFTLING_MODEL_GUITION_JC4827W543** -- Guition JC4827W543C
-  (`main/boards/guition_jc4827w543.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
+- **DRAFTLING_MODEL_GUITION_JC4827W543C** -- Guition JC4827W543C
+  (`main/boards/guition_jc4827w543c.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
   flash, `partitions_4mb.csv`), 4.3" 480x272 NV3041A QSPI panel
   (`display_nv3041a.cpp`; CS=45, SCK=47, D0-D3=21/48/40/39, same QSPI
   pins as the JC3248W535), LEDC backlight on GPIO1 at 5 kHz, GT911
@@ -2361,9 +2500,9 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   BOOT (GPIO0) wake, no battery level indication (IP5306 charger only,
   no battery voltage meter wired to the ESP32-S3). The
   unused NS4168 I2S amplifier (LRCLK=2, BCLK=42, DIN=41; no enable
-  GPIO) has its lines driven LOW at boot (`jc4827w543_quiet_speaker()`
+  GPIO) has its lines driven LOW at boot (`jc4827w543c_quiet_speaker()`
   in main.cpp) and held LOW through deep sleep.
-  `pre_sleep_jc4827w543_deinit()` puts the GT911 to sleep, releases
+  `pre_sleep_jc4827w543c_deinit()` puts the GT911 to sleep, releases
   the SD card, holds the amplifier lines and calls
   `display_deep_sleep_prepare()`. No USB MSC / Kermit (native USB vs.
   bridge not confirmed). Tested on physical hardware.
@@ -2854,23 +2993,40 @@ follows the pack:
 | KB_LAYOUT_ENABLE_DE | German (QWERTZ) | y in the default pack |
 | KB_LAYOUT_ENABLE_FR | French (AZERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_HE | Hebrew (SI 1452) | y in the default pack |
+| KB_LAYOUT_ENABLE_DE_CH | Swiss German (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_FR_CH | Swiss French (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_IT | Italian (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_PT | Portuguese, Portugal (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_ES | Spanish, Spain (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_GB | United Kingdom (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_SE_FI | Swedish / Finnish (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_NO | Norwegian (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_DK | Danish (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_PL | Polish, programmers (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_CZ | Czech (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_SK | Slovak (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_HU | Hungarian (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_RO | Romanian, standard (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_HR | Croatian / Slovenian (QWERTZ) | y in the default pack |
+| KB_LAYOUT_ENABLE_TR | Turkish Q (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_VI | Vietnamese (Telex) | y in the vietnamese pack |
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
 | KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
 
-Derived: `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
+Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR or TR
+enabled) compiles the Latin Extended-A font subset;
+`DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
 fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
 of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
 component reads these symbols at compile time to conditionally compile
-only the enabled layout tables. A board-specific `sdkconfig.defaults.*`
-can override individual symbols (see `sdkconfig.defaults.sunton_8048s043`,
-which keeps only US + DE for that author's German keyboard); the
-`sdkconfig.defaults.lang_<pack>` files set every layout explicitly, so
-they win over such board lines.
+only the enabled layout tables. Board `sdkconfig.defaults.*` files do
+not set layout symbols: every board builds the pack's full layout set,
+and users pick theirs with the runtime "Active layouts" setting below.
+The `sdkconfig.defaults.lang_<pack>` files set every layout explicitly.
 
 Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
@@ -2881,8 +3037,8 @@ order follows the compiled-in layouts.
 
 ## Building
 
-Requires ESP-IDF v6.0.2 or later (v6.1 or later for the ESP32-S31
-board, `espressif_s31_korvo1`).
+Requires ESP-IDF v6.1 or later (the top-level `CMakeLists.txt` stops
+with a `FATAL_ERROR` on older versions).
 
 PSRAM is required on every supported board. The editor gap buffer
 (sized dynamically at startup from the PSRAM that is free when
@@ -2903,14 +3059,16 @@ PSRAM) are not supported.
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
 `jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
-`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
+`waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `nicemcu_c5_28ips`, `espressif_s31_korvo1`). Each
-preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults` plus its own
-`sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
+preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
+`sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,
+so no Bluetooth option is set for a disabled stack -- ESP-IDF 6.1
+reports such settings) and its own `sdkconfig.defaults.<board>` file (which sets `CONFIG_IDF_TARGET` and
 the board's `CONFIG_DRAFTLING_MODEL_*` option), and places `binaryDir` /
 `SDKCONFIG` under `build/<board>` so every board's build output stays
 isolated. Run these from inside `firmware/`:
@@ -2931,7 +3089,12 @@ idf.py --preset waveshare_rlcd42 --lang-pack japanese build
 
 If you pull new changes that touch `sdkconfig.defaults` or a board's
 `sdkconfig.defaults.<board>` file, delete the preset's generated
-`sdkconfig` so the defaults are re-applied:
+`sdkconfig` so the defaults are re-applied. After a change to a
+preset's `SDKCONFIG_DEFAULTS` list in `CMakePresets.json`, delete the
+whole `build/<board>` directory: its CMake cache keeps the old list.
+The top-level `CMakeLists.txt` stops a build whose sdkconfig has
+Bluetooth off on a board without `CONFIG_DRAFTLING_NO_BLUETOOTH`,
+which is what such a stale build directory produces.
 
 ```bash
 rm -f build/waveshare_rlcd42/sdkconfig    # from inside firmware/

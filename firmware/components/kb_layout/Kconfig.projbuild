@@ -13,7 +13,7 @@ choice DRAFTLING_LANG_PACK
         individually.
 
     config DRAFTLING_LANG_PACK_DEFAULT
-        bool "Default (US, Ukrainian, German, French, Hebrew)"
+        bool "Default (US, Ukrainian, German, French, Hebrew and 16 more European layouts)"
 
     config DRAFTLING_LANG_PACK_VIETNAMESE
         bool "Vietnamese (US, Vietnamese Telex)"
@@ -85,6 +85,129 @@ config KB_LAYOUT_ENABLE_HE
         Hebrew typing is right-to-left; LVGL's bidirectional text
         engine (LV_USE_BIDI) handles the visual reordering.
 
+config KB_LAYOUT_ENABLE_DE_CH
+    bool "Swiss German (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Swiss German QWERTZ keyboard layout (umlauts on
+        their own keys, e-acute / e-grave / a-grave shifted; accent
+        dead keys).
+
+config KB_LAYOUT_ENABLE_FR_CH
+    bool "Swiss French (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Swiss French QWERTZ keyboard layout (e-acute /
+        e-grave / a-grave on their own keys, umlauts shifted; accent
+        dead keys).
+
+config KB_LAYOUT_ENABLE_IT
+    bool "Italian (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Italian QWERTY keyboard layout with accented
+        vowels.
+
+config KB_LAYOUT_ENABLE_PT
+    bool "Portuguese (Portugal, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Portuguese (Portugal) QWERTY keyboard layout with
+        c-cedilla and the acute / grave / tilde / circumflex dead keys.
+
+config KB_LAYOUT_ENABLE_ES
+    bool "Spanish (Spain, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Spanish (Spain) QWERTY keyboard layout with n-tilde
+        and the acute / grave / circumflex / diaeresis dead keys.
+
+config KB_LAYOUT_ENABLE_GB
+    bool "United Kingdom (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the United Kingdom QWERTY keyboard layout (pound sign
+        on Shift+3, @ on Shift+', AltGr + vowel for acute vowels).
+
+config KB_LAYOUT_ENABLE_SE_FI
+    bool "Swedish / Finnish (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Swedish / Finnish QWERTY keyboard layout (a-ring, a / o-umlaut;
+        accent dead keys). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_NO
+    bool "Norwegian (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Norwegian QWERTY keyboard layout (a-ring, ae, o-slash; accent
+        dead keys). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_DK
+    bool "Danish (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Danish QWERTY keyboard layout (a-ring, ae, o-slash; accent
+        dead keys). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_PL
+    bool "Polish (programmers, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Polish programmers layout: US QWERTY with the Polish letters
+        on AltGr + letter. Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_CZ
+    bool "Czech (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Czech QWERTZ keyboard layout (accented letters on the number
+        row; acute, caron and ring dead keys). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_SK
+    bool "Slovak (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Slovak QWERTZ keyboard layout (accented letters on the number
+        row; acute, caron and ring dead keys). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_HU
+    bool "Hungarian (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Hungarian QWERTZ keyboard layout (every Hungarian letter on its
+        own key). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_RO
+    bool "Romanian (standard, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Romanian standard QWERTY keyboard layout (s / t with comma
+        below, a-breve, a / i-circumflex). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_HR
+    bool "Croatian / Slovenian (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Croatian / Slovenian QWERTZ keyboard layout (s / c / z-caron,
+        c-acute, d-stroke). Pulls in the Latin Extended-A font
+        subset.
+
+config KB_LAYOUT_ENABLE_TR
+    bool "Turkish Q (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Turkish Q keyboard layout (dotless i, g-breve, s-cedilla). Pulls in the Latin Extended-A font
+        subset.
+
 config KB_LAYOUT_ENABLE_VI
     bool "Vietnamese (Telex input)"
     default y if DRAFTLING_LANG_PACK_VIETNAMESE
@@ -120,6 +243,13 @@ config KB_LAYOUT_ENABLE_ZH
         US-English keyboard, with a word dictionary derived from the
         Android Open Source Project PinyinIME (about 0.7 MB). Pulls
         in the CJK fonts.
+
+# Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
+# letters of the Central / Eastern European, Baltic and Turkish
+# languages and the spacing accents of their dead keys.
+config DRAFTLING_HAS_LATIN_EXT_A
+    bool
+    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR
 
 config DRAFTLING_HAS_CJK
     bool

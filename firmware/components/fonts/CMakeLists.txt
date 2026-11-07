@@ -51,6 +51,14 @@ if(latinx_enabled)
     endforeach()
 endif()
 
+# Latin Extended-A subset (Polish, Czech, Turkish, ... letters) for the
+# Central / Eastern European and Turkish layouts of the default pack.
+if(CONFIG_DRAFTLING_HAS_LATIN_EXT_A)
+    foreach(n ${font_slots_gb})
+        list(APPEND srcs "greybeard_latina_${n}.c")
+    endforeach()
+endif()
+
 # CJK pixel fonts: the runtime driver plus one font set (see
 # cjk/LICENSE.txt): the glyphs of the language pack's language, in its
 # regional style, at the three native sizes.
@@ -106,6 +114,11 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     if(latinx_enabled)
         foreach(n ${font_slots_hack})
             list(APPEND srcs "hack_latinx_${n}.c")
+        endforeach()
+    endif()
+    if(CONFIG_DRAFTLING_HAS_LATIN_EXT_A)
+        foreach(n ${font_slots_hack})
+            list(APPEND srcs "hack_latina_${n}.c")
         endforeach()
     endif()
 endif()

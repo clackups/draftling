@@ -73,7 +73,9 @@
  * trigger: a long press (2 s, CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO in
  * Kconfig.projbuild) enters standby_enter_sleep() via the generic
  * sleep_button_poll_cb() handler in main.cpp, independent of the
- * short-press KB_KEY_ENTER injection above. */
+ * short-press KB_KEY_ENTER injection above. A press of it also wakes
+ * the board (EXT1, CONFIG_DRAFTLING_WAKEUP_GPIO_EXTRA), next to the
+ * EXT0 wake on BOOT. */
 #define BTN_UP_PIN       4
 #define BTN_FUNCTION_PIN 5
 #define BTN_DOWN_PIN     6

@@ -8,21 +8,10 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
-CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 # Push WiFi/LWIP dynamic allocations to PSRAM to free internal DRAM.
 # WiFi static RX buffers still must live in internal DMA-capable RAM,
 # so their count is bounded below by sdkconfig (see WiFi section).
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
-
-# Bluetooth (BLE only -- ESP32-S3 has no Classic BT support)
-CONFIG_BT_ENABLED=y
-CONFIG_BT_BLUEDROID_ENABLED=y
-CONFIG_BT_BLE_ENABLED=y
-CONFIG_BT_GATTC_ENABLE=y
-CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
-CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
-CONFIG_BT_BLE_SMP_ENABLE=y
-CONFIG_BT_HID_HOST_ENABLED=y
 
 # WiFi
 # Static RX buffers (1600 B each) are allocated from internal DMA-capable
@@ -36,8 +25,6 @@ CONFIG_BT_HID_HOST_ENABLED=y
 # CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP.
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
-# RX BA window must be <= 2 * static_rx_buffer_num (IDF constraint).
-CONFIG_ESP_WIFI_RX_BA_WIN=6
 # Move RX-management buffers from the WiFi static internal-RAM pool to
 # the regular heap (which lands in PSRAM thanks to
 # SPIRAM_TRY_ALLOCATE_WIFI_LWIP above). Without this, esp_wifi_init()

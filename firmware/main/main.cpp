@@ -32,7 +32,7 @@
 #endif
 #include "sdkconfig.h"
 
-#if defined(CONFIG_ESP_HOSTED_ENABLED)
+#if defined(CONFIG_ESP_HOSTED_HOST)
 #include "esp_hosted.h"
 #include "esp_hosted_event.h"
 #include "esp_event.h"
@@ -1142,12 +1142,12 @@ static void pre_sleep_viewe_uedx80480043_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043 */
 
-#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
+#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C)
 /* The NS4168 speaker amplifier is unused and its enable is not wired
  * to a GPIO. Drive its I2S lines LOW so it sees no clock and no
  * floating inputs. Called at boot (which also releases the holds set
  * by the pre-sleep hook) and before deep sleep with hold = true. */
-static void jc4827w543_quiet_speaker(bool hold = false)
+static void jc4827w543c_quiet_speaker(bool hold = false)
 {
     const int pins[] = { SPK_I2S_LRCLK_PIN, SPK_I2S_BCLK_PIN, SPK_I2S_DIN_PIN };
     for (int pin : pins) {
@@ -1159,7 +1159,7 @@ static void jc4827w543_quiet_speaker(bool hold = false)
     }
 }
 
-static void pre_sleep_jc4827w543_deinit(void)
+static void pre_sleep_jc4827w543c_deinit(void)
 {
     ESP_LOGI(TAG, "Pre-sleep: Guition JC4827W543C peripheral teardown");
 
@@ -1170,7 +1170,7 @@ static void pre_sleep_jc4827w543_deinit(void)
     /* The SD card stays powered in deep sleep: release it so it drops
      * to its idle state. */
     (void)sd_card_deinit();
-    jc4827w543_quiet_speaker(true);
+    jc4827w543c_quiet_speaker(true);
 
     /* Backlight off (held LOW) and the NV3041A in SLPIN. Take the
      * LVGL lock so no flush is in progress. */
@@ -1178,7 +1178,7 @@ static void pre_sleep_jc4827w543_deinit(void)
     display_deep_sleep_prepare();
     if (locked) draftling_lvgl_port_unlock();
 }
-#endif /* CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543 */
+#endif /* CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C */
 
 #if defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
     defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
@@ -2215,30 +2215,63 @@ static void sleep_button_init(void)
 #endif /* CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO >= 0 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
-/* M5Stack Tab5 (ESP32-P4): pre-sleep peripheral teardown.
+/* M5Stack Tab5 (ESP32-P4): pre-sleep teardown and power-off.
  *
- * The Tab5 has no LP_IO-capable user input, so deep sleep can only
- * exit via the hardware RESET button (the chip cold-boots; editor
- * state is restored from autosave). With the BSP's default state
- * left untouched the board still draws far more than it should in
- * deep sleep because:
+ * On battery the Tab5 switches itself off completely: the power
+ * circuit cuts the supply after a pulse train on PWROFF_PULSE
+ * (PI4IOE5V6408 #2 at 0x44, P4), the same sequence M5Unified's
+ * Power_Class::powerOff() sends (ten level changes, 50 ms apart). The
+ * side power button turns the board back on and app_main() runs from
+ * a cold boot. On USB power the supply stays up, the hook returns and
+ * standby_enter_sleep() falls back to deep sleep (the Tab5 has no
+ * LP_IO-capable user input, so RESET wakes it).
  *
- *   - the ESP32-C6 co-processor stays fully powered through P4 deep
- *     sleep (WLAN_PWR_EN = PI4IOE5V6408 #2 P0 is latched HIGH at
- *     boot and never released; the C6 LDO keeps its CPU, BLE
- *     controller and SDIO link armed),
- *   - the MIPI-DSI panel and its backlight stay on,
- *   - the GT911 touch controller keeps polling at ~3 mA,
- *   - the RTC peripherals domain is left powered.
+ * Before that, everything that would stay powered in deep sleep is
+ * switched off, while the BSP's I2C bus is still up:
  *
- * This hook drives each of those into the lowest state we can reach
- * from software, in the order dictated by their dependencies (the
- * I/O expander writes must happen while bsp_i2c is still up; the
- * panel disable is safe at any time because the BSP owns it).
+ *   touch controller       held in reset (0x43 P5) BSP_FEATURE_TOUCH
+ *   MIPI-DSI panel         display off + SLPIN    display_deep_sleep_prepare()
+ *   backlight (GPIO22)     LEDC stopped LOW, held display_deep_sleep_prepare()
+ *   INA226 battery monitor power-down mode        battery_ina226_prepare_sleep()
+ *   ESP32-C6 (WLAN_PWR_EN, 0x44 P0)   off         BSP_FEATURE_WIFI
+ *   USB-A 5 V boost (USB5V_EN, 0x44 P3) off       BSP_FEATURE_USB
+ *   speaker amp (SPK_EN, 0x43 P1)     off         BSP_FEATURE_SPEAKER
+ *   camera (0x43 P6)                  off         BSP_FEATURE_CAMERA
+ *   external 5 V (EXT5V_EN, 0x43 P2)  off         direct expander write
+ *   RTC peripherals domain            powered down
  *
- * Wake path is unchanged: the chip cold-boots on RESET and re-runs
- * app_main(), which re-asserts WLAN_PWR_EN and CHG_EN through the
- * same BSP / expander code used at first boot. */
+ * CHG_EN (0x44 P7) stays HIGH so the battery charges while the Tab5
+ * is off. The expander pins are set through the BSP's expander
+ * handles so the drivers' shadow registers stay in sync with the
+ * chips. app_main() turns the rails back on at the next boot. */
+#define TAB5_EXT5V_EN      IO_EXPANDER_PIN_NUM_2   /* PI4IOE5V6408 #1 (0x43) */
+#define TAB5_PWROFF_PULSE  IO_EXPANDER_PIN_NUM_4   /* PI4IOE5V6408 #2 (0x44) */
+
+static void tab5_feature_off(bsp_feature_t feature, const char *name)
+{
+    esp_err_t err = bsp_feature_enable(feature, false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Tab5: %s off failed: %s", name, esp_err_to_name(err));
+    }
+}
+
+static void tab5_expander_pin_low(esp_io_expander_handle_t ioe,
+                                  uint32_t pin, const char *name)
+{
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    if (ioe) {
+        err = esp_io_expander_set_dir(ioe, pin, IO_EXPANDER_OUTPUT);
+        if (err == ESP_OK) {
+            err = esp_io_expander_set_output_mode(
+                ioe, pin, IO_EXPANDER_OUTPUT_MODE_PUSH_PULL);
+        }
+        if (err == ESP_OK) err = esp_io_expander_set_level(ioe, pin, 0);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Tab5: %s low failed: %s", name, esp_err_to_name(err));
+    }
+}
+
 static void pre_sleep_tab5_deinit(void)
 {
     ESP_LOGI(TAG, "Pre-sleep: M5Stack Tab5 peripheral teardown");
@@ -2246,33 +2279,48 @@ static void pre_sleep_tab5_deinit(void)
     /* Editor autosave first while every bus is still up. */
     pre_sleep_autosave();
 
-    /* GT911 -> sleep (uses the BSP-owned I2C bus, which is still up). */
-    touchscreen_sleep();
-
-    /* MIPI-DSI panel + backlight off via the BSP-managed handles. */
     display_deep_sleep_prepare();
+    battery_ina226_prepare_sleep();
 
-    /* Drop the ESP32-C6 power rail. The PI4IOE5V6408 latches the
-     * pin state across P4 deep sleep, so the rail stays off until
-     * the next cold boot re-runs bsp_feature_enable(BSP_FEATURE_WIFI,
-     * true) in app_main(). Use the BSP API rather than poking the
-     * expander directly so the driver's shadow register stays in
-     * sync with the chip; otherwise a later RMW on any other pin
-     * on the same expander would un-clear our bit. */
-    {
-        esp_err_t err = bsp_feature_enable(BSP_FEATURE_WIFI, false);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "Tab5: WLAN_PWR_EN dropped (ESP32-C6 off)");
-        } else {
-            ESP_LOGW(TAG, "Tab5: bsp_feature_enable(WIFI, false) failed: %s",
-                     esp_err_to_name(err));
-        }
+    /* The BSP's touch drivers have no sleep command (touchscreen_sleep()
+     * only logs "Sleep mode not supported"), so hold the controller in
+     * reset instead (0x43 P5 LOW). */
+    tab5_feature_off(BSP_FEATURE_TOUCH, "touch controller");
+
+    /* Stop all traffic to the C6 before its supply goes. Without this,
+     * cutting USB 5 V below disconnected a USB keyboard, usb_kbd turned
+     * BLE back on, the scan went to the unpowered C6, and ESP-Hosted
+     * aborted on the SDIO failure. ble_keyboard_shutdown() keeps BLE
+     * off; esp_hosted_deinit() closes the C6's data path and stops the
+     * SDIO tasks, so nothing reads or writes the bus afterwards. */
+    ble_keyboard_shutdown();
+    vTaskDelay(pdMS_TO_TICKS(100)); /* let the HCI stop-scan go out */
+    int hosted_err = esp_hosted_deinit();
+    if (hosted_err != 0) {
+        ESP_LOGW(TAG, "Tab5: esp_hosted_deinit failed: %d", hosted_err);
     }
 
-    /* Power down the RTC peripherals domain. Draftling has no ULP
-     * and no RTC SLOW data to retain across wake, so dropping this
-     * domain shaves a few mA on ESP32-P4 over the default. */
+    tab5_feature_off(BSP_FEATURE_WIFI, "ESP32-C6 power");
+    tab5_feature_off(BSP_FEATURE_USB, "USB-A 5 V");
+    tab5_feature_off(BSP_FEATURE_SPEAKER, "speaker amplifier");
+    tab5_feature_off(BSP_FEATURE_CAMERA, "camera");
+    tab5_expander_pin_low(bsp_io_expander_init(), TAB5_EXT5V_EN,
+                          "EXT5V_EN");
+
+    /* Draftling has no ULP and no RTC SLOW data to keep. */
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+
+    /* Power off. On battery the supply drops during this loop. */
+    esp_io_expander_handle_t ioe2 = bsp_io_expander1_init();
+    tab5_expander_pin_low(ioe2, TAB5_PWROFF_PULSE, "PWROFF_PULSE");
+    if (ioe2) {
+        ESP_LOGI(TAG, "Tab5: power-off pulse");
+        for (int i = 0; i < 10; i++) {
+            esp_io_expander_set_level(ioe2, TAB5_PWROFF_PULSE, i & 1);
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+    ESP_LOGI(TAG, "Tab5: still powered (USB), entering deep sleep");
 }
 #endif /* CONFIG_DRAFTLING_MODEL_M5STACK_TAB5 */
 
@@ -2785,15 +2833,16 @@ extern "C" void app_main(void)
      * to the same `high` we already set here. */
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN) && TOUCH_INT_PIN >= 0
     {
-        /* (a) Hold INT low at the SoC pin. */
-        gpio_config_t int_cfg = {};
-        int_cfg.intr_type    = GPIO_INTR_DISABLE;
-        int_cfg.mode         = GPIO_MODE_OUTPUT;
-        int_cfg.pin_bit_mask = (1ULL << TOUCH_INT_PIN);
-        int_cfg.pull_up_en   = GPIO_PULLUP_DISABLE;
-        int_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
-        gpio_config(&int_cfg);
-        gpio_set_level((gpio_num_t)TOUCH_INT_PIN, 0);
+        /* (a) Hold INT low at the SoC pin. Not with gpio_config():
+         * that reserves the pin as an output, and the BSP's touch
+         * driver configures it again in bsp_touch_new(), which logs
+         * "gpio: conflict found for GPIO[23]". The calls below set
+         * the same state without a reservation. */
+        const gpio_num_t int_pin = (gpio_num_t)TOUCH_INT_PIN;
+        gpio_reset_pin(int_pin);
+        gpio_set_pull_mode(int_pin, GPIO_FLOATING);
+        gpio_set_level(int_pin, 0);
+        gpio_set_direction(int_pin, GPIO_MODE_OUTPUT);
 
         /* (b) Power-cycle TOUCH_EN through the first PI4IOE5V6408
          * so the GT911 actually re-runs its internal POR and
@@ -2838,6 +2887,12 @@ extern "C" void app_main(void)
         }
     }
 #endif
+
+    /* Speaker amplifier (SPK_EN, 0x43 P1): Draftling plays no sound.
+     * The expander boots with the pin in high impedance, which leaves
+     * the amplifier on; drive it LOW so it does not drain the battery. */
+    tab5_feature_off(BSP_FEATURE_SPEAKER, "speaker amplifier");
+    ESP_LOGI(TAG, "Tab5: speaker amplifier off");
 
     /* M5Stack Tab5 battery charger enable (CHG_EN, P7 on the second
      * PI4IOE5V6408) is asserted later, AFTER `bsp_feature_enable()`
@@ -2948,7 +3003,7 @@ extern "C" void app_main(void)
         nv.bl_pwm_hz    = LCD_BL_PWM_HZ;
         display_nv3041a_config(&nv);
     }
-    jc4827w543_quiet_speaker();
+    jc4827w543c_quiet_speaker();
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1683)
     /* Elecrow CrowPanel 5.79in E-Paper HMI. Dual-SSD1683 SPI panel;
@@ -3342,7 +3397,7 @@ extern "C" void app_main(void)
      * firmware (see docs/tab5-esp-hosted.md). In that case we show a
      * persistent on-screen message and halt instead of letting later
      * BLE/Wi-Fi initialisation abort the firmware. */
-#if defined(CONFIG_ESP_HOSTED_ENABLED)
+#if defined(CONFIG_ESP_HOSTED_HOST)
     {
 #if defined(CONFIG_DRAFTLING_DISPLAY_MIPI_DSI)
         /* On the M5Stack Tab5 the ESP32-C6 co-processor's 3V3 rail is
@@ -3492,10 +3547,11 @@ extern "C" void app_main(void)
                 "ESP32-C6 not responding.\n\n"
                 "The on-board ESP32-C6 co-processor is not "
                 "responding over the ESP-Hosted SDIO link. "
-                "This usually means it has not been flashed "
-                "with the matching ESP-Hosted slave firmware.\n\n"
-                "Please flash the ESP32-C6 with the ESP-Hosted "
-                "slave firmware, then power-cycle the device.\n\n"
+                "This usually means it does not run ESP-Hosted "
+                "firmware.\n\n"
+                "Run the Tab5 C6 upgrade tool "
+                "(misc/p4_upgrade_cp in the Draftling "
+                "repository), then flash Draftling again.\n\n"
                 "See docs/tab5-esp-hosted.md for instructions.";
             if (draftling_lvgl_port_lock(-1)) {
                 editor_ui_show_fatal(fatal_msg);
@@ -3510,6 +3566,53 @@ extern "C" void app_main(void)
             }
         }
         ESP_LOGI(TAG, "ESP-Hosted link up");
+
+        /* ESP-Hosted 3.x keeps the link up with older C6 firmware (so
+         * that the C6 can be upgraded over it), but the Bluetooth
+         * bring-up in ble_keyboard_init() needs esp-hosted 3.1 on the
+         * C6 and would abort, reboot and abort again. Check the C6's
+         * version first. Every esp-hosted generation answers this
+         * request. */
+        esp_hosted_coprocessor_fwver_t cp_ver = {};
+        bool cp_ver_ok = esp_hosted_get_coprocessor_fwversion(&cp_ver) == 0;
+        if (cp_ver_ok) {
+            ESP_LOGI(TAG, "ESP32-C6 runs esp-hosted %u.%u.%u",
+                     (unsigned)cp_ver.major1, (unsigned)cp_ver.minor1,
+                     (unsigned)cp_ver.patch1);
+            /* For F1 -> Hardware information. */
+            static char cp_fw_str[32];
+            snprintf(cp_fw_str, sizeof(cp_fw_str), "esp-hosted %u.%u.%u",
+                     (unsigned)cp_ver.major1, (unsigned)cp_ver.minor1,
+                     (unsigned)cp_ver.patch1);
+            editor_ui_set_coprocessor("ESP32-C6", cp_fw_str);
+        }
+        if (!cp_ver_ok || cp_ver.major1 < 3 ||
+            (cp_ver.major1 == 3 && cp_ver.minor1 < 1)) {
+            static char old_msg[400];
+            char ver[24] = "an unknown version";
+            if (cp_ver_ok) {
+                snprintf(ver, sizeof(ver), "esp-hosted %u.%u.%u",
+                         (unsigned)cp_ver.major1, (unsigned)cp_ver.minor1,
+                         (unsigned)cp_ver.patch1);
+            }
+            snprintf(old_msg, sizeof(old_msg),
+                     "ESP32-C6 firmware too old.\n\n"
+                     "The on-board ESP32-C6 runs %s; this Draftling "
+                     "needs esp-hosted 3.1.\n\n"
+                     "Run the Tab5 C6 upgrade tool once "
+                     "(misc/p4_upgrade_cp in the Draftling "
+                     "repository), then flash Draftling again.\n\n"
+                     "See docs/tab5-esp-hosted.md for instructions.",
+                     ver);
+            ESP_LOGE(TAG, "%s", old_msg);
+            if (draftling_lvgl_port_lock(-1)) {
+                editor_ui_show_fatal(old_msg);
+                draftling_lvgl_port_unlock();
+            }
+            while (true) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+        }
     }
 #endif
 
@@ -3771,8 +3874,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)
     standby_set_pre_sleep_cb(pre_sleep_viewe_uedx80480043_deinit);
-#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543)
-    standby_set_pre_sleep_cb(pre_sleep_jc4827w543_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C)
+    standby_set_pre_sleep_cb(pre_sleep_jc4827w543c_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104A) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104B) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \

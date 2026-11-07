@@ -84,25 +84,22 @@
  * rotates indev points itself inside indev_pointer_proc(). So
  * touchscreen.cpp must hand LVGL coords in the *pre-rotation*
  * portrait frame -- main.cpp passes user_rotate_deg=0 for that
- * reason. Empirically (Tab5 v1, GT911 via BSP), the controller's
- * native axes are inverted on both axes relative to the panel's
- * portrait pixel axes: a tap at landscape upper-left produces
- * raw_x near 0 (small end of the 0..720 short-axis range) and
- * raw_y near 1280 (large end of the long-axis range), which
- * corresponds to panel-native portrait corner (0, 1280-ish) --
- * the opposite portrait corner from what LVGL's rotation-270
- * indev transform expects for landscape (0, 0). Mirroring both
- * X and Y in native_to_logical() flips raw onto panel-native
- * portrait so LVGL's own indev rotation lands the cursor under
- * the finger. */
+ * reason. The raw axes match the panel's portrait pixel axes, so no
+ * swap or mirror is needed: lvgl_port.cpp feeds LVGL the mirrored
+ * quarter turn (lvgl_rotation_for_port_deg()), whose indev rotation
+ * is the exact inverse of the flush rotation. (Before that fix both
+ * axes were mirrored here to cancel the 180-degree error LVGL's
+ * plain rotation-270 transform introduced; after it the mirror
+ * inverted touch: a tap at the lower right moved the cursor to the
+ * upper left.) */
 #define TOUCH_I2C_ADDR      0x14
 #define TOUCH_INT_PIN       CONFIG_DRAFTLING_TOUCH_INT_GPIO
 #define TOUCH_RST_PIN       CONFIG_DRAFTLING_TOUCH_RST_GPIO
 #define TOUCH_NATIVE_W      720
 #define TOUCH_NATIVE_H      1280
 #define TOUCH_SWAP_XY       0
-#define TOUCH_MIRROR_X      1
-#define TOUCH_MIRROR_Y      1
+#define TOUCH_MIRROR_X      0
+#define TOUCH_MIRROR_Y      0
 
 /* No board-managed battery ADC: Tab5 carries a 2S NP-F550 Li-ion
  * pack monitored by an INA226 power monitor at I2C 0x41 (on the

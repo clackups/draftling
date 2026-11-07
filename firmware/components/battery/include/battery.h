@@ -104,6 +104,14 @@ int battery_init_bq27220(void *i2c_master_bus);
 int battery_init_ina226(void *i2c_master_bus, int i2c_addr, int cells);
 
 /*
+ * Before sleep or power-off: switch the INA226 to power-down mode.
+ * battery_init_ina226() restores continuous mode at the next boot.
+ * Returns 0 on success, non-zero on failure or before
+ * battery_init_ina226().
+ */
+int battery_ina226_prepare_sleep(void);
+
+/*
  * Initialize a CellWise CW2017 fuel-gauge backend on an existing I2C
  * master bus, at the fixed 7-bit address 0x63. Used on the Xteink X4
  * Pro. The bus must already have been created by the caller and

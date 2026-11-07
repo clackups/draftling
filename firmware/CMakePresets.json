@@ -6,7 +6,7 @@
             "displayName": "Waveshare ESP32-S3-RLCD-4.2",
             "binaryDir": "build/waveshare_rlcd42",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_rlcd42",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.waveshare_rlcd42",
                 "SDKCONFIG": "build/waveshare_rlcd42/sdkconfig"
             }
         },
@@ -15,7 +15,7 @@
             "displayName": "M5Stack PaperS3",
             "binaryDir": "build/m5stack_papers3",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_papers3",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.m5stack_papers3",
                 "SDKCONFIG": "build/m5stack_papers3/sdkconfig"
             }
         },
@@ -24,7 +24,7 @@
             "displayName": "LilyGO T5 E-Paper S3 Pro / Pro Lite",
             "binaryDir": "build/lilygo_t5_epd_s3_pro",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.lilygo_t5_epd_s3_pro",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.lilygo_t5_epd_s3_pro",
                 "SDKCONFIG": "build/lilygo_t5_epd_s3_pro/sdkconfig"
             }
         },
@@ -33,7 +33,7 @@
             "displayName": "LilyGO T5 E-Paper S3 Pro original H752",
             "binaryDir": "build/lilygo_t5_epd_s3_pro_h752",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.lilygo_t5_epd_s3_pro_h752",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.lilygo_t5_epd_s3_pro_h752",
                 "SDKCONFIG": "build/lilygo_t5_epd_s3_pro_h752/sdkconfig"
             }
         },
@@ -42,7 +42,7 @@
             "displayName": "Waveshare ESP32-S3-Touch-LCD-3.49",
             "binaryDir": "build/waveshare_touch_lcd_349",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_touch_lcd_349",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.waveshare_touch_lcd_349",
                 "SDKCONFIG": "build/waveshare_touch_lcd_349/sdkconfig"
             }
         },
@@ -51,7 +51,7 @@
             "displayName": "M5Stack Tab5 (ESP32-P4)",
             "binaryDir": "build/m5stack_tab5",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_tab5",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.m5stack_tab5",
                 "SDKCONFIG": "build/m5stack_tab5/sdkconfig"
             }
         },
@@ -60,7 +60,7 @@
             "displayName": "Guition JC3248W535",
             "binaryDir": "build/jc3248w535",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.jc3248w535",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.jc3248w535",
                 "SDKCONFIG": "build/jc3248w535/sdkconfig"
             }
         },
@@ -69,7 +69,7 @@
             "displayName": "Sunton ESP32-8048S070C",
             "binaryDir": "build/sunton_8048s070",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s070",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.sunton_8048s070",
                 "SDKCONFIG": "build/sunton_8048s070/sdkconfig"
             }
         },
@@ -78,17 +78,17 @@
             "displayName": "Sunton ESP32-8048S043C",
             "binaryDir": "build/sunton_8048s043",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.sunton_8048s043",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.sunton_8048s043",
                 "SDKCONFIG": "build/sunton_8048s043/sdkconfig"
             }
         },
         {
-            "name": "guition_jc4827w543",
+            "name": "guition_jc4827w543c",
             "displayName": "Guition JC4827W543C",
-            "binaryDir": "build/guition_jc4827w543",
+            "binaryDir": "build/guition_jc4827w543c",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.guition_jc4827w543",
-                "SDKCONFIG": "build/guition_jc4827w543/sdkconfig"
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.guition_jc4827w543c",
+                "SDKCONFIG": "build/guition_jc4827w543c/sdkconfig"
             }
         },
         {
@@ -96,7 +96,7 @@
             "displayName": "VIEWE UEDX80480043E-WB-A / -WB-B",
             "binaryDir": "build/viewe_uedx80480043",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.viewe_uedx80480043",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.viewe_uedx80480043",
                 "SDKCONFIG": "build/viewe_uedx80480043/sdkconfig"
             }
         },
@@ -105,7 +105,7 @@
             "displayName": "Elecrow CrowPanel ESP32 HMI 5.0\"",
             "binaryDir": "build/elecrow_crowpanel_50",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.elecrow_crowpanel_50",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.elecrow_crowpanel_50",
                 "SDKCONFIG": "build/elecrow_crowpanel_50/sdkconfig"
             }
         },
@@ -114,7 +114,7 @@
             "displayName": "Waveshare ESP32-S3-Touch-LCD-7",
             "binaryDir": "build/waveshare_touch_lcd_7",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_touch_lcd_7",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.waveshare_touch_lcd_7",
                 "SDKCONFIG": "build/waveshare_touch_lcd_7/sdkconfig"
             }
         },
@@ -123,7 +123,7 @@
             "displayName": "Waveshare ESP32-S3-LCD-3.16",
             "binaryDir": "build/waveshare_lcd_316",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_lcd_316",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.waveshare_lcd_316",
                 "SDKCONFIG": "build/waveshare_lcd_316/sdkconfig"
             }
         },
@@ -132,7 +132,7 @@
             "displayName": "Freenove FNK0104A (2.8in ILI9341, no touch)",
             "binaryDir": "build/freenove_fnk0104a",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104a",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.freenove_fnk0104a",
                 "SDKCONFIG": "build/freenove_fnk0104a/sdkconfig"
             }
         },
@@ -141,7 +141,7 @@
             "displayName": "Freenove FNK0104B (2.8in ILI9341, touch)",
             "binaryDir": "build/freenove_fnk0104b",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104b",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.freenove_fnk0104b",
                 "SDKCONFIG": "build/freenove_fnk0104b/sdkconfig"
             }
         },
@@ -150,7 +150,7 @@
             "displayName": "Freenove FNK0104S (4.0in ST7796, touch)",
             "binaryDir": "build/freenove_fnk0104s",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104s",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.freenove_fnk0104s",
                 "SDKCONFIG": "build/freenove_fnk0104s/sdkconfig"
             }
         },
@@ -159,7 +159,7 @@
             "displayName": "Freenove FNK0104N (3.5in ST77922 QSPI)",
             "binaryDir": "build/freenove_fnk0104n",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.freenove_fnk0104n",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.freenove_fnk0104n",
                 "SDKCONFIG": "build/freenove_fnk0104n/sdkconfig"
             }
         },
@@ -177,7 +177,7 @@
             "displayName": "Viewe UEDX24320028E-WB-A + UEED035HV (3.5in ST7365 transflective, touch)",
             "binaryDir": "build/viewe_uedx24320028_ueed035hv",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.viewe_uedx24320028_ueed035hv",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.viewe_uedx24320028_ueed035hv",
                 "SDKCONFIG": "build/viewe_uedx24320028_ueed035hv/sdkconfig"
             }
         },
@@ -186,7 +186,7 @@
             "displayName": "Xteink X4 Pro (SSD1677/UC8179/UC8279, 800x480 e-paper)",
             "binaryDir": "build/xteink_x4_pro",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.xteink_x4_pro",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.xteink_x4_pro",
                 "SDKCONFIG": "build/xteink_x4_pro/sdkconfig"
             }
         },
@@ -195,7 +195,7 @@
             "displayName": "Xteink X4 Classic / X4 v2 (SSD1677/UC8179/UC8279, 800x480 e-paper, no touch)",
             "binaryDir": "build/xteink_x4_classic",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.xteink_x4_classic",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.xteink_x4_classic",
                 "SDKCONFIG": "build/xteink_x4_classic/sdkconfig"
             }
         },
@@ -204,7 +204,7 @@
             "displayName": "Elecrow CrowPanel ESP32-S3 5.79in E-Paper HMI (SSD1683 x2)",
             "binaryDir": "build/elecrow_crowpanel_579",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.elecrow_crowpanel_579",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.elecrow_crowpanel_579",
                 "SDKCONFIG": "build/elecrow_crowpanel_579/sdkconfig"
             }
         },
@@ -213,7 +213,7 @@
             "displayName": "Waveshare ESP32-S3-ePaper-3.97 (SSD1677-compatible, 800x480 e-paper)",
             "binaryDir": "build/waveshare_epaper_397",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.waveshare_epaper_397",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.waveshare_epaper_397",
                 "SDKCONFIG": "build/waveshare_epaper_397/sdkconfig"
             }
         },
@@ -222,7 +222,7 @@
             "displayName": "Seeed Studio reTerminal E1001 (7.5in UC8179 e-paper)",
             "binaryDir": "build/seeed_reterminal_e1001",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.seeed_reterminal_e1001",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.seeed_reterminal_e1001",
                 "SDKCONFIG": "build/seeed_reterminal_e1001/sdkconfig"
             }
         },
@@ -231,7 +231,7 @@
             "displayName": "Seeed reTerminal Sticky (SSD1677, 3.97in e-paper, touch)",
             "binaryDir": "build/seeed_reterminal_sticky",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.seeed_reterminal_sticky",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.seeed_reterminal_sticky",
                 "SDKCONFIG": "build/seeed_reterminal_sticky/sdkconfig"
             }
         },
@@ -240,7 +240,7 @@
             "displayName": "M5Stack PaperMono / PaperMono-Lite (3.97in SSD1677 e-paper)",
             "binaryDir": "build/m5stack_papermono",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.m5stack_papermono",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.m5stack_papermono",
                 "SDKCONFIG": "build/m5stack_papermono/sdkconfig"
             }
         },
@@ -249,7 +249,7 @@
             "displayName": "NiceMCU-C5E-DEV_2.8IPS (ESP32-C5, 2.8in ST7789, touch)",
             "binaryDir": "build/nicemcu_c5_28ips",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.nicemcu_c5_28ips",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.nicemcu_c5_28ips",
                 "SDKCONFIG": "build/nicemcu_c5_28ips/sdkconfig"
             }
         },
@@ -258,7 +258,7 @@
             "displayName": "Espressif ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3",
             "binaryDir": "build/espressif_s31_korvo1",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.espressif_s31_korvo1",
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.espressif_s31_korvo1",
                 "SDKCONFIG": "build/espressif_s31_korvo1/sdkconfig"
             }
         }

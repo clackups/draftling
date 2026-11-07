@@ -210,6 +210,8 @@ static i2c_master_dev_handle_t   s_m5pm1_dev = NULL;
  * so on the Tab5 a negative shunt voltage means "charging". A small
  * noise threshold filters out the few-microvolt offset reading the
  * INA226 returns when no current is flowing. */
+#define INA226_REG_CONFIG        0x00
+#define INA226_CONFIG_DEFAULT    0x4127  /* power-on value */
 #define INA226_REG_SHUNTVOLTAGE  0x01
 #define INA226_REG_BUSVOLTAGE    0x02
 #define INA226_BUSVOLTAGE_LSB_UV 1250    /* microvolts per LSB */
@@ -881,6 +883,27 @@ extern "C" int battery_m5pm1_prepare_sleep(void)
 
 /* ---- INA226 backend ---- */
 
+static esp_err_t ina226_write_config(uint16_t cfg)
+{
+    if (!s_ina226_dev) return ESP_ERR_INVALID_STATE;
+    uint8_t wr[3] = { INA226_REG_CONFIG, (uint8_t)(cfg >> 8), (uint8_t)cfg };
+    return i2c_master_transmit(s_ina226_dev, wr, sizeof(wr), 100 /* ms */);
+}
+
+extern "C" int battery_ina226_prepare_sleep(void)
+{
+    if (!s_ina226_dev) return -1;
+    /* Mode bits 2..0 = 000: power-down (about 2 uA instead of about
+     * 330 uA in continuous mode). battery_init_ina226() restores the
+     * default at the next boot. */
+    esp_err_t err = ina226_write_config(INA226_CONFIG_DEFAULT & ~0x0007);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "INA226: power-down failed: %s", esp_err_to_name(err));
+        return -1;
+    }
+    return 0;
+}
+
 extern "C" int battery_init_ina226(void *i2c_master_bus, int i2c_addr,
                                    int cells)
 {
@@ -919,12 +942,17 @@ extern "C" int battery_init_ina226(void *i2c_master_bus, int i2c_addr,
         return -1;
     }
 
-    /* The INA226 powers up in continuous shunt+bus mode with 1.1 ms
-     * conversion times by default, which is fine for a voltage-only
-     * read. We deliberately do NOT touch the calibration register
-     * (current/power LSBs depend on the shunt resistor wiring, which
-     * is board-specific and irrelevant for percentage-from-voltage).
-     */
+    /* Restore the power-on configuration (continuous shunt + bus,
+     * 1.1 ms conversions), which is fine for a voltage-only read:
+     * battery_ina226_prepare_sleep() switches the chip to power-down,
+     * and it keeps that setting through a P4 deep sleep (it has no
+     * reset line). We deliberately do NOT touch the calibration
+     * register (current/power LSBs depend on the shunt resistor
+     * wiring, which is board-specific and irrelevant for
+     * percentage-from-voltage). */
+    if (ina226_write_config(INA226_CONFIG_DEFAULT) != ESP_OK) {
+        ESP_LOGW(TAG, "INA226: config write failed");
+    }
 
     s_ina226_cells = cells;
     s_backend = BATT_BACKEND_INA226;

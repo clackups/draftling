@@ -649,8 +649,8 @@ static void save_append_only_to_nvs(void)
  * which of the compiled-in keyboard layouts (see kb_layout.h) Ctrl+L /
  * Win+Space rotate through -- a build with several layouts enabled in
  * Kconfig does not force every user to page through all of them just
- * to get back to the one or two they actually use. Defaults to US and
- * UA (see kb_layout.cpp's default_active_mask()). The mask itself is
+ * to get back to the one or two they actually use. Defaults to US
+ * only (see kb_layout.cpp's default_active_mask()). The mask itself is
  * owned by kb_layout.cpp; this is just the NVS load/save wrapper. */
 /* The bit order of the mask follows the compiled-in layouts, so each
  * language pack keeps its own key: flashing a different pack must not
@@ -1298,6 +1298,10 @@ static help_origin_t s_help_origin = HELP_FROM_EDITOR;
 /* BOARD_NAME from the board header, handed over by main.cpp
  * (editor_ui_set_board_name()) for the hardware information page. */
 static const char *s_board_name  = NULL;
+
+/* Radio co-processor (editor_ui_set_coprocessor()); NULL = none. */
+static const char *s_coproc_chip = NULL;
+static const char *s_coproc_fw   = NULL;
 
 /* ---- Device battery display ----
  *
@@ -4689,6 +4693,12 @@ extern "C" void editor_ui_set_board_name(const char *name)
     s_board_name = name;
 }
 
+extern "C" void editor_ui_set_coprocessor(const char *chip, const char *firmware)
+{
+    s_coproc_chip = chip;
+    s_coproc_fw = firmware;
+}
+
 extern "C" void editor_ui_set_ble_prompt_text(const char *text)
 {
     /* Update the bottom-half label on the boot "BLE prompt" screen.
@@ -5271,12 +5281,16 @@ static void refresh_settings_items(void)
     /* Active language layouts -- comma-separated summary of the
      * layouts Ctrl+L / Win+Space currently rotate through. */
     {
-        char names[64] = "";
+        char names[200] = "";
         for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
             kb_layout_id_t id = (kb_layout_id_t)i;
             if (!kb_layout_is_active(id)) continue;
             if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
             strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
+        }
+        /* A long list would not fit the row: give the count instead. */
+        if (strlen(names) > 40) {
+            snprintf(names, sizeof(names), "%d layouts", kb_layout_active_count());
         }
         snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
         lv_list_add_btn(s_settings_list, NULL, buf);
@@ -6254,8 +6268,12 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         if (s_dbx_step == DBX_STEP_SITE) {
             text_field_key(s_dbx_site, sizeof(s_dbx_site), &s_dbx_site_pos, ev);
         } else {
-            /* Digits only; editing keys pass through. */
+            /* Digits only; editing keys pass through. A dead key
+             * (translate returned NULL and left an accent pending)
+             * must not reach text_field_key(), which would translate
+             * the key again and type the accent. */
             const char *text = kb_layout_translate(ev->keycode, ev->modifier);
+            if (!text && kb_layout_dead_key_pending()) break;
             bool printable = text && (unsigned char)text[0] >= 0x20;
             if (!printable || (text[0] >= '0' && text[0] <= '9' && !text[1]))
                 text_field_key(s_dbx_otp, sizeof(s_dbx_otp), &s_dbx_otp_pos, ev);
@@ -7390,6 +7408,12 @@ static void build_hwinfo_text(std::string &out, int cols)
              chip.revision / 100, chip.revision % 100, chip.cores,
              chip.cores == 1 ? "" : "s");
     help_row(out, cols, kc, "Chip", buf);
+
+    if (s_coproc_chip) {
+        help_heading(out, "Radio co-processor");
+        help_row(out, cols, kc, "Chip", s_coproc_chip);
+        help_row(out, cols, kc, "Firmware", s_coproc_fw ? s_coproc_fw : "unknown");
+    }
 
     help_heading(out, "Memory");
     hwinfo_heap_row(out, cols, kc, "RAM", MALLOC_CAP_INTERNAL);
@@ -9807,7 +9831,11 @@ static void handle_editor_key(const kb_event_t *ev)
         show_help(HELP_FROM_EDITOR);
         return;
     }
-    if ((ev->modifier & (KB_MOD_LALT | KB_MOD_RALT)) && !ctrl &&
+    /* Right Alt is AltGr on layouts that have one (AltGr + i types
+     * i-acute on the UK layout), so only Left Alt is Alt there. */
+    uint8_t alt_mask = kb_layout_has_altgr() ? KB_MOD_LALT
+                                             : (KB_MOD_LALT | KB_MOD_RALT);
+    if ((ev->modifier & alt_mask) && !ctrl &&
         kb_layout_shortcut_char(ev->keycode) == 'i') {
         /* Alt+I: file information for the focused document. */
         show_editor_fileinfo();

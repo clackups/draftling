@@ -344,6 +344,68 @@ static void enter_display_off(void)
  * EXT0 cannot be armed (see standby_enter_sleep()). */
 #define STUCK_WAKE_PIN_TIMER_SEC 60
 
+#if SOC_PM_SUPPORT_EXT0_WAKEUP && CONFIG_DRAFTLING_WAKEUP_GPIO >= 0 && \
+    !defined(CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF)
+/* Enable the RTC pull-up (and disable the pull-down) on a wake pin.
+ * See standby_enter_sleep() for why. */
+static void wake_pin_pullup(gpio_num_t g)
+{
+    if (!rtc_gpio_is_valid_gpio(g)) {
+        ESP_LOGW(TAG, "GPIO%d is not RTC-capable; cannot enable internal pull-up",
+                 (int)g);
+        return;
+    }
+    esp_err_t err = rtc_gpio_pullup_en(g);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "rtc_gpio_pullup_en(GPIO%d) failed: %s",
+                 (int)g, esp_err_to_name(err));
+    }
+    err = rtc_gpio_pulldown_dis(g);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "rtc_gpio_pulldown_dis(GPIO%d) failed: %s",
+                 (int)g, esp_err_to_name(err));
+    }
+}
+
+/* Wait until a wake pin reads HIGH 3 times in a row (20 ms apart), for
+ * up to 10 s. Returns false if it is still LOW then. See
+ * standby_enter_sleep() for why. */
+static bool wait_wake_pin_high(gpio_num_t g)
+{
+    const int poll_ms       = 20;
+    const int required_high = 3;
+    const int max_wait_ms   = 10000;
+    int consec_high = 0;
+    int waited_ms   = 0;
+    while (consec_high < required_high) {
+        if (gpio_get_level(g) == 1) {
+            consec_high++;
+        } else {
+            if (waited_ms == 0) {
+                ESP_LOGI(TAG, "Wake pin GPIO%d is LOW -- waiting for "
+                              "button release", (int)g);
+            }
+            consec_high = 0;
+        }
+        if (consec_high >= required_high) {
+            break;
+        }
+        if (waited_ms >= max_wait_ms) {
+            ESP_LOGW(TAG, "Wake pin GPIO%d still LOW after %d ms",
+                     (int)g, max_wait_ms);
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(poll_ms));
+        waited_ms += poll_ms;
+    }
+    if (waited_ms > 0) {
+        ESP_LOGI(TAG, "Wake pin GPIO%d settled HIGH after %d ms",
+                 (int)g, waited_ms);
+    }
+    return true;
+}
+#endif
+
 extern "C" void standby_set_inhibit(bool inhibit)
 {
     s_inhibit = inhibit;
@@ -478,21 +540,7 @@ extern "C" void standby_enter_sleep(void)
      * fatal: a non-RTC-capable GPIO will be rejected here, and we
      * still want to attempt deep sleep with whatever wake-up
      * configuration we can make work. */
-    if (rtc_gpio_is_valid_gpio(wake_gpio)) {
-        esp_err_t err = rtc_gpio_pullup_en(wake_gpio);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "rtc_gpio_pullup_en(GPIO%d) failed: %s",
-                     (int)wake_gpio, esp_err_to_name(err));
-        }
-        err = rtc_gpio_pulldown_dis(wake_gpio);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "rtc_gpio_pulldown_dis(GPIO%d) failed: %s",
-                     (int)wake_gpio, esp_err_to_name(err));
-        }
-    } else {
-        ESP_LOGW(TAG, "GPIO%d is not RTC-capable; cannot enable internal pull-up",
-                 (int)wake_gpio);
-    }
+    wake_pin_pullup(wake_gpio);
 
     /* Wait for the wake pin to actually settle HIGH before arming
      * EXT0. Without this, we have observed boards (LilyGO T5 E-Paper
@@ -518,44 +566,7 @@ extern "C" void standby_enter_sleep(void)
      * gpio_get_level() because at this point the pad is still on
      * the digital GPIO matrix; esp_sleep_enable_ext0_wakeup() is
      * what later switches it to the RTC IO mux. */
-    bool wake_pin_ready = true;
-    {
-        const int     poll_ms        = 20;
-        const int     required_high  = 3;
-        const int     max_wait_ms    = 10000;
-        int           consec_high    = 0;
-        int           waited_ms      = 0;
-        while (consec_high < required_high) {
-            int lvl = gpio_get_level(wake_gpio);
-            if (lvl == 1) {
-                consec_high++;
-            } else {
-                if (waited_ms == 0) {
-                    ESP_LOGI(TAG, "Wake pin GPIO%d is LOW -- waiting for "
-                                  "button release", (int)wake_gpio);
-                }
-                consec_high = 0;
-            }
-            if (consec_high >= required_high) {
-                break;
-            }
-            if (waited_ms >= max_wait_ms) {
-                ESP_LOGW(TAG, "Wake pin GPIO%d still LOW after %d ms -- "
-                              "skipping EXT0 arm to avoid immediate "
-                              "wake; waking on a %d s timer instead",
-                         (int)wake_gpio, max_wait_ms,
-                         STUCK_WAKE_PIN_TIMER_SEC);
-                wake_pin_ready = false;
-                break;
-            }
-            vTaskDelay(pdMS_TO_TICKS(poll_ms));
-            waited_ms += poll_ms;
-        }
-        if (wake_pin_ready && waited_ms > 0) {
-            ESP_LOGI(TAG, "Wake pin GPIO%d settled HIGH after %d ms",
-                     (int)wake_gpio, waited_ms);
-        }
-    }
+    bool wake_pin_ready = wait_wake_pin_high(wake_gpio);
 
     /* Configure wake-up GPIO as EXT0 wake-up source (wake on low level) */
     esp_err_t wake_err = ESP_FAIL;
@@ -570,11 +581,38 @@ extern "C" void standby_enter_sleep(void)
                      (int)wake_gpio, gpio_get_level(wake_gpio));
         }
     } else {
+        ESP_LOGW(TAG, "Skipping EXT0 arm on GPIO%d to avoid an immediate "
+                      "wake; waking on a %d s timer instead",
+                 (int)wake_gpio, STUCK_WAKE_PIN_TIMER_SEC);
         esp_sleep_enable_timer_wakeup((uint64_t)STUCK_WAKE_PIN_TIMER_SEC *
                                       1000000ULL);
         ESP_LOGI(TAG, "Entering deep sleep (EXT0 skipped, wake via timer "
                       "or RESET)...");
     }
+
+#if SOC_PM_SUPPORT_EXT1_WAKEUP && CONFIG_DRAFTLING_WAKEUP_GPIO_EXTRA >= 0
+    /* Second wake button (e.g. the button that was just held to put
+     * the device to sleep): EXT1, any-low, next to EXT0 above. Same
+     * pull-up and wait-for-release treatment as the main wake pin;
+     * if it stays LOW it is simply not armed. */
+    {
+        gpio_num_t extra = (gpio_num_t)CONFIG_DRAFTLING_WAKEUP_GPIO_EXTRA;
+        wake_pin_pullup(extra);
+        if (wait_wake_pin_high(extra)) {
+            esp_err_t err = esp_sleep_enable_ext1_wakeup_io(
+                1ULL << extra, ESP_EXT1_WAKEUP_ANY_LOW);
+            if (err != ESP_OK) {
+                ESP_LOGW(TAG, "esp_sleep_enable_ext1_wakeup_io(GPIO%d) "
+                              "failed: %s", (int)extra, esp_err_to_name(err));
+            } else {
+                ESP_LOGI(TAG, "Also waking on GPIO%d (EXT1)", (int)extra);
+            }
+        } else {
+            ESP_LOGW(TAG, "Extra wake pin GPIO%d stuck LOW -- not armed",
+                     (int)extra);
+        }
+    }
+#endif
 #else
     /* Target or board has no configured GPIO wake source (including
      * ESP32-P4 and boards without a user wake button).

@@ -12,8 +12,9 @@
 ##
 ## When CONFIG_BT_BLUEDROID_ENABLED is set but CONFIG_BT_CONTROLLER_DISABLED
 ## is also set (the Tab5 / ESP32-P4 build), we additionally need
-## the `espressif/esp_hosted` component for the hosted-VHCI HCI
-## driver that gets attached to Bluedroid in ble_keyboard_init().
+## the `espressif/esp_hosted` component, whose Bluetooth adapter
+## (esp_hosted_bt_host_stack_setup()) binds Bluedroid to the C6's
+## controller in ble_keyboard_init().
 ##
 ## On ESP32-P4 specifically we MUST have the Bluedroid host enabled
 ## (controller comes from the on-board C6 via ESP-Hosted VHCI). If
@@ -26,7 +27,7 @@
 if(CONFIG_IDF_TARGET_ESP32P4 AND NOT CONFIG_BT_BLUEDROID_ENABLED)
     message(FATAL_ERROR
         "Tab5 (ESP32-P4) requires CONFIG_BT_BLUEDROID_ENABLED=y for the "
-        "BLE keyboard over ESP-Hosted VHCI, but sdkconfig has it unset. "
+        "BLE keyboard over ESP-Hosted HCI, but sdkconfig has it unset. "
         "Your sdkconfig is likely stale: delete sdkconfig + sdkconfig.old "
         "and rerun `idf.py set-target esp32p4` so sdkconfig.defaults.esp32p4 "
         "is reapplied. See the Bluetooth block in sdkconfig.defaults.esp32p4 "
@@ -64,7 +65,7 @@ if(CONFIG_BT_BLUEDROID_ENABLED)
     endif()
 endif()
 
-## ESP-IDF 6.0's esp32c5 esp_bt.h leaves the cca_drop_mode /
+## ESP-IDF's esp32c5 esp_bt.h (6.0 and still 6.1) leaves the cca_drop_mode /
 ## cca_low_tx_pwr members out of BT_CONTROLLER_INIT_CONFIG_DEFAULT(),
 ## which trips -Wmissing-field-initializers (an error with -Werror)
 ## where ble_keyboard.cpp expands the macro. The gap is in the IDF

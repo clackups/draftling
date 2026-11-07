@@ -29,6 +29,7 @@ load the firmware quickly without having to compile it.
   * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO)
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
+  * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
   * [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) (discontinued)
 
 * DIY boards
@@ -36,7 +37,6 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-RLCD-4.2](https://docs.waveshare.com/ESP32-S3-RLCD-4.2) ([a 3D-printed enclosure available](3D_Prints/Waveshare_ESP32-S3-RLCD-4.2/))
   * [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html) ([GitHub](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792))
   * [Elecrow CrowPanel ESP32 HMI 5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html) (800x480 color LCD, capacitive touch)
-  * Guition JC3248W535
   * [Guition JC4827W543C](https://www.atomic14.com/esp32/boards/guition-jc4827w543/) (4.3" 480x272 color LCD, capacitive touch)
   * [VIEWE UEDX80480043E-WB-A / -WB-B](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display) (4.3" 800x480 color LCD, capacitive touch)
   * [7" and 4.3" Sunton boards](https://github.com/rzeldent/platformio-espressif32-sunton)
@@ -47,7 +47,6 @@ load the firmware quickly without having to compile it.
   * [MicroJournal Rev 5.0](https://github.com/unkyulee/micro-journal/blob/main/rev.5/5.0/readme.md) (ILI9341) and Rev 5.1 (ST7789) writerdecks (ESP32-S3, one firmware, display detected at boot) -- tested on the Rev 5.0 (ILI9341) only; Rev 5.1 (ST7789) untested
   * [NiceMCU-C5E-DEV_2.8IPS](https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS) (ESP32-C5, 2.8" color LCD)
   * [Espressif ESP32-S31-Korvo-1](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp32-s31-korvo-1/index.html) with the ESP32-S3-LCD-EV-Board-SUB3 4.3" LCD subboard (ESP32-S31, 800x480 color LCD, capacitive touch, USB keyboard port) -- untested on physical hardware
-  * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) (no web flasher support, as internal firmware needs an upgrade too)
 
 
 ## Features
@@ -423,7 +422,7 @@ boot or power button, or on touchscreen tap where hardware allows it.
 
 ## Keyboard Layouts
 
-The editor supports five keyboard layouts that can be switched with
+The editor supports 21 keyboard layouts that can be switched with
 **Ctrl+L** (or **Win+Space**) or through the **F1 menu**:
 
 | Code | Layout |
@@ -433,10 +432,33 @@ The editor supports five keyboard layouts that can be switched with
 | DE | German (QWERTZ with umlauts) |
 | FR | French (AZERTY with accents) |
 | HE | Hebrew (Israeli standard) |
+| DE-CH | Swiss German (QWERTZ) |
+| FR-CH | Swiss French (QWERTZ) |
+| IT | Italian (QWERTY with accents) |
+| PT | Portuguese, Portugal (QWERTY) |
+| ES | Spanish, Spain (QWERTY) |
+| GB | United Kingdom (QWERTY) |
+| SE/FI | Swedish / Finnish (QWERTY) |
+| NO | Norwegian (QWERTY) |
+| DK | Danish (QWERTY) |
+| PL | Polish, programmers (QWERTY, Polish letters on AltGr) |
+| CZ | Czech (QWERTZ) |
+| SK | Slovak (QWERTZ) |
+| HU | Hungarian (QWERTZ) |
+| RO | Romanian, standard (QWERTY) |
+| HR/SI | Croatian / Slovenian (QWERTZ) |
+| TR | Turkish Q (QWERTY) |
 
-The current layout is shown in the title bar. By default, only
-US-English and Ukrainian are compiled into the firmware. Other layouts
-need to be enabled in firmware configuration.
+The accent keys of the European layouts are dead keys, as on a
+computer: press the accent, then the
+letter (acute + e gives e-acute). The accent followed by Space types
+the accent alone. The key left of Z on European keyboards (`<` `>`)
+works on all of these layouts.
+
+All of them are compiled into the default firmware, but only
+US-English is active at first. Turn the others on in F1 -> Settings -> Active
+layouts; Ctrl+L cycles through the active ones. The current layout is
+shown in the title bar when more than one is active.
 
 Vietnamese, Korean, Japanese and Simplified Chinese come in separate
 firmware images, the language packs, each with US-English and the

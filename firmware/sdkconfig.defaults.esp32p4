@@ -37,7 +37,6 @@ CONFIG_ESP32P4_REV_MIN_100=y
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_HEX=y
 CONFIG_SPIRAM_SPEED_200M=y
-CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
 
 # MIPI-DSI / DPI panel framebuffer
 #
@@ -49,78 +48,42 @@ CONFIG_BSP_LCD_DPI_BUFFER_NUMS=1
 
 # Wi-Fi / Bluetooth on the ESP32-P4 are unavailable natively (no
 # on-chip 2.4 GHz radio). Tab5 routes both through an on-board
-# ESP32-C6 co-processor via ESP-Hosted-MCU over SDIO. The host
-# component is `espressif/esp_hosted` (added in main/idf_component.yml
-# under `target == esp32p4`); Wi-Fi calls are redirected through
-# `espressif/esp_wifi_remote`; Bluedroid talks to the C6's BLE
-# controller through ESP-Hosted's VHCI driver. See
-# docs/tab5-esp-hosted.md for the C6 slave firmware version and
-# the one-time flashing procedure.
+# ESP32-C6 co-processor via ESP-Hosted 3.1 over SDIO. The host
+# component is `espressif/esp_hosted` (main/idf_component.yml, under
+# `target == esp32p4`); ESP-IDF's esp_wifi remote layer redirects the
+# Wi-Fi calls into its RPCs; Bluedroid talks to the C6's BLE
+# controller through ESP-Hosted's Bluetooth adapter. The C6 must run
+# esp-hosted 3.1 as well: misc/p4_upgrade_cp/ installs it from the
+# P4 (see docs/tab5-esp-hosted.md).
 
 # ---------------------------------------------------------------
-# ESP-Hosted-MCU transport (SDIO, 4-bit, 40 MHz)
+# ESP-Hosted 3.1 host, SDIO to the on-board C6 (4-bit, 40 MHz)
 #
-# Tab5 SDIO pin map between P4 (host) and C6 (slave). These match
-# the M5Tab5-UserDemo sdkconfig and the Tab5 schematic.
-# RESET line to the C6 is GPIO15, active-low (verified against
-# M5Stack's reference firmware).
+# ESP32P4_TAB5_C6_BOARD is ESP-Hosted's own Tab5 profile: it locks the
+# SDIO pins to the Tab5 wiring (CLK 12, CMD 13, D0-D3 11/10/9/8) and
+# the C6 reset (EN) line to GPIO15, matching M5Tab5-UserDemo.
 #
-# NOTE: in espressif/esp_hosted >= 2.x, CONFIG_ESP_HOSTED_SDIO_PIN_*
-# are non-promptable derived ints (see upstream Kconfig: each is
-# `int` + `default ESP_HOSTED_PRIV_SDIO_PIN_*_SLOT_{0,1}`). Any
-# attempt to set CONFIG_ESP_HOSTED_SDIO_PIN_CLK=... here is silently
-# dropped by Kconfig and the value is recomputed from the per-slot
-# PRIV defaults (which on P4/SLOT_1 give CLK=18 CMD=19 D0=14 D1=15
-# D2=16 D3=17 -- not the Tab5 wiring, and D1=15 collides with the
-# C6 reset line). The promptable knobs are the
-# CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_*_SLOT_1 symbols below; those
-# DO override correctly. SLOT_1 is already the P4 default and is
-# the slot wired to the on-board C6.
+# AUTO_CALL_INIT_BEFORE_APP_MAIN must stay off: ESP-Hosted 3.x would
+# otherwise start the link from a constructor before app_main(), but
+# the C6 has no supply until main.cpp drives WLAN_PWR_EN through the
+# BSP. main.cpp calls esp_hosted_init() itself afterwards.
 # ---------------------------------------------------------------
-CONFIG_ESP_HOSTED_ENABLED=y
-CONFIG_ESP_HOSTED_SDIO_HOST_INTERFACE=y
-CONFIG_ESP_HOSTED_IDF_SLAVE_TARGET="esp32c6"
+CONFIG_ESP_HOSTED=y
+CONFIG_ESP_HOSTED_HOST=y
+CONFIG_ESP_HOSTED_HOST_TYPE_MCU=y
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
-CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
-CONFIG_ESP_HOSTED_SDIO_4_BIT_BUS=y
-CONFIG_ESP_HOSTED_SDIO_BUS_WIDTH=4
-CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ=40000
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=12
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=13
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=11
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=10
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=9
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=8
-CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=15
-# Reset polarity: use the umbrella CONFIG_ESP_HOSTED_RESET_GPIO_ACTIVE_LOW
-# symbol. The per-bus CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW sits inside a
-# `choice ESP_HOSTED_SDIO_RESET_GPIO_CONFIG` whose default is ACTIVE_HIGH;
-# the umbrella bool (default y if *_ACTIVE_LOW) is the symbol the host
-# driver actually reads (#ifdef CONFIG_ESP_HOSTED_RESET_GPIO_ACTIVE_LOW
-# in host/port/esp/freertos/include/port_esp_hosted_host_config.h). Set
-# it directly to avoid any confusion about which knob is in effect.
-CONFIG_ESP_HOSTED_RESET_GPIO_ACTIVE_LOW=y
-# Streaming RX mode pre-allocates a 15+ KB-per-block mempool that is
-# too large for the P4's tight internal DMA-capable SRAM at the point
-# hosted_mempool_create() runs; keep packet mode so the per-block size
-# stays at MAX_SDIO_BUFFER_SIZE (1536 B).
-# CONFIG_ESP_HOSTED_SDIO_OPTIMIZATION_RX_STREAMING_MODE is not set
-
-# On ESP32-P4 the GDMA engine can reach PSRAM through the cache, so
-# let ESP-Hosted allocate its SDIO transport mempool from the 32 MB
-# HEX PSRAM instead of the ~480 KB internal SRAM. Without this knob
-# hosted_malloc_align() falls back to MALLOC_CAP_INTERNAL|DMA|8BIT
-# and sdio_drv.c's `assert(buf_mp_g)` fires at boot.
-CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
-
-# ---------------------------------------------------------------
-# Wi-Fi Remote -- redirect esp_wifi_* into ESP-Hosted RPCs so
-# wifi_manager.cpp does not need a P4-specific code path.
-# ---------------------------------------------------------------
 CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
+CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6=y
+CONFIG_ESP32P4_TAB5_C6_BOARD=y
+CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH_4=y
+CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=40000
+CONFIG_ESP_HOSTED_HOST_RESET_GPIO=15
+CONFIG_ESP_HOSTED_AUTO_CALL_INIT_BEFORE_APP_MAIN=n
 
 # ---------------------------------------------------------------
-# Bluetooth on ESP32-P4 -- Bluedroid host + hosted-VHCI controller
+# Bluetooth on ESP32-P4 -- Bluedroid host + the C6's BLE controller
 #
 # IMPORTANT: on ESP32-P4, CONFIG_BT_ENABLED=y does NOT enable an
 # on-chip Bluetooth radio (the P4 has none). ESP-IDF detects the
@@ -128,46 +91,37 @@ CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
 # so CONFIG_BT_ENABLED=y on this target only means "build the
 # Bluedroid HOST". The BLE controller actually lives on the
 # on-board ESP32-C6 and is reached over ESP-Hosted's SDIO
-# transport via a VHCI HCI driver attached to Bluedroid.
+# transport.
 #
 # components/ble_keyboard/ble_keyboard.cpp has a
-# CONFIG_BT_CONTROLLER_DISABLED branch that brings up
-# esp_hosted_bt_controller_* and attaches the hosted-VHCI HCI
-# driver before esp_bluedroid_init(). Without CONFIG_BT_ENABLED
-# (and CONFIG_BT_BLUEDROID_ENABLED, which it implies), the
-# ble_keyboard.cpp file collapses to its no-op stub at the top
-# (`#if !defined(CONFIG_BT_BLUEDROID_ENABLED)`) and you see
+# CONFIG_BT_CONTROLLER_DISABLED branch that calls
+# esp_hosted_bt_host_stack_setup() (controller up on the C6, hosted
+# HCI attached to Bluedroid) before esp_bluedroid_init(). Without
+# CONFIG_BT_ENABLED (and CONFIG_BT_BLUEDROID_ENABLED, which it
+# implies), the ble_keyboard.cpp file collapses to its no-op stub at
+# the top (`#if !defined(CONFIG_BT_BLUEDROID_ENABLED)`) and you see
 # "Bluedroid host not enabled in sdkconfig" at boot.
 #
 # We therefore inherit CONFIG_BT_ENABLED=y / CONFIG_BT_BLUEDROID_ENABLED=y
-# from sdkconfig.defaults (do NOT override them to =n here, even
+# from sdkconfig.defaults.bluetooth (do NOT override them to =n here, even
 # though "BT_ENABLED on a chip with no BT radio" looks wrong).
 #
-# The two CONFIG_ESP_HOSTED_* knobs below tell `espressif/esp_hosted`
-# to compile in its Bluedroid VHCI shim; without them the hosted_*
-# symbols ble_keyboard.cpp links against are not produced. Recipe
-# mirrors examples/host_bluedroid_ble_compatibility_test in
-# espressif/esp-hosted-mcu. The C6 slave only speaks BLE 4.2, so
-# pin BT_BLE_42 and turn off BLE 5.0 features.
+# ESP_HOSTED_HOST_FEAT_BT builds ESP-Hosted's Bluetooth adapter; it
+# picks Bluedroid from CONFIG_BT_BLUEDROID_ENABLED. (The 2.x knobs
+# ESP_HOSTED_ENABLE_BT_BLUEDROID / ESP_HOSTED_BLUEDROID_HCI_VHCI are
+# gone; a stale sdkconfig that still sets them fails the build on
+# purpose.) The C6 controller speaks BLE 4.2, so BLE 5.0 features
+# stay off.
 #
 # NOTE on stale sdkconfig: ESP-IDF only applies sdkconfig.defaults
-# when sdkconfig does not yet exist. If you previously built with
-# CONFIG_BT_ENABLED=n / CONFIG_BT_BLUEDROID_ENABLED=n, your local
-# sdkconfig has those values cached and `idf.py reconfigure` will
-# NOT overwrite them, producing
-#   "fatal error: esp_bt_main.h: No such file or directory"
-# in components/ble_keyboard/ble_keyboard.cpp because the `bt`
-# component does not export the Bluedroid host headers when
-# CONFIG_BT_BLUEDROID_ENABLED is unset. Fix: delete sdkconfig and
-# rerun `idf.py reconfigure` (or `idf.py fullclean`).
+# when sdkconfig does not yet exist. After pulling this change,
+# delete build/m5stack_tab5 and build again.
 # ---------------------------------------------------------------
 CONFIG_BT_ENABLED=y
 CONFIG_BT_BLUEDROID_ENABLED=y
 CONFIG_BT_CONTROLLER_DISABLED=y
 CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n
-CONFIG_BT_LE_50_FEATURE_SUPPORT=n
-CONFIG_ESP_HOSTED_ENABLE_BT_BLUEDROID=y
-CONFIG_ESP_HOSTED_BLUEDROID_HCI_VHCI=y
+CONFIG_ESP_HOSTED_HOST_FEAT_BT=y
 
 # The default ESP-IDF main task stack (3.5 KB) is too tight for the
 # editor's call chains; match the ESP32-S3 build.

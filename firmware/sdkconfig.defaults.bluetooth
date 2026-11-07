@@ -1,0 +1,32 @@
+# Bluetooth LE keyboard host (Bluedroid), listed in the
+# SDKCONFIG_DEFAULTS of every CMakePresets.json preset whose board uses
+# a BLE keyboard. Boards without Bluetooth (MicroJournal Rev 5) leave
+# it out, so none of these options is set for a disabled BT stack.
+# The BLE HID host is esp_hidh (esp_hid component); the Classic-BT
+# CONFIG_BT_HID_HOST_ENABLED is not needed.
+# Target-specific additions: sdkconfig.defaults.bluetooth.<target>,
+# which ESP-IDF loads right after this file.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_BLUEDROID_ENABLED=y
+CONFIG_BT_BLE_ENABLED=y
+CONFIG_BT_GATTC_ENABLE=y
+CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
+CONFIG_BT_BLE_SMP_ENABLE=y
+# Move the Bluedroid host environment from .bss (always-resident
+# internal DRAM) into the heap, where CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST
+# (set in sdkconfig.defaults.bluetooth.esp32s3 / .esp32c5 / .esp32s31) can land it in PSRAM. This is
+# the largest single Bluedroid win for the internal-DRAM budget on
+# PSRAM-heavy boards (M5Stack PaperS3).
+CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY=y
+# Maximum number of characteristic-notification registrations the
+# GATTC stack can hold across the whole BLE host. A BLE HID keyboard
+# typically registers several CCCDs (one per HID Input Report ID, the
+# Battery Level, and sometimes the Boot Keyboard Input report); NKRO
+# devices with multi-TLC report maps register more. We previously
+# tried lowering this to 5 to shave a few hundred bytes of internal
+# DRAM, but that turned out to silently break input on real keyboards
+# whose notification count after reconnection exceeded the cap (the
+# L2CAP/ATT connection stayed up but no input data ever flowed --
+# visible symptom: BLE pairs and reconnects fine but no keystrokes).
+# Keep the ESP-IDF default of 30 to leave headroom for any keyboard.
+CONFIG_BT_GATTC_NOTIF_REG_MAX=30

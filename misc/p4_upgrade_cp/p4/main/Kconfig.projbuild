@@ -1,0 +1,21 @@
+menu "P4 co-processor upgrade"
+
+    choice P4UP_BOARD
+        prompt "Board"
+        default P4UP_BOARD_M5STACK_TAB5
+        help
+            The board the tool runs on. Each board has a preset in
+            CMakePresets.json and a header in main/boards/.
+
+        config P4UP_BOARD_M5STACK_TAB5
+            bool "M5Stack Tab5 (ESP32-C6)"
+    endchoice
+
+    config P4UP_BOARD_ID
+        string
+        default "m5stack_tab5" if P4UP_BOARD_M5STACK_TAB5
+        help
+            Preset name; the co-processor image is taken from
+            ../cp/build/<id>/cp_hosted.bin.
+
+endmenu

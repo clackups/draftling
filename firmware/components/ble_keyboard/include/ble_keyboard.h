@@ -94,6 +94,11 @@ void ble_keyboard_disable(void);
  * keyboard the user powers on can pair / reconnect. No-op if BLE
  * is already enabled or has never been initialised. */
 void ble_keyboard_enable(void);
+/* Like ble_keyboard_disable(), but ble_keyboard_enable() is a no-op
+ * afterwards. Called before sleep, so a keyboard that disappears
+ * while the rails go down (a USB keyboard losing its 5 V) cannot
+ * restart BLE on a radio that is being switched off. */
+void ble_keyboard_shutdown(void);
 /* Erase every stored keyboard bond and start scanning for a new
  * keyboard from scratch. Removes all bonded device entries from
  * the Bluedroid stack and from NVS, disconnects any currently-

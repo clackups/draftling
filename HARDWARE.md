@@ -134,12 +134,12 @@ tablet with a 5" 1280x720 IPS color LCD (ILI9881C or ST7123, MIPI-DSI
 2-lane, auto-detected by the upstream `espressif/m5stack_tab5`
 BSP). GT911 capacitive touch on I2C (backup address 0x14). Li-ion
 battery + PMIC + USB-C charging.  Wi-Fi / Bluetooth are routed through
-an on-board ESP32-C6 co-processor via ESP-Hosted-MCU over SDIO; both
+an on-board ESP32-C6 co-processor via ESP-Hosted 3.1 over SDIO; both
 `wifi_manager` (Git sync) and `ble_keyboard` (BLE HID host) work the
-same as on the ESP32-S3 boards. The C6 must be flashed once with the
-matching ESP-Hosted slave firmware -- see
-[docs/tab5-esp-hosted.md](docs/tab5-esp-hosted.md)` for the
-procedure. This board has been tested on physical hardware; touch and
+same as on the ESP32-S3 boards. The C6 must run esp-hosted 3.1: the
+upgrade tool in `misc/p4_upgrade_cp/` (preset `tab5`) installs it once from the P4,
+over the SDIO link -- see
+[docs/tab5-esp-hosted.md](docs/tab5-esp-hosted.md). This board has been tested on physical hardware; touch and
 the on-board MicroSD slot both work.
 
 The M5Stack Tab5 is a much faster device than those using ESP32-S3,
@@ -148,6 +148,10 @@ a built-in fast USB charger. The device supports a USB keyboard as an
 alternative too BLE. Also, M5 produces a specialized keyboard
 ayttachment for Tab5, which is automatically supported by Draftling
 firmware.
+
+On battery, going to sleep turns the Tab5 off completely (open
+documents are saved first); press the side power button to turn it
+on. On USB power it sleeps instead, and RESET wakes it.
 
 
 ## Guition JC3248W535
@@ -245,9 +249,11 @@ Tested on physical hardware.
 is a 4.3" smart display: ESP32-S3 with 4 MB flash and 8 MB PSRAM, a
 480x272 IPS color LCD (NV3041A, QSPI) with GT911 capacitive touch, a
 MicroSD slot, a speaker amplifier and an IP5306 battery charger. Build
-preset `guition_jc4827w543`. Pins are taken from the vendor IO table
+preset `guition_jc4827w543c`. Pins are taken from the vendor IO table
 in [profi-max/JC4827W543_4.3inch_ESP32S3_board](https://github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
-The resistive-touch JC4827W543R is not supported.
+This profile is for the capacitive-touch JC4827W543C only; the
+vendor's resistive-touch (JC4827W543R) and no-touch (JC4827W543N)
+variants of this board are not supported.
 
 - BOOT (GPIO0) wakes the device from sleep; holding it for 2 seconds
   forgets the paired keyboards.
@@ -632,6 +638,9 @@ Up/Down inject the arrow keys and Function injects Enter
 (`ws_epaper397_nav_init()` in `main/main.cpp`), mirroring the Elecrow
 CrowPanel 5.79"'s Back/dial-switch convention; BOOT is the standard
 deep-sleep wake / BLE-forget button every other board already gets.
+A 2 s hold of Function (the rocker's center press) enters deep sleep,
+and pressing it wakes the board again: it is armed as an EXT1 wake
+source (`DRAFTLING_WAKEUP_GPIO_EXTRA`) next to the EXT0 wake on BOOT.
 On-board MicroSD wired to a full 4-bit SDMMC bus, of which Draftling
 only uses 1-bit mode (CLK/CMD/D0), matching every other SDMMC board
 in this repo.

@@ -11,8 +11,7 @@ saves flash space.
 ## Building
 
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/)
-v6.0.2 or later (v6.1 or later for the ESP32-S31 board,
-`espressif_s31_korvo1`).
+v6.1 or later.
 
 All firmware sources and build files live under [`firmware/`](firmware),
 which ships a [`CMakePresets.json`](firmware/CMakePresets.json) with one
@@ -33,7 +32,7 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
 `waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `elecrow_crowpanel_50`,
-`viewe_uedx80480043`, `guition_jc4827w543`, `waveshare_touch_lcd_7`,
+`viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_touch_lcd_7`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,
 `microjournal_rev5`,
 `xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
@@ -52,10 +51,14 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 If you pull new changes that touch `sdkconfig.defaults` or any of the
 per-board `sdkconfig.defaults.<board>` files, delete the preset's
-generated `sdkconfig` so the defaults are re-applied:
+generated `sdkconfig` so the defaults are re-applied. If the change
+also edits `CMakePresets.json` (a preset's list of defaults files),
+delete the whole build directory instead, since its CMake cache keeps
+the old list:
 
 ```bash
 rm -f firmware/build/waveshare_rlcd42/sdkconfig
+# or, after CMakePresets.json changes: rm -rf firmware/build/waveshare_rlcd42
 cd firmware
 idf.py --preset waveshare_rlcd42 build
 ```
@@ -70,7 +73,7 @@ variable:
 
 | Pack | Layouts | Image size (RLCD-4.2) |
 |------|---------|-----------------------|
-| `default` | US-English, Ukrainian, German, French, Hebrew | 2.3 MB |
+| `default` | US-English, Ukrainian, German, French, Hebrew, Swiss German, Swiss French, Italian, Portuguese, Spanish, United Kingdom, Swedish / Finnish, Norwegian, Danish, Polish, Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian, Turkish | 2.3 MB |
 | `vietnamese` | US-English, Vietnamese (Telex) | 2.3 MB |
 | `korean` | US-English, Korean (2-set Hangul) | 3.1 MB |
 | `japanese` | US-English, Japanese (romaji -> kana -> kanji) | 4.2 MB |

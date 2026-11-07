@@ -137,7 +137,7 @@ config DRAFTLING_MODEL_VIEWE_UEDX80480043
         USB through a CH340C USB-to-UART bridge. USB-powered, no
         battery input.
 
-config DRAFTLING_MODEL_GUITION_JC4827W543
+config DRAFTLING_MODEL_GUITION_JC4827W543C
     bool "Guition JC4827W543C (ESP32-S3, NV3041A, 4.3\" QSPI color LCD, 480x272, touch)"
     depends on IDF_TARGET_ESP32S3
     help
@@ -149,6 +149,9 @@ config DRAFTLING_MODEL_GUITION_JC4827W543
         meter). The BOOT button (GPIO0) is the
         deep-sleep wakeup source. Pins from the vendor IO pin table
         (github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
+        Capacitive-touch JC4827W543C only; the resistive-touch
+        (JC4827W543R) and no-touch (JC4827W543N) variants are not
+        supported.
         Tested on physical hardware.
 
 config DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
@@ -477,7 +480,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
@@ -666,7 +669,7 @@ config DRAFTLING_DISPLAY_ST77922
 # this board.
 config DRAFTLING_DISPLAY_NV3041A
     bool
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default n
 
 # DRAFTLING_DISPLAY_ST7365 is set automatically when the selected
@@ -949,9 +952,11 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
 # 25 kHz; 15 kHz gave the best result on hardware.
 config DRAFTLING_BACKLIGHT_PWM_HZ
     int "Backlight PWM frequency (Hz)"
-    depends on DRAFTLING_DISPLAY_RGB && !DRAFTLING_HAS_CH422G
+    depends on (DRAFTLING_DISPLAY_RGB && !DRAFTLING_HAS_CH422G) || DRAFTLING_DISPLAY_MIPI_DSI
     range 100 100000
     default 15000 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    # M5Stack Tab5: the BSP's 5 kHz flickers visibly when dimmed.
+    default 25000 if DRAFTLING_MODEL_M5STACK_TAB5
     # VIEWE UEDX80480043E-WB: VIEWE's BSP uses 5 kHz, which whined
     # audibly on hardware.
     default 15000 if DRAFTLING_MODEL_VIEWE_UEDX80480043
@@ -1223,6 +1228,15 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 # physically attached USB keyboard preempts BLE pairing. If a USB
 # keyboard is detected within DRAFTLING_USB_KBD_PROBE_MS at boot,
 # the ble_keyboard component is left uninitialised.
+# Boards built without Bluetooth (their preset leaves out
+# sdkconfig.defaults.bluetooth). Every other board needs the BLE
+# keyboard host; the top-level CMakeLists.txt stops a build of such a
+# board whose sdkconfig has Bluetooth off.
+config DRAFTLING_NO_BLUETOOTH
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default n
+
 config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
@@ -1441,7 +1455,7 @@ config DRAFTLING_WAKEUP_GPIO
     # Guition JC4827W543C: BOOT button. GPIO0 is also the panel's TE
     # output on this board; TE is never enabled (no TEON), see
     # display_nv3041a.cpp.
-    default 0  if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 0  if DRAFTLING_MODEL_GUITION_JC4827W543C
     # Elecrow CrowPanel 5.0": no GPIO wake. BOOT (GPIO0) is wired
     # straight to the LCD's pixel clock input with no pull-up resistor,
     # and the panel stays powered in deep sleep and holds the line LOW
@@ -1490,6 +1504,19 @@ config DRAFTLING_WAKEUP_GPIO
     # RESET button wakes the device.
     default 61 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     default 0
+
+# DRAFTLING_WAKEUP_GPIO_EXTRA is an optional second active-low
+# RTC-capable GPIO that also wakes the device from deep sleep, armed
+# through EXT1 (ESP_EXT1_WAKEUP_ANY_LOW) next to the EXT0 wake on
+# DRAFTLING_WAKEUP_GPIO. -1 (default) arms nothing extra.
+config DRAFTLING_WAKEUP_GPIO_EXTRA
+    int
+    # Waveshare ESP32-S3-ePaper-3.97: the Function button (GPIO5, the
+    # center press of the rocker) puts the device to sleep on a 2 s
+    # hold (DRAFTLING_SLEEP_BUTTON_GPIO) and wakes it as well; BOOT
+    # stays the main wake button.
+    default 5  if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default -1
 
 # DRAFTLING_SLEEP_BUTTON_GPIO names a second, board-specific GPIO
 # that enters deep sleep (via standby_enter_sleep()) on a
@@ -1578,7 +1605,7 @@ config DRAFTLING_TOUCHSCREEN
     # register map), polled, no INT / RST lines.
     default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
     # Guition JC4827W543C: GT911 with INT on GPIO3, RST on GPIO38.
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default n
@@ -1618,7 +1645,7 @@ config DRAFTLING_TOUCH_GT911
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default y if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
-    default y if DRAFTLING_MODEL_GUITION_JC4827W543
+    default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
@@ -1680,7 +1707,7 @@ config DRAFTLING_TOUCH_INT_GPIO
     depends on DRAFTLING_TOUCHSCREEN
     range -1 54
     default 3  if DRAFTLING_MODEL_JC3248W535
-    default 3  if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 3  if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 48 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 3  if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 15 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
@@ -1744,7 +1771,7 @@ config DRAFTLING_TOUCH_RST_GPIO
     default 38 if DRAFTLING_MODEL_SUNTON_8048S070
     default 38 if DRAFTLING_MODEL_SUNTON_8048S043
     default 38 if DRAFTLING_MODEL_VIEWE_UEDX80480043
-    default 38 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 38 if DRAFTLING_MODEL_GUITION_JC4827W543C
     # Freenove FNK0104B / FNK0104S: FT6336U RST_N_PIN.
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 18 if DRAFTLING_MODEL_FREENOVE_FNK0104S
@@ -1840,7 +1867,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 800 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default 800 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
-    default 480 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 480 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 800 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     # Waveshare ESP32-S3-LCD-3.16: native 320x820 portrait panel; the
     # 270-degree base rotation (DRAFTLING_DISPLAY_ROTATE) renders the
@@ -1888,7 +1915,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX80480043
     default 480 if DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1
-    default 272 if DRAFTLING_MODEL_GUITION_JC4827W543
+    default 272 if DRAFTLING_MODEL_GUITION_JC4827W543C
     default 480 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_7
     default 820 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A

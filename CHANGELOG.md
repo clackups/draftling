@@ -8,11 +8,86 @@ in the git log.
 
 ### Added
 
+- **M5Stack Tab5: C6 firmware version on the hardware information
+  page**: F1 -> Hardware information now has a "Radio co-processor"
+  section with the esp-hosted firmware version of the ESP32-C6 that
+  provides Wi-Fi and Bluetooth.
+
+- **16 more European keyboard layouts**: the default firmware now
+  includes Swiss German, Swiss French, Italian, Portuguese, Spanish,
+  UK, Swedish / Finnish, Norwegian, Danish, Polish (programmers),
+  Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian and Turkish
+  Q, and the screen fonts now show the Central and Eastern European
+  and Turkish letters (Latin Extended-A). Turn them on in F1 -> Settings -> Active layouts, then
+  switch with Ctrl+L. Accents are typed as on a computer: press the
+  accent key, then the letter.
+- **Caps Lock on accented-letter keys**: on the Swiss and Italian
+  layouts Caps Lock now types the capital of the accented letters too.
+- **Accent keys on the German and French layouts**: the accent keys
+  (^ and the acute / grave key on German, ^ and the diaeresis on
+  French) now combine with the next letter, so French can type
+  e-circumflex and the like. Press Space after the accent to type the
+  accent alone.
+- **Waveshare ESP32-S3-ePaper-3.97: wake with the rocker**: pressing
+  the center of the rocker wheel now wakes the device from sleep, the
+  same button whose 2-second hold puts it to sleep. The BOOT button
+  still wakes it too.
 - **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
   Espressif's ESP32-S31-Korvo-1 board with the
   ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
   in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
   board Draftling supports. Not yet tested on the device.
+
+### Changed
+
+- **M5Stack Tab5: sleep switches it off**: on battery, going to sleep
+  (Ctrl+P, F1 -> Sleep now or the inactivity timeout) now turns the
+  Tab5 off completely, after saving open documents; press the side
+  power button to turn it on. On USB power it sleeps as before and
+  RESET wakes it. The battery keeps charging while it is off, and the
+  USB-A port, speaker, camera and external 5 V are switched off first.
+- **M5Stack Tab5: no backlight flicker**: the backlight dimming now
+  runs at 25 kHz instead of 5 kHz, so the screen no longer flickers
+  below full brightness.
+- **M5Stack Tab5: speaker off**: Draftling plays no sound, so the
+  Tab5's speaker amplifier is now switched off at power-on to save
+  battery.
+- **M5Stack Tab5: ESP-Hosted 3.1**: Draftling for the Tab5 now needs
+  esp-hosted 3.1 on the Tab5's built-in ESP32-C6 (the chip that
+  provides Wi-Fi and Bluetooth). Install it once with the new Tab5 C6
+  upgrade tool in `misc/p4_upgrade_cp`: it runs on the Tab5 itself,
+  upgrades the C6 from any earlier esp-hosted firmware (including the
+  one the Tab5 ships with), and shows its progress on the screen. No
+  wires or adapters are needed. A Tab5 whose C6 still has older
+  firmware shows a message saying so instead of starting.
+- **Only US-English layout active by default**: on a fresh install of
+  the default firmware, Ctrl+L no longer cycles through Ukrainian.
+  Turn other layouts on in F1 -> Settings -> Active layouts. Devices
+  that already have a saved layout selection keep it.
+- **Sunton ESP32-8048S043: all layouts of the language pack**: this
+  board used to build with only the US and German layouts; it now has
+  the same layouts as every other board. Devices that had German
+  active show Ukrainian in its place after the update: pick German
+  again once in F1 -> Settings -> Active layouts.
+- **ESP-IDF 6.1 is the minimum version for building**: building the
+  firmware yourself now needs ESP-IDF v6.1 or later; older versions
+  stop with an error. After updating, delete your existing build
+  directories once (`rm -rf firmware/build/<board>`), since an old one
+  would otherwise stop the build with a "Bluetooth is off" error.
+  Prebuilt images from the web flasher are not affected.
+
+### Fixed
+
+- **M5Stack Tab5: touch was upside down**: a tap at the lower right
+  moved the cursor to the upper left. Taps now land under the finger.
+- **M5Stack Tab5: crash on sleep with a USB keyboard**: with a USB
+  keyboard plugged in, Ctrl+P (or any sleep) crashed and restarted the
+  Tab5 instead of switching it off. It now goes to sleep normally.
+
+- **The `<` `>` key on German and French keyboards**: the key left of
+  Z typed nothing on the German layout and is now `<` `>` (AltGr: `|`)
+  on both. On the French layout the key left of Enter now types `*`
+  and the micro sign, as printed on it.
 
 ## [1.0.22] - 2026-11-03
 

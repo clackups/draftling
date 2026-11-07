@@ -10,12 +10,13 @@
  * Pins from the vendor IO table ("4.3 inches IO pin distribution.xls"
  * in github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board), which
  * agrees with that repository's Arduino demos and ESPHome's device
- * config (devices.esphome.io/devices/guition-jc4827543c). The
- * resistive-touch variant (JC4827W543R, XPT2046 on the SD card's SPI
- * bus) is not supported.
+ * config (devices.esphome.io/devices/guition-jc4827543c). This
+ * profile is for the capacitive-touch JC4827W543C only: the vendor's
+ * resistive-touch (JC4827W543R, XPT2046 on the SD card's SPI bus) and
+ * no-touch (JC4827W543N) variants are not supported.
  *
  * Included by main/app_config.h when
- * CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543 is selected.
+ * CONFIG_DRAFTLING_MODEL_GUITION_JC4827W543C is selected.
  */
 
 #define BOARD_NAME          "Guition JC4827W543C"

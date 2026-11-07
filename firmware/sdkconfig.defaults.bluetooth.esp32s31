@@ -1,0 +1,3 @@
+# ESP32-S31 additions to sdkconfig.defaults.bluetooth (loaded by
+# ESP-IDF right after it). Put Bluedroid's allocations in PSRAM first.
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
