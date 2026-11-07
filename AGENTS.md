@@ -3072,9 +3072,15 @@ separate `clackups/draftling-flasher` repository only -- never as
 GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`, `lilygo_t5_epd_s3_pro`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono` and `microjournal_rev5`, each in every language
-pack (the default image plus one per non-default pack, listed in the
-release's `languagePacks` array in `manifest.json`). Extend the list
+`m5stack_papermono`, `microjournal_rev5` and `m5stack_tab5`, each in
+every language pack (the default image plus one per non-default pack,
+listed in the release's `languagePacks` array in `manifest.json`).
+The flasher also carries the Tab5 C6 upgrade tool as its own board
+entry, `m5stack_tab5_cp_upgrade` (one image, no language packs, built
+with `misc/p4_upgrade_cp/build.sh m5stack_tab5`; files from
+`misc/p4_upgrade_cp/p4/build/m5stack_tab5/`). ESP32-P4 images put the
+bootloader at `0x2000`, not `0x0`: take the offsets from each build's
+`flasher_args.json`. Extend the list
 there as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
