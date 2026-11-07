@@ -3075,10 +3075,15 @@ GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `m5stack_papermono`, `microjournal_rev5` and `m5stack_tab5`, each in
 every language pack (the default image plus one per non-default pack,
 listed in the release's `languagePacks` array in `manifest.json`).
-The flasher also carries the Tab5 C6 upgrade tool as its own board
-entry, `m5stack_tab5_cp_upgrade` (one image, no language packs, built
-with `misc/p4_upgrade_cp/build.sh m5stack_tab5`; files from
-`misc/p4_upgrade_cp/p4/build/m5stack_tab5/`). ESP32-P4 images put the
+The Tab5 entry also carries the C6 upgrade tool as a second release
+(tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
+language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
+where `<V>` is the esp-hosted version it installs: the pin in
+`misc/p4_upgrade_cp/cp/main/idf_component.yml`, which is also the
+app version of both the C6 image and the P4 tool. Build it with
+`misc/p4_upgrade_cp/build.sh m5stack_tab5` (files from
+`misc/p4_upgrade_cp/p4/build/m5stack_tab5/`); it only needs a new
+release when that pin changes. ESP32-P4 images put the
 bootloader at `0x2000`, not `0x0`: take the offsets from each build's
 `flasher_args.json`. Extend the list
 there as more boards get a web-flasher entry. A release does not need to
