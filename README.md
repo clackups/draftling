@@ -29,6 +29,7 @@ load the firmware quickly without having to compile it.
   * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO)
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
+  * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
   * [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) (discontinued)
 
 * DIY boards
@@ -45,7 +46,6 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-LCD-3.16](https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16)
   * [MicroJournal Rev 5.0](https://github.com/unkyulee/micro-journal/blob/main/rev.5/5.0/readme.md) (ILI9341) and Rev 5.1 (ST7789) writerdecks (ESP32-S3, one firmware, display detected at boot) -- tested on the Rev 5.0 (ILI9341) only; Rev 5.1 (ST7789) untested
   * [NiceMCU-C5E-DEV_2.8IPS](https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS) (ESP32-C5, 2.8" color LCD)
-  * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) (no web flasher support, as internal firmware needs an upgrade too)
 
 
 ## Features
