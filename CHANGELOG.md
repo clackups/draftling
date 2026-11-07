@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.23] - 2026-11-07
+
 ### Added
 
 - **M5Stack Tab5: C6 firmware version on the hardware information
