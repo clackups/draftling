@@ -195,10 +195,18 @@ extern "C" esp_err_t wifi_manager_init(void)
      * tasks now that this is also called lazily from wifi_manager_connect_to(). */
     static SemaphoreHandle_t init_mutex = NULL;
     static portMUX_TYPE init_spinlock = portMUX_INITIALIZER_UNLOCKED;
-    portENTER_CRITICAL(&init_spinlock);
-    if (init_mutex == NULL) init_mutex = xSemaphoreCreateMutex();
-    portEXIT_CRITICAL(&init_spinlock);
-    if (init_mutex == NULL) return ESP_ERR_NO_MEM;
+    /* Creating a mutex allocates, which must not happen inside a
+     * critical section: create one outside, install it under the
+     * spinlock, and drop it if another task installed one first. */
+    if (init_mutex == NULL) {
+        SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        if (m == NULL) return ESP_ERR_NO_MEM;
+        portENTER_CRITICAL(&init_spinlock);
+        bool installed = (init_mutex == NULL);
+        if (installed) init_mutex = m;
+        portEXIT_CRITICAL(&init_spinlock);
+        if (!installed) vSemaphoreDelete(m);
+    }
     xSemaphoreTake(init_mutex, portMAX_DELAY);
 
     if (s_initialized) {
