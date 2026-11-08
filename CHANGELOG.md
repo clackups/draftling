@@ -43,6 +43,14 @@ in the git log.
   documents on the card, deleting sub-folders, images, `.gitignore`
   and any other file there (with no `path=` set: in the whole
   repository). Only documents are changed now; everything else stays.
+- **First Git sync no longer deletes documents already on the card**:
+  when a project with documents was synced for the first time with a
+  repository that already had commits, the server's files were written
+  over the card: documents the server did not have were deleted and
+  documents with the same name overwritten, and neither had been
+  saved in Git. Now both are kept: a document only on the card is
+  added to the repository, and one on both sides is merged (with
+  conflict markers where they differ).
 
 ## [1.0.23] - 2026-11-07
 

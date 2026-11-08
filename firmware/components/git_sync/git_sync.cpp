@@ -225,6 +225,20 @@ static void joinp(char *out, size_t osz, const char *dir, const char *name)
     strlcat(out, name, osz);
 }
 
+/* Whether the working dir holds any document. */
+static esp_err_t worktree_has_docs(bool *out)
+{
+    *out = false;
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t ret = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (ret != ESP_OK) return ret;
+    for (int i = 0; i < count && !*out; i++)
+        if (!entries[i].is_dir && is_doc(entries[i].name)) *out = true;
+    sd_card_free_list(entries);
+    return ESP_OK;
+}
+
 /* Build the synced sub-tree from the document files in the working
  * dir. Only documents are synced, so everything else in base (the
  * current sub-tree: folders, images, README files...) is kept as it
@@ -485,19 +499,34 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         remove(pack);
         if (ret != ESP_OK) { set_error("Cannot unpack fetched history"); return ret; }
 
-        git_ref_write(localref, &remote_sha);
         git_ref_write(remoteref, &remote_sha);
-        local_head = remote_sha;
-        have_head = true;
 
-        git_oid sub;
-        ret = subtree_for_commit(&local_head, &sub);
-        if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL);
-        if (ret != ESP_OK) {
-            /* Start over as a first sync next time. */
-            git_ref_delete(localref);
-            set_error("Cannot write files to the SD card");
-            return ret;
+        /* Documents already on the card were never committed: checking
+         * the server's tree out over them would delete or overwrite
+         * them. Then the local branch is left unborn, step 3 commits
+         * the card's documents as a commit of their own, and step 4
+         * merges that with the server's history like any other local
+         * commit (files on one side are kept, a file on both sides is
+         * merged with conflict markers). */
+        bool have_local_docs = false;
+        if (worktree_has_docs(&have_local_docs) != ESP_OK) {
+            set_error("Cannot read working tree");
+            return ESP_FAIL;
+        }
+        if (!have_local_docs) {
+            git_ref_write(localref, &remote_sha);
+            local_head = remote_sha;
+            have_head = true;
+
+            git_oid sub;
+            ret = subtree_for_commit(&local_head, &sub);
+            if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL);
+            if (ret != ESP_OK) {
+                /* Start over as a first sync next time. */
+                git_ref_delete(localref);
+                set_error("Cannot write files to the SD card");
+                return ret;
+            }
         }
     }
 
