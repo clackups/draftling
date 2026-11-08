@@ -33,8 +33,7 @@
  * ------------
  * This backend keeps its own RGB565 framebuffer in PSRAM (sized to
  * width * height * 2). The LVGL port's flush_cb pushes RGB565
- * rectangles into it via display_push_rgb565() (with SCALE x SCALE
- * nearest-neighbor expansion of each logical pixel), accumulating a
+ * rectangles into it via display_push_rgb565(), accumulating a
  * dirty bounding box; display_flush() copies just that region to the
  * panel via esp_lcd_panel_draw_bitmap(). A degraded per-pixel
  * fallback (display_set_pixel, interpreting 0/0xFF as black/white) is
@@ -319,12 +318,6 @@ static const int kDataGpios[16] = {
 /* CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ (main/Kconfig.projbuild). */
 #define BL_LEDC_FREQ_HZ     CONFIG_DRAFTLING_BACKLIGHT_PWM_HZ
 #endif
-
-/* Logical-to-panel pixel scale (Kconfig). Each logical LVGL pixel is
- * rendered as SCALE x SCALE physical panel pixels. */
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define RGB_SCALE 1
 
 static esp_lcd_panel_handle_t s_panel = NULL;
 static int s_width  = 0;
@@ -631,26 +624,18 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
      * the left/top margin into the full physical panel (same
      * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
-    int px = ((int)x + display_margin_left()) * RGB_SCALE;
-    int py = ((int)y + display_margin_top())  * RGB_SCALE;
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
     if (px >= s_width || py >= s_height) return;
-    uint16_t v = (color == 0) ? 0x0000 : 0xFFFF;
-    int x_end = px + RGB_SCALE; if (x_end > s_width)  x_end = s_width;
-    int y_end = py + RGB_SCALE; if (y_end > s_height) y_end = s_height;
-    for (int yy = py; yy < y_end; yy++) {
-        uint16_t *row = s_fb + (size_t)yy * s_width + px;
-        for (int xx = px; xx < x_end; xx++) *row++ = v;
-    }
-    int x2 = x_end - 1;
-    int y2 = y_end - 1;
+    s_fb[(size_t)py * s_width + px] = (color == 0) ? 0x0000 : 0xFFFF;
     if (s_dirty_x1 < 0) {
-        s_dirty_x1 = px;  s_dirty_y1 = py;
-        s_dirty_x2 = x2;  s_dirty_y2 = y2;
+        s_dirty_x1 = s_dirty_x2 = px;
+        s_dirty_y1 = s_dirty_y2 = py;
     } else {
         if (px < s_dirty_x1) s_dirty_x1 = px;
-        if (x2 > s_dirty_x2) s_dirty_x2 = x2;
+        if (px > s_dirty_x2) s_dirty_x2 = px;
         if (py < s_dirty_y1) s_dirty_y1 = py;
-        if (y2 > s_dirty_y2) s_dirty_y2 = y2;
+        if (py > s_dirty_y2) s_dirty_y2 = py;
     }
 }
 
@@ -658,13 +643,11 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
                                     const void *color_map)
 {
     if (w <= 0 || h <= 0) return true;
-    int px = (x + display_margin_left()) * RGB_SCALE;
-    int py = (y + display_margin_top())  * RGB_SCALE;
-    int pw = w * RGB_SCALE;
-    int ph = h * RGB_SCALE;
+    int px = x + display_margin_left();
+    int py = y + display_margin_top();
     if (px < 0 || py < 0) return true;
-    int x2 = px + pw - 1;
-    int y2 = py + ph - 1;
+    int x2 = px + w - 1;
+    int y2 = py + h - 1;
     if (x2 >= s_width)  x2 = s_width  - 1;
     if (y2 >= s_height) y2 = s_height - 1;
     int eff_w = x2 - px + 1;
@@ -672,33 +655,10 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (eff_w <= 0 || eff_h <= 0) return true;
 
     const uint16_t *src = (const uint16_t *)color_map;
-    if (RGB_SCALE == 1) {
-        for (int row = 0; row < eff_h; row++) {
-            uint16_t *dst = s_fb + (size_t)(py + row) * s_width + px;
-            memcpy(dst, src, eff_w * sizeof(uint16_t));
-            src += w;
-        }
-    } else {
-        for (int sy = 0; sy < h; sy++) {
-            int dy0 = py + sy * RGB_SCALE;
-            if (dy0 >= s_height) break;
-            uint16_t *drow0 = s_fb + (size_t)dy0 * s_width + px;
-            uint16_t *p = drow0;
-            int written = 0;
-            for (int sx = 0; sx < w && written < eff_w; sx++) {
-                uint16_t v = src[(size_t)sy * w + sx];
-                for (int k = 0; k < RGB_SCALE && written < eff_w; k++) {
-                    *p++ = v;
-                    written++;
-                }
-            }
-            for (int k = 1; k < RGB_SCALE; k++) {
-                int dy = dy0 + k;
-                if (dy >= s_height) break;
-                memcpy(s_fb + (size_t)dy * s_width + px, drow0,
-                       (size_t)eff_w * sizeof(uint16_t));
-            }
-        }
+    for (int row = 0; row < eff_h; row++) {
+        uint16_t *dst = s_fb + (size_t)(py + row) * s_width + px;
+        memcpy(dst, src, eff_w * sizeof(uint16_t));
+        src += w;
     }
 
     if (s_dirty_x1 < 0) {

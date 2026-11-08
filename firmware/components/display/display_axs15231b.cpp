@@ -341,16 +341,6 @@ static int s_cs_pin  = -1;
 static uint16_t *s_fb = NULL;
 static size_t    s_fb_pixels = 0;
 
-/* Logical-to-panel pixel scale. Read from Kconfig at compile time.
- * Each logical LVGL pixel is rendered as SCALE x SCALE physical
- * panel pixels via nearest-neighbor expansion in display_push_rgb565().
- * LVGL renders into a logical canvas of size (s_width / SCALE) by
- * (s_height / SCALE), so without this scaling the LVGL output would
- * occupy only the top-left 1/SCALE^2 of the panel. */
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define AXS_SCALE 1
-
 /* Accumulated dirty bounding box (inclusive) since the last flush.
  * (-1, -1, -1, -1) means clean. */
 static int s_dirty_x1 = -1;
@@ -1033,30 +1023,19 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
 {
     /* Caller passes *logical* (margin-shrunk) coordinates; offset by
      * the left/top margin into the full physical panel (same
-     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp),
-     * then expand to a SCALE x SCALE block of panel pixels to match
-     * display_push_rgb565(). */
-    int px = ((int)x + display_margin_left()) * AXS_SCALE;
-    int py = ((int)y + display_margin_top())  * AXS_SCALE;
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
     if (px >= s_width || py >= s_height) return;
-    uint16_t v = (color == 0) ? 0x0000 : 0xFFFF;
-    int x_end = px + AXS_SCALE; if (x_end > s_width)  x_end = s_width;
-    int y_end = py + AXS_SCALE; if (y_end > s_height) y_end = s_height;
-    for (int yy = py; yy < y_end; yy++) {
-        uint16_t *row = s_fb + (size_t)yy * s_width + px;
-        for (int xx = px; xx < x_end; xx++) *row++ = v;
-    }
-
-    int x2 = x_end - 1;
-    int y2 = y_end - 1;
+    s_fb[(size_t)py * s_width + px] = (color == 0) ? 0x0000 : 0xFFFF;
     if (s_dirty_x1 < 0) {
-        s_dirty_x1 = px;  s_dirty_y1 = py;
-        s_dirty_x2 = x2;  s_dirty_y2 = y2;
+        s_dirty_x1 = s_dirty_x2 = px;
+        s_dirty_y1 = s_dirty_y2 = py;
     } else {
         if (px < s_dirty_x1) s_dirty_x1 = px;
-        if (x2 > s_dirty_x2) s_dirty_x2 = x2;
+        if (px > s_dirty_x2) s_dirty_x2 = px;
         if (py < s_dirty_y1) s_dirty_y1 = py;
-        if (y2 > s_dirty_y2) s_dirty_y2 = y2;
+        if (py > s_dirty_y2) s_dirty_y2 = py;
     }
 }
 
@@ -1065,17 +1044,13 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
 {
     if (w <= 0 || h <= 0) return true;
     /* Caller passes *logical* (margin-shrunk) coordinates and a
-     * tightly-packed (logical w * logical h) RGB565 buffer. Offset by
-     * the left/top margin, then nearest-neighbor expand each source
-     * pixel into a SCALE x SCALE panel-pixel block in the
-     * framebuffer. */
-    int px = (x + display_margin_left()) * AXS_SCALE;
-    int py = (y + display_margin_top())  * AXS_SCALE;
-    int pw = w * AXS_SCALE;
-    int ph = h * AXS_SCALE;
+     * tightly-packed w * h RGB565 buffer; offset by the left/top
+     * margin into the framebuffer. */
+    int px = x + display_margin_left();
+    int py = y + display_margin_top();
     if (px < 0 || py < 0) return true;
-    int x2 = px + pw - 1;
-    int y2 = py + ph - 1;
+    int x2 = px + w - 1;
+    int y2 = py + h - 1;
     if (x2 >= s_width)  x2 = s_width  - 1;
     if (y2 >= s_height) y2 = s_height - 1;
     int eff_w = x2 - px + 1;
@@ -1083,38 +1058,10 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     if (eff_w <= 0 || eff_h <= 0) return true;
 
     const uint16_t *src = (const uint16_t *)color_map;
-    if (AXS_SCALE == 1) {
-        for (int row = 0; row < eff_h; row++) {
-            uint16_t *dst = s_fb + (size_t)(py + row) * s_width + px;
-            memcpy(dst, src, eff_w * sizeof(uint16_t));
-            src += w;
-        }
-    } else {
-        /* Expand each source row into one panel row, then memcpy-replicate
-         * (AXS_SCALE - 1) more times. */
-        for (int sy = 0; sy < h; sy++) {
-            int dy0 = py + sy * AXS_SCALE;
-            if (dy0 >= s_height) break;
-            uint16_t *drow0 = s_fb + (size_t)dy0 * s_width + px;
-            int eff_w_row = eff_w;
-            /* Build the first scaled row in place. */
-            uint16_t *p = drow0;
-            int written = 0;
-            for (int sx = 0; sx < w && written < eff_w_row; sx++) {
-                uint16_t v = src[(size_t)sy * w + sx];
-                for (int k = 0; k < AXS_SCALE && written < eff_w_row; k++) {
-                    *p++ = v;
-                    written++;
-                }
-            }
-            /* Replicate that row scale-1 more times (clipped at panel). */
-            for (int k = 1; k < AXS_SCALE; k++) {
-                int dy = dy0 + k;
-                if (dy >= s_height) break;
-                memcpy(s_fb + (size_t)dy * s_width + px, drow0,
-                       (size_t)eff_w_row * sizeof(uint16_t));
-            }
-        }
+    for (int row = 0; row < eff_h; row++) {
+        uint16_t *dst = s_fb + (size_t)(py + row) * s_width + px;
+        memcpy(dst, src, eff_w * sizeof(uint16_t));
+        src += w;
     }
 
     if (s_dirty_x1 < 0) {
@@ -1135,12 +1082,10 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
         s_clip_w = s_clip_h = 0;
         return;
     }
-    /* Caller passes *logical* coordinates; the dirty bbox and the
-     * panel-write window operate in panel pixels, so scale up. */
-    s_clip_x = x * AXS_SCALE;
-    s_clip_y = y * AXS_SCALE;
-    s_clip_w = w * AXS_SCALE;
-    s_clip_h = h * AXS_SCALE;
+    s_clip_x = x;
+    s_clip_y = y;
+    s_clip_w = w;
+    s_clip_h = h;
 }
 
 extern "C" void display_flush(void)

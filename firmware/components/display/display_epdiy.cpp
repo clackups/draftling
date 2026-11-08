@@ -178,12 +178,6 @@ static int                 s_width  = 0;        /* panel pixels */
 static int                 s_height = 0;        /* panel pixels */
 static bool                s_initialized = false;
 
-/* Logical-to-panel scale (every logical LVGL pixel is rendered as a
- * SCALE x SCALE block of panel pixels). */
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define EPDIY_SCALE 1
-
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define EPDIY_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #else
@@ -409,11 +403,8 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 #endif
 
     ESP_LOGI(TAG, "epdiy display initialized "
-                  "(%dx%d panel, scale=%d -> %dx%d logical), full refresh "
-                  "every %d partials",
-             s_width, s_height, EPDIY_SCALE,
-             s_width / EPDIY_SCALE, s_height / EPDIY_SCALE,
-             EPDIY_FULL_REFRESH_INTERVAL);
+                  "(%dx%d panel), full refresh every %d partials",
+             s_width, s_height, EPDIY_FULL_REFRESH_INTERVAL);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -430,13 +421,11 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     if (!s_initialized) return;
     /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
      * the left/top margin into the full physical panel (same
-     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp),
-     * then expand to a SCALE x SCALE block of panel pixels. */
-    int px = ((int)x + display_margin_left()) * EPDIY_SCALE;
-    int py = ((int)y + display_margin_top())  * EPDIY_SCALE;
-    fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE,
-                    (color != 0) ? 0x0F : 0x00);
-    mark_dirty_rect(px, py, EPDIY_SCALE, EPDIY_SCALE);
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    fill_panel_rect(px, py, 1, 1, (color != 0) ? 0x0F : 0x00);
+    mark_dirty_rect(px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h,
@@ -449,23 +438,13 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     int ox = x + display_margin_left();
     int oy = y + display_margin_top();
 
-    /* Per-logical-pixel: write a SCALE x SCALE block into the
-     * grayscale framebuffer. */
     for (int sy = 0; sy < h; sy++) {
         for (int sx = 0; sx < w; sx++) {
-            uint16_t v = src[(size_t)sy * w + sx];
-            uint8_t g = rgb565_to_gray4(v);
-            int px = (ox + sx) * EPDIY_SCALE;
-            int py = (oy + sy) * EPDIY_SCALE;
-            fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE, g);
+            uint8_t g = rgb565_to_gray4(src[(size_t)sy * w + sx]);
+            fill_panel_rect(ox + sx, oy + sy, 1, 1, g);
         }
     }
-
-    int dx = ox * EPDIY_SCALE;
-    int dy = oy * EPDIY_SCALE;
-    int dw = w * EPDIY_SCALE;
-    int dh = h * EPDIY_SCALE;
-    mark_dirty_rect(dx, dy, dw, dh);
+    mark_dirty_rect(ox, oy, w, h);
     return true;
 }
 

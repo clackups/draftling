@@ -20,9 +20,6 @@ static constexpr int PANEL_WIDTH = 960;
 static constexpr int PANEL_HEIGHT = 540;
 static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define H752_SCALE 1
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define H752_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
@@ -221,8 +218,7 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     clear_dirty();
     s_initialized = true;
 
-    ESP_LOGI(TAG, "H752 EPD47 display initialized (%dx%d panel, scale=%d -> %dx%d logical)",
-             s_width, s_height, H752_SCALE, s_width / H752_SCALE, s_height / H752_SCALE);
+    ESP_LOGI(TAG, "H752 EPD47 display initialized (%dx%d panel)", s_width, s_height);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -239,10 +235,10 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
      * the left/top margin into the full physical panel (same
      * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
-    int px = ((int)x + display_margin_left()) * H752_SCALE;
-    int py = ((int)y + display_margin_top())  * H752_SCALE;
-    fill_panel_rect(px, py, H752_SCALE, H752_SCALE, color == 0);
-    mark_dirty_rect(px, py, H752_SCALE, H752_SCALE);
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    fill_panel_rect(px, py, 1, 1, color == 0);
+    mark_dirty_rect(px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
@@ -254,12 +250,10 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *colo
     for (int sy = 0; sy < h; ++sy) {
         for (int sx = 0; sx < w; ++sx) {
             bool black = rgb565_is_black(src[(size_t)sy * w + sx]);
-            fill_panel_rect((ox + sx) * H752_SCALE, (oy + sy) * H752_SCALE,
-                            H752_SCALE, H752_SCALE, black);
+            fill_panel_rect(ox + sx, oy + sy, 1, 1, black);
         }
     }
-    mark_dirty_rect(ox * H752_SCALE, oy * H752_SCALE,
-                    w * H752_SCALE, h * H752_SCALE);
+    mark_dirty_rect(ox, oy, w, h);
     return true;
 }
 
@@ -361,10 +355,10 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
         s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
         return;
     }
-    s_clip_x0 = std::max(0, x * H752_SCALE);
-    s_clip_y0 = std::max(0, y * H752_SCALE);
-    s_clip_x1 = std::min(s_width  - 1, (x + w) * H752_SCALE - 1);
-    s_clip_y1 = std::min(s_height - 1, (y + h) * H752_SCALE - 1);
+    s_clip_x0 = std::max(0, x);
+    s_clip_y0 = std::max(0, y);
+    s_clip_x1 = std::min(s_width  - 1, x + w - 1);
+    s_clip_y1 = std::min(s_height - 1, y + h - 1);
 }
 
 extern "C" void display_set_backlight(int percent)
