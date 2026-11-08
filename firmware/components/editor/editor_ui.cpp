@@ -834,9 +834,12 @@ static lv_obj_t *s_scr_ble_prompt  = NULL;
 static lv_obj_t *s_ble_prompt_lbl  = NULL;
 
 /* Menu overlay objects */
+#define MENU_HDR_TEXT "Menu - Up/Down, Enter to select, Esc to close"
 static lv_obj_t *s_scr_menu     = NULL;
 static lv_obj_t *s_menu_list    = NULL;
 static lv_obj_t *s_lbl_menu_hdr = NULL;
+static menu_item_id_t s_menu_nav_stack[4] = { MENU_ID_ROOT };
+static int       s_menu_nav_depth = 1;
 static int       s_menu_sel     = 0;
 /* Previously highlighted menu item, so update_list_highlight() can
  * clear just the old selection on Up/Down navigation instead of
@@ -871,14 +874,22 @@ static inline int list_move_index(int current_idx, int delta, int count)
     return (current + offset) % count;
 }
 
+static inline menu_item_id_t menu_current_parent(void)
+{
+    if (s_menu_nav_depth <= 0 ||
+        s_menu_nav_depth > (int)(sizeof(s_menu_nav_stack) / sizeof(s_menu_nav_stack[0])))
+        return MENU_ID_ROOT;
+    return s_menu_nav_stack[s_menu_nav_depth - 1];
+}
+
 static inline menu_item_id_t menu_id_for_index(int idx)
 {
-    return editor_menu_id_for_index(idx);
+    return editor_menu_id_for_index(menu_current_parent(), idx);
 }
 
 static inline int menu_index_for_id(menu_item_id_t id)
 {
-    return editor_menu_index_for_id(id);
+    return editor_menu_index_for_id(menu_current_parent(), id);
 }
 
 static inline menu_item_id_t menu_selection_id(void)
@@ -894,7 +905,28 @@ static inline void menu_set_selection_id(menu_item_id_t id)
 
 static inline void menu_move_selection(int delta)
 {
-    s_menu_sel = editor_menu_move_index(s_menu_sel, delta);
+    s_menu_sel = editor_menu_move_index(menu_current_parent(), s_menu_sel, delta);
+}
+
+static const char *menu_header_text(void)
+{
+    static char header[80];
+    if (s_menu_nav_depth <= 1) return MENU_HDR_TEXT;
+
+    size_t used = 0;
+    for (int i = 1; i < s_menu_nav_depth; ++i) {
+        const char *title = editor_menu_title(s_menu_nav_stack[i]);
+        if (!title) continue;
+        int written = snprintf(header + used, sizeof(header) - used, "%s%s",
+                               used ? " > " : "", title);
+        if (written < 0 || (size_t)written >= sizeof(header) - used) {
+            header[sizeof(header) - 1] = '\0';
+            return header;
+        }
+        used += (size_t)written;
+    }
+    snprintf(header + used, sizeof(header) - used, " - Up/Down, Enter, Esc");
+    return header;
 }
 
 static const settings_item_id_t s_settings_row_ids[] = {
@@ -929,6 +961,8 @@ static const settings_item_id_t s_settings_row_ids[] = {
 };
 #define SETTINGS_ROW_COUNT (int)(sizeof(s_settings_row_ids) / sizeof(s_settings_row_ids[0]))
 
+static int s_settings_sel = 0;
+
 static inline settings_item_id_t settings_id_for_index(int idx)
 {
     return list_id_for_index(s_settings_row_ids, idx, SETTINGS_ID_INVALID);
@@ -954,10 +988,6 @@ static inline void settings_move_selection(int delta)
 {
     s_settings_sel = list_move_index(s_settings_sel, delta, SETTINGS_ROW_COUNT);
 }
-
-/* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
- * card" picker replaces it with its question while it is open. */
-#define MENU_HDR_TEXT "Menu - Up/Down, Enter to select, Esc to close"
 
 /* "Format SD card" picker: three steps rendered into s_menu_list (like
  * the "SD card via USB" picker), with the question in the menu header.
@@ -1082,7 +1112,6 @@ static bool s_setup_dismissed = false;
 /* Settings screen objects */
 static lv_obj_t *s_scr_settings  = NULL;
 static lv_obj_t *s_settings_list = NULL;
-static int       s_settings_sel  = 0;
 /* See s_menu_sel_prev above. */
 static int       s_settings_sel_prev = -1;
 static bool      s_settings_open = false;
@@ -3637,6 +3666,15 @@ static void editor_ui_move_visual(int direction)
     }
 }
 
+static void menu_show_project_info(void);
+static void render_string_list(lv_obj_t *list, const std::vector<std::string> &rows);
+static void refresh_settings_items(void);
+static void refresh_layouts_picker_items(void);
+#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+static void refresh_theme_picker_items(void);
+#endif
+static void request_close_settings(void);
+
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
 /* The three activate-on-tap callbacks for the touchable lists.
  * They are defined further down with the rest of their respective
@@ -3644,6 +3682,7 @@ static void editor_ui_move_visual(int direction)
  * them as function pointers in the static touch contexts. */
 static void browser_activate_item(int row);
 static void menu_activate_item(menu_item_id_t id);
+static void menu_activate_index(int idx);
 static void settings_activate_item(settings_item_id_t item);
 #endif
 
@@ -4912,7 +4951,9 @@ static void menu_hotkey_draw_cb(lv_event_t *e)
 static void menu_mark_hotkeys(void)
 {
     for (const menu_hotkey_t &h : s_menu_hotkeys) {
-        lv_obj_t *btn = lv_obj_get_child(s_menu_list, menu_index_for_id(h.id));
+        int idx = menu_index_for_id(h.id);
+        if (idx < 0) continue;
+        lv_obj_t *btn = lv_obj_get_child(s_menu_list, idx);
         lv_obj_t *lbl = btn ? lv_obj_get_child(btn, 0) : NULL;
         if (!lbl) continue;
         lv_obj_add_event_cb(lbl, menu_hotkey_ext_size_cb,
@@ -4923,82 +4964,99 @@ static void menu_mark_hotkeys(void)
     }
 }
 
-static void refresh_menu_items(void)
+static void menu_label_for_id(menu_item_id_t id, char *buf, size_t len)
 {
-    std::vector<std::string> rows;
-    char buf[80];
-
-    rows.emplace_back("Settings...");
-
-    snprintf(buf, sizeof(buf), "BLE: %s",
-             ble_keyboard_is_connected()
-                 ? ble_keyboard_get_device_name()
-                 : "not connected");
-    rows.emplace_back(buf);
-
-    rows.emplace_back("BLE: Start scan");
-
-    if (wifi_manager_is_connected()) {
-        snprintf(buf, sizeof(buf), "WiFi: %s (%s)",
-                 wifi_manager_get_ssid(), wifi_manager_get_ip());
-    } else {
-        char cfg_ssid[33];
-        if (wifi_manager_get_configured_ssid(cfg_ssid, sizeof(cfg_ssid))) {
-            snprintf(buf, sizeof(buf), "WiFi: Connect to %s", cfg_ssid);
-        } else {
-            snprintf(buf, sizeof(buf), "WiFi: Connect (not configured)");
-        }
+    const char *title = editor_menu_title(id);
+    if (title) {
+        snprintf(buf, len, "%s", title);
+        return;
     }
-    rows.emplace_back(buf);
 
-    rows.emplace_back("WiFi: New connection...");
-    rows.emplace_back("WiFi: Disconnect");
-
-    {
+    switch (id) {
+    case MENU_ID_BLE_STATUS:
+        snprintf(buf, len, "BLE: %s",
+                 ble_keyboard_is_connected()
+                     ? ble_keyboard_get_device_name()
+                     : "not connected");
+        break;
+    case MENU_ID_WIFI_STATUS:
+        if (wifi_manager_is_connected()) {
+            snprintf(buf, len, "WiFi: %s (%s)",
+                     wifi_manager_get_ssid(), wifi_manager_get_ip());
+        } else {
+            snprintf(buf, len, "WiFi: not connected");
+        }
+        break;
+    case MENU_ID_WIFI_CONNECT: {
+        if (!wifi_manager_is_connected()) {
+            char cfg_ssid[33];
+            if (wifi_manager_get_configured_ssid(cfg_ssid, sizeof(cfg_ssid))) {
+                snprintf(buf, len, "WiFi: Connect to %s", cfg_ssid);
+            } else {
+                snprintf(buf, len, "WiFi: Connect (not configured)");
+            }
+        } else {
+            snprintf(buf, len, "WiFi: Connect (already connected)");
+        }
+        break;
+    }
+    case MENU_ID_GIT_SYNC: {
         project_name_t p;
         char dir[64];
         if (context_project(p, sizeof(p))) {
             project_dir(p, dir, sizeof(dir));
-            snprintf(buf, sizeof(buf), "Git Sync: %s%s", p,
+            snprintf(buf, len, "Git Sync: %s%s", p,
                      git_sync_is_configured(dir) ? "" : " (not configured)");
         } else {
-            snprintf(buf, sizeof(buf), "Git Sync (no project selected)");
+            snprintf(buf, len, "Git Sync (no project selected)");
         }
+        break;
     }
-    rows.emplace_back(buf);
-
-    rows.emplace_back("Connect a Draftbox repository...");
-
-    snprintf(buf, sizeof(buf), "Keyboard: %s  (Enter to cycle)",
-             kb_layout_name(kb_layout_get()));
-    rows.emplace_back(buf);
-
+    case MENU_ID_KB_LAYOUT:
+        snprintf(buf, len, "Keyboard layout: %s",
+                 kb_layout_name(kb_layout_get()));
+        break;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    if (usbmsc_item_disabled()) {
-        snprintf(buf, sizeof(buf), "SD card via USB: (no SD card)");
-    } else {
-        snprintf(buf, sizeof(buf), "SD card via USB: %s  (Enter to change)",
-                 usb_msc_mode_name(s_usbmsc_pending_mode));
-    }
-    rows.emplace_back(buf);
+    case MENU_ID_USB_MSC:
+        if (usbmsc_item_disabled()) {
+            snprintf(buf, len, "SD card via USB: (no SD card)");
+        } else {
+            snprintf(buf, len, "SD card via USB: %s",
+                     usb_msc_mode_name(s_usbmsc_pending_mode));
+        }
+        break;
 #endif
-
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    {
+    case MENU_ID_KERMIT: {
         project_name_t p;
         if (context_project(p, sizeof(p)))
-            snprintf(buf, sizeof(buf), "Sync via browser: %s...", p);
+            snprintf(buf, len, "Sync via browser: %s...", p);
         else
-            snprintf(buf, sizeof(buf), "Sync via browser (no project selected)");
+            snprintf(buf, len, "Sync via browser (no project selected)");
+        break;
     }
-    rows.emplace_back(buf);
 #endif
+    case MENU_ID_FORMAT_SD:
+        snprintf(buf, len, "%s",
+                 sd_card_get_handle() ? "Format SD card..." :
+                                        "Format SD card... (no SD card)");
+        break;
+    default:
+        snprintf(buf, len, "%s", title ? title : "");
+        break;
+    }
+}
 
-    rows.emplace_back(sd_card_get_handle() ? "Format SD card..." : "Format SD card... (no SD card)");
-    rows.emplace_back("Hardware information");
-    rows.emplace_back("Help (F10)");
-    rows.emplace_back("Sleep now");
-    rows.emplace_back("Close menu (Esc / F1)");
+static void refresh_menu_items(void)
+{
+    std::vector<std::string> rows;
+    int count = editor_menu_row_count(menu_current_parent());
+    if (s_menu_sel < 0 || s_menu_sel >= count) s_menu_sel = 0;
+    for (int i = 0; i < count; ++i) {
+        char buf[128];
+        menu_label_for_id(menu_id_for_index(i), buf, sizeof(buf));
+        rows.emplace_back(buf);
+    }
 
     render_string_list(s_menu_list, rows);
     menu_mark_hotkeys();
@@ -5013,7 +5071,7 @@ static void refresh_menu_items(void)
      * pass the addresses of s_menu_sel / s_menu_sel_prev. */
     s_menu_touch_ctx.p_sel      = &s_menu_sel;
     s_menu_touch_ctx.p_sel_prev = &s_menu_sel_prev;
-    s_menu_touch_ctx.activate   = menu_activate_item;
+    s_menu_touch_ctx.activate   = menu_activate_index;
     list_touch_attach(s_menu_list, &s_menu_touch_ctx);
 #endif
 
@@ -5035,9 +5093,43 @@ static void update_menu_highlight(void)
     s_menu_sel_prev = s_menu_sel;
 }
 
+static bool menu_enter_submenu(menu_item_id_t id)
+{
+    const int capacity =
+        (int)(sizeof(s_menu_nav_stack) / sizeof(s_menu_nav_stack[0]));
+    if (editor_menu_index_for_id(menu_current_parent(), id) < 0 ||
+        editor_menu_row_count(id) <= 0 ||
+        s_menu_nav_depth >= capacity) {
+        return false;
+    }
+
+    s_menu_nav_stack[s_menu_nav_depth++] = id;
+    s_menu_sel = 0;
+    s_menu_sel_prev = -1;
+    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
+    refresh_menu_items();
+    return true;
+}
+
+static bool menu_back(void)
+{
+    if (s_menu_nav_depth <= 1) return false;
+
+    menu_item_id_t leaving = menu_current_parent();
+    --s_menu_nav_depth;
+    s_menu_sel = editor_menu_index_for_id(menu_current_parent(), leaving);
+    if (s_menu_sel < 0) s_menu_sel = 0;
+    s_menu_sel_prev = -1;
+    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
+    refresh_menu_items();
+    return true;
+}
+
 static void show_menu(void)
 {
     s_menu_open = true;
+    s_menu_nav_depth = 1;
+    s_menu_nav_stack[0] = MENU_ID_ROOT;
     menu_set_selection_id(MENU_ID_SETTINGS);
     /* Defensive reset: every normal exit from the picker / password
      * prompt (Enter or Esc) already clears these, so this is only a
@@ -5054,7 +5146,7 @@ static void show_menu(void)
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     s_kermit_picker_open = false;
 #endif
-    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     /* Sync the staged choice to whatever usb_msc is actually doing
      * right now -- picks up an auto-off that happened while the menu
@@ -6679,7 +6771,7 @@ static void update_kermit_picker_highlight(void)
 static void close_kermit_picker(void)
 {
     s_kermit_picker_open = false;
-    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
     refresh_menu_items();
 }
 
@@ -6757,7 +6849,7 @@ static void close_fmt_picker(void)
 {
     s_fmt_step = FMT_STEP_NONE;
     memset(s_fmt_pass, 0, sizeof(s_fmt_pass));
-    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
     refresh_menu_items();
 }
 
@@ -6940,10 +7032,20 @@ static void start_project_sync(void)
 static void menu_activate_item(menu_item_id_t id)
 {
     switch (id) {
+    case MENU_ID_CONNECTIVITY:
+    case MENU_ID_BLUETOOTH:
+    case MENU_ID_WIFI:
+    case MENU_ID_WRITING:
+    case MENU_ID_STORAGE:
+    case MENU_ID_SYSTEM:
+        menu_enter_submenu(id);
+        break;
     case MENU_ID_SETTINGS:
         show_settings();
         break;
     case MENU_ID_BLE_STATUS: /* no action */
+        break;
+    case MENU_ID_WIFI_STATUS: /* no action */
         break;
     case MENU_ID_BLE_SCAN:
         /* BLE may be idle (disabled) when another keyboard owns input
@@ -7017,6 +7119,9 @@ static void menu_activate_item(menu_item_id_t id)
         kb_layout_next();
         refresh_menu_items();
         break;
+    case MENU_ID_PROJECT_INFO:
+        menu_show_project_info();
+        break;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     case MENU_ID_USB_MSC:
         if (usbmsc_item_disabled()) {
@@ -7068,9 +7173,55 @@ static void menu_activate_item(menu_item_id_t id)
     case MENU_ID_CLOSE:
         close_menu();
         break;
+    case MENU_ID_ROOT:
+    case MENU_ID_INVALID:
     default:
         break;
     }
+}
+
+static void menu_activate_index(int idx)
+{
+    menu_activate_item(menu_id_for_index(idx));
+}
+
+static bool menu_reveal_item(menu_item_id_t id)
+{
+    menu_item_id_t path[4];
+    int path_len = 0;
+    menu_item_id_t parent = editor_menu_parent_for_id(id);
+    if (parent == MENU_ID_INVALID) return false;
+
+    while (parent != MENU_ID_ROOT) {
+        if (path_len >= (int)(sizeof(path) / sizeof(path[0]))) return false;
+        path[path_len++] = parent;
+        parent = editor_menu_parent_for_id(parent);
+        if (parent == MENU_ID_INVALID) return false;
+    }
+
+    s_menu_nav_depth = 1;
+    s_menu_nav_stack[0] = MENU_ID_ROOT;
+    while (path_len > 0) {
+        menu_item_id_t next = path[--path_len];
+        if (editor_menu_index_for_id(menu_current_parent(), next) < 0 ||
+            s_menu_nav_depth >= (int)(sizeof(s_menu_nav_stack) /
+                                      sizeof(s_menu_nav_stack[0]))) {
+            s_menu_nav_depth = 1;
+            return false;
+        }
+        s_menu_nav_stack[s_menu_nav_depth++] = next;
+    }
+
+    s_menu_sel = editor_menu_index_for_id(menu_current_parent(), id);
+    if (s_menu_sel < 0) {
+        s_menu_nav_depth = 1;
+        s_menu_sel = 0;
+        return false;
+    }
+    s_menu_sel_prev = -1;
+    if (s_lbl_menu_hdr) lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
+    refresh_menu_items();
+    return true;
 }
 
 static void handle_xfer_picker_key(const kb_event_t *ev);
@@ -7194,9 +7345,12 @@ static void handle_menu_key(const kb_event_t *ev)
         update_menu_highlight();
         break;
     case KB_KEY_ENTER:
-        menu_activate_item(menu_selection_id());
+        menu_activate_index(s_menu_sel);
         break;
     case KB_KEY_ESCAPE:
+        if (menu_back()) break;
+        close_menu();
+        break;
     case KB_KEY_F1:
         close_menu();
         break;
@@ -7211,6 +7365,8 @@ static void handle_menu_key(const kb_event_t *ev)
             char ch = kb_layout_shortcut_char(ev->keycode);
             for (const menu_hotkey_t &h : s_menu_hotkeys) {
                 if (ch != h.key) continue;
+                if (menu_index_for_id(h.id) < 0 && !menu_reveal_item(h.id))
+                    continue;
                 menu_set_selection_id(h.id);
                 update_menu_highlight();
                 if (h.id != MENU_ID_KB_LAYOUT) menu_activate_item(h.id);
@@ -7904,6 +8060,21 @@ static void show_browser_fileinfo(void)
     show_fileinfo_page(origin, text);
 }
 
+static void menu_show_project_info(void)
+{
+    project_name_t project;
+    if (!context_project(project, sizeof(project))) {
+        editor_ui_set_status("No project selected");
+        return;
+    }
+
+    std::string text;
+    build_projectinfo_text(text, help_cols(), project);
+    s_menu_open = false;
+    show_help_page(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER,
+                   "Project information - Esc or Enter to close", text);
+}
+
 static void close_help(void)
 {
     s_help_open = false;
@@ -8240,7 +8411,7 @@ static void close_xfer_picker(void)
 {
     s_xfer_open = false;
     s_menu_open = false;
-    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
     xfer_return();
 }
 
