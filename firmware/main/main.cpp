@@ -68,6 +68,18 @@
 
 static const char *TAG = "Draftling";
 
+/* Press and release one key, as if typed on a keyboard: how the board
+ * buttons (page turn, Esc, F1, ...) drive the editor. */
+[[maybe_unused]] static void inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
 #if defined(CONFIG_DRAFTLING_DEBUG_POWER) || \
     defined(CONFIG_DRAFTLING_CHARGER_WATCHDOG_REASSERT)
 /* esp_timer handle for the periodic charger maintenance task. Created
@@ -1243,11 +1255,60 @@ static void pre_sleep_reterminal_sticky_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
 
-/* Poll period and long-press threshold shared by the H752 side-key
- * handler and the generic wakeup-GPIO handler below. */
+/* Poll period and long-press threshold shared by the board button
+ * pollers below. */
 #define BTN_POLL_PERIOD_MS    30
 #define BTN_LONG_PRESS_MS     2000
 #define BTN_LONG_PRESS_TICKS  (BTN_LONG_PRESS_MS / BTN_POLL_PERIOD_MS)
+
+/* Debounced button sampled every BTN_POLL_PERIOD_MS (active low, the
+ * caller passes the sampled "is pressed"). A change of state counts
+ * after `samples` consecutive samples agree. btn_update() returns
+ * BTN_EV_LONG once when the button has been held for long_ticks samples
+ * (0 = no long press), and BTN_EV_SHORT on a release that came before
+ * that. */
+typedef struct {
+    bool down;
+    int  stable;
+    int  hold;
+    bool long_fired;
+} btn_state_t;
+
+typedef enum { BTN_EV_NONE, BTN_EV_SHORT, BTN_EV_LONG } btn_event_t;
+
+[[maybe_unused]] static btn_event_t btn_update(btn_state_t *b, bool raw_down,
+                                               int samples, int long_ticks)
+{
+    if (raw_down == b->down) {
+        b->stable = 0;
+        if (b->down && long_ticks > 0 && !b->long_fired && ++b->hold >= long_ticks) {
+            b->long_fired = true;
+            return BTN_EV_LONG;
+        }
+        return BTN_EV_NONE;
+    }
+    if (++b->stable < samples) return BTN_EV_NONE;
+    b->stable = 0;
+    b->down = raw_down;
+    bool was_long = b->long_fired;
+    b->hold = 0;
+    b->long_fired = false;
+    return (!b->down && !was_long) ? BTN_EV_SHORT : BTN_EV_NONE;
+}
+
+/* A row of buttons that each inject one key on release (no long
+ * press). */
+typedef struct { int pin; uint8_t keycode; } btn_key_t;
+
+[[maybe_unused]] static void btn_keys_poll(const btn_key_t *keys, btn_state_t *st,
+                                           int n, int samples)
+{
+    for (int i = 0; i < n; i++) {
+        bool raw_down = gpio_get_level((gpio_num_t)keys[i].pin) == 0;
+        if (btn_update(&st[i], raw_down, samples, 0) == BTN_EV_SHORT)
+            inject_key(keys[i].keycode);
+    }
+}
 
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
 /* ---- H752 hardware shortcut keys ----
@@ -1271,20 +1332,9 @@ static void pre_sleep_reterminal_sticky_deinit(void)
  * the editor returns to the file browser (auto-saving, see
  * editor_ui.cpp). */
 
-static void h752_inject_key(uint8_t keycode)
-{
-    ESP_LOGD(TAG, "H752 key inject: keycode=0x%02X", keycode);
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void h752_touch_button_cb(void)
 {
-    h752_inject_key(KB_KEY_ESCAPE);
+    inject_key(KB_KEY_ESCAPE);
 }
 
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
@@ -1293,46 +1343,19 @@ static void h752_touch_button_cb(void)
 static void h752_user_key_poll_cb(void *arg)
 {
     (void)arg;
-    static bool down             = false;
-    static int  stable           = 0;
-    static int  hold_ticks       = 0;
-    static bool long_press_fired = false;
-
+    static btn_state_t st;
     bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
-
-    if (raw_down == down) {
-        /* No state change -- count hold time while button is held */
-        if (down) {
-            hold_ticks++;
-            if (!long_press_fired && hold_ticks >= H752_LONG_PRESS_TICKS) {
-                long_press_fired = true;
-                ESP_LOGI(TAG, "H752 side key: 2 s long press -- "
-                              "forgetting all keyboards (GPIO%d)",
-                         WAKEUP_GPIO_NUM);
-                ble_keyboard_forget_all();
-            }
-        }
-        stable = 0;
-        return;
-    }
-
-    if (++stable < 2) return;
-
-    stable = 0;
-    down = raw_down;
-    ESP_LOGD(TAG, "H752 side key %s (GPIO%d)",
-             down ? "PRESSED" : "released", WAKEUP_GPIO_NUM);
-
-    if (down) {
-        hold_ticks       = 0;
-        long_press_fired = false;
-    } else {
-        /* Released: inject F1 only for a short press (< 2 s). */
-        if (!long_press_fired) {
-            h752_inject_key(KB_KEY_F1);
-        }
-        hold_ticks       = 0;
-        long_press_fired = false;
+    switch (btn_update(&st, raw_down, 2, H752_LONG_PRESS_TICKS)) {
+    case BTN_EV_LONG:
+        ESP_LOGI(TAG, "H752 side key: 2 s long press -- "
+                      "forgetting all keyboards (GPIO%d)", WAKEUP_GPIO_NUM);
+        ble_keyboard_forget_all();
+        break;
+    case BTN_EV_SHORT:
+        inject_key(KB_KEY_F1);     /* on release, short press only */
+        break;
+    default:
+        break;
     }
 }
 
@@ -1367,40 +1390,16 @@ static void h752_user_key_init(void)
  * keeps using the generic wakeup_btn_init() path below unchanged
  * (deep-sleep wake source + 2 s hold to forget BLE keyboards). */
 
-static void xteink_x4_pro_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void xteink_x4_pro_btn_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+    /* Inject on release, matching the H752 side-key convention. */
+    static const btn_key_t kButtons[] = {
         { BTN_LEFT_PIN,  KB_KEY_PAGEUP },
         { BTN_RIGHT_PIN, KB_KEY_PAGEDOWN },
     };
-    static bool down[2]   = { false, false };
-    static int  stable[2] = { 0, 0 };
-
-    for (int i = 0; i < 2; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            continue;
-        }
-        if (++stable[i] < 2) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i]) {
-            /* Inject on release, matching the H752 side-key convention. */
-            xteink_x4_pro_inject_key(kButtons[i].keycode);
-        }
-    }
+    static btn_state_t st[2];
+    btn_keys_poll(kButtons, st, 2, 2);
 }
 
 static void xteink_x4_pro_btn_init(void)
@@ -1444,62 +1443,30 @@ static void xteink_x4_pro_btn_init(void)
 #define XTEINK_X4C_DEBOUNCE_SAMPLES 5
 #define XTEINK_X4C_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
-static void xteink_x4_classic_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void xteink_x4_classic_power_key_poll_cb(void *arg)
 {
     (void)arg;
-    static bool down             = false;
-    static int  stable           = 0;
-    static int  hold_ticks       = 0;
-    static bool long_press_fired = false;
-
+    static btn_state_t st;
     bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
-
-    if (raw_down == down) {
-        if (down) {
-            hold_ticks++;
-            if (!long_press_fired && hold_ticks >= XTEINK_X4C_LONG_PRESS_TICKS) {
-                long_press_fired = true;
-                ESP_LOGI(TAG, "X4 Classic Power button: 2 s long press -- "
-                              "forgetting all keyboards (GPIO%d)",
-                         WAKEUP_GPIO_NUM);
-                ble_keyboard_forget_all();
-            }
-        }
-        stable = 0;
-        return;
-    }
-
-    if (++stable < XTEINK_X4C_DEBOUNCE_SAMPLES) return;
-
-    stable = 0;
-    down = raw_down;
-
-    if (down) {
-        hold_ticks       = 0;
-        long_press_fired = false;
-    } else {
-        if (!long_press_fired) {
-            xteink_x4_classic_inject_key(KB_KEY_F1);
-        }
-        hold_ticks       = 0;
-        long_press_fired = false;
+    switch (btn_update(&st, raw_down, XTEINK_X4C_DEBOUNCE_SAMPLES,
+                       XTEINK_X4C_LONG_PRESS_TICKS)) {
+    case BTN_EV_LONG:
+        ESP_LOGI(TAG, "X4 Classic Power button: 2 s long press -- "
+                      "forgetting all keyboards (GPIO%d)", WAKEUP_GPIO_NUM);
+        ble_keyboard_forget_all();
+        break;
+    case BTN_EV_SHORT:
+        inject_key(KB_KEY_F1);
+        break;
+    default:
+        break;
     }
 }
 
 static void xteink_x4_classic_nav_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+    static const btn_key_t kButtons[] = {
         { BTN_LEFT_PIN,         KB_KEY_UP },
         { BTN_RIGHT_PIN,        KB_KEY_DOWN },
         { BTN_BOTTOM_LEFT_PIN,  KB_KEY_LEFT },
@@ -1507,22 +1474,8 @@ static void xteink_x4_classic_nav_poll_cb(void *arg)
         { BTN_CONFIRM_PIN,      KB_KEY_ENTER },
         { BTN_BACK_PIN,         KB_KEY_ESCAPE },
     };
-    static bool down[6]   = { false, false, false, false, false, false };
-    static int  stable[6] = { 0, 0, 0, 0, 0, 0 };
-
-    for (int i = 0; i < 6; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            continue;
-        }
-        if (++stable[i] < XTEINK_X4C_DEBOUNCE_SAMPLES) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i]) {
-            xteink_x4_classic_inject_key(kButtons[i].keycode);
-        }
-    }
+    static btn_state_t st[6];
+    btn_keys_poll(kButtons, st, 6, XTEINK_X4C_DEBOUNCE_SAMPLES);
 }
 
 static void xteink_x4_classic_btn_init(void)
@@ -1599,58 +1552,26 @@ static void xteink_x4_classic_btn_init(void)
  * well under normal human button-press duration. */
 #define CROWPANEL_DEBOUNCE_SAMPLES 5
 
-static void crowpanel_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
 #define CROWPANEL_MENU_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
 static void crowpanel_menu_key_poll_cb(void *arg)
 {
     (void)arg;
-    static bool down             = false;
-    static int  stable           = 0;
-    static int  hold_ticks       = 0;
-    static bool long_press_fired = false;
-
+    static btn_state_t st;
     bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
-
-    if (raw_down == down) {
-        if (down) {
-            hold_ticks++;
-            if (!long_press_fired && hold_ticks >= CROWPANEL_MENU_LONG_PRESS_TICKS) {
-                long_press_fired = true;
-                ESP_LOGI(TAG, "CrowPanel Menu button: 2 s long press -- "
-                              "forgetting all keyboards (GPIO%d)",
-                         WAKEUP_GPIO_NUM);
-                ble_keyboard_forget_all();
-            }
-        }
-        stable = 0;
-        return;
-    }
-
-    if (++stable < CROWPANEL_DEBOUNCE_SAMPLES) return;
-
-    stable = 0;
-    down = raw_down;
-
-    if (down) {
-        hold_ticks       = 0;
-        long_press_fired = false;
-    } else {
-        if (!long_press_fired) {
-            crowpanel_inject_key(KB_KEY_F1);
-        }
-        hold_ticks       = 0;
-        long_press_fired = false;
+    switch (btn_update(&st, raw_down, CROWPANEL_DEBOUNCE_SAMPLES,
+                       CROWPANEL_MENU_LONG_PRESS_TICKS)) {
+    case BTN_EV_LONG:
+        ESP_LOGI(TAG, "CrowPanel Menu button: 2 s long press -- "
+                      "forgetting all keyboards (GPIO%d)", WAKEUP_GPIO_NUM);
+        ble_keyboard_forget_all();
+        break;
+    case BTN_EV_SHORT:
+        inject_key(KB_KEY_F1);
+        break;
+    default:
+        break;
     }
 }
 
@@ -1676,28 +1597,14 @@ static void crowpanel_menu_key_init(void)
 static void crowpanel_nav_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+    static const btn_key_t kButtons[] = {
         { BTN_BACK_PIN,      KB_KEY_ESCAPE },
         { BTN_DIAL_UP_PIN,   KB_KEY_UP },
         { BTN_DIAL_DOWN_PIN, KB_KEY_DOWN },
         { BTN_DIAL_OK_PIN,   KB_KEY_ENTER },
     };
-    static bool down[4]   = { false, false, false, false };
-    static int  stable[4] = { 0, 0, 0, 0 };
-
-    for (int i = 0; i < 4; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            continue;
-        }
-        if (++stable[i] < CROWPANEL_DEBOUNCE_SAMPLES) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i]) {
-            crowpanel_inject_key(kButtons[i].keycode);
-        }
-    }
+    static btn_state_t st[4];
+    btn_keys_poll(kButtons, st, 4, CROWPANEL_DEBOUNCE_SAMPLES);
 }
 
 static void crowpanel_nav_init(void)
@@ -1733,40 +1640,16 @@ static void crowpanel_nav_init(void)
  * CrowPanel 5.79"'s Back/dial-switch convention above. All three are
  * polled at BTN_POLL_PERIOD_MS and injected on release. */
 
-static void ws_epaper397_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void ws_epaper397_nav_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+    static const btn_key_t kButtons[] = {
         { BTN_UP_PIN,       KB_KEY_UP },
         { BTN_DOWN_PIN,     KB_KEY_DOWN },
         { BTN_FUNCTION_PIN, KB_KEY_ENTER },
     };
-    static bool down[3]   = { false, false, false };
-    static int  stable[3] = { 0, 0, 0 };
-
-    for (int i = 0; i < 3; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            continue;
-        }
-        if (++stable[i] < 2) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i]) {
-            ws_epaper397_inject_key(kButtons[i].keycode);
-        }
-    }
+    static btn_state_t st[3];
+    btn_keys_poll(kButtons, st, 3, 2);
 }
 
 static void ws_epaper397_nav_init(void)
@@ -1900,40 +1783,16 @@ static void korvo_btn_init(void)
  * below unchanged (deep-sleep wake source, short press = sleep, 2 s
  * hold = forget BLE keyboards). */
 
-static void reterminal_sticky_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void reterminal_sticky_btn_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
+    /* Inject on release, matching the Xteink X4 Pro convention. */
+    static const btn_key_t kButtons[] = {
         { BTN_UP_PIN,   KB_KEY_PAGEUP },
         { BTN_DOWN_PIN, KB_KEY_PAGEDOWN },
     };
-    static bool down[2]   = { false, false };
-    static int  stable[2] = { 0, 0 };
-
-    for (int i = 0; i < 2; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            continue;
-        }
-        if (++stable[i] < 2) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i]) {
-            /* Inject on release, matching the Xteink X4 Pro convention. */
-            reterminal_sticky_inject_key(kButtons[i].keycode);
-        }
-    }
+    static btn_state_t st[2];
+    btn_keys_poll(kButtons, st, 2, 2);
 }
 
 static void reterminal_sticky_btn_init(void)
@@ -1967,41 +1826,18 @@ static void reterminal_sticky_btn_init(void)
  * wakeup_btn_poll_cb(), and B enters deep sleep through
  * sleep_button_poll_cb() (CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO). */
 
-static void papermono_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void papermono_btn_poll_cb(void *arg)
 {
     (void)arg;
-    static const struct { int pin; uint8_t keycode; } kButtons[] = {
-        { BTN_A_PIN, KB_KEY_PAGEUP },
-        { BTN_B_PIN, KB_KEY_PAGEDOWN },
-    };
-    static bool down[2]       = { false, false };
-    static int  stable[2]     = { 0, 0 };
-    static int  hold_ticks[2] = { 0, 0 };
-
+    /* Page Up / Down on a short press; a 2 s hold is the wake / sleep
+     * pollers' business, so it injects nothing here. */
+    static const int kPins[2] = { BTN_A_PIN, BTN_B_PIN };
+    static const uint8_t kKeys[2] = { KB_KEY_PAGEUP, KB_KEY_PAGEDOWN };
+    static btn_state_t st[2];
     for (int i = 0; i < 2; i++) {
-        bool raw_down = gpio_get_level((gpio_num_t)kButtons[i].pin) == 0;
-        if (raw_down == down[i]) {
-            stable[i] = 0;
-            if (down[i] && hold_ticks[i] < BTN_LONG_PRESS_TICKS) hold_ticks[i]++;
-            continue;
-        }
-        if (++stable[i] < 2) continue;
-        stable[i] = 0;
-        down[i] = raw_down;
-        if (!down[i] && hold_ticks[i] < BTN_LONG_PRESS_TICKS) {
-            papermono_inject_key(kButtons[i].keycode);
-        }
-        hold_ticks[i] = 0;
+        bool raw_down = gpio_get_level((gpio_num_t)kPins[i]) == 0;
+        if (btn_update(&st[i], raw_down, 2, BTN_LONG_PRESS_TICKS) == BTN_EV_SHORT)
+            inject_key(kKeys[i]);
     }
 }
 
@@ -2050,62 +1886,42 @@ static void papermono_btn_init(void)
 static void wakeup_btn_poll_cb(void *arg)
 {
     (void)arg;
-    gpio_num_t wake_gpio = (gpio_num_t)WAKEUP_GPIO_NUM;
-    static bool down             = false;
-    static int  stable           = 0;
-    static int  hold_ticks       = 0;
-    static bool long_press_fired = false;
-
-    bool raw_down = gpio_get_level(wake_gpio) == 0;
-    if (raw_down == down) {
-        stable = 0;
-        if (down && !long_press_fired) {
-            if (++hold_ticks >= BTN_LONG_PRESS_TICKS) {
-                long_press_fired = true;
-                ESP_LOGI(TAG, "Wakeup button held %d ms -- forgetting all BLE bonds",
-                         BTN_LONG_PRESS_MS);
-                ble_keyboard_forget_all();
-            }
-        }
-        return;
+    static btn_state_t st;
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+    btn_event_t ev = btn_update(&st, raw_down, 2, BTN_LONG_PRESS_TICKS);
+    if (ev == BTN_EV_LONG) {
+        ESP_LOGI(TAG, "Wakeup button held %d ms -- forgetting all BLE bonds",
+                 BTN_LONG_PRESS_MS);
+        ble_keyboard_forget_all();
     }
-
-    if (++stable < 2) return;
-
-    stable = 0;
-    down = raw_down;
-    if (!down) {
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO) || \
     defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
-        /* Unlike the shared BOOT-as-wake convention on every other
-         * board, this button is silkscreened "Power" (or, on the
-         * Seeed reTerminal Sticky, "Power/AI"). On the X4 Pro there
-         * is no hardware latch this firmware uses to physically cut
-         * power (XTEINK_POWER_LATCH_PIN only gates peripheral rails),
-         * so deep sleep IS that board's power-off; on the Sticky the
-         * pre-sleep hook releases PWR_HOLD / PWR_LOCK, a real
-         * power-off on battery. A
-         * short press (release before the 2 s hold below) triggers it
-         * instead of waiting for the inactivity timeout, matching what
-         * a button labeled Power should do -- through the editor, like
-         * Ctrl+P, so unsaved changes get the Save / Discard / Cancel
-         * prompt first (editor_ui_request_sleep()). The 2 s hold still
-         * forgets BLE keyboards; long_press_fired keeps the two
-         * mutually exclusive.
-         *
-         * On the reTerminal Sticky this deliberately does not match
-         * the vendor firmware's own convention for this button
-         * (FreeInk: "click confirms, hold sleeps") -- see
-         * main/boards/seeed_reterminal_sticky.h for why Draftling
-         * reuses the X4 Pro convention instead. */
-        if (!long_press_fired) {
-            ESP_LOGI(TAG, "Power button released -- requesting deep sleep");
-            editor_ui_request_sleep();
-        }
-#endif
-        hold_ticks       = 0;
-        long_press_fired = false;
+    /* Unlike the shared BOOT-as-wake convention on every other
+     * board, this button is silkscreened "Power" (or, on the
+     * Seeed reTerminal Sticky, "Power/AI"). On the X4 Pro there
+     * is no hardware latch this firmware uses to physically cut
+     * power (XTEINK_POWER_LATCH_PIN only gates peripheral rails),
+     * so deep sleep IS that board's power-off; on the Sticky the
+     * pre-sleep hook releases PWR_HOLD / PWR_LOCK, a real
+     * power-off on battery. A
+     * short press (release before the 2 s hold) triggers it
+     * instead of waiting for the inactivity timeout, matching what
+     * a button labeled Power should do -- through the editor, like
+     * Ctrl+P, so unsaved changes get the Save / Discard / Cancel
+     * prompt first (editor_ui_request_sleep()). The 2 s hold still
+     * forgets BLE keyboards; btn_update() reports a press as one or
+     * the other, never both.
+     *
+     * On the reTerminal Sticky this deliberately does not match
+     * the vendor firmware's own convention for this button
+     * (FreeInk: "click confirms, hold sleeps") -- see
+     * main/boards/seeed_reterminal_sticky.h for why Draftling
+     * reuses the X4 Pro convention instead. */
+    if (ev == BTN_EV_SHORT) {
+        ESP_LOGI(TAG, "Power button released -- requesting deep sleep");
+        editor_ui_request_sleep();
     }
+#endif
 }
 
 static void wakeup_btn_init(void)
@@ -2157,38 +1973,13 @@ static void wakeup_btn_init(void)
 static void sleep_button_poll_cb(void *arg)
 {
     (void)arg;
-    static bool down             = false;
-    static int  stable           = 0;
-    static int  hold_ticks       = 0;
-    static bool long_press_fired = false;
-
+    static btn_state_t st;
     bool raw_down = gpio_get_level((gpio_num_t)CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO) == 0;
-
-    if (raw_down == down) {
-        if (down) {
-            hold_ticks++;
-            if (!long_press_fired && hold_ticks >= SLEEP_BUTTON_LONG_PRESS_TICKS) {
-                long_press_fired = true;
-                ESP_LOGI(TAG, "Sleep button: 2 s long press -- "
-                              "entering deep sleep (GPIO%d)",
-                         CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO);
-                standby_enter_sleep();
-                /* Does not return (EPD/deep-sleep boards). */
-            }
-        }
-        stable = 0;
-        return;
-    }
-
-    if (++stable < 2) return;
-
-    stable = 0;
-    down = raw_down;
-    if (down) {
-        hold_ticks       = 0;
-        long_press_fired = false;
-    } else {
-        long_press_fired = false;
+    if (btn_update(&st, raw_down, 2, SLEEP_BUTTON_LONG_PRESS_TICKS) == BTN_EV_LONG) {
+        ESP_LOGI(TAG, "Sleep button: 2 s long press -- "
+                      "entering deep sleep (GPIO%d)", CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO);
+        standby_enter_sleep();
+        /* Does not return (EPD/deep-sleep boards). */
     }
 }
 
@@ -2456,6 +2247,11 @@ extern "C" void app_main(void)
      * further 180 degrees on top of whatever display_orientation_init()
      * above just produced. */
     display_flip_init();
+
+    /* Load the "2x scale" setting (Settings -> 2x scale; off on a fresh
+     * install) before the LVGL canvas and the touchscreen frame are
+     * sized from DISPLAY_SCALE below. */
+    display_scale_init();
 
 #if defined(BOARD_WS2812_PIN)
     ws2812_off();
@@ -3100,10 +2896,12 @@ extern "C" void app_main(void)
      * CONFIG_DRAFTLING_DISPLAY_HIDPI.)
      *
      * DISPLAY_ROTATE_EFFECTIVE folds in the "Display orientation"
-     * setting: portrait = the board's base rotation + 90. */
+     * setting: portrait = the board's base rotation + 90.
+     * DISPLAY_SCALE is the "2x scale" setting: with it on, LVGL renders
+     * a half-size canvas that the port draws 2x2 per pixel. */
     ESP_LOGI(TAG, "Initializing LVGL...");
     draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT,
-                             DISPLAY_ROTATE_EFFECTIVE);
+                             DISPLAY_ROTATE_EFFECTIVE, DISPLAY_SCALE);
 
     /* Initialize battery voltage monitor before the UI so the editor
      * status bar can show the battery level immediately. battery_init
@@ -3809,8 +3607,10 @@ extern "C" void app_main(void)
          * to roughly 1/4 down from the top instead of the centre).
          * Pass user_rotate_deg=0 so the rotation happens exactly
          * once, inside LVGL. */
-        tcfg.logical_width  = DISPLAY_LOGICAL_WIDTH;
-        tcfg.logical_height = DISPLAY_LOGICAL_HEIGHT;
+        /* With the 2x scale on, the LVGL canvas is half the panel in
+         * each direction, so touch points are reported in that frame. */
+        tcfg.logical_width  = DISPLAY_LOGICAL_WIDTH  / DISPLAY_SCALE;
+        tcfg.logical_height = DISPLAY_LOGICAL_HEIGHT / DISPLAY_SCALE;
         tcfg.swap_xy  = TOUCH_SWAP_XY  ? true : false;
         tcfg.mirror_x = TOUCH_MIRROR_X ? true : false;
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;

@@ -68,6 +68,7 @@
 #include <driver/gpio.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 #include "lvgl_port.h"
 
@@ -114,7 +115,6 @@ static const char *TAG = "DisplayEPDIY";
 #if defined(EPDIY_BL_PIN)
 #define EPDIY_HAS_BACKLIGHT 1
 #define BL_LEDC_TIMER       LEDC_TIMER_0
-#define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 10) - 1)
@@ -132,33 +132,15 @@ static void backlight_pwm_init(int bl_pin)
      * sleep. The latch survives the wake reset on ESP32-S3 and
      * keeps the pad clamped LOW regardless of any GPIO matrix /
      * LEDC routing we configure here, which is why the front-light
-     * stays dark after wake. Release the per-pin hold (no-op on a
-     * genuine cold boot) so ledc_channel_config below can drive
-     * the pin. */
-    gpio_hold_dis((gpio_num_t)bl_pin);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
-    t.clk_cfg         = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = bl_pin;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
-    /* Start in the OFF state (matches the LilyGO factory firmware
+     * stays dark after wake. bl_ledc_setup() releases the per-pin
+     * hold (no-op on a genuine cold boot) so LEDC can drive the pin.
+     *
+     * Start in the OFF state (matches the LilyGO factory firmware
      * which pulls BOARD_BL_EN low at boot). The editor restores
      * the persisted brightness from NVS via display_set_backlight()
      * once it has loaded the user setting. */
-    c.duty       = 0;
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
-
+    bl_ledc_setup(bl_pin, BL_LEDC_TIMER, BL_LEDC_CHANNEL, BL_LEDC_DUTY_RES,
+                  BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
 }
 #endif  /* EPDIY_BL_PIN */
@@ -177,12 +159,6 @@ static uint8_t            *s_fb     = nullptr;  /* shortcut: epd_hl_get_framebuf
 static int                 s_width  = 0;        /* panel pixels */
 static int                 s_height = 0;        /* panel pixels */
 static bool                s_initialized = false;
-
-/* Logical-to-panel scale (every logical LVGL pixel is rendered as a
- * SCALE x SCALE block of panel pixels). */
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define EPDIY_SCALE 1
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define EPDIY_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
@@ -409,11 +385,8 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
 #endif
 
     ESP_LOGI(TAG, "epdiy display initialized "
-                  "(%dx%d panel, scale=%d -> %dx%d logical), full refresh "
-                  "every %d partials",
-             s_width, s_height, EPDIY_SCALE,
-             s_width / EPDIY_SCALE, s_height / EPDIY_SCALE,
-             EPDIY_FULL_REFRESH_INTERVAL);
+                  "(%dx%d panel), full refresh every %d partials",
+             s_width, s_height, EPDIY_FULL_REFRESH_INTERVAL);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -430,13 +403,11 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     if (!s_initialized) return;
     /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
      * the left/top margin into the full physical panel (same
-     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp),
-     * then expand to a SCALE x SCALE block of panel pixels. */
-    int px = ((int)x + display_margin_left()) * EPDIY_SCALE;
-    int py = ((int)y + display_margin_top())  * EPDIY_SCALE;
-    fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE,
-                    (color != 0) ? 0x0F : 0x00);
-    mark_dirty_rect(px, py, EPDIY_SCALE, EPDIY_SCALE);
+     * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    fill_panel_rect(px, py, 1, 1, (color != 0) ? 0x0F : 0x00);
+    mark_dirty_rect(px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h,
@@ -449,23 +420,13 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     int ox = x + display_margin_left();
     int oy = y + display_margin_top();
 
-    /* Per-logical-pixel: write a SCALE x SCALE block into the
-     * grayscale framebuffer. */
     for (int sy = 0; sy < h; sy++) {
         for (int sx = 0; sx < w; sx++) {
-            uint16_t v = src[(size_t)sy * w + sx];
-            uint8_t g = rgb565_to_gray4(v);
-            int px = (ox + sx) * EPDIY_SCALE;
-            int py = (oy + sy) * EPDIY_SCALE;
-            fill_panel_rect(px, py, EPDIY_SCALE, EPDIY_SCALE, g);
+            uint8_t g = rgb565_to_gray4(src[(size_t)sy * w + sx]);
+            fill_panel_rect(ox + sx, oy + sy, 1, 1, g);
         }
     }
-
-    int dx = ox * EPDIY_SCALE;
-    int dy = oy * EPDIY_SCALE;
-    int dw = w * EPDIY_SCALE;
-    int dh = h * EPDIY_SCALE;
-    mark_dirty_rect(dx, dy, dw, dh);
+    mark_dirty_rect(ox, oy, w, h);
     return true;
 }
 
@@ -613,26 +574,11 @@ extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
      * refresh region. */
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    /* No external 1-bpp framebuffer; epdiy owns the 4-bpp one. */
-    return nullptr;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return 0;
-}
-
 extern "C" void display_set_backlight(int percent)
 {
 #if defined(EPDIY_HAS_BACKLIGHT)
-    if (percent < 0)   percent = 0;
-    if (percent > 100) percent = 100;
     if (!s_bl_inited) return;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX));
 #else
     (void)percent;
     /* This epdiy board variant has no controllable front-light. */
@@ -659,8 +605,7 @@ extern "C" void display_deep_sleep_prepare(void)
      * up to the post-wake display_init() to re-initialize the
      * channel from scratch. */
     if (s_bl_inited) {
-        ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
-        ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);
+        bl_ledc_write(BL_LEDC_CHANNEL, 0);
     }
     /* Setting LEDC duty to 0 stops switching, but the LEDC peripheral
      * is powered down by the digital domain in deep sleep, which

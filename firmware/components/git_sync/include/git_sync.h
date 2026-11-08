@@ -52,7 +52,6 @@ bool git_sync_get_remote(const char *project_dir, char *host, size_t host_sz,
 /* Folder of the project the running (or last) sync works on. */
 const char *git_sync_get_project_dir(void);
 const char *git_sync_get_last_error(void);
-const char *git_sync_get_last_sync_time(void);
 
 /* Whether a file in the sync directory is safely stored on the Git
  * server, i.e. could be deleted locally without losing anything.

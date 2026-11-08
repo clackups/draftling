@@ -8,6 +8,77 @@ in the git log.
 
 ### Added
 
+- **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
+  (large view)"): draws every screen pixel as a 2x2 block, so text,
+  menus and dialogs are twice as large (with a quarter of the content
+  on screen). Applied on the next restart, which is offered when you
+  leave the Settings screen.
+
+### Fixed
+
+- **Git sync in repositories with many branches or tags**: the device
+  only looked at the first 32 branches and tags the server listed, so
+  in a larger repository it could fail to find its own branch and
+  then refuse to push or skip the server's changes.
+- **Git sync no longer copies non-document files onto the SD card**:
+  files in the repository other than `.md`, `.fountain` and `.txt`
+  documents (images, a `git.cfg` someone committed, ...) were written
+  into the project folder, where a committed `git.cfg` replaced the
+  device's own Git settings.
+- **Git sync reports files it cannot write**: when a file from the
+  server could not be written to the SD card (for example a full
+  card), the sync still said it was complete, and the next sync then
+  committed the old file over the server's version. It now stops with
+  "Cannot write files to the SD card" and tries again next time.
+  Documents the card cannot hold at all (a name with `:` or `?`, a
+  symbolic link) are left in the repository untouched; the sync
+  message says how many were not copied to the card.
+- **Projects with many files**: only the first 128 entries of a
+  project folder were looked at (in no particular order), so Git sync
+  committed the rest as deleted, project deletion could miss unpushed
+  files, and the file browser showed at most 64 files or projects. All
+  of them now see every file.
+- **Move / copy to project with many projects**: the Alt+M / Alt+C
+  project picker (and the one for files outside projects) listed only
+  the first 32 projects.
+- **Git sync keeps the repository's other files**: a sync commit
+  replaced the whole synced folder of the repository with the
+  documents on the card, deleting sub-folders, images, `.gitignore`
+  and any other file there (with no `path=` set: in the whole
+  repository). Only documents are changed now; everything else stays.
+- **First Git sync no longer deletes documents already on the card**:
+  when a project with documents was synced for the first time with a
+  repository that already had commits, the server's files were written
+  over the card: documents the server did not have were deleted and
+  documents with the same name overwritten, and neither had been
+  saved in Git. Now both are kept: a document only on the card is
+  added to the repository, and one on both sides is merged (with
+  conflict markers where they differ).
+- **A document saved at the moment the power went off is recovered**:
+  saving replaces the old file in two steps, and a power loss between
+  them left the new contents only in a hidden temporary file, so the
+  document seemed gone. It is now put back the next time the card is
+  mounted.
+- **Sync via browser no longer passes off a damaged download as
+  complete**: when a file could not be read from the SD card part-way
+  through, the computer received a cut-off copy as if it were the whole
+  file. The transfer is now aborted with "SD card read error".
+- **Pasting over a selection in a nearly full document**: when the
+  pasted text did not fit, the selected text was deleted anyway. The
+  paste is now refused and the selection kept.
+- **WiFi network list stuck on "Scanning..."**: on e-paper boards the
+  scan result could be dropped while the screen was refreshing,
+  leaving the list waiting forever (likewise the Draftbox prompt
+  waiting for WiFi). The result is now always shown.
+- **No more restarts on a screen bus error**: on boards with an
+  ST77922, NV3041A or AXS15231B screen, a transient error while
+  updating the screen or changing the brightness restarted the device,
+  losing unsaved text. It is now logged and the next update repaints.
+
+## [1.0.23] - 2026-11-07
+
+### Added
+
 - **M5Stack Tab5: C6 firmware version on the hardware information
   page**: F1 -> Hardware information now has a "Radio co-processor"
   section with the esp-hosted firmware version of the ESP32-C6 that

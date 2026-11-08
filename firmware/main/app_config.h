@@ -4,6 +4,7 @@
 #include "display_margins.h"
 #include "display_orientation.h"
 #include "display_flip.h"
+#include "display_scale.h"
 
 /* Display dimensions (derived from Kconfig hardware model selection) */
 #define DISPLAY_WIDTH   CONFIG_DRAFTLING_DISPLAY_WIDTH
@@ -45,6 +46,13 @@
  * CONFIG_DRAFTLING_DISPLAY_HIDPI.) */
 #define DISPLAY_LOGICAL_WIDTH  (DISPLAY_WIDTH  - display_margin_left() - display_margin_right())
 #define DISPLAY_LOGICAL_HEIGHT (DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())
+
+/* "2x scale" setting (F1 -> Settings, restart to apply; display_scale.h):
+ * 1, or 2 when every LVGL pixel is drawn as a 2x2 block. The LVGL
+ * canvas -- and the touchscreen's logical frame -- is then
+ * DISPLAY_LOGICAL_WIDTH / HEIGHT divided by this. display_scale_init()
+ * must have run first (main.cpp calls it after display_flip_init()). */
+#define DISPLAY_SCALE          (display_scale_factor())
 
 /* SD Card mount point (shared across all hardware models) */
 #define SD_MOUNT_POINT  "/sdcard"

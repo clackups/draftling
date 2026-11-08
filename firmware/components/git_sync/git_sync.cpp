@@ -61,6 +61,7 @@ typedef struct {
     char author_email[96];
     char local_path[160];      /* project folder, e.g. "/sdcard/MyDrafts" */
     bool configured;
+    bool bad_branch;           /* branch= is not a valid branch name */
 } git_cfg_t;
 
 /* Configuration of the project being synced. Written only by
@@ -71,7 +72,6 @@ static git_cfg_t s_cfg;
 static git_sync_state_t    s_state    = GIT_SYNC_IDLE;
 static git_sync_callback_t s_callback = NULL;
 static char s_last_error[128] = "";
-static char s_last_sync[32]   = "";
 
 static bool s_time_synced = false;
 
@@ -80,6 +80,12 @@ static bool s_time_synced = false;
 #define GIT_SYNC_STACK_SIZE (24 * 1024)
 static StackType_t *s_stack_buf = NULL;
 static StaticTask_t s_task_tcb;
+/* One long-lived worker runs every sync: its static stack and TCB are
+ * never handed to a second task while the first is still winding
+ * down (a self-deleted static task stays on FreeRTOS' termination list
+ * until the idle task gets to it). */
+static TaskHandle_t s_worker = NULL;
+static volatile git_sync_direction_t s_req_dir = GIT_SYNC_BOTH;
 
 /* ---- helpers ----------------------------------------------------- */
 
@@ -200,8 +206,6 @@ static void iso_now(char *out, size_t outsz)
 
 /* ---- working tree <-> flat tree -------------------------------- */
 
-#define WT_MAX_FILES 128
-
 /* A working-tree document: Markdown ("*.md"), a Fountain screenplay
  * ("*.fountain") or plain text ("*.txt"). Hidden files (the editor's ".<name>.meta" sidecars)
  * are never synced. */
@@ -219,6 +223,29 @@ static bool is_doc(const char *name)
             has_suffix(name, l, ".txt"));
 }
 
+/* A name the SD card's FAT file system can store: none of
+ * \ / : * ? " < > |, no control character, no trailing dot or space. */
+static bool fat_name_ok(const char *name)
+{
+    size_t l = strlen(name);
+    if (l == 0 || name[l - 1] == '.' || name[l - 1] == ' ') return false;
+    for (const char *p = name; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || strchr("\\/:*?\"<>|", c)) return false;
+    }
+    return true;
+}
+
+/* A tree entry the sync keeps in step with the card: a plain file
+ * (not a folder, symlink or submodule) that is a document and whose
+ * name the card can store. Every other entry stays in Git untouched:
+ * never written to the card, never removed from the tree. */
+static bool synced_entry(const git_tree_entry *e)
+{
+    uint32_t type = e->mode & 0170000;
+    return type == 0100000 && is_doc(e->name) && fat_name_ok(e->name);
+}
+
 /* "<dir>/<name>" without tripping -Wformat-truncation. */
 static void joinp(char *out, size_t osz, const char *dir, const char *name)
 {
@@ -227,22 +254,38 @@ static void joinp(char *out, size_t osz, const char *dir, const char *name)
     strlcat(out, name, osz);
 }
 
-/* Build a flat tree object from the document files in the working dir.
- * Returns the tree oid (zero-cleared when there are no files). */
-static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
+/* Whether the working dir holds any document. */
+static esp_err_t worktree_has_docs(bool *out)
+{
+    *out = false;
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t ret = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (ret != ESP_OK) return ret;
+    for (int i = 0; i < count && !*out; i++)
+        if (!entries[i].is_dir && is_doc(entries[i].name)) *out = true;
+    sd_card_free_list(entries);
+    return ESP_OK;
+}
+
+/* Build the synced sub-tree from the document files in the working
+ * dir. Only documents are synced, so everything else in base (the
+ * current sub-tree: folders, images, README files...) is kept as it
+ * is; its documents are replaced by the ones on the card. Returns the
+ * tree oid (zero-cleared when the tree ends up empty). */
+static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *out_nfiles)
 {
     git_oid_clear(out);
     *out_nfiles = 0;
 
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (!entries) return ESP_ERR_NO_MEM;
-
-    int count = sd_card_list_dir(s_cfg.local_path, entries, WT_MAX_FILES);
-    if (count < 0) { heap_caps_free(entries); return ESP_FAIL; }
-
     git_tree t = {};
-    esp_err_t ret = ESP_OK;
+    esp_err_t ret = git_tree_load(base, &t);    /* zero oid = empty tree */
+    if (ret != ESP_OK) return ret;
+
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t lr = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (lr != ESP_OK) { git_tree_free(&t); return lr; }
     for (int i = 0; i < count; i++) {
         if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
 
@@ -253,10 +296,24 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
         if (ret == ESP_ERR_NOT_FOUND) { ret = ESP_OK; continue; }
         if (ret != ESP_OK) break;
 
-        if (!git_tree_set(&t, 0100644, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
+        /* A document keeps the mode it has in the tree (e.g. 100755):
+         * the card has no file modes to take a change from. */
+        const git_tree_entry *old = git_tree_get(&t, entries[i].name);
+        uint32_t mode = (old && synced_entry(old)) ? old->mode : 0100644;
+        if (!git_tree_set(&t, mode, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
         (*out_nfiles)++;
     }
-    heap_caps_free(entries);
+    /* Synced documents of base that are no longer on the card were
+     * deleted there. */
+    for (int i = t.count - 1; ret == ESP_OK && i >= 0; i--) {
+        const git_tree_entry *e = &t.entries[i];
+        if (!synced_entry(e)) continue;
+        bool on_card = false;
+        for (int k = 0; k < count && !on_card; k++)
+            on_card = !entries[k].is_dir && strcmp(entries[k].name, e->name) == 0;
+        if (!on_card) git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
+    }
+    sd_card_free_list(entries);
 
     if (ret == ESP_OK && t.count > 0)
         ret = git_tree_write(&t, out);
@@ -264,11 +321,19 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
     return ret;
 }
 
-/* Materialise a flat tree's blobs into the working dir; delete local
- * document files not present in the tree. */
-static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
+/* Materialise a flat tree's documents into the working dir; delete
+ * local document files not present in the tree. Every file is tried;
+ * the result is an error if any of them could not be written or
+ * deleted, since the working dir then does not match the tree.
+ * Entries synced_entry() refuses (a name FAT cannot store, a symlink
+ * or submodule named like a document) are counted in *out_skipped,
+ * not treated as errors: they could never be written, and failing on
+ * them would block the project's sync for good. */
+static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written,
+                                  int *out_skipped)
 {
     if (out_written) *out_written = 0;
+    if (out_skipped) *out_skipped = 0;
 
     git_tree t = {};
     esp_err_t ret = git_tree_load(tree_oid, &t);
@@ -277,6 +342,17 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
     for (int i = 0; i < t.count; i++) {
         const git_tree_entry *e = &t.entries[i];
         if ((e->mode & 040000) == 040000) continue;    /* skip sub-dirs */
+        /* Only documents are synced. Anything else in the repository
+         * (images, README files, a git.cfg) stays in Git: writing it
+         * into the project folder could overwrite the device's own
+         * git.cfg or files the sync never commits back. */
+        if (!is_doc(e->name)) continue;
+        if (!synced_entry(e)) {
+            ESP_LOGW(TAG, "checkout: skipping %s (not a plain file, or a name "
+                          "the SD card cannot store)", e->name);
+            if (out_skipped) (*out_skipped)++;
+            continue;
+        }
 
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, e->name);
@@ -287,29 +363,37 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
             git_oid_eq(&cur, &e->oid))
             continue;
         git_obj_type ot;
-        if (git_odb_read_type(&e->oid, &ot, NULL) != ESP_OK || ot != GIT_OBJ_BLOB)
+        if (git_odb_read_type(&e->oid, &ot, NULL) != ESP_OK || ot != GIT_OBJ_BLOB ||
+            git_odb_read_to_file(&e->oid, NULL, path) != ESP_OK) {
+            ESP_LOGE(TAG, "checkout: cannot write %s", path);
+            ret = ESP_FAIL;
             continue;
-        if (git_odb_read_to_file(&e->oid, NULL, path) == ESP_OK && out_written)
-            (*out_written)++;
+        }
+        if (out_written) (*out_written)++;
     }
 
     /* Delete local document files that are gone from the tree. */
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (entries) {
-        int count = sd_card_list_dir(s_cfg.local_path, entries, WT_MAX_FILES);
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t lr = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (lr == ESP_OK) {
         for (int i = 0; i < count; i++) {
             if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
             if (git_tree_get(&t, entries[i].name)) continue;
             char path[400];
             joinp(path, sizeof(path), s_cfg.local_path, entries[i].name);
-            sd_card_delete_file(path);
+            if (sd_card_delete_file(path) != ESP_OK) {
+                ESP_LOGE(TAG, "checkout: cannot delete %s", path);
+                ret = ESP_FAIL;
+            }
         }
-        heap_caps_free(entries);
+        sd_card_free_list(entries);
+    } else {
+        ret = lr;
     }
 
     git_tree_free(&t);
-    return ESP_OK;
+    return ret;
 }
 
 /* Turn merge results into a stored flat tree. */
@@ -318,7 +402,7 @@ static esp_err_t results_to_tree(const git_merge_path_result *res, int n, git_oi
     git_tree t = {};
     for (int i = 0; i < n; i++) {
         if (git_oid_is_zero(&res[i].oid)) continue;      /* deleted */
-        if (!git_tree_set(&t, 0100644, res[i].name, &res[i].oid)) {
+        if (!git_tree_set(&t, res[i].mode, res[i].name, &res[i].oid)) {
             git_tree_free(&t);
             return ESP_ERR_NO_MEM;
         }
@@ -362,6 +446,17 @@ static esp_err_t subtree_for_commit(const git_oid *commit_oid, git_oid *out)
 
 /* ---- the sync itself ------------------------------------------- */
 
+/* Update a ref; on failure report it (set_error()) and
+ * return false. The refs are what the next sync starts from, so a lost
+ * update must not pass silently. */
+static bool ref_write(const char *ref, const git_oid *oid)
+{
+    if (git_ref_write(ref, oid) == ESP_OK) return true;
+    ESP_LOGE(TAG, "cannot write ref %s", ref);
+    set_error("Cannot write to the SD card");
+    return false;
+}
+
 struct sync_stats {
     bool committed_local;
     bool fast_forwarded;
@@ -369,6 +464,7 @@ struct sync_stats {
     bool pushed;
     int  nconflicts;
     int  files_out;
+    int  files_skipped;
 };
 
 static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
@@ -415,7 +511,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         return ESP_FAIL;
     }
     git_repo_clean_tmp();
-    git_head_set_symbolic(localref);
+    if (git_head_set_symbolic(localref) != ESP_OK) {
+        set_error("Cannot write to the SD card");
+        return ESP_FAIL;
+    }
 
     char host[96];
     remote_host(host, sizeof(host));
@@ -424,9 +523,11 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     /* 1. advertise remote refs */
     snprintf(msg, sizeof(msg), "Contacting %s...", host);
     notify(GIT_SYNC_IN_PROGRESS, msg);
-    git_ref_adv adv[32];
-    int nadv = 0;
-    esp_err_t ret = git_http_list_refs(&remote, "git-upload-pack", adv, 32, &nadv);
+    git_oid remote_sha;
+    git_oid_clear(&remote_sha);
+    bool remote_has_branch = false;
+    esp_err_t ret = git_http_find_ref(&remote, "git-upload-pack", server_ref,
+                                      &remote_sha, &remote_has_branch);
     if (ret == ESP_ERR_INVALID_STATE) {
         snprintf(msg, sizeof(msg), "%s rejected the login (check token)", host);
         set_error(msg);
@@ -438,16 +539,6 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         return ret;
     }
 
-    git_oid remote_sha;
-    bool remote_has_branch = false;
-    for (int i = 0; i < nadv; i++) {
-        if (strcmp(adv[i].name, server_ref) == 0) {
-            remote_sha = adv[i].oid;
-            remote_has_branch = true;
-            break;
-        }
-    }
-
     /* git_ref_read() leaves *out untouched on failure (ref file does
      * not exist yet -- the very first sync of a repo), so local_head
      * must start zeroed: step 5 below reads it unconditionally
@@ -456,8 +547,14 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
      * as some garbage non-zero SHA instead of "no commit". */
     git_oid local_head;
     git_oid_clear(&local_head);
-    bool have_head = (git_ref_read(localref, &local_head) == ESP_OK) &&
-                     !git_oid_is_zero(&local_head);
+    esp_err_t rr = git_ref_read(localref, &local_head);
+    if (rr != ESP_OK && rr != ESP_ERR_NOT_FOUND) {
+        /* Not "no commit yet": treating it so would start over as a
+         * first sync. */
+        set_error("Cannot read the local Git history");
+        return rr;
+    }
+    bool have_head = rr == ESP_OK && !git_oid_is_zero(&local_head);
 
     /* 2. initial clone */
     if (!have_head && remote_has_branch) {
@@ -473,32 +570,54 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         remove(pack);
         if (ret != ESP_OK) { set_error("Cannot unpack fetched history"); return ret; }
 
-        git_ref_write(localref, &remote_sha);
-        git_ref_write(remoteref, &remote_sha);
-        local_head = remote_sha;
-        have_head = true;
+        if (!ref_write(remoteref, &remote_sha)) return ESP_FAIL;
 
-        git_oid sub;
-        if (subtree_for_commit(&local_head, &sub) == ESP_OK)
-            checkout_subtree(&sub, NULL);
+        /* Documents already on the card were never committed: checking
+         * the server's tree out over them would delete or overwrite
+         * them. Then the local branch is left unborn, step 3 commits
+         * the card's documents as a commit of their own, and step 4
+         * merges that with the server's history like any other local
+         * commit (files on one side are kept, a file on both sides is
+         * merged with conflict markers). */
+        bool have_local_docs = false;
+        if (worktree_has_docs(&have_local_docs) != ESP_OK) {
+            set_error("Cannot read working tree");
+            return ESP_FAIL;
+        }
+        if (!have_local_docs) {
+            /* The branch is created only once the files are on the
+             * card; a failed checkout leaves it unborn, and the next
+             * sync starts over as a first sync. */
+            git_oid sub;
+            ret = subtree_for_commit(&remote_sha, &sub);
+            if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL, &st->files_skipped);
+            if (ret != ESP_OK) {
+                set_error("Cannot write files to the SD card");
+                return ret;
+            }
+            if (!ref_write(localref, &remote_sha)) return ESP_FAIL;
+            local_head = remote_sha;
+            have_head = true;
+        }
     }
 
     /* 3. local commit from the working tree */
     notify(GIT_SYNC_IN_PROGRESS, "Committing local changes...");
     ensure_time();
 
-    git_oid ours_sub;
-    int nfiles = 0;
-    ret = build_worktree_subtree(&ours_sub, &nfiles);
-    if (ret != ESP_OK) { set_error("Cannot read working tree"); return ret; }
-
     git_oid cur_sub;
     ret = subtree_for_commit(have_head ? &local_head : NULL, &cur_sub);
     if (ret != ESP_OK) { set_error("Cannot read current tree"); return ret; }
 
+    git_oid ours_sub;
+    int nfiles = 0;
+    ret = build_worktree_subtree(&cur_sub, &ours_sub, &nfiles);
+    if (ret != ESP_OK) { set_error("Cannot read working tree"); return ret; }
+
     if (!git_oid_eq(&ours_sub, &cur_sub)) {
         git_oid base_root;
-        commit_tree_oid(have_head ? &local_head : NULL, &base_root);
+        ret = commit_tree_oid(have_head ? &local_head : NULL, &base_root);
+        if (ret != ESP_OK) { set_error("Cannot read current tree"); return ret; }
         git_oid new_root;
         ret = git_tree_splice_subtree(git_oid_is_zero(&base_root) ? NULL : &base_root,
                                       s_cfg.remote_path, &ours_sub, &new_root);
@@ -517,12 +636,20 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         ret = git_commit_create(&new_root, parents, np, ident, msg, &newc);
         if (ret != ESP_OK) { set_error("Cannot create local commit"); return ret; }
 
-        git_ref_write(localref, &newc);
+        if (!ref_write(localref, &newc)) return ESP_FAIL;
         local_head = newc;
         have_head = true;
         st->committed_local = true;
         ESP_LOGI(TAG, "local commit %s", newc.hex);
     }
+
+    /* The commit that matches the files on the card. Steps 4 and 5 move
+     * the local branch past it only after the integrated tree has been
+     * written to the card: if that fails, the branch still describes
+     * the card and the next sync integrates again (instead of
+     * committing the old files on top of the integrated history and
+     * reverting the server's changes). */
+    git_oid committed_head = local_head;
 
     /* 4. integrate remote */
     bool need_integrate = remote_has_branch &&
@@ -537,7 +664,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             int nh = 0;
             git_oid *chain = NULL;
             int nchain = 0;
-            if (git_commit_list_linear(NULL, &local_head, &chain, &nchain) == ESP_OK) {
+            if (git_commit_list_linear(NULL, &local_head, 16, &chain, &nchain) == ESP_OK) {
                 for (int i = nchain - 1; i >= 0 && nh < 16; i--) haves[nh++] = chain[i];
                 free(chain);
             }
@@ -557,7 +684,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         }
 
         git_oid mb;
-        git_merge_base(&local_head, &remote_sha, &mb);
+        ret = git_merge_base(&local_head, &remote_sha, &mb);
+        if (ret != ESP_OK) { set_error("Cannot compare with the server's history"); return ret; }
 
         if (git_oid_eq(&mb, &remote_sha)) {
             /* remote tip is already an ancestor -- we are ahead, nothing
@@ -566,7 +694,6 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         } else if (git_oid_eq(&mb, &local_head)) {
             /* fast-forward */
             local_head = remote_sha;
-            git_ref_write(localref, &local_head);
             st->fast_forwarded = true;
             ESP_LOGI(TAG, "fast-forward to %s", remote_sha.hex);
         } else {
@@ -574,8 +701,13 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             git_oid *commits = NULL;
             int ncommits = 0;
             const git_oid *mbp = git_oid_is_zero(&mb) ? NULL : &mb;
-            ret = git_commit_list_linear(mbp, &local_head, &commits, &ncommits);
-            if (ret != ESP_OK) { set_error("History not linear -- cannot rebase"); return ret; }
+            ret = git_commit_list_linear(mbp, &local_head, 0, &commits, &ncommits);
+            if (ret != ESP_OK) {
+                set_error(ret == ESP_ERR_NO_MEM    ? "Out of memory listing local commits" :
+                          ret == ESP_ERR_NOT_FOUND ? "History not linear -- cannot rebase"
+                                                   : "Cannot read the local Git history");
+                return ret;
+            }
 
             git_oid newbase = remote_sha;
             char ident[224];
@@ -587,9 +719,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
                 git_oid cparent = (cc.nparents > 0) ? cc.parents[0] : (git_oid){0};
 
                 git_oid base_sub, ours_sub2, theirs_sub;
-                subtree_for_commit(git_oid_is_zero(&cparent) ? NULL : &cparent, &base_sub);
-                subtree_for_commit(&newbase, &ours_sub2);
-                subtree_for_commit(&commits[i], &theirs_sub);
+                ret = subtree_for_commit(git_oid_is_zero(&cparent) ? NULL : &cparent, &base_sub);
+                if (ret == ESP_OK) ret = subtree_for_commit(&newbase, &ours_sub2);
+                if (ret == ESP_OK) ret = subtree_for_commit(&commits[i], &theirs_sub);
+                if (ret != ESP_OK) { git_commit_free(&cc); break; }
 
                 git_merge_path_result *res = NULL;
                 int nres = 0, nconf = 0;
@@ -604,7 +737,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
                 if (ret != ESP_OK) { git_commit_free(&cc); break; }
 
                 git_oid nb_root;
-                commit_tree_oid(&newbase, &nb_root);
+                ret = commit_tree_oid(&newbase, &nb_root);
+                if (ret != ESP_OK) { git_commit_free(&cc); break; }
                 git_oid new_root;
                 ret = git_tree_splice_subtree(git_oid_is_zero(&nb_root) ? NULL : &nb_root,
                                               s_cfg.remote_path, &merged_sub, &new_root);
@@ -629,20 +763,26 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             if (ret != ESP_OK) { set_error("Rebase failed"); return ret; }
 
             local_head = newbase;
-            git_ref_write(localref, &local_head);
             st->rebased = true;
         }
     } else if (remote_has_branch && git_oid_eq(&remote_sha, &local_head)) {
-        git_ref_write(remoteref, &remote_sha);
+        if (!ref_write(remoteref, &remote_sha)) return ESP_FAIL;
     }
 
     /* 5. checkout the integrated tree */
     {
         git_oid sub;
-        if (subtree_for_commit(&local_head, &sub) == ESP_OK) {
+        ret = subtree_for_commit(&local_head, &sub);
+        if (ret == ESP_OK) {
             notify(GIT_SYNC_IN_PROGRESS, "Updating working files...");
-            checkout_subtree(&sub, &st->files_out);
+            ret = checkout_subtree(&sub, &st->files_out, &st->files_skipped);
         }
+        if (ret != ESP_OK) {
+            set_error("Cannot write files to the SD card");
+            return ret;
+        }
+        if (!git_oid_eq(&local_head, &committed_head) && !ref_write(localref, &local_head))
+            return ESP_FAIL;
     }
 
     /* 6. push */
@@ -711,7 +851,9 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         }
         git_buf_free(&report);
 
-        git_ref_write(remoteref, &local_head);
+        /* The push went through; without the record the files only look
+         * not pushed (Del refuses them) until the next sync. */
+        if (!ref_write(remoteref, &local_head)) return ESP_FAIL;
         st->pushed = true;
         ESP_LOGI(TAG, "pushed %s", local_head.hex);
     }
@@ -721,13 +863,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
 
 /* ---- task ------------------------------------------------------- */
 
-static void sync_task(void *arg)
+static void run_sync(git_sync_direction_t dir)
 {
-    git_sync_direction_t dir = (git_sync_direction_t)(intptr_t)arg;
-
     if (!wifi_manager_is_connected()) {
         set_error("WiFi not connected");
-        vTaskDelete(NULL);
         return;
     }
 
@@ -750,13 +889,17 @@ static void sync_task(void *arg)
         pos += snprintf(summary + pos, sizeof(summary) - pos,
                         st.nconflicts ? "Sync done, %d conflict(s)" : "Sync complete",
                         st.nconflicts);
-        const char *parts[5];
+        const char *parts[6];
         int np = 0;
-        char b1[24], b2[24];
+        char b1[24], b2[24], b3[32];
         if (st.committed_local) parts[np++] = "committed";
         if (st.fast_forwarded)  parts[np++] = "fast-forward";
         if (st.rebased)         parts[np++] = "rebased";
         if (st.files_out) { snprintf(b1, sizeof(b1), "%d file(s) updated", st.files_out); parts[np++] = b1; }
+        if (st.files_skipped) {
+            snprintf(b3, sizeof(b3), "%d not copied to the card", st.files_skipped);
+            parts[np++] = b3;
+        }
         if (st.pushed) { snprintf(b2, sizeof(b2), "pushed"); parts[np++] = b2; }
         if (np) {
             pos += snprintf(summary + pos, sizeof(summary) - pos, " (");
@@ -765,13 +908,19 @@ static void sync_task(void *arg)
                                 i ? ", " : "", parts[i]);
             snprintf(summary + pos, sizeof(summary) - pos, ")");
         }
-        strlcpy(s_last_sync, "OK", sizeof(s_last_sync));
         notify(GIT_SYNC_SUCCESS, summary);
     } else if (s_state != GIT_SYNC_ERROR) {
         set_error("Sync failed");
     }
+}
 
-    vTaskDelete(NULL);
+static void sync_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        run_sync(s_req_dir);
+    }
 }
 
 /* ---- config --------------------------------------------------- */
@@ -827,8 +976,11 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         }
     }
 
-    c->configured = (c->repo_url[0] != '\0');
     if (c->branch[0] == '\0') strlcpy(c->branch, "main", sizeof(c->branch));
+    /* The branch name becomes a path under .git/refs: refuse one that
+     * is not a valid name (and would reach elsewhere). */
+    c->bad_branch = !git_branch_name_ok(c->branch);
+    c->configured = (c->repo_url[0] != '\0') && !c->bad_branch;
 }
 
 /* "<dir>/git.cfg" */
@@ -1005,7 +1157,8 @@ static esp_err_t draftbox_connect(const char *dir, const char *site, const char 
         /* The remote-tracking ref describes what is on the *previous*
          * server; git_sync_file_status() must not take it as proof that
          * a file is stored on the new one. The next sync recreates it. */
-        if (prev->repo_url[0] && strcmp(prev->repo_url, res->clone_url) != 0) {
+        if (prev->repo_url[0] && !prev->bad_branch &&
+            strcmp(prev->repo_url, res->clone_url) != 0) {
             char refpath[400];
             snprintf(refpath, sizeof(refpath), "%s/.git/refs/remotes/origin/%s",
                      dir, prev->branch);
@@ -1048,21 +1201,27 @@ extern "C" esp_err_t git_sync_start(const char *project_dir, git_sync_direction_
     if (s_state == GIT_SYNC_IN_PROGRESS) { set_error("Sync already in progress"); return ESP_ERR_INVALID_STATE; }
     if (s_draftbox_busy) { set_error("Draftbox connection in progress"); return ESP_ERR_INVALID_STATE; }
     if (!project_dir || !project_dir[0]) { set_error("No project selected"); return ESP_ERR_INVALID_ARG; }
-    if (!load_config(&s_cfg, project_dir)) { set_error("Not configured"); return ESP_ERR_INVALID_STATE; }
+    if (!load_config(&s_cfg, project_dir)) {
+        set_error(s_cfg.bad_branch ? "Invalid branch name in git.cfg" : "Not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
     ESP_LOGI(TAG, "Sync %s: %s branch=%s path=%s", project_dir, s_cfg.repo_url,
              s_cfg.branch, s_cfg.remote_path[0] ? s_cfg.remote_path : "(root)");
 
     s_state = GIT_SYNC_IN_PROGRESS;
 
-    if (!s_stack_buf) {
-        s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, MALLOC_CAP_SPIRAM);
-        if (!s_stack_buf) { set_error("Failed to alloc sync stack"); return ESP_ERR_NO_MEM; }
+    if (!s_worker) {
+        if (!s_stack_buf) {
+            s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, MALLOC_CAP_SPIRAM);
+            if (!s_stack_buf) { set_error("Failed to alloc sync stack"); return ESP_ERR_NO_MEM; }
+        }
+        s_worker = xTaskCreateStaticPinnedToCore(
+            sync_worker, "git_sync", GIT_SYNC_STACK_SIZE / sizeof(StackType_t),
+            NULL, 3, s_stack_buf, &s_task_tcb, 0);
+        if (!s_worker) { set_error("Failed to start sync task"); return ESP_FAIL; }
     }
-
-    TaskHandle_t h = xTaskCreateStaticPinnedToCore(
-        sync_task, "git_sync", GIT_SYNC_STACK_SIZE / sizeof(StackType_t),
-        (void *)(intptr_t)direction, 3, s_stack_buf, &s_task_tcb, 0);
-    if (!h) { set_error("Failed to start sync task"); return ESP_FAIL; }
+    s_req_dir = direction;
+    xTaskNotifyGive(s_worker);
     return ESP_OK;
 }
 
@@ -1137,8 +1296,8 @@ static git_sync_file_status_t file_diff_cfg(git_cfg_t *c, const char *project_di
     char path[400];
     joinp(path, sizeof(path), c->local_path, name);
     git_oid work_blob;
-    if (data) git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob);
-    else if (git_odb_hash_file(GIT_OBJ_BLOB, path, &work_blob) != ESP_OK)
+    if ((data ? git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob)
+              : git_odb_hash_file(GIT_OBJ_BLOB, path, &work_blob)) != ESP_OK)
         return GIT_SYNC_FILE_ERROR;
 
     git_sync_file_status_t result = GIT_SYNC_FILE_ERROR;
@@ -1173,11 +1332,9 @@ static void project_status_cfg(git_cfg_t *c, const char *project_dir,
     if (!load_config(c, project_dir)) return;
     st->configured = true;
 
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (!entries) { st->error = true; return; }
-    int count = sd_card_list_dir(project_dir, entries, WT_MAX_FILES);
-    if (count < 0) { heap_caps_free(entries); st->error = true; return; }
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    if (sd_card_list_dir(project_dir, &entries, &count) != ESP_OK) { st->error = true; return; }
 
     char remoteref[96];
     snprintf(remoteref, sizeof(remoteref), "refs/remotes/origin/%s", c->branch);
@@ -1225,7 +1382,7 @@ static void project_status_cfg(git_cfg_t *c, const char *project_dir,
     }
     git_tree_free(&t);
     git_repo_close();
-    heap_caps_free(entries);
+    sd_card_free_list(entries);
 }
 
 extern "C" void git_sync_project_status(const char *project_dir,
@@ -1287,4 +1444,3 @@ extern "C" bool git_sync_get_remote(const char *project_dir, char *host, size_t 
 
 extern "C" const char *git_sync_get_project_dir(void) { return s_cfg.local_path; }
 extern "C" const char *git_sync_get_last_error(void) { return s_last_error; }
-extern "C" const char *git_sync_get_last_sync_time(void) { return s_last_sync; }

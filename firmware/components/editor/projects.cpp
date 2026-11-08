@@ -12,7 +12,6 @@
 
 static const char *TAG = "Projects";
 
-#define ROOT_SCAN_MAX 128
 
 /* Project and root metadata: hidden files, so neither the file browser
  * nor Git sync ever sees them. */
@@ -53,30 +52,43 @@ extern "C" void project_dir(const char *name, char *out, size_t out_sz)
     snprintf(out, out_sz, "%s/%s", mount(), name ? name : "");
 }
 
-static sd_card_file_entry_t *scan_dir(const char *dir, int *count)
+/* Every entry of dir (sd_card_list_dir()); false when it cannot be
+ * listed. Release *out with sd_card_free_list(). */
+static bool scan_dir(const char *dir, sd_card_file_entry_t **out, int *count)
 {
-    *count = 0;
-    sd_card_file_entry_t *e = (sd_card_file_entry_t *)heap_caps_malloc(
-        ROOT_SCAN_MAX * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (!e) return NULL;
-    int n = sd_card_list_dir(dir, e, ROOT_SCAN_MAX);
-    *count = n < 0 ? 0 : n;
-    return e;
+    return sd_card_list_dir(dir, out, count) == ESP_OK;
 }
 
-extern "C" int project_list(project_name_t *out, int max)
+extern "C" project_name_t *project_list(int *out_count)
 {
+    *out_count = -1;
     int count = 0;
-    sd_card_file_entry_t *e = scan_dir(mount(), &count);
-    if (!e) return 0;
+    sd_card_file_entry_t *e = NULL;
+    if (!scan_dir(mount(), &e, &count)) return NULL;
+    project_name_t *out = count ? (project_name_t *)malloc((size_t)count * sizeof(*out)) : NULL;
+    if (count && !out) {
+        ESP_LOGE(TAG, "project list: out of memory");
+        sd_card_free_list(e);
+        return NULL;
+    }
     int n = 0;
     /* sd_card_list_dir() sorts case-insensitively by name. */
-    for (int i = 0; i < count && n < max; i++) {
+    for (int i = 0; out && i < count; i++) {
         if (!e[i].is_dir || project_name_problem(e[i].name)) continue;
         strlcpy(out[n++], e[i].name, sizeof(project_name_t));
     }
-    heap_caps_free(e);
-    return n;
+    sd_card_free_list(e);
+    if (n == 0) { free(out); out = NULL; }
+    *out_count = n;
+    return out;
+}
+
+extern "C" bool project_any(void)
+{
+    int n = 0;
+    project_name_t *all = project_list(&n);
+    free(all);
+    return n != 0;
 }
 
 extern "C" bool project_exists(const char *name)
@@ -128,21 +140,16 @@ extern "C" bool project_of_path(const char *path, char *out, size_t out_sz)
 extern "C" int project_root_doc_names(project_file_name_t *names, int max)
 {
     int count = 0;
-    sd_card_file_entry_t *e = scan_dir(mount(), &count);
-    if (!e) return 0;
+    sd_card_file_entry_t *e = NULL;
+    if (!scan_dir(mount(), &e, &count)) return 0;
     int n = 0;
     for (int i = 0; i < count; i++) {
         if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
         if (names && n < max) strlcpy(names[n], e[i].name, sizeof(project_file_name_t));
         n++;
     }
-    heap_caps_free(e);
+    sd_card_free_list(e);
     return n;
-}
-
-extern "C" int project_root_doc_count(void)
-{
-    return project_root_doc_names(NULL, 0);
 }
 
 extern "C" bool project_free_file_name(const char *dir, const char *name,
@@ -183,8 +190,8 @@ extern "C" esp_err_t project_migrate_root(const char *name, int *moved)
     }
 
     int count = 0;
-    sd_card_file_entry_t *e = scan_dir(mount(), &count);
-    if (!e) return ESP_ERR_NO_MEM;
+    sd_card_file_entry_t *e = NULL;
+    if (!scan_dir(mount(), &e, &count)) return ESP_FAIL;
     esp_err_t ret = ESP_OK;
     for (int i = 0; i < count; i++) {
         if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
@@ -207,7 +214,7 @@ extern "C" esp_err_t project_migrate_root(const char *name, int *moved)
         sidecar_path(dir, dst_name, md, sizeof(md));
         if (sd_card_file_exists(ms) && !sd_card_file_exists(md)) sd_card_rename(ms, md);
     }
-    heap_caps_free(e);
+    sd_card_free_list(e);
 
     /* The Git configuration and history go with the documents, unless
      * the project already has its own. */
@@ -233,14 +240,14 @@ extern "C" void project_stats(const char *name, int *files, uint64_t *bytes)
     char dir[64];
     project_dir(name, dir, sizeof(dir));
     int count = 0;
-    sd_card_file_entry_t *e = scan_dir(dir, &count);
-    if (!e) return;
+    sd_card_file_entry_t *e = NULL;
+    if (!scan_dir(dir, &e, &count)) return;
     for (int i = 0; i < count; i++) {
         if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
         (*files)++;
         *bytes += e[i].size;
     }
-    heap_caps_free(e);
+    sd_card_free_list(e);
 }
 
 /* "last=<value>" metadata files. */

@@ -11,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <soc/soc_caps.h>
 #include <esp_vfs_fat.h>
 #include <diskio_sdmmc.h>
@@ -48,6 +49,64 @@ extern "C" void sd_card_set_sdmmc_slot(int slot)
     s_sdmmc_slot = slot;
 }
 
+/* Atomic writes (sd_card_write_file_parts(), sd_card_replace_with())
+ * go through "<dir>/.<name>.dtmp" (being written) and
+ * "<dir>/.<name>.dnew" (complete, about to replace <name>). After a
+ * power loss a .dnew is the newest complete version of <name> and
+ * replaces it -- when the old file was already removed it is the only
+ * copy left. A .dtmp may be incomplete and is dropped. Looks at the
+ * root, the project folders and their Git repositories (refs and HEAD
+ * are written the same way), skipping .git/objects and .git/tmp. */
+static void recover_dir(const char *dir, int depth, bool in_git)
+{
+    DIR *d = opendir(dir);
+    if (!d) return;
+    char *path = (char *)malloc(3 * 512);
+    if (!path) { closedir(d); return; }
+    char *tmp = path + 512, *sub = path + 1024;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        size_t len = strlen(n);
+        if (ent->d_type == DT_DIR) {
+            bool into_git = depth == 1 && strcmp(n, ".git") == 0;
+            bool go = (depth == 0 && n[0] != '.') || into_git ||
+                      (in_git && depth < 8 && strcmp(n, ".") != 0 &&
+                       strcmp(n, "..") != 0 &&
+                       !(depth == 2 && (strcmp(n, "objects") == 0 ||
+                                        strcmp(n, "tmp") == 0)));
+            if (go) {
+                snprintf(sub, 512, "%s/%s", dir, n);
+                recover_dir(sub, depth + 1, in_git || into_git);
+            }
+            continue;
+        }
+        if (len < 7 || n[0] != '.') continue;
+        bool is_tmp = strcmp(n + len - 5, ".dtmp") == 0;
+        bool is_new = strcmp(n + len - 5, ".dnew") == 0;
+        if (!is_tmp && !is_new) continue;
+        snprintf(tmp, 512, "%s/%s", dir, n);
+        if (is_tmp) {
+            ESP_LOGW(TAG, "Dropping interrupted write %s", tmp);
+            remove(tmp);
+            continue;
+        }
+        snprintf(path, 512, "%s/%.*s", dir, (int)(len - 6), n + 1);
+        remove(path);
+        if (rename(tmp, path) == 0)
+            ESP_LOGW(TAG, "Recovered %s from an interrupted save", path);
+        else
+            ESP_LOGE(TAG, "Cannot recover %s", path);
+    }
+    free(path);
+    closedir(d);
+}
+
+static void recover_interrupted_writes(void)
+{
+    recover_dir(s_mount, 0, false);
+}
+
 #if SOC_SDMMC_HOST_SUPPORTED
 extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point)
 {
@@ -74,6 +133,7 @@ extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const ch
     }
     sdmmc_card_print_info(stdout, s_card);
     ESP_LOGI(TAG, "SD card mounted at %s", s_mount);
+    recover_interrupted_writes();
     return ESP_OK;
 }
 #else
@@ -366,6 +426,7 @@ extern "C" esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
     sdmmc_card_print_info(stdout, s_card);
     ESP_LOGI(TAG, "SD card mounted at %s (SPI host %d, CS=%d)",
              s_mount, spi_host, cs);
+    recover_interrupted_writes();
     return ESP_OK;
 }
 
@@ -446,16 +507,23 @@ extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t 
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
 
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz < 0) { fclose(f); return ESP_FAIL; }
+    long sz = -1;
+    if (fseek(f, 0, SEEK_END) == 0) sz = ftell(f);
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return ESP_FAIL; }
 
     char *buf = (char *)malloc(sz + 1);
     if (!buf) { fclose(f); return ESP_ERR_NO_MEM; }
 
     size_t rd = fread(buf, 1, sz, f);
+    bool err = ferror(f);
     fclose(f);
+    if (err || rd != (size_t)sz) {
+        /* A partial read must not pass for the whole file (git.cfg,
+         * wifi.cfg, metadata). */
+        ESP_LOGE(TAG, "Read failed: %s (%zu/%ld bytes)", path, rd, sz);
+        free(buf);
+        return ESP_FAIL;
+    }
     buf[rd] = '\0';
 
     *out_buf = buf;
@@ -474,21 +542,12 @@ extern "C" esp_err_t sd_card_write_file_parts(const char *path,
 {
     if (!s_card) return ESP_ERR_INVALID_STATE;
 
-    /* Atomic write: stream the new contents into a temporary file next
-     * to the target, flush it all the way down to the card, then rename
-     * it over the target. A power loss or card yank while the bytes are
-     * being written therefore never truncates or half-overwrites
-     * `path` -- the incomplete data only ever lands in the temporary
-     * file, which is removed on the next write. FAT's rename() cannot
-     * replace an existing file, so the old file is unlinked immediately
-     * before the rename; the only unguarded window is that single
-     * directory-entry swap, and the fully written replacement still
-     * exists as the temporary file if power is lost inside it.
-     *
-     * The temporary lives in the same directory as `path` (rename must
-     * stay within one filesystem) and is named ".<basename>.dtmp" so a
-     * leftover after a crash is hidden from the file browser, which
-     * skips dot-prefixed entries. */
+    /* Atomic write: stream the new contents into a hidden temporary
+     * next to the target (".<basename>.dtmp", skipped by the file
+     * browser; rename must stay within one filesystem), flush it all
+     * the way down to the card, then sd_card_replace_with() swaps it in.
+     * A power loss or card yank at any point leaves the old or the new
+     * contents, never a truncated file (see recover_interrupted_writes()). */
     char tmp[512];
     const char *slash = strrchr(path, '/');
     int n;
@@ -518,24 +577,46 @@ extern "C" esp_err_t sd_card_write_file_parts(const char *path,
         return ESP_FAIL;
     }
 
-    remove(path);
-    if (rename(tmp, path) != 0) {
-        /* Leave the temporary file in place: it holds the only complete
-         * copy of the new contents now that the old file is gone. */
-        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", tmp, path, strerror(errno));
-        return ESP_FAIL;
-    }
-    return ESP_OK;
+    return sd_card_replace_with(tmp, path);
 }
 
-extern "C" esp_err_t sd_card_append_file(const char *path, const char *data, size_t len)
+/* "<dir>/.<base><suffix>" for path "<dir>/<base>". */
+static bool hidden_name(const char *path, const char *suffix, char *out, size_t osz)
 {
-    if (!s_card) return ESP_ERR_INVALID_STATE;
-    FILE *f = fopen(path, "ab");
-    if (!f) return ESP_FAIL;
-    fwrite(data, 1, len, f);
-    fsync(fileno(f));
-    fclose(f);
+    const char *slash = strrchr(path, '/');
+    int n = slash ? snprintf(out, osz, "%.*s/.%s%s", (int)(slash - path), path,
+                             slash + 1, suffix)
+                  : snprintf(out, osz, ".%s%s", path, suffix);
+    return n > 0 && (size_t)n < osz;
+}
+
+extern "C" esp_err_t sd_card_replace_with(const char *tmp, const char *path)
+{
+    /* FAT cannot rename over an existing file, so the old file has to
+     * go first. The complete new contents are renamed to
+     * ".<name>.dnew" before that: if power is lost between removing
+     * the old file and the final rename, recover_interrupted_writes()
+     * finds the .dnew at the next mount and finishes the job. (A
+     * leftover .dtmp is always incomplete and is dropped.) */
+    char done[512];
+    if (!hidden_name(path, ".dnew", done, sizeof(done))) {
+        ESP_LOGE(TAG, "Path too long for atomic write: %s", path);
+        remove(tmp);
+        return ESP_FAIL;
+    }
+    remove(done);
+    if (rename(tmp, done) != 0) {
+        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", tmp, done, strerror(errno));
+        remove(tmp);
+        return ESP_FAIL;
+    }
+    remove(path);
+    if (rename(done, path) != 0) {
+        /* Leave .dnew in place: it is the only complete copy now, and
+         * the next mount moves it back. */
+        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", done, path, strerror(errno));
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -578,29 +659,54 @@ static int sd_entry_cmp(const void *a, const void *b)
     return strcasecmp(ea->name, eb->name);
 }
 
-extern "C" int sd_card_list_dir(const char *path, sd_card_file_entry_t *entries, int max_entries)
+extern "C" esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **out,
+                                      int *count)
 {
+    *out = NULL;
+    *count = 0;
     DIR *dir = opendir(path);
-    if (!dir) return -1;
-    int count = 0;
+    if (!dir) return ESP_FAIL;
+    sd_card_file_entry_t *v = NULL;
+    int n = 0, cap = 0;
+    esp_err_t ret = ESP_OK;
     struct dirent *ent;
-    while ((ent = readdir(dir)) != NULL && count < max_entries) {
+    while ((ent = readdir(dir)) != NULL) {
         if (ent->d_name[0] == '.') continue;
-        strncpy(entries[count].name, ent->d_name, sizeof(entries[count].name) - 1);
-        entries[count].name[sizeof(entries[count].name) - 1] = '\0';
-        entries[count].is_dir = (ent->d_type == DT_DIR);
+        if (n == cap) {
+            int nc = cap ? cap * 2 : 32;
+            sd_card_file_entry_t *nv = (sd_card_file_entry_t *)heap_caps_realloc(
+                v, (size_t)nc * sizeof(*v), MALLOC_CAP_SPIRAM);
+            if (!nv) nv = (sd_card_file_entry_t *)heap_caps_realloc(
+                v, (size_t)nc * sizeof(*v), MALLOC_CAP_DEFAULT);
+            if (!nv) { ret = ESP_ERR_NO_MEM; break; }
+            v = nv;
+            cap = nc;
+        }
+        sd_card_file_entry_t *e = &v[n];
+        strlcpy(e->name, ent->d_name, sizeof(e->name));
+        e->is_dir = (ent->d_type == DT_DIR);
 
         char full[512];
         snprintf(full, sizeof(full), "%s/%s", path, ent->d_name);
         struct stat st;
-        entries[count].size = (stat(full, &st) == 0) ? st.st_size : 0;
-        count++;
+        e->size = (stat(full, &st) == 0) ? st.st_size : 0;
+        n++;
     }
     closedir(dir);
-    if (count > 1) {
-        qsort(entries, (size_t)count, sizeof(entries[0]), sd_entry_cmp);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "list_dir %s: out of memory after %d entries", path, n);
+        heap_caps_free(v);
+        return ret;
     }
-    return count;
+    if (n > 1) qsort(v, (size_t)n, sizeof(v[0]), sd_entry_cmp);
+    *out = v;
+    *count = n;
+    return ESP_OK;
+}
+
+extern "C" void sd_card_free_list(sd_card_file_entry_t *list)
+{
+    if (list) heap_caps_free(list);
 }
 
 extern "C" long sd_card_file_size(const char *path)

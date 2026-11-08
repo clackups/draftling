@@ -46,12 +46,6 @@ esp_err_t m5ioe1_init(void *i2c_bus);
 esp_err_t m5ioe1_set_pin(int pin, bool level);
 
 /*
- * Return PYG<pin> to a high-impedance input (the chip's reset state),
- * e.g. to stop powering a peripheral before deep sleep.
- */
-esp_err_t m5ioe1_release_pin(int pin);
-
-/*
  * Disable both PWM channels (PWM1 on PYG9, PWM2 on PYG8), so the pins
  * follow m5ioe1_set_pin() again. The chip keeps its PWM state across
  * ESP32 resets and reflashes; other firmware may leave a channel on.

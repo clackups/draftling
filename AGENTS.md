@@ -736,6 +736,11 @@ Per-board display backends behind a single C API:
   outputs that main.cpp drives before `display_init()`, so
   `display_set_shared_i2c_bus()` is a no-op here. The front-light is
   the M5PM1's PWM0 (`battery_m5pm1_set_frontlight()`).
+- **epd_fb.h** -- the 1-bpp framebuffer, dirty rectangle and RGB565
+  push shared by the e-paper backends that keep their own framebuffer
+  (ws_epd397, m5_papermono, reterminal_sticky, xteink_epd, seeed_e1001,
+  h752). Each keeps one `epd_fb_t` (`s_epdfb`) and aliases its old
+  `s_fb` / `s_width` / `s_dirty_*` names onto it.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -785,9 +790,9 @@ non-e-paper builds do not link epdiy into the final image.
 Public API: `display_init()`, `display_clear()`, `display_set_pixel()`,
 `display_flush()`, `display_full_refresh()`, `display_push_rgb565()`,
 `display_set_partial_clip()`, `display_set_backlight()`,
-`display_controller_name()`, `display_spi_tft_config()`, `display_get_buffer()`,
-`display_get_buffer_size()`, `lvgl_port_init()`,
-`lvgl_port_lock()`, `lvgl_port_unlock()`.
+`display_controller_name()`, `display_spi_tft_config()`,
+`draftling_lvgl_port_init()`, `draftling_lvgl_port_lock()`,
+`draftling_lvgl_port_unlock()`.
 
 ### components/editor/
 
@@ -896,7 +901,7 @@ can show different formats.
 FAT drops the latter; at most `PROJECT_NAME_MAX` = 32; "System Volume
 Information" reserved), `project_list()` (root folders with a valid
 name), `project_create()` / `project_delete()` (`sd_card_remove_tree()`,
-`.git` included), `project_of_path()`, `project_root_doc_count()`,
+`.git` included), `project_of_path()`, `project_root_doc_names()`,
 `project_migrate_root()` (root documents with their `.meta` sidecars,
 then `git.cfg` and `.git` unless the project has its own; a taken name
 gets `-2`, `-3`, ... from `project_free_file_name()`), `project_stats()`
@@ -1380,6 +1385,11 @@ Source layout (all in-tree, no managed components):
   becomes a whole-file conflict. `git_diff_line_counts()` (Alt+I) uses
   the same diff on hashes of the whole texts.
 
+Host test: `test/host/run.sh` builds this component for the host
+(stub ESP-IDF headers, the SD card as a folder, `esp_http_client`
+replaced by `git http-backend` against a real bare repository) and
+runs whole syncs; run it after changing anything here.
+
 Convention: a `const git_oid *` parameter that represents an optional
 commit/tree ("no parent", "no base", "not cloned yet") is passed as a
 literal `NULL`, not a pointer to a zero-filled `git_oid`. Every function
@@ -1524,8 +1534,7 @@ PaperMono) and stubbed out otherwise. The M5IOE1 (fixed address 0x4F)
 is a register-addressed 14-pin expander: each GPIO setting is a
 16-bit little-endian register pair, one bit per pin (PYG1 = bit 0).
 Only digital outputs are implemented: `m5ioe1_set_pin(pin, level)`
-makes PYG<pin> a push-pull output without pulls and drives it, and
-`m5ioe1_release_pin()` returns it to a high-impedance input.
+makes PYG<pin> a push-pull output without pulls and drives it.
 `m5ioe1_init()` probes the chip (which wakes it from I2C idle sleep)
 and disables its idle sleep (register 0x23). On the PaperMono,
 main.cpp uses it before `display_init()` to power the e-paper panel,
@@ -1533,7 +1542,7 @@ the FT6336G touch controller and the MicroSD card and to pulse the
 panel and touch reset lines, and the pre-sleep hook switches those
 supplies off again.
 
-Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
+Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`.
 
 A third driver, NXP PCA9557 (`io_expander_pca9557.cpp`), is compiled
 in only with `CONFIG_DRAFTLING_HAS_PCA9557` (the Elecrow CrowPanel
@@ -1641,7 +1650,7 @@ remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
 
 Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
-`kb_layout_set()`, `kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_get()`, `kb_layout_name()`,
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
 `kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
@@ -2025,14 +2034,13 @@ returning `true`. That flag drives two things: the editor's WiFi
 status icon switches to the "6"-badged variant (see
 `components/editor/wifi_icon.c` below), and `git_sync`'s HTTP layer
 (`git_net.c`) prefers the Git server's `AAAA` record, falling back to
-`A` if the connection attempt fails. The flag (and the cached address
-string from `wifi_manager_get_ipv6()`) resets on disconnect and at the
-start of every new connection attempt.
+`A` if the connection attempt fails. The flag resets on disconnect and
+at the start of every new connection attempt.
 
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
 `wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
-`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`,
+`wifi_manager_has_global_ipv6()`,
 `wifi_manager_get_configured()` (SSID + password Ctrl+W would use),
 `wifi_manager_forget()` (disconnect and erase the `wifi` NVS namespace
 plus the WiFi driver's own saved station config: `esp_wifi_restore()`
@@ -2864,6 +2872,31 @@ controls for the same turn; `editor_ui.cpp`'s
 handling compiled out) whenever `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`
 is defined.
 
+### 2x scale (user-adjustable, not a Kconfig setting)
+
+Off (default) or on, a third **runtime, NVS-persisted** setting
+modelled on "Display upside down":
+`components/display/display_scale.{h,cpp}` expose
+`display_scale_factor()` (1 or 2, frozen for the session, loaded by
+`display_scale_init()`, which `main.cpp` calls right after
+`display_flip_init()`), plus `display_scale_set_2x()` /
+`display_scale_get_pending_2x()` for the F1 -> Settings "2x scale
+(large view)" row (`SETTINGS_IDX_SCALE2X`, restart to apply via
+`s_restart_needed`). NVS namespace `dispscale`, key `x2` (u8).
+
+`app_config.h`'s `DISPLAY_SCALE` is passed as the fourth argument of
+`draftling_lvgl_port_init()`, which keeps `s_phys_w/h` at the
+(margin-shrunk) panel size but creates the LVGL display at
+`width / scale` x `height / scale`. `flush_cb` rotates a tile in that
+scaled frame (`map_area_to_physical()` with the halved panel size),
+then `upscale_tile_rgb565()` expands each pixel into a 2x2 block in
+`s_scale_buf` and the coordinates are doubled; the per-pixel
+`display_set_pixel()` fallback walks the final physical buffer. The
+display backends never see the scale.
+`draftling_lvgl_port_map_to_physical()` applies the same doubling (the
+e-paper typing clip). The touchscreen's `logical_width/height` and the
+editor's `SCR_W`/`SCR_H` are divided by the scale as well.
+
 #### E-paper full-refresh interval (DRAFTLING_EPD_FULL_REFRESH_INTERVAL)
 
 `int` used by e-paper backends only (gated on
@@ -3116,9 +3149,20 @@ separate `clackups/draftling-flasher` repository only -- never as
 GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`, `lilygo_t5_epd_s3_pro`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono` and `microjournal_rev5`, each in every language
-pack (the default image plus one per non-default pack, listed in the
-release's `languagePacks` array in `manifest.json`). Extend the list
+`m5stack_papermono`, `microjournal_rev5` and `m5stack_tab5`, each in
+every language pack (the default image plus one per non-default pack,
+listed in the release's `languagePacks` array in `manifest.json`).
+The Tab5 entry also carries the C6 upgrade tool as a second release
+(tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
+language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
+where `<V>` is the esp-hosted version it installs: the pin in
+`misc/p4_upgrade_cp/cp/main/idf_component.yml`, which is also the
+app version of both the C6 image and the P4 tool. Build it with
+`misc/p4_upgrade_cp/build.sh m5stack_tab5` (files from
+`misc/p4_upgrade_cp/p4/build/m5stack_tab5/`); it only needs a new
+release when that pin changes. ESP32-P4 images put the
+bootloader at `0x2000`, not `0x0`: take the offsets from each build's
+`flasher_args.json`. Extend the list
 there as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply

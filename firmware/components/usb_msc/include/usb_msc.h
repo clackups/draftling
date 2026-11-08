@@ -67,19 +67,6 @@ esp_err_t usb_msc_set_mode(usb_msc_mode_t mode);
 
 usb_msc_mode_t usb_msc_get_mode(void);
 
-/* true once a USB host has enumerated the device and for as long as
- * it stays attached. Always false when the mode is USB_MSC_MODE_OFF. */
-bool usb_msc_is_host_connected(void);
-
-/*
- * Seconds left before usb_msc automatically reverts to
- * USB_MSC_MODE_OFF because no host has been connected for
- * CONFIG_DRAFTLING_USB_MSC_IDLE_TIMEOUT_SEC seconds. Returns -1 when
- * the mode is USB_MSC_MODE_OFF or a host is currently connected (no
- * countdown running in either case).
- */
-int usb_msc_idle_seconds_remaining(void);
-
 #ifdef __cplusplus
 }
 #endif

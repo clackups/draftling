@@ -270,6 +270,7 @@ typedef struct {
     uint8_t        buf[1024];
     size_t         buf_len, buf_pos;
     long           count;           /* bytes consumed so far */
+    bool           err;             /* the file could not be read to its end */
 } ksrc_t;
 
 static int src_peek(ksrc_t *s)
@@ -278,7 +279,10 @@ static int src_peek(ksrc_t *s)
         if (s->buf_pos >= s->buf_len) {
             s->buf_len = fread(s->buf, 1, sizeof(s->buf), s->fp);
             s->buf_pos = 0;
-            if (s->buf_len == 0) return -1;
+            if (s->buf_len == 0) {
+                if (ferror(s->fp)) s->err = true;
+                return -1;
+            }
         }
         return s->buf[s->buf_pos];
     }
@@ -1034,9 +1038,21 @@ static int send_one(int *seq, char hdr, const char *name, FILE *fp,
             status(false, "Sending %s: %ld KB", name, src.count / 1024);
         }
     }
+    if (src.err) {
+        /* A read error ends the data like the end of the file would:
+         * tell the client to discard what it got, then abort, rather
+         * than let a truncated copy pass for the file. */
+        zdata[0] = 'D';
+        zlen = 1;
+    }
     r = send_wait('Z', *seq, (const uint8_t *)zdata, zlen, &ack);
     if (r != 1) return r;
     *seq = (*seq + 1) & 63;
+    if (src.err) {
+        status(true, "SD card read error: %s not sent", name);
+        send_error(*seq, "SD card read error");
+        return 0;
+    }
     return result;
 }
 

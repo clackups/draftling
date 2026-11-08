@@ -931,41 +931,10 @@ extern "C" void touchscreen_set_button_callback(touchscreen_button_cb_t cb)
 #endif
 }
 
-extern "C" bool touchscreen_is_initialized(void)
-{
-    return s_initialized;
-}
-
 extern "C" int touchscreen_get_int_gpio(void)
 {
     if (!s_initialized) return -1;
     return s_cfg.intr;
-}
-
-extern "C" bool touchscreen_read(int *out_x, int *out_y)
-{
-    if (!s_initialized || !s_mux) return false;
-    bool pressed = false;
-    if (xSemaphoreTake(s_mux, pdMS_TO_TICKS(20)) == pdTRUE) {
-        pressed = poll_controller(out_x ? out_x : NULL,
-                                  out_y ? out_y : NULL);
-        if (pressed) {
-            if (out_x) s_x_latch = *out_x;
-            if (out_y) s_y_latch = *out_y;
-        }
-        s_pressed_latch = pressed;
-        xSemaphoreGive(s_mux);
-    }
-    if (!pressed) {
-        if (out_x) *out_x = s_x_latch;
-        if (out_y) *out_y = s_y_latch;
-    }
-    return pressed;
-}
-
-extern "C" bool touchscreen_is_pressed(void)
-{
-    return s_pressed_latch;
 }
 
 extern "C" void touchscreen_sleep(void)
@@ -1047,10 +1016,7 @@ extern "C" void touchscreen_sleep(void)
 
 extern "C" void touchscreen_init(const touchscreen_config_t *cfg) { (void)cfg; }
 extern "C" void touchscreen_set_button_callback(touchscreen_button_cb_t cb) { (void)cb; }
-extern "C" bool touchscreen_is_initialized(void) { return false; }
 extern "C" int  touchscreen_get_int_gpio(void)    { return -1; }
-extern "C" bool touchscreen_read(int *x, int *y)  { (void)x; (void)y; return false; }
-extern "C" bool touchscreen_is_pressed(void)      { return false; }
 extern "C" void touchscreen_sleep(void)           { }
 
 #endif /* CONFIG_DRAFTLING_TOUCHSCREEN */

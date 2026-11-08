@@ -109,13 +109,6 @@ extern "C" esp_err_t m5ioe1_set_pin(int pin, bool level)
     return err;
 }
 
-extern "C" esp_err_t m5ioe1_release_pin(int pin)
-{
-    if (!s_dev) return ESP_ERR_INVALID_STATE;
-    if (pin < 1 || pin > 14) return ESP_ERR_INVALID_ARG;
-    return update16(REG_GPIO_MODE_L, (uint16_t)(1u << (pin - 1)), false);
-}
-
 extern "C" esp_err_t m5ioe1_pwm_off(void)
 {
     if (!s_dev) return ESP_ERR_INVALID_STATE;
@@ -149,12 +142,6 @@ extern "C" esp_err_t m5ioe1_set_pin(int pin, bool level)
 {
     (void)pin;
     (void)level;
-    return ESP_OK;
-}
-
-extern "C" esp_err_t m5ioe1_release_pin(int pin)
-{
-    (void)pin;
     return ESP_OK;
 }
 

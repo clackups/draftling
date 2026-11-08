@@ -30,7 +30,6 @@ static char s_ssid[33]   = "";
 static bool s_initialized = false;
 static esp_netif_t *s_sta_netif = NULL;
 static bool s_ipv6_global = false;
-static char s_ip6_str[48] = "";
 /* True while a connection attempt (or an established connection)
  * wants WIFI_EVENT_STA_DISCONNECTED to trigger a reconnect. Cleared
  * before every deliberate disconnect / stop and once the retry budget
@@ -92,7 +91,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
         } else if (id == WIFI_EVENT_STA_DISCONNECTED) {
             wifi_event_sta_disconnected_t *ev = (wifi_event_sta_disconnected_t *)data;
             s_ipv6_global = false;
-            s_ip6_str[0] = '\0';
             /* ASSOC_LEAVE is our own esp_wifi_disconnect() (e.g. the
              * one wifi_manager_connect_to() issues before switching
              * networks) -- never retry that. */
@@ -128,7 +126,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
                  IPV62STR(event->ip6_info.ip), type);
         if (type == ESP_IP6_ADDR_IS_GLOBAL) {
             s_ipv6_global = true;
-            snprintf(s_ip6_str, sizeof(s_ip6_str), IPV6STR, IPV62STR(event->ip6_info.ip));
             /* Re-fire the state callback so the UI refreshes the WiFi
              * icon (and anything else derived from dual-stack status)
              * even though wifi_state_t itself did not change. */
@@ -195,10 +192,18 @@ extern "C" esp_err_t wifi_manager_init(void)
      * tasks now that this is also called lazily from wifi_manager_connect_to(). */
     static SemaphoreHandle_t init_mutex = NULL;
     static portMUX_TYPE init_spinlock = portMUX_INITIALIZER_UNLOCKED;
-    portENTER_CRITICAL(&init_spinlock);
-    if (init_mutex == NULL) init_mutex = xSemaphoreCreateMutex();
-    portEXIT_CRITICAL(&init_spinlock);
-    if (init_mutex == NULL) return ESP_ERR_NO_MEM;
+    /* Creating a mutex allocates, which must not happen inside a
+     * critical section: create one outside, install it under the
+     * spinlock, and drop it if another task installed one first. */
+    if (init_mutex == NULL) {
+        SemaphoreHandle_t m = xSemaphoreCreateMutex();
+        if (m == NULL) return ESP_ERR_NO_MEM;
+        portENTER_CRITICAL(&init_spinlock);
+        bool installed = (init_mutex == NULL);
+        if (installed) init_mutex = m;
+        portEXIT_CRITICAL(&init_spinlock);
+        if (!installed) vSemaphoreDelete(m);
+    }
     xSemaphoreTake(init_mutex, portMAX_DELAY);
 
     if (s_initialized) {
@@ -272,16 +277,6 @@ extern "C" esp_err_t wifi_manager_init(void)
     s_initialized = true;
     xSemaphoreGive(init_mutex);
     ESP_LOGI(TAG, "WiFi manager initialized");
-    return ESP_OK;
-}
-
-extern "C" esp_err_t wifi_manager_deinit(void)
-{
-    s_auto_retry = false;
-    esp_wifi_stop();
-    esp_wifi_deinit();
-    s_initialized = false;
-    set_state(WIFI_STATE_IDLE);
     return ESP_OK;
 }
 
@@ -409,7 +404,6 @@ extern "C" esp_err_t wifi_manager_connect_to(const char *ssid, const char *passw
     s_auth_failed = false;
     s_ip_str[0] = '\0';
     s_ipv6_global = false;
-    s_ip6_str[0] = '\0';
     /* A fail bit left over from an earlier attempt (e.g. one that hit
      * the 30 s timeout and then exhausted its retries) would otherwise
      * end this wait immediately. */
@@ -463,7 +457,6 @@ extern "C" esp_err_t wifi_manager_disconnect(void)
     esp_wifi_stop();
     s_ip_str[0] = '\0';
     s_ipv6_global = false;
-    s_ip6_str[0] = '\0';
     set_state(WIFI_STATE_DISCONNECTED);
     return ESP_OK;
 }
@@ -586,4 +579,3 @@ extern "C" void wifi_manager_set_callback(wifi_state_callback_t cb) { s_callback
 extern "C" const char *wifi_manager_get_ip(void) { return s_ip_str; }
 extern "C" const char *wifi_manager_get_ssid(void) { return s_ssid; }
 extern "C" bool wifi_manager_has_global_ipv6(void) { return s_ipv6_global; }
-extern "C" const char *wifi_manager_get_ipv6(void) { return s_ip6_str; }

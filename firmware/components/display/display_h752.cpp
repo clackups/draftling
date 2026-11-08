@@ -12,6 +12,8 @@
 #include <FastEPD.h>
 
 #include "display.h"
+#include "bl_ledc.h"
+#include "epd_fb.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayH752";
@@ -20,9 +22,6 @@ static constexpr int PANEL_WIDTH = 960;
 static constexpr int PANEL_HEIGHT = 540;
 static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 
-/* Panels render 1:1; the former DRAFTLING_DISPLAY_SCALE upscale
- * has been removed (high-density boards use a larger font instead). */
-#define H752_SCALE 1
 
 #ifdef CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #define H752_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
@@ -31,122 +30,36 @@ static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 #endif
 
 #define H752_BL_LEDC_TIMER       LEDC_TIMER_0
-#define H752_BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define H752_BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define H752_BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
 #define H752_BL_LEDC_DUTY_MAX    ((1 << 10) - 1)
 #define H752_BL_LEDC_FREQ_HZ     5000
 #define H752_BL_PIN              40
 
-static uint8_t *s_fb = nullptr;
+static epd_fb_t s_epdfb = EPD_FB_INIT(PANEL_WIDTH, PANEL_HEIGHT);
+#define s_fb              (s_epdfb.buf)
+#define s_width           (s_epdfb.width)
+#define s_height          (s_epdfb.height)
+#define s_dirty_x0        (s_epdfb.x0)
+#define s_dirty_y0        (s_epdfb.y0)
+#define s_dirty_x1        (s_epdfb.x1)
+#define s_dirty_y1        (s_epdfb.y1)
+#define s_dirty_area_sum  (s_epdfb.area)
 static FASTEPD *s_epd = nullptr;
 static bool s_initialized = false;
 static bool s_bl_inited = false;
 static bool s_force_full = true;
 static int s_partial_count = 0;
-static int s_dirty_x0 = -1;
-static int s_dirty_y0 = -1;
-static int s_dirty_x1 = -1;
-static int s_dirty_y1 = -1;
 static int s_clip_x0 = -1;
 static int s_clip_y0 = -1;
 static int s_clip_x1 = -1;
 static int s_clip_y1 = -1;
-static int s_width = PANEL_WIDTH;
-static int s_height = PANEL_HEIGHT;
-
-static inline void clear_dirty(void)
-{
-    s_dirty_x0 = s_dirty_y0 = s_dirty_x1 = s_dirty_y1 = -1;
-}
-
-static inline void mark_dirty_rect(int x, int y, int w, int h)
-{
-    if (w <= 0 || h <= 0) return;
-    int x0 = std::max(0, x);
-    int y0 = std::max(0, y);
-    int x1 = std::min(s_width,  x + w);
-    int y1 = std::min(s_height, y + h);
-    if (x1 <= x0 || y1 <= y0) return;
-    if (s_dirty_x0 < 0) {
-        s_dirty_x0 = x0;
-        s_dirty_y0 = y0;
-        s_dirty_x1 = x1 - 1;
-        s_dirty_y1 = y1 - 1;
-        return;
-    }
-    s_dirty_x0 = std::min(s_dirty_x0, x0);
-    s_dirty_y0 = std::min(s_dirty_y0, y0);
-    s_dirty_x1 = std::max(s_dirty_x1, x1 - 1);
-    s_dirty_y1 = std::max(s_dirty_y1, y1 - 1);
-}
-
-static inline void set_panel_pixel(int x, int y, bool black)
-{
-    if ((unsigned)x >= (unsigned)s_width || (unsigned)y >= (unsigned)s_height) {
-        return;
-    }
-    size_t idx = (size_t)y * (s_width / 8) + (size_t)(x >> 3);
-    uint8_t mask = (uint8_t)(0x80U >> (x & 7));
-    if (black) {
-        s_fb[idx] &= (uint8_t)~mask;
-    } else {
-        s_fb[idx] |= mask;
-    }
-}
-
-static void fill_panel_rect(int x, int y, int w, int h, bool black)
-{
-    if (!s_fb || w <= 0 || h <= 0) return;
-    int x0 = std::max(0, x);
-    int y0 = std::max(0, y);
-    int x1 = std::min(s_width, x + w);
-    int y1 = std::min(s_height, y + h);
-    if (x1 <= x0 || y1 <= y0) return;
-
-    if (x0 == 0 && x1 == s_width) {
-        const size_t row_bytes = (size_t)s_width / 8;
-        for (int py = y0; py < y1; ++py) {
-            memset(s_fb + (size_t)py * row_bytes, black ? 0x00 : 0xFF, row_bytes);
-        }
-        return;
-    }
-
-    for (int py = y0; py < y1; ++py) {
-        for (int px = x0; px < x1; ++px) {
-            set_panel_pixel(px, py, black);
-        }
-    }
-}
-
-static inline bool rgb565_is_black(uint16_t v)
-{
-    /* Green is the highest-resolution RGB565 channel and a good enough
-     * threshold for Draftling's mostly black/white LVGL output. */
-    return ((v >> 5) & 0x3F) < 32;
-}
 
 static void backlight_pwm_init(void)
 {
     if (s_bl_inited) return;
-    ledc_timer_config_t t = {};
-    t.speed_mode = H752_BL_LEDC_MODE;
-    t.duty_resolution = H752_BL_LEDC_DUTY_RES;
-    t.timer_num = H752_BL_LEDC_TIMER;
-    t.freq_hz = H752_BL_LEDC_FREQ_HZ;
-    t.clk_cfg = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    gpio_hold_dis((gpio_num_t)H752_BL_PIN);
-    ledc_channel_config_t c = {};
-    c.gpio_num = H752_BL_PIN;
-    c.speed_mode = H752_BL_LEDC_MODE;
-    c.channel = H752_BL_LEDC_CHANNEL;
-    c.timer_sel = H752_BL_LEDC_TIMER;
-    c.intr_type = LEDC_INTR_DISABLE;
-    c.duty = 0;
-    c.hpoint = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    bl_ledc_setup(H752_BL_PIN, H752_BL_LEDC_TIMER, H752_BL_LEDC_CHANNEL,
+                  H752_BL_LEDC_DUTY_RES, H752_BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
 }
 
@@ -218,18 +131,17 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
 
     backlight_pwm_init();
     s_force_full = true;
-    clear_dirty();
+    epd_fb_clear_dirty(&s_epdfb);
     s_initialized = true;
 
-    ESP_LOGI(TAG, "H752 EPD47 display initialized (%dx%d panel, scale=%d -> %dx%d logical)",
-             s_width, s_height, H752_SCALE, s_width / H752_SCALE, s_height / H752_SCALE);
+    ESP_LOGI(TAG, "H752 EPD47 display initialized (%dx%d panel)", s_width, s_height);
 }
 
 extern "C" void display_clear(uint8_t color)
 {
     if (!s_initialized || !s_fb) return;
     memset(s_fb, color ? 0xFF : 0x00, FRAMEBUFFER_BYTES);
-    mark_dirty_rect(0, 0, s_width, s_height);
+    epd_fb_mark_dirty(&s_epdfb, 0, 0, s_width, s_height);
     s_force_full = true;
 }
 
@@ -239,10 +151,10 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     /* Coordinates are *logical* (margin-shrunk) pixels -- offset by
      * the left/top margin into the full physical panel (same
      * convention as display_ws_epd397.cpp / display_xteink_epd.cpp). */
-    int px = ((int)x + display_margin_left()) * H752_SCALE;
-    int py = ((int)y + display_margin_top())  * H752_SCALE;
-    fill_panel_rect(px, py, H752_SCALE, H752_SCALE, color == 0);
-    mark_dirty_rect(px, py, H752_SCALE, H752_SCALE);
+    int px = (int)x + display_margin_left();
+    int py = (int)y + display_margin_top();
+    epd_fb_fill_rect(&s_epdfb, px, py, 1, 1, color == 0);
+    epd_fb_mark_dirty(&s_epdfb, px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
@@ -250,16 +162,7 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *colo
     if (!s_initialized || !s_fb || !color_map || w <= 0 || h <= 0) return false;
     int ox = x + display_margin_left();
     int oy = y + display_margin_top();
-    const uint16_t *src = (const uint16_t *)color_map;
-    for (int sy = 0; sy < h; ++sy) {
-        for (int sx = 0; sx < w; ++sx) {
-            bool black = rgb565_is_black(src[(size_t)sy * w + sx]);
-            fill_panel_rect((ox + sx) * H752_SCALE, (oy + sy) * H752_SCALE,
-                            H752_SCALE, H752_SCALE, black);
-        }
-    }
-    mark_dirty_rect(ox * H752_SCALE, oy * H752_SCALE,
-                    w * H752_SCALE, h * H752_SCALE);
+    epd_fb_push_rgb565(&s_epdfb, ox, oy, w, h, color_map);
     return true;
 }
 
@@ -345,7 +248,7 @@ extern "C" void display_full_refresh(void)
     if (!s_initialized) return;
     s_force_full = true;
     s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
-    mark_dirty_rect(0, 0, s_width, s_height);
+    epd_fb_mark_dirty(&s_epdfb, 0, 0, s_width, s_height);
     display_flush();
 }
 
@@ -361,20 +264,10 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
         s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
         return;
     }
-    s_clip_x0 = std::max(0, x * H752_SCALE);
-    s_clip_y0 = std::max(0, y * H752_SCALE);
-    s_clip_x1 = std::min(s_width  - 1, (x + w) * H752_SCALE - 1);
-    s_clip_y1 = std::min(s_height - 1, (y + h) * H752_SCALE - 1);
-}
-
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return FRAMEBUFFER_BYTES;
+    s_clip_x0 = std::max(0, x);
+    s_clip_y0 = std::max(0, y);
+    s_clip_x1 = std::min(s_width  - 1, x + w - 1);
+    s_clip_y1 = std::min(s_height - 1, y + h - 1);
 }
 
 extern "C" void display_set_backlight(int percent)
@@ -382,9 +275,7 @@ extern "C" void display_set_backlight(int percent)
     if (!s_bl_inited) return;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
-    uint32_t duty = (uint32_t)((H752_BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL));
+    bl_ledc_write(H752_BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, H752_BL_LEDC_DUTY_MAX));
 }
 
 extern "C" void display_sleep(void)
@@ -398,8 +289,7 @@ extern "C" void display_wake(void)
 extern "C" void display_deep_sleep_prepare(void)
 {
     if (s_bl_inited) {
-        ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, 0);
-        ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL);
+        bl_ledc_write(H752_BL_LEDC_CHANNEL, 0);
     }
     gpio_hold_dis((gpio_num_t)H752_BL_PIN);
     gpio_reset_pin((gpio_num_t)H752_BL_PIN);
