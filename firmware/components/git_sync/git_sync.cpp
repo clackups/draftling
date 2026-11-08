@@ -277,6 +277,11 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
     for (int i = 0; i < t.count; i++) {
         const git_tree_entry *e = &t.entries[i];
         if ((e->mode & 040000) == 040000) continue;    /* skip sub-dirs */
+        /* Only documents are synced. Anything else in the repository
+         * (images, README files, a git.cfg) stays in Git: writing it
+         * into the project folder could overwrite the device's own
+         * git.cfg or files the sync never commits back. */
+        if (!is_doc(e->name)) continue;
 
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, e->name);

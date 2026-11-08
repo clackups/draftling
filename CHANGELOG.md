@@ -20,6 +20,11 @@ in the git log.
   only looked at the first 32 branches and tags the server listed, so
   in a larger repository it could fail to find its own branch and
   then refuse to push or skip the server's changes.
+- **Git sync no longer copies non-document files onto the SD card**:
+  files in the repository other than `.md`, `.fountain` and `.txt`
+  documents (images, a `git.cfg` someone committed, ...) were written
+  into the project folder, where a committed `git.cfg` replaced the
+  device's own Git settings.
 
 ## [1.0.23] - 2026-11-07
 
