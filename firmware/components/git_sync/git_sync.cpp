@@ -424,9 +424,11 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     /* 1. advertise remote refs */
     snprintf(msg, sizeof(msg), "Contacting %s...", host);
     notify(GIT_SYNC_IN_PROGRESS, msg);
-    git_ref_adv adv[32];
-    int nadv = 0;
-    esp_err_t ret = git_http_list_refs(&remote, "git-upload-pack", adv, 32, &nadv);
+    git_oid remote_sha;
+    git_oid_clear(&remote_sha);
+    bool remote_has_branch = false;
+    esp_err_t ret = git_http_find_ref(&remote, "git-upload-pack", server_ref,
+                                      &remote_sha, &remote_has_branch);
     if (ret == ESP_ERR_INVALID_STATE) {
         snprintf(msg, sizeof(msg), "%s rejected the login (check token)", host);
         set_error(msg);
@@ -436,16 +438,6 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         snprintf(msg, sizeof(msg), "Cannot reach %s", host);
         set_error(msg);
         return ret;
-    }
-
-    git_oid remote_sha;
-    bool remote_has_branch = false;
-    for (int i = 0; i < nadv; i++) {
-        if (strcmp(adv[i].name, server_ref) == 0) {
-            remote_sha = adv[i].oid;
-            remote_has_branch = true;
-            break;
-        }
     }
 
     /* git_ref_read() leaves *out untouched on failure (ref file does

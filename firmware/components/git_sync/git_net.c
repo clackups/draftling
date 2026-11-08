@@ -128,10 +128,10 @@ static void dump_head(const char *what, const uint8_t *b, size_t n)
 /* info/refs                                                          */
 /* ------------------------------------------------------------------ */
 
-esp_err_t git_http_list_refs(const git_remote *r, const char *service,
-                             git_ref_adv *refs, int max, int *out_count)
+esp_err_t git_http_find_ref(const git_remote *r, const char *service,
+                            const char *refname, git_oid *out, bool *found)
 {
-    *out_count = 0;
+    *found = false;
 
     char url[420];
     snprintf(url, sizeof(url), "%s/info/refs?service=%s", r->base_url, service);
@@ -180,18 +180,16 @@ esp_err_t git_http_list_refs(const git_remote *r, const char *service,
         memcpy(oid.hex, line, GIT_OID_HEXSZ);
         oid.hex[GIT_OID_HEXSZ] = '\0';
 
-        char name[160];
+        /* The name ends at '\n', at the NUL before the capability
+         * list, or at the end of the line. */
         int nl = 0;
-        for (int k = GIT_OID_HEXSZ + 1; k < llen && line[k] != '\n' &&
-             line[k] != '\0' && nl < (int)sizeof(name) - 1; k++)
-            name[nl++] = line[k];
-        name[nl] = '\0';
-        if (nl == 0 || strcmp(name, "capabilities^{}") == 0) continue;
-
-        if (*out_count < max) {
-            strlcpy(refs[*out_count].name, name, sizeof(refs[*out_count].name));
-            refs[*out_count].oid = oid;
-            (*out_count)++;
+        const char *name = line + GIT_OID_HEXSZ + 1;
+        int nmax = llen - (GIT_OID_HEXSZ + 1);
+        while (nl < nmax && name[nl] != '\n' && name[nl] != '\0') nl++;
+        if ((size_t)nl == strlen(refname) && memcmp(name, refname, (size_t)nl) == 0) {
+            *out = oid;
+            *found = true;
+            break;
         }
     }
 

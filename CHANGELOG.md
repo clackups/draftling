@@ -14,6 +14,13 @@ in the git log.
   on screen). Applied on the next restart, which is offered when you
   leave the Settings screen.
 
+### Fixed
+
+- **Git sync in repositories with many branches or tags**: the device
+  only looked at the first 32 branches and tags the server listed, so
+  in a larger repository it could fail to find its own branch and
+  then refuse to push or skip the server's changes.
+
 ## [1.0.23] - 2026-11-07
 
 ### Added

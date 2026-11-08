@@ -288,14 +288,12 @@ typedef struct {
     char auth_basic[420];       /* pre-computed "Basic xxx" or "" */
 } git_remote;
 
-typedef struct {
-    char    name[128];
-    git_oid oid;
-} git_ref_adv;
-
-/* GET /info/refs?service=<service>. Fills up to `max` advertised refs. */
-esp_err_t git_http_list_refs(const git_remote *r, const char *service,
-                             git_ref_adv *refs, int max, int *out_count);
+/* GET /info/refs?service=<service> and look up one advertised ref
+ * (e.g. "refs/heads/main"). *found is false when the server does not
+ * advertise it. Every advertised ref is scanned, however many there
+ * are. */
+esp_err_t git_http_find_ref(const git_remote *r, const char *service,
+                            const char *refname, git_oid *out, bool *found);
 
 /* POST /git-upload-pack: negotiate `want`/`have` and stream the returned
  * packfile to `out_pack_path`.  `haves` may be NULL/0. Returns
