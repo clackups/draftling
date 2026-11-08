@@ -40,7 +40,6 @@ struct editor_doc_s {
     char   path[256];     /* backing file path, "" when untitled */
     bool   modified;
     editor_doc_format_t format; /* Markdown, Fountain or plain text */
-    editor_mode_t mode;
     int    scroll_line;
     int    sel_anchor;    /* logical byte offset, -1 = no selection */
 
@@ -82,7 +81,6 @@ static size_t s_doc_buf_size = 0;
 #define s_path              (s_active->path)
 #define s_modified          (s_active->modified)
 #define s_format            (s_active->format)
-#define s_mode              (s_active->mode)
 #define s_scroll_line       (s_active->scroll_line)
 #define s_sel_anchor        (s_active->sel_anchor)
 #define s_nl_before         (s_active->nl_before)
@@ -184,14 +182,6 @@ static void insert_at_gap(const char *text, size_t len)
     s_gap_start += len;
 }
 
-static void ensure_gap(size_t need)
-{
-    size_t gap_sz = s_gap_end - s_gap_start;
-    if (gap_sz >= need) return;
-    /* Should not happen with 256K buffer and reasonable docs */
-    ESP_LOGE(TAG, "Gap buffer full");
-}
-
 /* ---- Document pool management ---- */
 
 /* Reset a document slot to an empty, untitled buffer. The slot's
@@ -203,7 +193,6 @@ static void doc_reset_empty(editor_doc_t *d)
     d->path[0]     = '\0';
     d->modified    = false;
     d->format      = EDITOR_DOC_MARKDOWN;
-    d->mode        = EDITOR_MODE_NORMAL;
     d->scroll_line = 0;
     d->sel_anchor  = -1;
     doc_invalidate_caches(d);
@@ -627,7 +616,6 @@ extern "C" esp_err_t editor_open_file(const char *path)
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_caches();
-    s_mode = EDITOR_MODE_EDITING;
 
     /* Restore cursor position and scroll line from the metadata
      * sidecar (no-op if the file was never opened before). */
@@ -802,7 +790,6 @@ extern "C" void editor_new_file(void)
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_caches();
-    s_mode = EDITOR_MODE_EDITING;
 }
 
 extern "C" void editor_close_file(void)
@@ -817,7 +804,6 @@ extern "C" void editor_close_file(void)
     s_scroll_line = 0;
     s_sel_anchor = -1;
     invalidate_caches();
-    s_mode = EDITOR_MODE_NORMAL;
 }
 
 extern "C" const char *editor_get_file_path(void) { return s_path[0] ? s_path : NULL; }
@@ -1339,7 +1325,6 @@ extern "C" bool editor_insert_char(char c)
                  (unsigned)(s_buf_size / 1024));
         return false;
     }
-    ensure_gap(1);
     if (s_gap_start >= s_gap_end) return false;
     size_t pos = s_gap_start;
     insert_at_gap(&c, 1);
@@ -1416,16 +1401,6 @@ extern "C" void editor_delete_forward(void)
     content_changed(s_gap_start);
 }
 
-extern "C" void editor_delete_line(void)
-{
-    editor_move_home();
-    size_t end = s_gap_end;
-    while (end < s_buf_size && s_buf[end] != '\n') end++;
-    if (end < s_buf_size) end++; /* include the newline */
-    remove_after_gap(end);
-    content_changed(s_gap_start);
-}
-
 extern "C" void editor_set_cursor(size_t pos)
 {
     size_t len = content_len();
@@ -1486,7 +1461,6 @@ extern "C" esp_err_t editor_replace_range(size_t start, size_t end,
     remove_before_gap(start);
     s_sel_anchor = -1;
     if (rlen > 0) {
-        ensure_gap(rlen);
         insert_at_gap(replacement, rlen);
     }
     content_changed(start);
@@ -1621,10 +1595,3 @@ extern "C" bool editor_paste(void)
     return got == s_clip_len;
 }
 
-extern "C" bool editor_has_clipboard(void)
-{
-    return s_clip_len > 0;
-}
-
-extern "C" editor_mode_t editor_get_mode(void) { return s_mode; }
-extern "C" void editor_set_mode(editor_mode_t mode) { s_mode = mode; }

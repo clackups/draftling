@@ -50,11 +50,9 @@ esp_err_t project_delete(const char *name);
  * project name in out and return true. */
 bool project_of_path(const char *path, char *out, size_t out_sz);
 
-/* Documents (*.md, *.fountain, *.txt) in the root folder. */
-int project_root_doc_count(void);
-
-/* Like project_root_doc_count(), and also stores the first max names
- * (sorted, cut to fit) in names. */
+/* Documents (*.md, *.fountain, *.txt) in the root folder: returns
+ * their count and stores the first max names (sorted, cut to fit) in
+ * names (which may be NULL). */
 typedef char project_file_name_t[64];
 int project_root_doc_names(project_file_name_t *names, int max);
 

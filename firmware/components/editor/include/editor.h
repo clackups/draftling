@@ -19,11 +19,6 @@ extern "C" {
  * Returns 0 before editor_init() has run. */
 size_t editor_get_max_doc_size(void);
 
-typedef enum {
-    EDITOR_MODE_NORMAL,
-    EDITOR_MODE_EDITING,
-} editor_mode_t;
-
 /* ---- Multi-document support ----
  *
  * The text engine keeps a small fixed pool of documents. Each document
@@ -228,7 +223,6 @@ size_t editor_peek_before(char *out, size_t max);
 bool editor_replace_before(size_t del, const char *text);
 void editor_delete_back(void);
 void editor_delete_forward(void);
-void editor_delete_line(void);
 
 void editor_set_cursor(size_t pos);
 
@@ -248,10 +242,6 @@ void editor_select_all(void);
 bool editor_copy(void);
 bool editor_cut(void);
 bool editor_paste(void);
-bool editor_has_clipboard(void);
-
-editor_mode_t editor_get_mode(void);
-void editor_set_mode(editor_mode_t mode);
 
 #ifdef __cplusplus
 }

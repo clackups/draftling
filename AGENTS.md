@@ -888,7 +888,7 @@ can show different formats.
 FAT drops the latter; at most `PROJECT_NAME_MAX` = 32; "System Volume
 Information" reserved), `project_list()` (root folders with a valid
 name), `project_create()` / `project_delete()` (`sd_card_remove_tree()`,
-`.git` included), `project_of_path()`, `project_root_doc_count()`,
+`.git` included), `project_of_path()`, `project_root_doc_names()`,
 `project_migrate_root()` (root documents with their `.meta` sidecars,
 then `git.cfg` and `.git` unless the project has its own; a taken name
 gets `-2`, `-3`, ... from `project_free_file_name()`), `project_stats()`

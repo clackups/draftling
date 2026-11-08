@@ -1631,14 +1631,11 @@ static split_mode_t s_split_mode = SPLIT_NONE;
 
 /* True while the editor screen is the active top-level screen, false
  * while the file browser is. This is the authoritative source for
- * key-event routing and refresh gating. It must NOT be derived from
- * editor_get_mode(): the editor "mode" is a per-document property
- * (editor.cpp aliases it onto the active document), and the active
- * document is re-bound to the focused pane on every cursor blink and
- * refresh. Reading the per-document mode to decide which screen we are
- * on therefore breaks in split mode -- the focused pane can carry an
- * EDITING mode while the browser is on screen, leaving keystrokes
- * routed to the (hidden) editor and the browser apparently frozen. */
+ * key-event routing and refresh gating. (A per-document "mode" used to
+ * be read for this; the active document is re-bound to the focused
+ * pane on every cursor blink and refresh, so in split mode it could say
+ * "editing" while the browser was on screen, routing keys to the
+ * hidden editor.) */
 static bool s_editor_screen_active = false;
 
 /* Which pane a file-browser "open" / "new" action should load into.
@@ -4512,7 +4509,6 @@ extern "C" void editor_ui_show_file_browser(void)
 extern "C" void editor_ui_show_editor(void)
 {
     s_editor_screen_active = true;
-    editor_set_mode(EDITOR_MODE_EDITING);
     /* The default text names the focused document's project. */
     if (!s_status_clear_timer) restore_default_status();
     sync_battery_labels();

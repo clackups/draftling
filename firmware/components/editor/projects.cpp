@@ -147,11 +147,6 @@ extern "C" int project_root_doc_names(project_file_name_t *names, int max)
     return n;
 }
 
-extern "C" int project_root_doc_count(void)
-{
-    return project_root_doc_names(NULL, 0);
-}
-
 extern "C" bool project_free_file_name(const char *dir, const char *name,
                                        char *out, size_t out_sz)
 {
