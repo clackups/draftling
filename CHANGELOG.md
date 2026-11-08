@@ -14,13 +14,6 @@ in the git log.
   on screen). Applied on the next restart, which is offered when you
   leave the Settings screen.
 
-### Changed
-
-- **Cursor position when scrolling between pages**: Up and Page Up now
-  bring the cursor in at the bottom of the newly drawn page; Down and
-  Page Down bring it in at the top. The cursor then moves line by line
-  across the page, while e-paper displays still redraw by page.
-
 ## [1.0.23] - 2026-11-07
 
 ### Added
