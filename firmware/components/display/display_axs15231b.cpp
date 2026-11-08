@@ -1363,16 +1363,6 @@ extern "C" void display_wake(void)
     ESP_LOGI(TAG, "panel awake (SLPOUT)");
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return (uint8_t *)s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return (int)(s_fb_pixels * sizeof(uint16_t));
-}
-
 extern "C" void display_deep_sleep_prepare(void)
 {
     /* Leave the panel in its current display-on state through deep

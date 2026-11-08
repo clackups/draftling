@@ -367,16 +367,6 @@ extern "C" void display_set_partial_clip(int x, int y, int w, int h)
     s_clip_y1 = std::min(s_height - 1, (y + h) * H752_SCALE - 1);
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return FRAMEBUFFER_BYTES;
-}
-
 extern "C" void display_set_backlight(int percent)
 {
     if (!s_bl_inited) return;

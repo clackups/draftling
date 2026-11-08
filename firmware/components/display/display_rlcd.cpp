@@ -247,16 +247,6 @@ extern "C" void display_request_full_refresh(void)
      * framebuffer. */
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return s_disp_buf;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return s_disp_len;
-}
-
 extern "C" bool display_push_rgb565(int /*x*/, int /*y*/, int /*w*/, int /*h*/,
                                     const void * /*color_map*/)
 {

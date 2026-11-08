@@ -589,16 +589,6 @@ extern "C" void display_request_full_refresh(void)
     s_force_full = true;
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return FRAMEBUFFER_BYTES;
-}
-
 extern "C" void display_sleep(void)
 {
     /* E-paper retains its image without power */

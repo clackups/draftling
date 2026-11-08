@@ -777,9 +777,9 @@ non-e-paper builds do not link epdiy into the final image.
 Public API: `display_init()`, `display_clear()`, `display_set_pixel()`,
 `display_flush()`, `display_full_refresh()`, `display_push_rgb565()`,
 `display_set_partial_clip()`, `display_set_backlight()`,
-`display_controller_name()`, `display_spi_tft_config()`, `display_get_buffer()`,
-`display_get_buffer_size()`, `lvgl_port_init()`,
-`lvgl_port_lock()`, `lvgl_port_unlock()`.
+`display_controller_name()`, `display_spi_tft_config()`,
+`draftling_lvgl_port_init()`, `draftling_lvgl_port_lock()`,
+`draftling_lvgl_port_unlock()`.
 
 ### components/editor/
 

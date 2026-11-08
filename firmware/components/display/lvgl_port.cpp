@@ -448,11 +448,6 @@ extern "C" void draftling_lvgl_port_set_flip180(bool flip)
              (int)flip, s_rotate_deg);
 }
 
-extern "C" bool draftling_lvgl_port_get_flip180(void)
-{
-    return s_flip180;
-}
-
 /* Wipe both LVGL draw buffers so no stale rendered pixels survive a
  * layout change (e.g. a base-font-size change that resizes every
  * widget on every screen).

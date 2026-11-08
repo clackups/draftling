@@ -613,17 +613,6 @@ extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
      * refresh region. */
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    /* No external 1-bpp framebuffer; epdiy owns the 4-bpp one. */
-    return nullptr;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return 0;
-}
-
 extern "C" void display_set_backlight(int percent)
 {
 #if defined(EPDIY_HAS_BACKLIGHT)

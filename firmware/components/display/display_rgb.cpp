@@ -781,16 +781,6 @@ extern "C" void display_request_full_refresh(void)
     s_dirty_y2 = s_height - 1;
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return (uint8_t *)s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return (int)(s_fb_pixels * sizeof(uint16_t));
-}
-
 extern "C" void display_sleep(void)
 {
     if (s_bl_pin >= 0) display_set_backlight(0);

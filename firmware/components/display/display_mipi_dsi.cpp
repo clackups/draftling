@@ -401,18 +401,6 @@ extern "C" void display_request_full_refresh(void)
     /* No-op: continuous scanout, nothing to latch. */
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    /* The legacy 1-bpp framebuffer is not exposed by this backend;
-     * Draftling code paths that touch it are e-paper-only. */
-    return NULL;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return 0;
-}
-
 extern "C" void display_sleep(void)
 {
     bsp_display_backlight_off();

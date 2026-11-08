@@ -173,6 +173,6 @@ and enables the GT911 touchscreen.
 - `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` + `DRAFTLING_RGB_BOARD_S043` derived flags, width/height (800x480), `DRAFTLING_DISPLAY_HIDPI` (Hack fonts), GT911 / touch-RST defaults.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
 - `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+Q -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
-- `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` / `draftling_lvgl_port_get_flip180()` runtime 180-degree flip.
+- `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` runtime 180-degree flip.
 - `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable.
 - `docs/sunton-esp32-8048S070c.md` -- the 7" sibling board.
