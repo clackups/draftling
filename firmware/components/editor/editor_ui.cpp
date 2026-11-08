@@ -54,6 +54,7 @@
 #include "display_margins.h"
 #include "display_orientation.h"
 #include "display_flip.h"
+#include "display_scale.h"
 #include "standby.h"
 #include "greybeard.h"
 #include "battery.h"
@@ -126,12 +127,17 @@ static inline bool scr_axes_swapped(void) { return !display_orientation_is_portr
 #else
 static inline bool scr_axes_swapped(void) { return display_orientation_is_portrait(); }
 #endif
-#define SCR_W        (scr_axes_swapped() \
+/* The "2x scale" setting (display_scale.h, frozen for the session)
+ * halves the LVGL canvas in both directions; the LVGL port draws every
+ * pixel as a 2x2 block. */
+#define SCR_W        ((scr_axes_swapped() \
     ? (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom()) \
-    : (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()))
-#define SCR_H        (scr_axes_swapped() \
+    : (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right())) \
+    / display_scale_factor())
+#define SCR_H        ((scr_axes_swapped() \
     ? (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()) \
-    : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom()))
+    : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())) \
+    / display_scale_factor())
 /* Header / status bar heights. These bars always use FONT_11, so on
  * high-density boards (which render 1:1 with the taller Hack font
  * instead of the old 2x upscale) they must be twice as tall to fit the
@@ -712,6 +718,11 @@ static bool s_pending_portrait = false;
  * (see display_flip.h); this local tracks the NVS-persisted value
  * that will apply on the next restart. */
 static bool s_pending_upside_down = false;
+
+/* Pending "2x scale" flag (Settings -> 2x scale). Frozen for the
+ * session like the orientation (see display_scale.h); this local
+ * tracks the NVS-persisted value that will apply on the next restart. */
+static bool s_pending_scale2x = false;
 
 /* Set whenever a restart-only display setting -- a margin, the
  * display orientation, or the upside-down flip -- is changed during
@@ -5206,14 +5217,15 @@ static int find_timeout_option(uint32_t sec)
 #define SETTINGS_IDX_UPSIDE_DOWN   (_SETTINGS_NEXT_AFTER_ORIENTATION + 0)
 #define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN (_SETTINGS_NEXT_AFTER_ORIENTATION + 1)
 #endif
-#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 0)
-#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 1)
-#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 2)
-#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 3)
+#define SETTINGS_IDX_SCALE2X       (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 0)
+#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 1)
+#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 2)
+#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 3)
+#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 4)
 /* "Sleep now" used to live here; it now lives in the F1 menu. */
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 4)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 5)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 6)
+#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 5)
+#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 6)
+#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 7)
 
 static void refresh_settings_items(void)
 {
@@ -5314,6 +5326,13 @@ static void refresh_settings_items(void)
              s_pending_upside_down ? "On" : "Off");
     lv_list_add_btn(s_settings_list, NULL, buf);
 #endif
+
+    /* 2x scale for the visually impaired: every pixel drawn as a 2x2
+     * block. The LVGL canvas size is fixed for the session, so it only
+     * takes effect on a restart. */
+    snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
+             s_pending_scale2x ? "On" : "Off");
+    lv_list_add_btn(s_settings_list, NULL, buf);
 
     /* Screen margins -- pixels of panel hidden under the enclosure on
      * each edge. Zero by default; the LVGL display resolution is fixed
@@ -5635,6 +5654,15 @@ static bool settings_cycle_item(int idx, int dir)
         refresh_settings_items();
         return true;
 #endif
+    } else if (idx == SETTINGS_IDX_SCALE2X) {
+        /* Only two states, so either direction toggles. The LVGL
+         * canvas size is fixed for the session (see display_scale.h),
+         * so request_close_settings() offers a restart on the way out. */
+        s_pending_scale2x = !s_pending_scale2x;
+        display_scale_set_2x(s_pending_scale2x);
+        s_restart_needed = true;
+        refresh_settings_items();
+        return true;
     } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
         int oi = find_margin_option(s_margin_left);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
@@ -7455,7 +7483,8 @@ static void build_hwinfo_text(std::string &out, int cols)
     snprintf(buf, sizeof(buf), "%d x %d", CONFIG_DRAFTLING_DISPLAY_WIDTH,
              CONFIG_DRAFTLING_DISPLAY_HEIGHT);
     help_row(out, cols, kc, "Resolution", buf);
-    snprintf(buf, sizeof(buf), "%d x %d", (int)SCR_W, (int)SCR_H);
+    snprintf(buf, sizeof(buf), "%d x %d%s", (int)SCR_W, (int)SCR_H,
+             display_scale_factor() > 1 ? " (2x scale)" : "");
     help_row(out, cols, kc, "Text area", buf);
 
     help_heading(out, "SD card");
@@ -12789,6 +12818,7 @@ extern "C" void editor_ui_init(void)
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();
     s_pending_upside_down = display_flip_get_pending_upside_down();
+    s_pending_scale2x = display_scale_get_pending_2x();
     init_styles();
 
     /* Create key-event queue (must exist before BLE callback is set) */

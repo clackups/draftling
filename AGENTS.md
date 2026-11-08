@@ -2821,6 +2821,31 @@ controls for the same turn; `editor_ui.cpp`'s
 handling compiled out) whenever `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`
 is defined.
 
+### 2x scale (user-adjustable, not a Kconfig setting)
+
+Off (default) or on, a third **runtime, NVS-persisted** setting
+modelled on "Display upside down":
+`components/display/display_scale.{h,cpp}` expose
+`display_scale_factor()` (1 or 2, frozen for the session, loaded by
+`display_scale_init()`, which `main.cpp` calls right after
+`display_flip_init()`), plus `display_scale_set_2x()` /
+`display_scale_get_pending_2x()` for the F1 -> Settings "2x scale
+(large view)" row (`SETTINGS_IDX_SCALE2X`, restart to apply via
+`s_restart_needed`). NVS namespace `dispscale`, key `x2` (u8).
+
+`app_config.h`'s `DISPLAY_SCALE` is passed as the fourth argument of
+`draftling_lvgl_port_init()`, which keeps `s_phys_w/h` at the
+(margin-shrunk) panel size but creates the LVGL display at
+`width / scale` x `height / scale`. `flush_cb` rotates a tile in that
+scaled frame (`map_area_to_physical()` with the halved panel size),
+then `upscale_tile_rgb565()` expands each pixel into a 2x2 block in
+`s_scale_buf` and the coordinates are doubled; the per-pixel
+`display_set_pixel()` fallback walks the final physical buffer. The
+display backends never see the scale.
+`draftling_lvgl_port_map_to_physical()` applies the same doubling (the
+e-paper typing clip). The touchscreen's `logical_width/height` and the
+editor's `SCR_W`/`SCR_H` are divided by the scale as well.
+
 #### E-paper full-refresh interval (DRAFTLING_EPD_FULL_REFRESH_INTERVAL)
 
 `int` used by e-paper backends only (gated on

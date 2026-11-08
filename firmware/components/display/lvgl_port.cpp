@@ -48,6 +48,46 @@ static int       s_phys_h     = 0;
 static uint16_t *s_rot_buf    = NULL;
 static size_t    s_rot_buf_px = 0;
 
+/* "2x scale" setting (display_scale.h): 1 or 2. LVGL renders into a
+ * canvas of (s_phys_w / s_scale) x (s_phys_h / s_scale); flush_cb
+ * rotates each tile in that scaled frame, then expands every pixel into
+ * an s_scale x s_scale block (s_scale_buf) before pushing it. */
+static int       s_scale        = 1;
+static uint16_t *s_scale_buf    = NULL;
+static size_t    s_scale_buf_px = 0;
+
+/* Grow a PSRAM tile buffer to hold at least px_count pixels. */
+static uint16_t *ensure_tile_buf(uint16_t **buf, size_t *cap, size_t px_count)
+{
+    if (px_count > *cap) {
+        if (*buf) heap_caps_free(*buf);
+        *buf = (uint16_t *)heap_caps_malloc(px_count * sizeof(uint16_t),
+                                            MALLOC_CAP_SPIRAM);
+        assert(*buf);
+        *cap = px_count;
+    }
+    return *buf;
+}
+
+/* Expand an RGB565 tile (w x h) so every pixel becomes an
+ * s x s block; dst is (w * s) x (h * s). */
+static void upscale_tile_rgb565(const uint16_t *src, uint16_t *dst,
+                                int w, int h, int s)
+{
+    int dst_w = w * s;
+    for (int j = 0; j < h; j++) {
+        const uint16_t *srow = src + (size_t)j * w;
+        uint16_t *drow = dst + (size_t)j * s * dst_w;
+        for (int i = 0; i < w; i++) {
+            uint16_t c = srow[i];
+            for (int k = 0; k < s; k++) drow[i * s + k] = c;
+        }
+        for (int r = 1; r < s; r++) {
+            memcpy(drow + (size_t)r * dst_w, drow, (size_t)dst_w * sizeof(uint16_t));
+        }
+    }
+}
+
 /* The two LVGL draw buffers handed to lv_display_set_buffers(). Kept
  * so draftling_lvgl_port_clear_buffers() can wipe stale rendered
  * pixels out of BOTH of them (see that function for why the panel
@@ -172,7 +212,12 @@ extern "C" void draftling_lvgl_port_map_to_physical(int x, int y, int w, int h,
     area.y1 = y;
     area.x2 = x + w - 1;
     area.y2 = y + h - 1;
-    map_area_to_physical(&area, s_rotate_deg, s_phys_w, s_phys_h, px, py, pw, ph);
+    map_area_to_physical(&area, s_rotate_deg, s_phys_w / s_scale,
+                         s_phys_h / s_scale, px, py, pw, ph);
+    *px *= s_scale;
+    *py *= s_scale;
+    *pw *= s_scale;
+    *ph *= s_scale;
 }
 
 static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_map)
@@ -191,18 +236,27 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
 
     if (s_rotate_deg == 90 || s_rotate_deg == 180 || s_rotate_deg == 270) {
         size_t px_count = (size_t)w * (size_t)h;
-        if (px_count > s_rot_buf_px) {
-            if (s_rot_buf) heap_caps_free(s_rot_buf);
-            s_rot_buf = (uint16_t *)heap_caps_malloc(px_count * sizeof(uint16_t),
-                                                    MALLOC_CAP_SPIRAM);
-            assert(s_rot_buf);
-            s_rot_buf_px = px_count;
-        }
+        ensure_tile_buf(&s_rot_buf, &s_rot_buf_px, px_count);
         rotate_tile_rgb565((const uint16_t *)color_map, s_rot_buf,
                            w, h, s_rotate_deg);
         push_buf = (uint8_t *)s_rot_buf;
-        map_area_to_physical(area, s_rotate_deg, s_phys_w, s_phys_h,
+        /* With the 2x scale on, rotate in the scaled-down panel frame;
+         * the upscale below then moves it to physical coordinates. */
+        map_area_to_physical(area, s_rotate_deg, s_phys_w / s_scale,
+                             s_phys_h / s_scale,
                              &phys_x, &phys_y, &phys_w, &phys_h);
+    }
+
+    if (s_scale > 1) {
+        size_t px_count = (size_t)phys_w * phys_h * s_scale * s_scale;
+        ensure_tile_buf(&s_scale_buf, &s_scale_buf_px, px_count);
+        upscale_tile_rgb565((const uint16_t *)push_buf, s_scale_buf,
+                            phys_w, phys_h, s_scale);
+        push_buf = (uint8_t *)s_scale_buf;
+        phys_x *= s_scale;
+        phys_y *= s_scale;
+        phys_w *= s_scale;
+        phys_h *= s_scale;
     }
 
     /* Fast path: if the backend supports it, push the LVGL RGB565
@@ -226,9 +280,11 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
         return;
     }
 
-    uint16_t *buf = (uint16_t *)color_map;
-    for (int y = area->y1; y <= area->y2; y++) {
-        for (int x = area->x1; x <= area->x2; x++) {
+    /* push_buf is already rotated and scaled into the physical
+     * rectangle (phys_x, phys_y, phys_w, phys_h). */
+    const uint16_t *buf = (const uint16_t *)push_buf;
+    for (int y = 0; y < phys_h; y++) {
+        for (int x = 0; x < phys_w; x++) {
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
             /* Color backends should always have handled the push via
              * display_push_rgb565() above; reaching here means the
@@ -239,14 +295,7 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *color_m
             (void)x; (void)y; (void)buf;
 #else
             uint8_t color = (*buf < 0x7FFF) ? 0x00 : 0xFF;
-            int px = x, py = y;
-            switch (s_rotate_deg) {
-            case 90:  px = s_phys_w - 1 - y; py = x; break;
-            case 180: px = s_phys_w - 1 - x; py = s_phys_h - 1 - y; break;
-            case 270: px = y; py = s_phys_h - 1 - x; break;
-            default:  break;
-            }
-            display_set_pixel(px, py, color);
+            display_set_pixel(phys_x + x, phys_y + y, color);
 #endif
             buf++;
         }
@@ -276,7 +325,8 @@ static void lvgl_task(void *arg)
     }
 }
 
-extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
+extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg,
+                                         int scale)
 {
     /* Stash the user-requested rotation and the backend-native panel
      * dimensions so flush_cb can software-rotate each LVGL tile back
@@ -292,6 +342,10 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     s_rotate_deg = s_base_rotate_deg;
     s_phys_w = width;
     s_phys_h = height;
+    s_scale  = (scale == 2) ? 2 : 1;
+    /* LVGL renders into the scaled-down canvas; flush_cb expands it. */
+    width  /= s_scale;
+    height /= s_scale;
 
     /* Recursive mutex so a task that already holds it can call
      * draftling_lvgl_port_lock() again without deadlocking. The "Sleep now"
@@ -361,7 +415,8 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg)
     ESP_ERROR_CHECK(esp_timer_start_periodic(timer, LVGL_TICK_PERIOD_MS * 1000));
 
     xTaskCreatePinnedToCore(lvgl_task, "LVGL", 8 * 1024, NULL, 5, NULL, 0);
-    ESP_LOGI(TAG, "LVGL port initialized (%dx%d, rotation=%d)", width, height, s_rotate_deg);
+    ESP_LOGI(TAG, "LVGL port initialized (%dx%d, rotation=%d, scale=%d)",
+             width, height, s_rotate_deg, s_scale);
 }
 
 /* Runtime 180-degree flip toggle.

@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
+  (large view)"): draws every screen pixel as a 2x2 block, so text,
+  menus and dialogs are twice as large (with a quarter of the content
+  on screen). Applied on the next restart, which is offered when you
+  leave the Settings screen.
+
 ## [1.0.23] - 2026-11-07
 
 ### Added

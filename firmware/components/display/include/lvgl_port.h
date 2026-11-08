@@ -6,7 +6,11 @@ extern "C" {
 
 #include <stdbool.h>
 
-void draftling_lvgl_port_init(int width, int height, int rotate_deg);
+/* width / height: the panel area in physical pixels (pre-rotation).
+ * scale: 1, or 2 for the "2x scale" setting (display_scale.h) -- LVGL
+ * then renders a (width / 2) x (height / 2) canvas and every pixel is
+ * drawn as a 2x2 block. */
+void draftling_lvgl_port_init(int width, int height, int rotate_deg, int scale);
 bool draftling_lvgl_port_lock(int timeout_ms);
 void draftling_lvgl_port_unlock(void);
 
@@ -26,7 +30,7 @@ void draftling_lvgl_port_clear_buffers(void);
 
 /* Map a rectangle from LVGL's logical (post-rotation) coordinate space
  * into physical panel coordinates, applying the same transform
- * flush_cb() uses to place each rendered tile -- the current base
+ * flush_cb() uses to place each rendered tile -- the 2x scale, the current base
  * rotation, the "Display orientation" portrait setting (folded into
  * the base rotation at boot) and the runtime 180-degree flip all
  * together.

@@ -2356,6 +2356,11 @@ extern "C" void app_main(void)
      * above just produced. */
     display_flip_init();
 
+    /* Load the "2x scale" setting (Settings -> 2x scale; off on a fresh
+     * install) before the LVGL canvas and the touchscreen frame are
+     * sized from DISPLAY_SCALE below. */
+    display_scale_init();
+
 #if defined(BOARD_WS2812_PIN)
     ws2812_off();
 #endif
@@ -2986,10 +2991,12 @@ extern "C" void app_main(void)
      * CONFIG_DRAFTLING_DISPLAY_HIDPI.)
      *
      * DISPLAY_ROTATE_EFFECTIVE folds in the "Display orientation"
-     * setting: portrait = the board's base rotation + 90. */
+     * setting: portrait = the board's base rotation + 90.
+     * DISPLAY_SCALE is the "2x scale" setting: with it on, LVGL renders
+     * a half-size canvas that the port draws 2x2 per pixel. */
     ESP_LOGI(TAG, "Initializing LVGL...");
     draftling_lvgl_port_init(DISPLAY_LOGICAL_WIDTH, DISPLAY_LOGICAL_HEIGHT,
-                             DISPLAY_ROTATE_EFFECTIVE);
+                             DISPLAY_ROTATE_EFFECTIVE, DISPLAY_SCALE);
 
     /* Initialize battery voltage monitor before the UI so the editor
      * status bar can show the battery level immediately. battery_init
@@ -3691,8 +3698,10 @@ extern "C" void app_main(void)
          * to roughly 1/4 down from the top instead of the centre).
          * Pass user_rotate_deg=0 so the rotation happens exactly
          * once, inside LVGL. */
-        tcfg.logical_width  = DISPLAY_LOGICAL_WIDTH;
-        tcfg.logical_height = DISPLAY_LOGICAL_HEIGHT;
+        /* With the 2x scale on, the LVGL canvas is half the panel in
+         * each direction, so touch points are reported in that frame. */
+        tcfg.logical_width  = DISPLAY_LOGICAL_WIDTH  / DISPLAY_SCALE;
+        tcfg.logical_height = DISPLAY_LOGICAL_HEIGHT / DISPLAY_SCALE;
         tcfg.swap_xy  = TOUCH_SWAP_XY  ? true : false;
         tcfg.mirror_x = TOUCH_MIRROR_X ? true : false;
         tcfg.mirror_y = TOUCH_MIRROR_Y ? true : false;
