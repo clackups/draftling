@@ -19,7 +19,6 @@ void draftling_lvgl_port_unlock(void);
  * does not change the reported resolution, so it can be toggled live
  * without rebuilding the LVGL widget tree. */
 void draftling_lvgl_port_set_flip180(bool flip);
-bool draftling_lvgl_port_get_flip180(void);
 
 /* Zero both LVGL draw buffers to drop stale rendered pixels after a
  * layout change (e.g. a base-font-size change). Needed on the

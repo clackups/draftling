@@ -61,11 +61,8 @@
  *
  * Scaling
  * -------
- * Draftling renders LVGL 1:1 at the panel resolution (framebuffer
- * upscaling was removed; the Tab5 uses the larger Hack font instead).
- * MDSI_SCALE is fixed at 1, so the copy paths below are effectively a
- * straight blit; they are kept in their generic form in case a future
- * board needs expansion again.
+ * Draftling renders LVGL 1:1 at the panel resolution (the Tab5 uses
+ * the larger Hack font), so a pushed tile is a straight blit.
  *
  * Rotation
  * --------
@@ -94,10 +91,6 @@
 #include "display_margins.h"
 
 static const char *TAG = "Display";
-
-/* Panel renders 1:1; the former DRAFTLING_DISPLAY_SCALE upscale has
- * been removed (Tab5 uses a larger font instead). */
-#define MDSI_SCALE   1
 
 /* Upper bound on how long a single DMA2D frame-buffer copy may take
  * before we give up waiting for the color-trans-done callback. The
@@ -154,28 +147,6 @@ static void dsi_blit(int x1, int y1, int x2, int y2, const void *buf)
                      MDSI_DRAW_TIMEOUT_MS);
         }
     }
-}
-
-/* Scratch buffer used to nearest-neighbor expand a logical RGB565
- * tile into a SCALE x SCALE panel-pixel block. Grown on demand to
- * the largest tile we have ever been asked to push; lives in PSRAM
- * because internal SRAM is reserved for DMA descriptors on P4. */
-static uint16_t *s_scratch    = NULL;
-static size_t    s_scratch_px = 0;
-
-static bool ensure_scratch(size_t px_needed)
-{
-    if (px_needed <= s_scratch_px) return true;
-    if (s_scratch) heap_caps_free(s_scratch);
-    s_scratch = (uint16_t *)heap_caps_malloc(px_needed * sizeof(uint16_t),
-                                             MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!s_scratch) {
-        s_scratch_px = 0;
-        ESP_LOGE(TAG, "scratch alloc failed (%u px)", (unsigned)px_needed);
-        return false;
-    }
-    s_scratch_px = px_needed;
-    return true;
 }
 
 extern "C" void display_set_backlight(int percent)
@@ -279,8 +250,7 @@ extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
      * framebuffer at boot. */
     bsp_display_backlight_off();
 
-    ESP_LOGI(TAG, "MIPI-DSI panel ready (%dx%d, scale=%d)",
-             s_width, s_height, MDSI_SCALE);
+    ESP_LOGI(TAG, "MIPI-DSI panel ready (%dx%d)", s_width, s_height);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -320,59 +290,13 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h,
     x += display_margin_left();
     y += display_margin_top();
 
-    if (MDSI_SCALE <= 1) {
-        /* Fast path: 1:1, push the LVGL buffer straight into the
-         * panel scanout framebuffer. */
-        int x2 = x + w;
-        int y2 = y + h;
-        if (x2 > s_width)  x2 = s_width;
-        if (y2 > s_height) y2 = s_height;
-        if (x2 <= x || y2 <= y) return true;
-        dsi_blit(x, y, x2, y2, color_map);
-        return true;
-    }
-
-    /* Scaled path: nearest-neighbor expand (w x h) logical pixels
-     * into (w*SCALE x h*SCALE) panel pixels in s_scratch, then push
-     * that as a single rectangle. */
-    int px = x * MDSI_SCALE;
-    int py = y * MDSI_SCALE;
-    int pw = w * MDSI_SCALE;
-    int ph = h * MDSI_SCALE;
-    if (px >= s_width || py >= s_height) return true;
-    if (px + pw > s_width)  pw = s_width  - px;
-    if (py + ph > s_height) ph = s_height - py;
-    if (pw <= 0 || ph <= 0) return true;
-
-    if (!ensure_scratch((size_t)pw * (size_t)ph)) return true;
-
-    /* color_map is a tightly-packed RGB565 LVGL framebuffer; LVGL
-     * v9 hands these out 2-byte aligned (lv_display_set_buffers
-     * pads to a multiple of LV_DRAW_BUF_ALIGN, default 4). */
-    const uint16_t *src = (const uint16_t *)color_map;
-    /* For each source row, write SCALE destination rows; for each
-     * source pixel, write SCALE destination pixels horizontally. */
-    for (int sy = 0; sy < h; sy++) {
-        const uint16_t *src_row = src + (size_t)sy * w;
-        /* Build the first expanded destination row for this source
-         * row, then memcpy it SCALE-1 more times. */
-        uint16_t *dst_row0 = s_scratch + (size_t)sy * MDSI_SCALE * pw;
-        int dx = 0;
-        for (int sx = 0; sx < w; sx++) {
-            uint16_t v = src_row[sx];
-            int copies = MDSI_SCALE;
-            if (dx + copies > pw) copies = pw - dx;
-            if (copies <= 0) break;
-            for (int k = 0; k < copies; k++) dst_row0[dx + k] = v;
-            dx += copies;
-        }
-        for (int r = 1; r < MDSI_SCALE; r++) {
-            if (sy * MDSI_SCALE + r >= ph) break;
-            uint16_t *dst_row = s_scratch + ((size_t)sy * MDSI_SCALE + r) * pw;
-            memcpy(dst_row, dst_row0, (size_t)pw * sizeof(uint16_t));
-        }
-    }
-    dsi_blit(px, py, px + pw, py + ph, s_scratch);
+    /* Push the LVGL buffer straight into the panel scanout framebuffer. */
+    int x2 = x + w;
+    int y2 = y + h;
+    if (x2 > s_width)  x2 = s_width;
+    if (y2 > s_height) y2 = s_height;
+    if (x2 <= x || y2 <= y) return true;
+    dsi_blit(x, y, x2, y2, color_map);
     return true;
 }
 
@@ -399,18 +323,6 @@ extern "C" void display_full_refresh(void)
 extern "C" void display_request_full_refresh(void)
 {
     /* No-op: continuous scanout, nothing to latch. */
-}
-
-extern "C" uint8_t *display_get_buffer(void)
-{
-    /* The legacy 1-bpp framebuffer is not exposed by this backend;
-     * Draftling code paths that touch it are e-paper-only. */
-    return NULL;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return 0;
 }
 
 extern "C" void display_sleep(void)

@@ -846,16 +846,6 @@ extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
      * refresh region. */
 }
 
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return s_disp_buf;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return FULL_BUF_LEN;
-}
-
 extern "C" void display_set_backlight(int /*percent*/)
 {
     /* No backlight on this panel. No-op. */

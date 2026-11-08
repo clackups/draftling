@@ -128,10 +128,10 @@ static void dump_head(const char *what, const uint8_t *b, size_t n)
 /* info/refs                                                          */
 /* ------------------------------------------------------------------ */
 
-esp_err_t git_http_list_refs(const git_remote *r, const char *service,
-                             git_ref_adv *refs, int max, int *out_count)
+esp_err_t git_http_find_ref(const git_remote *r, const char *service,
+                            const char *refname, git_oid *out, bool *found)
 {
-    *out_count = 0;
+    *found = false;
 
     char url[420];
     snprintf(url, sizeof(url), "%s/info/refs?service=%s", r->base_url, service);
@@ -151,10 +151,17 @@ esp_err_t git_http_list_refs(const git_remote *r, const char *service,
     git_buf body = GIT_BUF_INIT;
     char rb[1024];
     int n;
+    bool oom = false;
     while ((n = esp_http_client_read(c, rb, sizeof(rb))) > 0)
-        git_buf_put(&body, rb, n);
+        if (!git_buf_put(&body, rb, n)) { oom = true; break; }
     esp_http_client_close(c);
     esp_http_client_cleanup(c);
+    /* A cut-off advertisement would make a present branch look absent. */
+    if (oom || n < 0) {
+        ESP_LOGE(TAG, "info/refs: %s", oom ? "out of memory" : "read error");
+        git_buf_free(&body);
+        return oom ? ESP_ERR_NO_MEM : ESP_FAIL;
+    }
 
     /* parse pkt-lines */
     size_t i = 0;
@@ -180,18 +187,16 @@ esp_err_t git_http_list_refs(const git_remote *r, const char *service,
         memcpy(oid.hex, line, GIT_OID_HEXSZ);
         oid.hex[GIT_OID_HEXSZ] = '\0';
 
-        char name[160];
+        /* The name ends at '\n', at the NUL before the capability
+         * list, or at the end of the line. */
         int nl = 0;
-        for (int k = GIT_OID_HEXSZ + 1; k < llen && line[k] != '\n' &&
-             line[k] != '\0' && nl < (int)sizeof(name) - 1; k++)
-            name[nl++] = line[k];
-        name[nl] = '\0';
-        if (nl == 0 || strcmp(name, "capabilities^{}") == 0) continue;
-
-        if (*out_count < max) {
-            strlcpy(refs[*out_count].name, name, sizeof(refs[*out_count].name));
-            refs[*out_count].oid = oid;
-            (*out_count)++;
+        const char *name = line + GIT_OID_HEXSZ + 1;
+        int nmax = llen - (GIT_OID_HEXSZ + 1);
+        while (nl < nmax && name[nl] != '\n' && name[nl] != '\0') nl++;
+        if ((size_t)nl == strlen(refname) && memcmp(name, refname, (size_t)nl) == 0) {
+            *out = oid;
+            *found = true;
+            break;
         }
     }
 
@@ -311,7 +316,8 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
                 if (seen_ack || sec == SEC_PACKFILE) {
                     fseek(rf, pos, SEEK_SET);
                     size_t k;
-                    while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
+                    while ((k = fread(pkt, 1, 4096, rf)) > 0)
+                        if (fwrite(pkt, 1, k, fp) != k) { err = true; ESP_LOGE(TAG, "packfile: SD write error"); break; }
                     wrote = true;
                 }
                 break;
@@ -337,7 +343,11 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
                 if (pll < 1) continue;
                 uint8_t band = pl[0];
                 if (band == 1) {
-                    if (fwrite(pl + 1, 1, pll - 1, fp) != (size_t)(pll - 1)) { err = true; break; }
+                    if (fwrite(pl + 1, 1, pll - 1, fp) != (size_t)(pll - 1)) {
+                        ESP_LOGE(TAG, "packfile: SD write error");
+                        err = true;
+                        break;
+                    }
                     wrote = true;
                 } else if (band == 3) {
                     ESP_LOGE(TAG, "remote: %.*s", pll - 1, (const char *)pl + 1);
@@ -380,13 +390,15 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
             }
             if (found >= 0) {
                 fseek(rf, found, SEEK_SET);
-                while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
+                while ((k = fread(pkt, 1, 4096, rf)) > 0)
+                    if (fwrite(pkt, 1, k, fp) != k) { err = true; ESP_LOGE(TAG, "packfile: SD write error"); break; }
                 wrote = true;
             }
         }
 
         if (fclose(fp) != 0) wrote = false;
         fp = NULL;
+        if (ferror(rf)) err = true;      /* the response could not be read back */
         ret = (wrote && !err) ? ESP_OK : ESP_FAIL;
         if (ret != ESP_OK) {
             remove(out_pack_path);
@@ -498,8 +510,18 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
         git_buf raw = GIT_BUF_INIT;
         char rb[512];
         int n;
+        bool oom = false;
         while ((n = esp_http_client_read(c, rb, sizeof(rb))) > 0)
-            git_buf_put(&raw, rb, n);
+            if (!git_buf_put(&raw, rb, n)) { oom = true; break; }
+        if (oom || n < 0) {
+            /* The push may or may not have been applied: report it like
+             * a lost connection, so the caller retries and the next
+             * sync sees the server's real state. */
+            ESP_LOGE(TAG, "push report: %s", oom ? "out of memory" : "read error");
+            git_buf_free(&raw);
+            ret = ESP_ERR_TIMEOUT;
+            goto cleanup;
+        }
 
         /* unwrap pkt-lines into `report` */
         size_t i = 0;
@@ -508,6 +530,9 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
             int len = hex4((char *)raw.data + i);
             if (len < 0) break;
             if (len == 0) { i += 4; continue; }
+            /* 1..3 are delim / response-end / reserved pkts: no payload,
+             * and len - 4 would be negative. */
+            if (len < 4) { i += 4; continue; }
             if (i + (size_t)len > raw.len) break;
             const char *line2 = (char *)raw.data + i + 4;
             int llen = len - 4;

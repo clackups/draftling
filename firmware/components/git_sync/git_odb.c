@@ -6,11 +6,14 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <esp_log.h>
 #include <esp_heap_caps.h>
+
+#include "sd_card.h"
 
 static const char *TAG = "git.odb";
 
@@ -19,7 +22,6 @@ static char s_gitdir[288];
 static bool s_open;
 
 const char *git_repo_gitdir(void)  { return s_gitdir; }
-const char *git_repo_workdir(void) { return s_workdir; }
 
 /* ------------------------------------------------------------------ */
 /* filesystem helpers                                                 */
@@ -33,7 +35,7 @@ static int mkdir_p(const char *path)
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
-            if (mkdir(tmp, 0777) != 0 && errno != EEXIST) { *p = '/'; }
+            mkdir(tmp, 0777);    /* the final mkdir() below reports failure */
             *p = '/';
         }
     }
@@ -57,22 +59,36 @@ static esp_err_t read_whole_file(const char *path, git_buf *out)
     while ((r = fread(chunk, 1, sizeof(chunk), f)) > 0) {
         if (!git_buf_put(out, chunk, r)) { ret = ESP_ERR_NO_MEM; break; }
     }
+    if (ret == ESP_OK && ferror(f)) ret = ESP_FAIL;
     fclose(f);
     return ret;
 }
 
+/* "<dir>/.<base>.dtmp", the same hidden temporary sd_card_write_file()
+ * uses. */
+static bool hidden_tmp_for(const char *path, char *out, size_t osz)
+{
+    const char *slash = strrchr(path, '/');
+    int n = slash ? snprintf(out, osz, "%.*s/.%s.dtmp", (int)(slash - path), path, slash + 1)
+                  : snprintf(out, osz, ".%s.dtmp", path);
+    return n > 0 && (size_t)n < osz;
+}
+
+/* Refs and HEAD: written in full, synced to the card, then swapped in
+ * by sd_card_replace_with(), so a power loss leaves the old or the new
+ * ref (recovered at the next mount), never none -- a missing branch
+ * ref would make the next sync start over as a first sync. */
 static esp_err_t write_whole_file(const char *path, const void *data, size_t len)
 {
-    char tmp[352];
-    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    char tmp[400];
+    if (!hidden_tmp_for(path, tmp, sizeof(tmp))) return ESP_FAIL;
     FILE *f = fopen(tmp, "wb");
     if (!f) return ESP_FAIL;
     bool ok = (len == 0) || (fwrite(data, 1, len, f) == len);
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) ok = false;
     if (fclose(f) != 0) ok = false;
     if (!ok) { remove(tmp); return ESP_FAIL; }
-    remove(path);
-    if (rename(tmp, path) != 0) { remove(tmp); return ESP_FAIL; }
-    return ESP_OK;
+    return sd_card_replace_with(tmp, path);
 }
 
 /* ------------------------------------------------------------------ */
@@ -87,18 +103,22 @@ esp_err_t git_repo_open(const char *workdir)
     snprintf(s_gitdir, sizeof(s_gitdir), "%s/.git", s_workdir);
 
     char path[320];
-    if (mkdir_p(s_gitdir) != 0) {
-        ESP_LOGE(TAG, "cannot create %s", s_gitdir);
-        return ESP_FAIL;
+    static const char *const dirs[] = { "", "/objects", "/refs/heads",
+                                        "/refs/remotes/origin", "/tmp" };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(path, sizeof(path), "%s%s", s_gitdir, dirs[i]);
+        if (mkdir_p(path) != 0) {
+            ESP_LOGE(TAG, "cannot create %s", path);
+            return ESP_FAIL;
+        }
     }
-    snprintf(path, sizeof(path), "%s/objects", s_gitdir);  mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/refs/heads", s_gitdir); mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/refs/remotes/origin", s_gitdir); mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/tmp", s_gitdir); mkdir_p(path);
 
     snprintf(path, sizeof(path), "%s/HEAD", s_gitdir);
-    if (!file_exists(path))
-        write_whole_file(path, "ref: refs/heads/main\n", 21);
+    if (!file_exists(path) &&
+        write_whole_file(path, "ref: refs/heads/main\n", 21) != ESP_OK) {
+        ESP_LOGE(TAG, "cannot write %s", path);
+        return ESP_FAIL;
+    }
 
     s_open = true;
     return ESP_OK;
@@ -142,7 +162,7 @@ bool git_odb_exists(const git_oid *oid)
     return file_exists(p);
 }
 
-void git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
+esp_err_t git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
 {
     char hdr[32];
     int hlen = snprintf(hdr, sizeof(hdr), "%s %zu", git_obj_type_name(type), len);
@@ -150,8 +170,9 @@ void git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
     uint8_t raw[GIT_OID_RAWSZ];
     git_sha1_update(c, hdr, (size_t)hlen + 1);   /* include the NUL */
     git_sha1_update(c, data, len);
-    git_sha1_final(c, raw);
+    if (!git_sha1_final(c, raw)) return ESP_FAIL;
     git_oid_from_raw(out, raw);
+    return ESP_OK;
 }
 
 #define IO_CHUNK 4096
@@ -184,7 +205,7 @@ esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out)
         if (total != (size_t)size) ret = ESP_FAIL;
     }
     uint8_t raw[GIT_OID_RAWSZ];
-    git_sha1_final(c, raw);       /* frees c (NULL-safe) */
+    if (!git_sha1_final(c, raw) && ret == ESP_OK) ret = ESP_FAIL;   /* frees c */
     if (ret == ESP_OK) git_oid_from_raw(out, raw);
     free(buf);
     fclose(f);
@@ -250,7 +271,7 @@ esp_err_t git_odb_writer_finish(git_odb_writer *w, git_oid *out_oid)
     git_zwriter_free(w->zw);
     w->zw = NULL;
     uint8_t raw[GIT_OID_RAWSZ];
-    git_sha1_final(w->sha, raw);
+    if (!git_sha1_final(w->sha, raw)) ret = ESP_FAIL;
     w->sha = NULL;
     if (fclose(w->fp) != 0) ret = ESP_FAIL;
     w->fp = NULL;
@@ -273,7 +294,8 @@ esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
                         git_oid *out_oid)
 {
     git_oid oid;
-    git_odb_hash(type, data, len, &oid);
+    esp_err_t hr = git_odb_hash(type, data, len, &oid);
+    if (hr != ESP_OK) return hr;
     if (out_oid) *out_oid = oid;
     if (git_odb_exists(&oid)) return ESP_OK;
 
@@ -407,16 +429,6 @@ esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size
     return ESP_OK;
 }
 
-/* "<dir>/.<base>.dtmp", the same hidden temporary sd_card_write_file()
- * uses. */
-static bool hidden_tmp_for(const char *path, char *out, size_t osz)
-{
-    const char *slash = strrchr(path, '/');
-    int n = slash ? snprintf(out, osz, "%.*s/.%s.dtmp", (int)(slash - path), path, slash + 1)
-                  : snprintf(out, osz, ".%s.dtmp", path);
-    return n > 0 && (size_t)n < osz;
-}
-
 esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const char *path)
 {
     char tmp[400];
@@ -439,9 +451,7 @@ esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const cha
         if (fclose(f) != 0) ret = ESP_FAIL;
     }
     if (ret != ESP_OK) { remove(tmp); return ret; }
-    remove(path);
-    if (rename(tmp, path) != 0) { remove(tmp); return ESP_FAIL; }
-    return ESP_OK;
+    return sd_card_replace_with(tmp, path);
 }
 
 /* ------------------------------------------------------------------ */
@@ -453,14 +463,20 @@ static void ref_path(const char *name, char *out, size_t outsz)
     snprintf(out, outsz, "%s/%s", s_gitdir, name);
 }
 
-esp_err_t git_ref_read(const char *name, git_oid *out)
+static esp_err_t ref_read_depth(const char *name, git_oid *out, int depth)
 {
+    if (depth > 5) {                       /* "ref: X" loops */
+        ESP_LOGE(TAG, "symbolic ref loop at %s", name);
+        return ESP_FAIL;
+    }
     char p[352];
     ref_path(name, p, sizeof(p));
 
     git_buf b = GIT_BUF_INIT;
     esp_err_t ret = read_whole_file(p, &b);
-    if (ret != ESP_OK) { git_buf_free(&b); return ESP_ERR_NOT_FOUND; }
+    /* ESP_ERR_NOT_FOUND = no such ref; anything else is a read error,
+     * which must not look like "no commit yet". */
+    if (ret != ESP_OK) { git_buf_free(&b); return ret; }
 
     /* trim */
     while (b.len && (b.data[b.len - 1] == '\n' || b.data[b.len - 1] == '\r' ||
@@ -471,14 +487,26 @@ esp_err_t git_ref_read(const char *name, git_oid *out)
         char target[128];
         strlcpy(target, (char *)b.data + 5, sizeof(target));
         git_buf_free(&b);
-        return git_ref_read(target, out);
+        return ref_read_depth(target, out, depth + 1);
     }
 
     if (b.len < GIT_OID_HEXSZ) { git_buf_free(&b); return ESP_FAIL; }
-    memcpy(out->hex, b.data, GIT_OID_HEXSZ);
-    out->hex[GIT_OID_HEXSZ] = '\0';
+    git_oid oid;
+    memcpy(oid.hex, b.data, GIT_OID_HEXSZ);
+    oid.hex[GIT_OID_HEXSZ] = '\0';
     git_buf_free(&b);
+    uint8_t raw[GIT_OID_RAWSZ];
+    if (!git_oid_to_raw(raw, &oid)) {
+        ESP_LOGE(TAG, "ref %s is not an object id", name);
+        return ESP_FAIL;
+    }
+    *out = oid;
     return ESP_OK;
+}
+
+esp_err_t git_ref_read(const char *name, git_oid *out)
+{
+    return ref_read_depth(name, out, 0);
 }
 
 esp_err_t git_ref_write(const char *name, const git_oid *oid)
@@ -490,14 +518,6 @@ esp_err_t git_ref_write(const char *name, const git_oid *oid)
     return write_whole_file(p, line, strlen(line));
 }
 
-esp_err_t git_ref_delete(const char *name)
-{
-    char p[352];
-    ref_path(name, p, sizeof(p));
-    remove(p);
-    return ESP_OK;
-}
-
 esp_err_t git_head_set_symbolic(const char *target)
 {
     char p[352];
@@ -505,6 +525,22 @@ esp_err_t git_head_set_symbolic(const char *target)
     char line[160];
     snprintf(line, sizeof(line), "ref: %s\n", target);
     return write_whole_file(p, line, strlen(line));
+}
+
+bool git_branch_name_ok(const char *s)
+{
+    size_t n = strlen(s);
+    if (n == 0 || s[0] == '/' || s[0] == '.' || s[0] == '-' ||
+        s[n - 1] == '/' || s[n - 1] == '.')
+        return false;
+    if (n >= 5 && strcmp(s + n - 5, ".lock") == 0) return false;
+    if (strstr(s, "..") || strstr(s, "//") || strstr(s, "@{") || strstr(s, "/."))
+        return false;
+    for (const char *p = s; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c <= 0x20 || c == 0x7f || strchr("~^:?*[\\", c)) return false;
+    }
+    return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -550,29 +586,50 @@ static int tree_entry_cmp(const void *pa, const void *pb)
                          b->name, (b->mode & 040000) == 040000 && !(b->mode & 0100000));
 }
 
+/* Entry names git itself refuses (fsck): empty, ".", "..", ".git", or
+ * containing '/'. Trees come from the server, and an entry name ends up
+ * in a file path on the SD card. */
+static bool tree_name_ok(const uint8_t *p, size_t n)
+{
+    if (n == 0) return false;
+    if (memchr(p, '/', n)) return false;
+    if (n == 1 && p[0] == '.') return false;
+    if (n == 2 && p[0] == '.' && p[1] == '.') return false;
+    if (n == 4 && strncasecmp((const char *)p, ".git", 4) == 0) return false;
+    return true;
+}
+
 esp_err_t git_tree_parse(const uint8_t *data, size_t len, git_tree *out)
 {
     memset(out, 0, sizeof(*out));
+    esp_err_t ret = ESP_OK;
     size_t i = 0;
     while (i < len) {
         size_t sp = i;
         while (sp < len && data[sp] != ' ') sp++;
-        if (sp >= len) return ESP_FAIL;
+        if (sp >= len) { ret = ESP_FAIL; break; }
         size_t nul = sp + 1;
         while (nul < len && data[nul] != '\0') nul++;
-        if (nul + 1 + GIT_OID_RAWSZ > len) return ESP_FAIL;
+        if (nul + 1 + GIT_OID_RAWSZ > len) { ret = ESP_FAIL; break; }
 
-        if (!tree_grow(out)) return ESP_ERR_NO_MEM;
+        size_t nlen = nul - (sp + 1);
+        if (nlen >= sizeof(out->entries[0].name) ||
+            !tree_name_ok(data + sp + 1, nlen)) {
+            ESP_LOGE(TAG, "tree entry with an invalid name");
+            ret = ESP_FAIL;
+            break;
+        }
+        if (!tree_grow(out)) { ret = ESP_ERR_NO_MEM; break; }
         git_tree_entry *e = &out->entries[out->count++];
         memset(e, 0, sizeof(*e));
         e->mode = (uint32_t)strtoul((const char *)data + i, NULL, 8);
-        size_t nlen = nul - (sp + 1);
-        if (nlen >= sizeof(e->name)) return ESP_FAIL;
         memcpy(e->name, data + sp + 1, nlen);
         git_oid_from_raw(&e->oid, data + nul + 1);
         i = nul + 1 + GIT_OID_RAWSZ;
     }
-    return ESP_OK;
+    /* Callers only free the tree on success. */
+    if (ret != ESP_OK) git_tree_free(out);
+    return ret;
 }
 
 esp_err_t git_tree_load(const git_oid *oid, git_tree *out)
@@ -868,67 +925,95 @@ bool git_is_ancestor(const git_oid *anc, const git_oid *desc)
 /* BFS from `a`, record depth; then BFS from `b` and return the first
  * commit already seen from `a` (approximate LCA, good enough for the
  * linear + one-diverging-branch topology Draftling produces). */
+/* Breadth-first walk of all ancestors of start (start included) into
+ * seen; stops early at the first commit already in stop (when given)
+ * and returns it in *hit. Every commit must be present: a missing one
+ * would make the walk, and the merge base, silently wrong. */
+static esp_err_t walk_ancestors(const git_oid *start, git_oidset *seen,
+                                const git_oidset *stop, git_oid *hit)
+{
+    git_oidset q = {0};
+    esp_err_t ret = git_oidset_add(&q, start) ? ESP_OK : ESP_ERR_NO_MEM;
+    for (int i = 0; ret == ESP_OK && i < q.n; i++) {
+        git_oid cur = q.v[i];
+        if (git_oidset_has(seen, &cur)) continue;
+        if (!git_oidset_add(seen, &cur)) { ret = ESP_ERR_NO_MEM; break; }
+        if (stop && git_oidset_has(stop, &cur)) { *hit = cur; break; }
+        git_commit c;
+        ret = git_commit_load(&cur, &c);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "merge base: commit %s missing", cur.hex);
+            break;
+        }
+        for (int p = 0; p < c.nparents && ret == ESP_OK; p++)
+            if (!git_oidset_add(&q, &c.parents[p])) ret = ESP_ERR_NO_MEM;
+        git_commit_free(&c);
+    }
+    git_oidset_free(&q);
+    return ret;
+}
+
 esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out)
 {
     git_oid_clear(out);
     if (git_oid_is_zero(a) || git_oid_is_zero(b)) return ESP_OK;
     if (git_oid_eq(a, b)) { *out = *a; return ESP_OK; }
 
-    git_oidset seen_a = {0}, q = {0};
-    git_oidset_add(&q, a);
-    for (int i = 0; i < q.n; i++) {
-        git_oid cur = q.v[i];
-        if (git_oidset_has(&seen_a, &cur)) continue;
-        git_oidset_add(&seen_a, &cur);
-        git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) continue;
-        for (int p = 0; p < c.nparents; p++) git_oidset_add(&q, &c.parents[p]);
-        git_commit_free(&c);
-    }
-    git_oidset_free(&q);
-
-    git_oidset seen_b = {0};
-    git_oidset_add(&q, b);
-    esp_err_t ret = ESP_OK;
-    for (int i = 0; i < q.n; i++) {
-        git_oid cur = q.v[i];
-        if (git_oidset_has(&seen_b, &cur)) continue;
-        git_oidset_add(&seen_b, &cur);
-        if (git_oidset_has(&seen_a, &cur)) { *out = cur; break; }
-        git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) continue;
-        for (int p = 0; p < c.nparents; p++) git_oidset_add(&q, &c.parents[p]);
-        git_commit_free(&c);
-    }
-    git_oidset_free(&q);
+    git_oidset seen_a = {0}, seen_b = {0};
+    esp_err_t ret = walk_ancestors(a, &seen_a, NULL, NULL);
+    if (ret == ESP_OK) ret = walk_ancestors(b, &seen_b, &seen_a, out);
+    if (ret != ESP_OK) git_oid_clear(out);
     git_oidset_free(&seen_a);
     git_oidset_free(&seen_b);
     return ret;
 }
 
-esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head,
+esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int max,
                                  git_oid **out, int *out_count)
 {
     *out = NULL;
     *out_count = 0;
 
-    git_oid stack[64];
-    int n = 0;
+    /* First-parent walk from head back to base (or the root), newest
+     * first; reversed below. max > 0 keeps only the newest max. */
+    git_oid *v = NULL;
+    int n = 0, cap = 0;
+    esp_err_t ret = ESP_OK;
     git_oid cur = *head;
-    while (!git_oid_is_zero(&cur) && !(base && git_oid_eq(&cur, base))) {
-        if (n >= (int)(sizeof(stack) / sizeof(stack[0]))) return ESP_FAIL;
-        stack[n++] = cur;
+    while (!git_oid_is_zero(&cur) && !(base && git_oid_eq(&cur, base)) &&
+           (max <= 0 || n < max)) {
+        if (n == cap) {
+            int nc = cap ? cap * 2 : 32;
+            git_oid *nv = realloc(v, (size_t)nc * sizeof(*nv));
+            if (!nv) { ret = ESP_ERR_NO_MEM; break; }
+            v = nv;
+            cap = nc;
+        }
+        v[n++] = cur;
         git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) return ESP_FAIL;
-        if (c.nparents == 0) { git_commit_free(&c); cur = (git_oid){0}; break; }
-        cur = c.parents[0];   /* first-parent walk */
+        ret = git_commit_load(&cur, &c);
+        if (ret != ESP_OK) break;
+        if (c.nparents == 0) git_oid_clear(&cur);
+        else cur = c.parents[0];
         git_commit_free(&c);
     }
+    if (ret != ESP_OK) { free(v); return ret; }
+    /* A base that the first-parent walk never met (it was reached
+     * through a merge's second parent): the range is not a straight
+     * line, and replaying everything back to the root instead would
+     * re-apply commits the other side already has. */
+    if (base && !git_oid_is_zero(base) && git_oid_is_zero(&cur) &&
+        (max <= 0 || n < max)) {
+        free(v);
+        return ESP_ERR_NOT_FOUND;
+    }
 
-    git_oid *arr = malloc((size_t)n * sizeof(*arr) + 1);
-    if (!arr && n) return ESP_ERR_NO_MEM;
-    for (int i = 0; i < n; i++) arr[i] = stack[n - 1 - i];   /* oldest first */
-    *out = arr;
+    for (int i = 0; i < n / 2; i++) {               /* oldest first */
+        git_oid t = v[i];
+        v[i] = v[n - 1 - i];
+        v[n - 1 - i] = t;
+    }
+    *out = v;
     *out_count = n;
     return ESP_OK;
 }

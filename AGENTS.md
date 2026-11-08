@@ -728,6 +728,11 @@ Per-board display backends behind a single C API:
   outputs that main.cpp drives before `display_init()`, so
   `display_set_shared_i2c_bus()` is a no-op here. The front-light is
   the M5PM1's PWM0 (`battery_m5pm1_set_frontlight()`).
+- **epd_fb.h** -- the 1-bpp framebuffer, dirty rectangle and RGB565
+  push shared by the e-paper backends that keep their own framebuffer
+  (ws_epd397, m5_papermono, reterminal_sticky, xteink_epd, seeed_e1001,
+  h752). Each keeps one `epd_fb_t` (`s_epdfb`) and aliases its old
+  `s_fb` / `s_width` / `s_dirty_*` names onto it.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the
@@ -777,9 +782,9 @@ non-e-paper builds do not link epdiy into the final image.
 Public API: `display_init()`, `display_clear()`, `display_set_pixel()`,
 `display_flush()`, `display_full_refresh()`, `display_push_rgb565()`,
 `display_set_partial_clip()`, `display_set_backlight()`,
-`display_controller_name()`, `display_spi_tft_config()`, `display_get_buffer()`,
-`display_get_buffer_size()`, `lvgl_port_init()`,
-`lvgl_port_lock()`, `lvgl_port_unlock()`.
+`display_controller_name()`, `display_spi_tft_config()`,
+`draftling_lvgl_port_init()`, `draftling_lvgl_port_lock()`,
+`draftling_lvgl_port_unlock()`.
 
 ### components/editor/
 
@@ -888,7 +893,7 @@ can show different formats.
 FAT drops the latter; at most `PROJECT_NAME_MAX` = 32; "System Volume
 Information" reserved), `project_list()` (root folders with a valid
 name), `project_create()` / `project_delete()` (`sd_card_remove_tree()`,
-`.git` included), `project_of_path()`, `project_root_doc_count()`,
+`.git` included), `project_of_path()`, `project_root_doc_names()`,
 `project_migrate_root()` (root documents with their `.meta` sidecars,
 then `git.cfg` and `.git` unless the project has its own; a taken name
 gets `-2`, `-3`, ... from `project_free_file_name()`), `project_stats()`
@@ -1372,6 +1377,11 @@ Source layout (all in-tree, no managed components):
   becomes a whole-file conflict. `git_diff_line_counts()` (Alt+I) uses
   the same diff on hashes of the whole texts.
 
+Host test: `test/host/run.sh` builds this component for the host
+(stub ESP-IDF headers, the SD card as a folder, `esp_http_client`
+replaced by `git http-backend` against a real bare repository) and
+runs whole syncs; run it after changing anything here.
+
 Convention: a `const git_oid *` parameter that represents an optional
 commit/tree ("no parent", "no base", "not cloned yet") is passed as a
 literal `NULL`, not a pointer to a zero-filled `git_oid`. Every function
@@ -1516,8 +1526,7 @@ PaperMono) and stubbed out otherwise. The M5IOE1 (fixed address 0x4F)
 is a register-addressed 14-pin expander: each GPIO setting is a
 16-bit little-endian register pair, one bit per pin (PYG1 = bit 0).
 Only digital outputs are implemented: `m5ioe1_set_pin(pin, level)`
-makes PYG<pin> a push-pull output without pulls and drives it, and
-`m5ioe1_release_pin()` returns it to a high-impedance input.
+makes PYG<pin> a push-pull output without pulls and drives it.
 `m5ioe1_init()` probes the chip (which wakes it from I2C idle sleep)
 and disables its idle sleep (register 0x23). On the PaperMono,
 main.cpp uses it before `display_init()` to power the e-paper panel,
@@ -1525,7 +1534,7 @@ the FT6336G touch controller and the MicroSD card and to pulse the
 panel and touch reset lines, and the pre-sleep hook switches those
 supplies off again.
 
-Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
+Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`.
 
 A third driver, NXP PCA9557 (`io_expander_pca9557.cpp`), is compiled
 in only with `CONFIG_DRAFTLING_HAS_PCA9557` (the Elecrow CrowPanel
@@ -1633,7 +1642,7 @@ remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
 
 Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
-`kb_layout_set()`, `kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_get()`, `kb_layout_name()`,
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
 `kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
@@ -2011,14 +2020,13 @@ returning `true`. That flag drives two things: the editor's WiFi
 status icon switches to the "6"-badged variant (see
 `components/editor/wifi_icon.c` below), and `git_sync`'s HTTP layer
 (`git_net.c`) prefers the Git server's `AAAA` record, falling back to
-`A` if the connection attempt fails. The flag (and the cached address
-string from `wifi_manager_get_ipv6()`) resets on disconnect and at the
-start of every new connection attempt.
+`A` if the connection attempt fails. The flag resets on disconnect and
+at the start of every new connection attempt.
 
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
 `wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
-`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`,
+`wifi_manager_has_global_ipv6()`,
 `wifi_manager_get_configured()` (SSID + password Ctrl+W would use),
 `wifi_manager_forget()` (disconnect and erase the `wifi` NVS namespace
 plus the WiFi driver's own saved station config: `esp_wifi_restore()`

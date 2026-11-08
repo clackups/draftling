@@ -58,6 +58,7 @@
 #include <driver/spi_master.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayST77922";
@@ -86,7 +87,6 @@ static const char *TAG = "DisplayST77922";
 #define ST_CHUNK_PIXELS 8192
 
 #define BL_LEDC_TIMER    LEDC_TIMER_3
-#define BL_LEDC_MODE     LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL  LEDC_CHANNEL_1
 #define BL_LEDC_DUTY_MAX ((1 << 8) - 1)
 #define BL_LEDC_FREQ_HZ  20000
@@ -204,7 +204,7 @@ static void write_reg(uint8_t cmd, const uint8_t *data, size_t len)
     t.address_bits = 24;
     t.base.length    = len * 8;
     t.base.tx_buffer = len ? data : NULL;
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, &t.base));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, &t.base));
 }
 
 /* Read `len` bytes of register `cmd`: opcode 0x0B and the 24-bit
@@ -279,7 +279,7 @@ static void write_pixels(int x1, int y1, int x2, int y2, pixel_fill_fn fill, voi
         t.address_bits = 24;
         t.base.length    = n * 16;
         t.base.tx_buffer = s_chunk;
-        ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, &t.base));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, &t.base));
         done += n;
     }
 }
@@ -300,26 +300,9 @@ static void fill_from_fb(uint16_t *dst, size_t start, size_t n, void *vctx)
 
 static void backlight_pwm_init(void)
 {
-    /* Released here in case display_deep_sleep_prepare() latched the
-     * pin low for deep sleep (see display_ili9341.cpp). */
-    gpio_hold_dis((gpio_num_t)ST_BL_PIN);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = LEDC_TIMER_8_BIT;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
-    t.clk_cfg         = LEDC_USE_RC_FAST_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = ST_BL_PIN;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.duty       = 0;   /* off until the panel is initialised */
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    /* Off until the panel is initialised. */
+    bl_ledc_setup(ST_BL_PIN, BL_LEDC_TIMER, BL_LEDC_CHANNEL, LEDC_TIMER_8_BIT,
+                  BL_LEDC_FREQ_HZ, LEDC_USE_RC_FAST_CLK, 0);
 }
 
 extern "C" void display_set_backlight(int percent)
@@ -327,9 +310,7 @@ extern "C" void display_set_backlight(int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     s_bl_last_pct = percent;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX));
 }
 
 extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
@@ -477,16 +458,6 @@ extern "C" void display_full_refresh(void)
 extern "C" void display_request_full_refresh(void)
 {
     /* Color LCD, no partial-refresh state machine to latch. */
-}
-
-extern "C" uint8_t *display_get_buffer(void)
-{
-    return (uint8_t *)s_fb;
-}
-
-extern "C" int display_get_buffer_size(void)
-{
-    return (int)(s_fb_pixels * sizeof(uint16_t));
 }
 
 extern "C" void display_sleep(void)

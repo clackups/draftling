@@ -112,9 +112,6 @@ void display_full_refresh(void);
  */
 void display_request_full_refresh(void);
 
-uint8_t *display_get_buffer(void);
-int display_get_buffer_size(void);
-
 #include <stdbool.h>
 
 /*

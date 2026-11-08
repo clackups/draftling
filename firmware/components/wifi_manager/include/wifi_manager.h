@@ -31,7 +31,6 @@ typedef struct {
 #define WIFI_SCAN_MAX_RESULTS 24
 
 esp_err_t wifi_manager_init(void);
-esp_err_t wifi_manager_deinit(void);
 esp_err_t wifi_manager_connect(void);
 /* Blocking (up to ~30 s). Returns ESP_ERR_INVALID_STATE without doing
  * anything when another connect or scan is already running. On failure
@@ -88,7 +87,6 @@ bool wifi_manager_last_failure_was_auth(void);
  * the network is IPv4/IPv6 dual-stack -- e.g. to pick the WiFi status
  * icon, or to prefer an AAAA lookup for an outgoing connection. */
 bool wifi_manager_has_global_ipv6(void);
-const char *wifi_manager_get_ipv6(void);
 
 #ifdef __cplusplus
 }

@@ -29,8 +29,16 @@ bool project_name_char_ok(char c);
 /* "/sdcard/<name>" */
 void project_dir(const char *name, char *out, size_t out_sz);
 
-/* Project folders on the card, sorted by name. Returns the count. */
-int project_list(project_name_t *out, int max);
+/* Every project folder on the card, sorted by name, in an allocated
+ * array (free() it; NULL when there are none). *count is the number
+ * of names, or -1 when the card cannot be read or the list does not
+ * fit in memory -- not the same as "no projects". */
+project_name_t *project_list(int *count);
+
+/* True if the card holds at least one project. Also true when that
+ * cannot be determined, so an error never sends the user into the
+ * first-project set-up. */
+bool project_any(void);
 
 bool project_exists(const char *name);
 
@@ -45,11 +53,9 @@ esp_err_t project_delete(const char *name);
  * project name in out and return true. */
 bool project_of_path(const char *path, char *out, size_t out_sz);
 
-/* Documents (*.md, *.fountain, *.txt) in the root folder. */
-int project_root_doc_count(void);
-
-/* Like project_root_doc_count(), and also stores the first max names
- * (sorted, cut to fit) in names. */
+/* Documents (*.md, *.fountain, *.txt) in the root folder: returns
+ * their count and stores the first max names (sorted, cut to fit) in
+ * names (which may be NULL). */
 typedef char project_file_name_t[64];
 int project_root_doc_names(project_file_name_t *names, int max);
 

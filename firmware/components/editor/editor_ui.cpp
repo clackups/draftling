@@ -1010,7 +1010,9 @@ static int  s_browser_sel    = 0;
 /* See s_menu_sel_prev. */
 static int  s_browser_sel_prev = -1;
 static int  s_browser_count  = 0;
-static sd_card_file_entry_t s_browser_entries[64];
+/* Every entry of the folder shown (sd_card_list_dir(); NULL when
+ * empty), replaced by each refresh_file_list(). */
+static sd_card_file_entry_t *s_browser_entries = NULL;
 
 /* ---- Projects (see projects.h) ----
  * The file browser has two levels: the list of projects (the folders
@@ -1089,7 +1091,6 @@ static bool      s_save_from_inpane = false;
 /* ---- Move / copy a file to a project (Alt+M / Alt+C) ----
  * A project picker on the menu screen (s_menu_list), like the Format SD
  * card picker; then, when needed, the name prompt above. */
-#define XFER_MAX_PROJECTS 32
 static bool           s_xfer_open = false;
 static bool           s_xfer_copy = false;
 static bool           s_xfer_from_inpane = false;
@@ -1098,7 +1099,7 @@ static int            s_xfer_sel_prev = -1;
 static project_name_t s_xfer_src_project = "";
 static char           s_xfer_src_name[256] = "";
 static project_name_t s_xfer_dst_project = "";
-static project_name_t s_xfer_projects[XFER_MAX_PROJECTS];
+static project_name_t *s_xfer_projects = NULL;  /* malloc'ed, see xfer_set_projects() */
 static int            s_xfer_nprojects = 0;  /* rows before "New project..." */
 /* The picker moves the files found outside any project (see
  * check_project_setup()) instead of one file. */
@@ -1630,14 +1631,11 @@ static split_mode_t s_split_mode = SPLIT_NONE;
 
 /* True while the editor screen is the active top-level screen, false
  * while the file browser is. This is the authoritative source for
- * key-event routing and refresh gating. It must NOT be derived from
- * editor_get_mode(): the editor "mode" is a per-document property
- * (editor.cpp aliases it onto the active document), and the active
- * document is re-bound to the focused pane on every cursor blink and
- * refresh. Reading the per-document mode to decide which screen we are
- * on therefore breaks in split mode -- the focused pane can carry an
- * EDITING mode while the browser is on screen, leaving keystrokes
- * routed to the (hidden) editor and the browser apparently frozen. */
+ * key-event routing and refresh gating. (A per-document "mode" used to
+ * be read for this; the active document is re-bound to the focused
+ * pane on every cursor blink and refresh, so in split mode it could say
+ * "editing" while the browser was on screen, routing keys to the
+ * hidden editor.) */
 static bool s_editor_screen_active = false;
 
 /* Which pane a file-browser "open" / "new" action should load into.
@@ -4197,7 +4195,7 @@ static void refresh_file_list(const char *select_name = NULL)
      * editor, and also preserves selection across a Git-sync refresh
      * that added or removed files. select_name, when given, is
      * selected instead (e.g. a file's new name after a rename). */
-    char remembered_name[sizeof(s_browser_entries[0].name)] = {0};
+    char remembered_name[sizeof(((sd_card_file_entry_t *)0)->name)] = {0};
     if (select_name) {
         strncpy(remembered_name, select_name, sizeof(remembered_name) - 1);
     } else if (s_browser_list && s_browser_sel >= 0 &&
@@ -4206,8 +4204,8 @@ static void refresh_file_list(const char *select_name = NULL)
         if (cur_btn) {
             int cur_idx = (int)(intptr_t)lv_obj_get_user_data(cur_btn);
             if (cur_idx >= 0 && cur_idx < s_browser_count) {
-                strncpy(remembered_name, s_browser_entries[cur_idx].name,
-                        sizeof(remembered_name) - 1);
+                strlcpy(remembered_name, s_browser_entries[cur_idx].name,
+                        sizeof(remembered_name));
             }
         }
     }
@@ -4219,21 +4217,29 @@ static void refresh_file_list(const char *select_name = NULL)
         s_cur_project[0] = '\0';
     }
 
+    sd_card_free_list(s_browser_entries);
+    s_browser_entries = NULL;
+    s_browser_count = 0;
+    char dir[64];
+    if (browser_at_root()) strlcpy(dir, sd_card_get_mount_point(), sizeof(dir));
+    else project_dir(s_cur_project, dir, sizeof(dir));
+    if (sd_card_list_dir(dir, &s_browser_entries, &s_browser_count) != ESP_OK) {
+        s_browser_entries = NULL;
+        s_browser_count = 0;
+        if (sd_card_get_handle()) editor_ui_set_status("Cannot read the SD card folder");
+    }
     if (browser_at_root()) {
-        /* The list of projects: the folders in the SD card root. */
-        static project_name_t names[64];
-        int n = project_list(names, 64);
-        for (int i = 0; i < n; i++) {
-            strlcpy(s_browser_entries[i].name, names[i], sizeof(s_browser_entries[i].name));
-            s_browser_entries[i].is_dir = true;
-            s_browser_entries[i].size = 0;
+        /* The list of projects: the folders in the SD card root with a
+         * valid project name (as project_list() picks them). */
+        int n = 0;
+        for (int i = 0; i < s_browser_count; i++) {
+            if (!s_browser_entries[i].is_dir ||
+                project_name_problem(s_browser_entries[i].name)) continue;
+            if (n != i) s_browser_entries[n] = s_browser_entries[i];
+            s_browser_entries[n].size = 0;
+            n++;
         }
         s_browser_count = n;
-    } else {
-        char dir[64];
-        project_dir(s_cur_project, dir, sizeof(dir));
-        s_browser_count = sd_card_list_dir(dir, s_browser_entries, 64);
-        if (s_browser_count < 0) s_browser_count = 0;
     }
 
     lv_obj_clean(s_browser_list);
@@ -4380,8 +4386,7 @@ static void check_project_setup(void)
             snprintf(more, sizeof(more), "  ...and %d more\n", ndocs - SHOW);
             text += more;
         }
-        project_name_t one[1];
-        bool have_projects = project_list(one, 1) > 0;
+        bool have_projects = project_any();
         if (have_projects)
             text += ndocs == 1 ? "Move it to a project?" : "Move them to a project?";
         else
@@ -4400,8 +4405,7 @@ static void check_project_setup(void)
                               : "Enter: move to a new project  Esc: power off");
         return;
     }
-    project_name_t one[1];
-    if (project_list(one, 1) == 0) {
+    if (!project_any()) {
         show_name_prompt(SAVE_MODE_PROJECT_FIRST, "Create a project (Enter):",
                          PROJECT_DEFAULT_NAME);
         set_status_with_timeout("Files are kept in projects. Name the first one", 0);
@@ -4505,7 +4509,6 @@ extern "C" void editor_ui_show_file_browser(void)
 extern "C" void editor_ui_show_editor(void)
 {
     s_editor_screen_active = true;
-    editor_set_mode(EDITOR_MODE_EDITING);
     /* The default text names the focused document's project. */
     if (!s_status_clear_timer) restore_default_status();
     sync_battery_labels();
@@ -5979,12 +5982,17 @@ static void wifi_pw_prompt_confirm(void)
     wifi_connect_picked_async(ssid, s_wifi_pw_buf);
 }
 
-/* Line-editing keys shared by the single-line text prompts on the menu
- * screen (WiFi password, Draftbox site / password): cursor movement,
- * Backspace / Delete and printable text in the active keyboard layout.
- * buf is UTF-8, pos a byte offset kept on a character boundary. Enter
- * and Esc are the caller's. */
-static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t *ev)
+/* Line-editing keys shared by every single-line text prompt (WiFi
+ * password, Draftbox site / password, save-as / rename name, Find /
+ * Replace): cursor movement, Backspace / Delete and printable text in
+ * the active keyboard layout. buf is UTF-8, pos a byte offset kept on a
+ * character boundary. Enter, Esc (and Tab, where it means something)
+ * are the caller's. accept, when given, may refuse a typed text given
+ * the current length. Returns true if the text changed. */
+typedef bool (*text_accept_fn)(const char *text, size_t cur_len);
+
+static bool text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t *ev,
+                           text_accept_fn accept = NULL)
 {
     switch (ev->keycode) {
     case KB_KEY_LEFT:
@@ -5992,20 +6000,20 @@ static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t 
             do { (*pos)--; }
             while (*pos > 0 && (buf[*pos] & 0xC0) == 0x80);
         }
-        break;
+        return false;
     case KB_KEY_RIGHT:
         if (*pos < (int)strlen(buf)) {
             (*pos)++;
             while (*pos < (int)strlen(buf) && (buf[*pos] & 0xC0) == 0x80)
                 (*pos)++;
         }
-        break;
+        return false;
     case KB_KEY_HOME:
         *pos = 0;
-        break;
+        return false;
     case KB_KEY_END:
         *pos = (int)strlen(buf);
-        break;
+        return false;
     case KB_KEY_BACKSPACE:
         if (*pos > 0) {
             int prev = *pos - 1;
@@ -6013,32 +6021,33 @@ static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t 
             int len = (int)strlen(buf);
             memmove(buf + prev, buf + *pos, (size_t)(len - *pos + 1));
             *pos = prev;
+            return true;
         }
-        break;
+        return false;
     case KB_KEY_DELETE: {
         int len = (int)strlen(buf);
         if (*pos < len) {
             int next = *pos + 1;
             while (next < len && (buf[next] & 0xC0) == 0x80) next++;
             memmove(buf + *pos, buf + next, (size_t)(len - next + 1));
+            return true;
         }
-        break;
+        return false;
     }
     default: {
         bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl) break; /* swallow ctrl combos */
+        if (ctrl) return false; /* swallow ctrl combos */
         const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            if ((unsigned char)text[0] < 0x20) break; /* reject control chars */
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(buf);
-            if (cur_len + tlen < buf_sz - 1) {
-                memmove(buf + *pos + tlen, buf + *pos, cur_len - (size_t)*pos + 1);
-                memcpy(buf + *pos, text, tlen);
-                *pos += (int)tlen;
-            }
-        }
-        break;
+        if (!text || !text[0]) return false;
+        if ((unsigned char)text[0] < 0x20) return false; /* reject control chars */
+        size_t tlen = strlen(text);
+        size_t cur_len = strlen(buf);
+        if (accept && !accept(text, cur_len)) return false;
+        if (cur_len + tlen >= buf_sz - 1) return false;
+        memmove(buf + *pos + tlen, buf + *pos, cur_len - (size_t)*pos + 1);
+        memcpy(buf + *pos, text, tlen);
+        *pos += (int)tlen;
+        return true;
     }
     }
 }
@@ -6114,8 +6123,7 @@ static void show_migrate_picker(void);
 static void migrate_popup_accept(void)
 {
     close_msg_popup();
-    project_name_t one[1];
-    if (project_list(one, 1) > 0) {
+    if (project_any()) {
         /* Existing projects to choose from, or a new one. */
         show_migrate_picker();
         return;
@@ -8274,15 +8282,34 @@ static void migrate_into_project(const char *name)
     set_status_with_timeout(msg, 6000);
 }
 
+/* Fill the picker rows with every project on the card except exclude;
+ * first (when given) leads the list. */
+static void xfer_set_projects(const char *first, const char *exclude)
+{
+    int n = 0;
+    project_name_t *all = project_list(&n);
+    if (n < 0) {
+        editor_ui_set_status("Cannot read the list of projects");
+        n = 0;
+    }
+    free(s_xfer_projects);
+    s_xfer_projects = (project_name_t *)malloc((size_t)(n + 1) * sizeof(project_name_t));
+    s_xfer_nprojects = 0;
+    if (s_xfer_projects) {
+        if (first) strlcpy(s_xfer_projects[s_xfer_nprojects++], first, sizeof(project_name_t));
+        for (int i = 0; i < n; i++) {
+            if (exclude && strcmp(all[i], exclude) == 0) continue;
+            strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
+        }
+    }
+    free(all);
+}
+
 /* "Files outside projects" dialog with projects on the card: pick one
  * of them, or "New project...". Esc returns to the dialog. */
 static void show_migrate_picker(void)
 {
-    static project_name_t all[64];
-    int n = project_list(all, 64);
-    s_xfer_nprojects = 0;
-    for (int i = 0; i < n && s_xfer_nprojects < XFER_MAX_PROJECTS; i++)
-        strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
+    xfer_set_projects(NULL, NULL);
     s_xfer_copy = false;
     s_xfer_src_project[0] = '\0';
     s_xfer_from_inpane = s_inpane_browser_open;
@@ -8312,14 +8339,7 @@ static void show_xfer_picker(bool copy)
     strlcpy(s_xfer_src_name, e->name, sizeof(s_xfer_src_name));
     browser_remember_selection();
 
-    static project_name_t all[64];
-    int n = project_list(all, 64);
-    s_xfer_nprojects = 0;
-    if (copy) strlcpy(s_xfer_projects[s_xfer_nprojects++], s_cur_project, sizeof(project_name_t));
-    for (int i = 0; i < n && s_xfer_nprojects < XFER_MAX_PROJECTS; i++) {
-        if (strcmp(all[i], s_cur_project) == 0) continue;
-        strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
-    }
+    xfer_set_projects(copy ? s_cur_project : NULL, s_cur_project);
 
     if (s_inpane_browser_open) close_inpane_browser();
     show_menu();
@@ -8597,6 +8617,19 @@ static void save_prompt_confirm(void)
     editor_ui_refresh();
 }
 
+/* What may be typed into the save-as / rename / project name field. */
+static bool save_name_accept(const char *text, size_t cur_len)
+{
+    /* No path separators. */
+    if (text[0] == '/' || text[0] == '\\') return false;
+    /* Project names: ASCII letters, digits, '-', '_', ' '. */
+    if (save_mode_is_project_name(s_save_mode) &&
+        (strlen(text) != 1 || !project_name_char_ok(text[0]) ||
+         cur_len + 1 > PROJECT_NAME_MAX))
+        return false;
+    return true;
+}
+
 static void handle_save_prompt_key(const kb_event_t *ev)
 {
     switch (ev->keycode) {
@@ -8606,78 +8639,9 @@ static void handle_save_prompt_key(const kb_event_t *ev)
     case KB_KEY_ESCAPE:
         save_prompt_cancel();
         return;
-    case KB_KEY_LEFT:
-        if (s_save_pos > 0) {
-            /* Move back one UTF-8 character */
-            do { s_save_pos--; }
-            while (s_save_pos > 0 &&
-                   (s_save_buf[s_save_pos] & 0xC0) == 0x80);
-        }
+    default:
+        text_field_key(s_save_buf, sizeof(s_save_buf), &s_save_pos, ev, save_name_accept);
         break;
-    case KB_KEY_RIGHT:
-        if (s_save_pos < (int)strlen(s_save_buf)) {
-            /* Move forward one UTF-8 character */
-            s_save_pos++;
-            while (s_save_pos < (int)strlen(s_save_buf) &&
-                   (s_save_buf[s_save_pos] & 0xC0) == 0x80)
-                s_save_pos++;
-        }
-        break;
-    case KB_KEY_HOME:
-        s_save_pos = 0;
-        break;
-    case KB_KEY_END:
-        s_save_pos = (int)strlen(s_save_buf);
-        break;
-    case KB_KEY_BACKSPACE:
-        if (s_save_pos > 0) {
-            /* Delete the previous UTF-8 character */
-            int prev = s_save_pos - 1;
-            while (prev > 0 && (s_save_buf[prev] & 0xC0) == 0x80)
-                prev--;
-            int len = (int)strlen(s_save_buf);
-            memmove(s_save_buf + prev, s_save_buf + s_save_pos,
-                    (size_t)(len - s_save_pos + 1));
-            s_save_pos = prev;
-        }
-        break;
-    case KB_KEY_DELETE: {
-        int len = (int)strlen(s_save_buf);
-        if (s_save_pos < len) {
-            /* Find end of current UTF-8 character */
-            int next = s_save_pos + 1;
-            while (next < len && (s_save_buf[next] & 0xC0) == 0x80)
-                next++;
-            memmove(s_save_buf + s_save_pos, s_save_buf + next,
-                    (size_t)(len - next + 1));
-        }
-        break;
-    }
-    default: {
-        /* Insert typed character (use layout translation) */
-        bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl) break; /* ignore ctrl combos in filename */
-        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(s_save_buf);
-            /* Reject path separators and control chars */
-            if (text[0] == '/' || text[0] == '\\' || text[0] < 0x20) break;
-            /* Project names: ASCII letters, digits, '-', '_', ' '. */
-            if (save_mode_is_project_name(s_save_mode) &&
-                (tlen != 1 || !project_name_char_ok(text[0]) ||
-                 cur_len + 1 > PROJECT_NAME_MAX))
-                break;
-            if (cur_len + tlen < sizeof(s_save_buf) - 1) {
-                memmove(s_save_buf + s_save_pos + tlen,
-                        s_save_buf + s_save_pos,
-                        cur_len - (size_t)s_save_pos + 1);
-                memcpy(s_save_buf + s_save_pos, text, tlen);
-                s_save_pos += (int)tlen;
-            }
-        }
-        break;
-    }
     }
     refresh_save_prompt();
 }
@@ -8952,8 +8916,7 @@ static void delete_prompt_activate(void)
         }
         snprintf(msg, sizeof(msg), "Deleted project %.32s", pname);
         editor_ui_set_status(msg);
-        project_name_t one[1];
-        if (project_list(one, 1) == 0)
+        if (!project_any())
             show_name_prompt(SAVE_MODE_PROJECT_FIRST, "Create a project (Enter):",
                              PROJECT_DEFAULT_NAME);
         return;
@@ -9319,79 +9282,13 @@ static void handle_search_prompt_key(const kb_event_t *ev)
             s_search_field = (s_search_field == 0) ? 1 : 0;
         }
         break;
-    case KB_KEY_LEFT:
-        if (*apos > 0) {
-            do { (*apos)--; }
-            while (*apos > 0 && (abuf[*apos] & 0xC0) == 0x80);
+    default:
+        /* Editing the find query invalidates the previous match. */
+        if (text_field_key(abuf, bufsz, apos, ev) && s_search_field == 0) {
+            s_search_match_start = -1;
+            s_search_match_end = -1;
         }
         break;
-    case KB_KEY_RIGHT:
-        if (*apos < (int)strlen(abuf)) {
-            (*apos)++;
-            while (*apos < (int)strlen(abuf) &&
-                   (abuf[*apos] & 0xC0) == 0x80)
-                (*apos)++;
-        }
-        break;
-    case KB_KEY_HOME:
-        *apos = 0;
-        break;
-    case KB_KEY_END:
-        *apos = (int)strlen(abuf);
-        break;
-    case KB_KEY_BACKSPACE:
-        if (*apos > 0) {
-            int prev = *apos - 1;
-            while (prev > 0 && (abuf[prev] & 0xC0) == 0x80) prev--;
-            int len = (int)strlen(abuf);
-            memmove(abuf + prev, abuf + *apos,
-                    (size_t)(len - *apos + 1));
-            *apos = prev;
-            /* Editing the find query invalidates the previous match. */
-            if (s_search_field == 0) {
-                s_search_match_start = -1;
-                s_search_match_end = -1;
-            }
-        }
-        break;
-    case KB_KEY_DELETE: {
-        int len = (int)strlen(abuf);
-        if (*apos < len) {
-            int next = *apos + 1;
-            while (next < len && (abuf[next] & 0xC0) == 0x80) next++;
-            memmove(abuf + *apos, abuf + next,
-                    (size_t)(len - next + 1));
-            if (s_search_field == 0) {
-                s_search_match_start = -1;
-                s_search_match_end = -1;
-            }
-        }
-        break;
-    }
-    default: {
-        if (ctrl) break; /* swallow other ctrl combos */
-        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            /* Reject control characters so the buffers stay
-             * printable; embedded newlines are not supported in the
-             * search dialog. */
-            if ((unsigned char)text[0] < 0x20) break;
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(abuf);
-            if (cur_len + tlen < bufsz - 1) {
-                memmove(abuf + *apos + tlen,
-                        abuf + *apos,
-                        cur_len - (size_t)*apos + 1);
-                memcpy(abuf + *apos, text, tlen);
-                *apos += (int)tlen;
-                if (s_search_field == 0) {
-                    s_search_match_start = -1;
-                    s_search_match_end = -1;
-                }
-            }
-        }
-        break;
-    }
     }
     refresh_search_prompt();
 }
@@ -11336,6 +11233,11 @@ static void ble_status_text_cb(const char *text)
  * wifi_manager_connect() blocks for up to 30 seconds while waiting for
  * the connection.  Running it on a separate task keeps the LVGL render
  * loop responsive so the user sees status updates in real time. */
+/* The WiFi worker tasks below wait for the LVGL lock without a time
+ * limit (like the Draftbox worker): nothing that holds the lock waits
+ * for them, and a dropped result would leave the scan picker on
+ * "Scanning..." or the Draftbox prompt on its WiFi step for good --
+ * e-paper flushes hold the lock longer than a short timeout. */
 static void wifi_connect_task(void *arg)
 {
     (void)arg;
@@ -11344,7 +11246,7 @@ static void wifi_connect_task(void *arg)
         /* No credentials, or another connect/scan is running -- the
          * wifi_state callback will not fire, so update the status bar
          * directly. */
-        if (draftling_lvgl_port_lock(200)) {
+        if (draftling_lvgl_port_lock(-1)) {
             editor_ui_set_status(ret == ESP_ERR_NOT_FOUND
                                      ? "WiFi: no credentials found"
                                      : "WiFi: busy, try again");
@@ -11379,7 +11281,7 @@ static void wifi_scan_task(void *arg)
     int count = 0;
     esp_err_t ret = wifi_manager_scan(results, WIFI_SCAN_MAX_RESULTS, &count);
 
-    if (draftling_lvgl_port_lock(200)) {
+    if (draftling_lvgl_port_lock(-1)) {
         /* Only touch the UI if the picker is still what's on screen --
          * the user may have backed out (Esc) while the scan was in
          * flight. */
@@ -11431,7 +11333,7 @@ static void wifi_connect_picked_task(void *arg)
     if (ret == ESP_OK) {
         wifi_manager_save_to_file(args->ssid, args->password);
     } else if (ret == ESP_ERR_INVALID_STATE) {
-        if (draftling_lvgl_port_lock(200)) {
+        if (draftling_lvgl_port_lock(-1)) {
             editor_ui_set_status("WiFi: busy, try again");
             draftling_lvgl_port_unlock();
         }

@@ -144,9 +144,6 @@ bool kb_layout_has_altgr(void);
 void kb_layout_set_caps_lock(bool on);
 bool kb_layout_get_caps_lock(void);
 
-/* Set the active keyboard layout */
-void kb_layout_set(kb_layout_id_t layout);
-
 /* Get the active keyboard layout */
 kb_layout_id_t kb_layout_get(void);
 

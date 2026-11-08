@@ -343,21 +343,6 @@ extern "C" usb_msc_mode_t usb_msc_get_mode(void)
     return s_mode;
 }
 
-extern "C" bool usb_msc_is_host_connected(void)
-{
-    return s_host_connected;
-}
-
-extern "C" int usb_msc_idle_seconds_remaining(void)
-{
-    if (s_mode == USB_MSC_MODE_OFF || s_host_connected) return -1;
-    int64_t idle_us = esp_timer_get_time() - s_disconnected_since_us;
-    int64_t timeout_us = (int64_t)CONFIG_DRAFTLING_USB_MSC_IDLE_TIMEOUT_SEC * 1000000LL;
-    int64_t remain_us = timeout_us - idle_us;
-    if (remain_us < 0) remain_us = 0;
-    return (int)(remain_us / 1000000LL);
-}
-
 #else /* !CONFIG_DRAFTLING_HAS_USB_MSC */
 
 extern "C" esp_err_t usb_msc_set_mode(usb_msc_mode_t mode)
@@ -368,16 +353,6 @@ extern "C" esp_err_t usb_msc_set_mode(usb_msc_mode_t mode)
 extern "C" usb_msc_mode_t usb_msc_get_mode(void)
 {
     return USB_MSC_MODE_OFF;
-}
-
-extern "C" bool usb_msc_is_host_connected(void)
-{
-    return false;
-}
-
-extern "C" int usb_msc_idle_seconds_remaining(void)
-{
-    return -1;
 }
 
 #endif /* CONFIG_DRAFTLING_HAS_USB_MSC */

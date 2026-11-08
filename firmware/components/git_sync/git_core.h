@@ -69,8 +69,9 @@ bool  git_buf_printf(git_buf *b, const char *fmt, ...);
 typedef struct git_sha1_ctx git_sha1_ctx;
 git_sha1_ctx *git_sha1_new(void);
 void git_sha1_update(git_sha1_ctx *c, const void *data, size_t n);
-void git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]); /* frees c */
-void git_sha1_hex(const void *data, size_t n, git_oid *out);
+/* Frees c (NULL-safe). False -- with out zeroed -- when c is NULL or
+ * any update or the final step failed. */
+bool git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]);
 
 /* ---- streaming zlib (miniz in ROM) ------------------------------- */
 
@@ -131,7 +132,6 @@ void      git_repo_close(void);
 /* Delete leftover scratch files (an interrupted sync). */
 void      git_repo_clean_tmp(void);
 const char *git_repo_gitdir(void);   /* "<workdir>/.git" */
-const char *git_repo_workdir(void);
 
 /* Loose object store. Content is the raw object payload (no header).
  * git_odb_read() / git_odb_write() hold the whole object in RAM: use
@@ -143,7 +143,7 @@ esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size
 esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
                         git_oid *out_oid);
 /* Hash without writing (used to test the working tree against HEAD). */
-void      git_odb_hash(git_obj_type type, const void *data, size_t len,
+esp_err_t git_odb_hash(git_obj_type type, const void *data, size_t len,
                        git_oid *out_oid);
 /* Hash a file's content as an object of the given type. */
 esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out_oid);
@@ -189,7 +189,6 @@ void      git_odb_tmp_path(char *out, size_t osz, const char *name);
  * if the ref does not exist. HEAD is resolved through one symref level. */
 esp_err_t git_ref_read(const char *name, git_oid *out);
 esp_err_t git_ref_write(const char *name, const git_oid *oid);
-esp_err_t git_ref_delete(const char *name);
 /* Write "ref: <target>\n" into HEAD. */
 esp_err_t git_head_set_symbolic(const char *target);
 
@@ -257,9 +256,11 @@ esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out);
 /* true if `anc` is an ancestor of (or equal to) `desc`. */
 bool git_is_ancestor(const git_oid *anc, const git_oid *desc);
 
-/* Collect the linear list of commits in (base, head], oldest first,
- * following first parents.  Fails if the range is not linear. */
-esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head,
+/* Collect the commits in (base, head] along first parents, oldest
+ * first (all the way to the root when base is NULL). max > 0 keeps
+ * only the newest max. ESP_ERR_NOT_FOUND when base is not on head's
+ * first-parent path. *out is malloc'ed. */
+esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int max,
                                  git_oid **out, int *out_count);
 
 /* Collect every object oid reachable from `heads` but not from `haves`
@@ -283,19 +284,22 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set);
 
 /* ---- transport (smart HTTP) ------------------------------------- */
 
+/* Whether s is a branch name git accepts (git check-ref-format
+ * --branch, roughly): no "..", "//", "@{", control characters, space,
+ * ~ ^ : ? * [ \, no leading / trailing '/' or '.', no ".lock" end. */
+bool git_branch_name_ok(const char *s);
+
 typedef struct {
     char base_url[320];         /* ".../repo.git" (no trailing slash) */
     char auth_basic[420];       /* pre-computed "Basic xxx" or "" */
 } git_remote;
 
-typedef struct {
-    char    name[128];
-    git_oid oid;
-} git_ref_adv;
-
-/* GET /info/refs?service=<service>. Fills up to `max` advertised refs. */
-esp_err_t git_http_list_refs(const git_remote *r, const char *service,
-                             git_ref_adv *refs, int max, int *out_count);
+/* GET /info/refs?service=<service> and look up one advertised ref
+ * (e.g. "refs/heads/main"). *found is false when the server does not
+ * advertise it. Every advertised ref is scanned, however many there
+ * are. */
+esp_err_t git_http_find_ref(const git_remote *r, const char *service,
+                            const char *refname, git_oid *out, bool *found);
 
 /* POST /git-upload-pack: negotiate `want`/`have` and stream the returned
  * packfile to `out_pack_path`.  `haves` may be NULL/0. Returns
@@ -317,9 +321,10 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
 
 typedef struct {
     /* per-path result */
-    char    name[256];
-    git_oid oid;                /* resulting blob (0 => deleted) */
-    bool    conflict;
+    char     name[256];
+    git_oid  oid;               /* resulting entry (0 => deleted) */
+    uint32_t mode;              /* its tree mode (0100644, 040000, ...) */
+    bool     conflict;
 } git_merge_path_result;
 
 /* Merge two flat "name -> blob oid" trees against a common `base` tree.
