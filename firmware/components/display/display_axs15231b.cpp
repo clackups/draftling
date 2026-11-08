@@ -63,6 +63,7 @@
 #include <esp_sleep.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayAXS";
@@ -82,7 +83,6 @@ static const char *TAG = "DisplayAXS";
  * dynamic frequency scaling; AUTO_CLK previously picked APB and
  * produced an unreliable PWM that left the BL effectively dark. */
 #define BL_LEDC_TIMER       LEDC_TIMER_3
-#define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_1
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_8_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 8) - 1)
@@ -179,26 +179,13 @@ static void backlight_pwm_init(int bl_pin)
      * the panel never sees a brief OFF pulse during the handoff. */
     gpio_set_level((gpio_num_t)bl_pin, s_bl_active_low ? 0 : 1);
 
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
     /* RC_FAST (~17.5 MHz internal oscillator) matches Waveshare's
      * reference and survives APB-clock changes when BLE/Wi-Fi enable
      * dynamic frequency scaling. AUTO_CLK previously picked APB,
      * which produced an unreliable PWM that left the BL effectively
-     * dark for the user. */
-    t.clk_cfg         = LEDC_USE_RC_FAST_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = bl_pin;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
-    /* Start at full brightness so the panel is lit the moment the
+     * dark for the user.
+     *
+     * Start at full brightness so the panel is lit the moment the
      * first frame reaches the framebuffer; the editor's
      * editor_ui_init() will lower the duty to the NVS-persisted
      * value shortly after. Initialising to "off" instead caused a
@@ -210,9 +197,9 @@ static void backlight_pwm_init(int bl_pin)
      * boards it is duty MAX (output HIGH = BL ON). This matches
      * Waveshare's reference firmware which initialises with
      * LCD_PWM_MODE_255 = (0xff - 255) = 0. */
-    c.duty       = s_bl_active_low ? 0 : BL_LEDC_DUTY_MAX;
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    bl_ledc_setup(bl_pin, BL_LEDC_TIMER, BL_LEDC_CHANNEL, BL_LEDC_DUTY_RES,
+                  BL_LEDC_FREQ_HZ, LEDC_USE_RC_FAST_CLK,
+                  s_bl_active_low ? 0 : BL_LEDC_DUTY_MAX);
 #endif
 }
 
@@ -255,8 +242,7 @@ extern "C" void display_set_backlight(int percent)
          * mapping: LCD_PWM_MODE_<bright> = (0xff - <bright>). */
         duty = BL_LEDC_DUTY_MAX - duty;
     }
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, duty);
 #endif
 }
 
@@ -1392,8 +1378,7 @@ extern "C" void display_deep_sleep_prepare(void)
         gpio_set_level((gpio_num_t)cut_pin, s_bl_active_low ? 1 : 0);
 #else
         uint32_t off_duty = s_bl_active_low ? BL_LEDC_DUTY_MAX : 0;
-        ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, off_duty));
-        ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+        bl_ledc_write(BL_LEDC_CHANNEL, off_duty);
 #endif
     }
 

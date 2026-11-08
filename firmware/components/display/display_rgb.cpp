@@ -80,6 +80,7 @@
 #include <esp_rom_sys.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 #include "io_expander_ch422g.h"
 
@@ -358,28 +359,11 @@ static uint32_t backlight_duty(int percent)
 static void backlight_pwm_init(int bl_pin)
 {
     if (bl_pin < 0) return;
-
-    /* display_deep_sleep_prepare() may have latched the pin at its
-     * "off" level for deep sleep; release it so LEDC can drive it. */
-    gpio_hold_dis((gpio_num_t)bl_pin);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
-    t.clk_cfg         = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = bl_pin;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
-    c.duty       = backlight_duty(100);  /* full brightness at boot */
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    /* Full brightness at boot; display_deep_sleep_prepare() may have
+     * latched the pin at its "off" level, which bl_ledc_setup()
+     * releases. */
+    bl_ledc_setup(bl_pin, BL_LEDC_TIMER, BL_LEDC_CHANNEL, BL_LEDC_DUTY_RES,
+                  BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, backlight_duty(100));
 }
 #endif
 
@@ -392,9 +376,7 @@ extern "C" void display_set_backlight(int percent)
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     backlight_ch422g_set(percent);
 #else
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL,
-                                  backlight_duty(percent)));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, backlight_duty(percent));
 #endif
 }
 
@@ -784,8 +766,7 @@ extern "C" void display_deep_sleep_prepare(void)
     gpio_hold_en((gpio_num_t)s_bl_pin);
     gpio_deep_sleep_hold_en();
 #else
-    ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
-    ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);
+    bl_ledc_write(BL_LEDC_CHANNEL, 0);
 #endif
 }
 

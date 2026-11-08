@@ -76,6 +76,7 @@
 #endif
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayILI9341";
@@ -91,7 +92,6 @@ static display_spi_tft_config_t s_cfg = {
  * default configuration (Guition JC3248W535 convention: duty MAX =
  * full brightness). */
 #define BL_LEDC_TIMER       LEDC_TIMER_3
-#define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_1
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_8_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 8) - 1)
@@ -444,22 +444,8 @@ static void backlight_pwm_init(void)
     ESP_ERROR_CHECK(gpio_config(&g));
     gpio_set_level((gpio_num_t)s_cfg.bl, 1);
 
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = s_cfg.bl_pwm_hz;
-    t.clk_cfg         = LEDC_USE_RC_FAST_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = s_cfg.bl;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.duty       = BL_LEDC_DUTY_MAX;
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    bl_ledc_setup(s_cfg.bl, BL_LEDC_TIMER, BL_LEDC_CHANNEL, BL_LEDC_DUTY_RES,
+                  s_cfg.bl_pwm_hz, LEDC_USE_RC_FAST_CLK, BL_LEDC_DUTY_MAX);
 }
 
 extern "C" void display_set_backlight(int percent)
@@ -468,9 +454,7 @@ extern "C" void display_set_backlight(int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     s_bl_last_pct = percent;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX));
 }
 
 /* MADCTL value for landscape orientation (rotation "1" in the

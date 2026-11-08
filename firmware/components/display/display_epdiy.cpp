@@ -68,6 +68,7 @@
 #include <driver/gpio.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 #include "lvgl_port.h"
 
@@ -114,7 +115,6 @@ static const char *TAG = "DisplayEPDIY";
 #if defined(EPDIY_BL_PIN)
 #define EPDIY_HAS_BACKLIGHT 1
 #define BL_LEDC_TIMER       LEDC_TIMER_0
-#define BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
 #define BL_LEDC_DUTY_MAX    ((1 << 10) - 1)
@@ -132,33 +132,15 @@ static void backlight_pwm_init(int bl_pin)
      * sleep. The latch survives the wake reset on ESP32-S3 and
      * keeps the pad clamped LOW regardless of any GPIO matrix /
      * LEDC routing we configure here, which is why the front-light
-     * stays dark after wake. Release the per-pin hold (no-op on a
-     * genuine cold boot) so ledc_channel_config below can drive
-     * the pin. */
-    gpio_hold_dis((gpio_num_t)bl_pin);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
-    t.clk_cfg         = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = bl_pin;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.intr_type  = LEDC_INTR_DISABLE;
-    /* Start in the OFF state (matches the LilyGO factory firmware
+     * stays dark after wake. bl_ledc_setup() releases the per-pin
+     * hold (no-op on a genuine cold boot) so LEDC can drive the pin.
+     *
+     * Start in the OFF state (matches the LilyGO factory firmware
      * which pulls BOARD_BL_EN low at boot). The editor restores
      * the persisted brightness from NVS via display_set_backlight()
      * once it has loaded the user setting. */
-    c.duty       = 0;
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
-
+    bl_ledc_setup(bl_pin, BL_LEDC_TIMER, BL_LEDC_CHANNEL, BL_LEDC_DUTY_RES,
+                  BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
 }
 #endif  /* EPDIY_BL_PIN */
@@ -595,12 +577,8 @@ extern "C" void display_set_partial_clip(int /*x*/, int /*y*/,
 extern "C" void display_set_backlight(int percent)
 {
 #if defined(EPDIY_HAS_BACKLIGHT)
-    if (percent < 0)   percent = 0;
-    if (percent > 100) percent = 100;
     if (!s_bl_inited) return;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX));
 #else
     (void)percent;
     /* This epdiy board variant has no controllable front-light. */
@@ -627,8 +605,7 @@ extern "C" void display_deep_sleep_prepare(void)
      * up to the post-wake display_init() to re-initialize the
      * channel from scratch. */
     if (s_bl_inited) {
-        ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, 0);
-        ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL);
+        bl_ledc_write(BL_LEDC_CHANNEL, 0);
     }
     /* Setting LEDC duty to 0 stops switching, but the LEDC peripheral
      * is powered down by the digital domain in deep sleep, which

@@ -53,6 +53,7 @@
 #include <driver/spi_master.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayNV3041A";
@@ -273,26 +274,9 @@ static void write_fb_rect(int x1, int y1, int x2, int y2)
 static void backlight_pwm_init(void)
 {
     if (s_cfg.bl < 0) return;
-    /* Released here in case display_deep_sleep_prepare() latched the
-     * pin low for deep sleep. */
-    gpio_hold_dis((gpio_num_t)s_cfg.bl);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = LEDC_TIMER_8_BIT;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = (uint32_t)s_cfg.bl_pwm_hz;
-    t.clk_cfg         = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t c = {};
-    c.gpio_num   = s_cfg.bl;
-    c.speed_mode = BL_LEDC_MODE;
-    c.channel    = BL_LEDC_CHANNEL;
-    c.timer_sel  = BL_LEDC_TIMER;
-    c.duty       = 0;   /* off until the panel is initialised */
-    c.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    /* Off until the panel is initialised. */
+    bl_ledc_setup(s_cfg.bl, BL_LEDC_TIMER, BL_LEDC_CHANNEL, LEDC_TIMER_8_BIT,
+                  (uint32_t)s_cfg.bl_pwm_hz, LEDC_AUTO_CLK, 0);
 }
 
 extern "C" void display_set_backlight(int percent)
@@ -301,9 +285,7 @@ extern "C" void display_set_backlight(int percent)
     if (percent > 100) percent = 100;
     s_bl_last_pct = percent;
     if (s_cfg.bl < 0) return;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    bl_ledc_write(BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX));
 }
 
 extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,

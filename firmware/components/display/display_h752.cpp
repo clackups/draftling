@@ -12,6 +12,7 @@
 #include <FastEPD.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "epd_fb.h"
 #include "display_margins.h"
 
@@ -29,7 +30,6 @@ static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 #endif
 
 #define H752_BL_LEDC_TIMER       LEDC_TIMER_0
-#define H752_BL_LEDC_MODE        LEDC_LOW_SPEED_MODE
 #define H752_BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define H752_BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
 #define H752_BL_LEDC_DUTY_MAX    ((1 << 10) - 1)
@@ -58,24 +58,8 @@ static int s_clip_y1 = -1;
 static void backlight_pwm_init(void)
 {
     if (s_bl_inited) return;
-    ledc_timer_config_t t = {};
-    t.speed_mode = H752_BL_LEDC_MODE;
-    t.duty_resolution = H752_BL_LEDC_DUTY_RES;
-    t.timer_num = H752_BL_LEDC_TIMER;
-    t.freq_hz = H752_BL_LEDC_FREQ_HZ;
-    t.clk_cfg = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    gpio_hold_dis((gpio_num_t)H752_BL_PIN);
-    ledc_channel_config_t c = {};
-    c.gpio_num = H752_BL_PIN;
-    c.speed_mode = H752_BL_LEDC_MODE;
-    c.channel = H752_BL_LEDC_CHANNEL;
-    c.timer_sel = H752_BL_LEDC_TIMER;
-    c.intr_type = LEDC_INTR_DISABLE;
-    c.duty = 0;
-    c.hpoint = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&c));
+    bl_ledc_setup(H752_BL_PIN, H752_BL_LEDC_TIMER, H752_BL_LEDC_CHANNEL,
+                  H752_BL_LEDC_DUTY_RES, H752_BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
 }
 
@@ -291,9 +275,7 @@ extern "C" void display_set_backlight(int percent)
     if (!s_bl_inited) return;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
-    uint32_t duty = (uint32_t)((H752_BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL));
+    bl_ledc_write(H752_BL_LEDC_CHANNEL, bl_ledc_percent_duty(percent, H752_BL_LEDC_DUTY_MAX));
 }
 
 extern "C" void display_sleep(void)
@@ -307,8 +289,7 @@ extern "C" void display_wake(void)
 extern "C" void display_deep_sleep_prepare(void)
 {
     if (s_bl_inited) {
-        ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, 0);
-        ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL);
+        bl_ledc_write(H752_BL_LEDC_CHANNEL, 0);
     }
     gpio_hold_dis((gpio_num_t)H752_BL_PIN);
     gpio_reset_pin((gpio_num_t)H752_BL_PIN);

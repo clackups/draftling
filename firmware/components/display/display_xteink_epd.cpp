@@ -54,6 +54,7 @@
 #include <freertos/task.h>
 
 #include "display.h"
+#include "bl_ledc.h"
 #include "epd_fb.h"
 #include "display_margins.h"
 
@@ -126,7 +127,6 @@ static const char *TAG = "DisplayXteink";
  * color-temperature UI), 10 kHz / 10-bit, active-HIGH. */
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
 #define BL_LEDC_TIMER        LEDC_TIMER_0
-#define BL_LEDC_MODE         LEDC_LOW_SPEED_MODE
 #define BL_LEDC_CHANNEL_COOL LEDC_CHANNEL_0
 #define BL_LEDC_CHANNEL_WARM LEDC_CHANNEL_1
 #define BL_LEDC_DUTY_RES     LEDC_TIMER_10_BIT
@@ -753,33 +753,11 @@ static void ctrl_deep_sleep(void)
 static void backlight_pwm_init(void)
 {
     if (s_bl_inited) return;
-
-    gpio_hold_dis((gpio_num_t)FRONTLIGHT_COOL_PIN);
-    gpio_hold_dis((gpio_num_t)FRONTLIGHT_WARM_PIN);
-
-    ledc_timer_config_t t = {};
-    t.speed_mode      = BL_LEDC_MODE;
-    t.duty_resolution = BL_LEDC_DUTY_RES;
-    t.timer_num       = BL_LEDC_TIMER;
-    t.freq_hz         = BL_LEDC_FREQ_HZ;
-    t.clk_cfg         = LEDC_AUTO_CLK;
-    ESP_ERROR_CHECK(ledc_timer_config(&t));
-
-    ledc_channel_config_t cc = {};
-    cc.gpio_num   = FRONTLIGHT_COOL_PIN;
-    cc.speed_mode = BL_LEDC_MODE;
-    cc.channel    = BL_LEDC_CHANNEL_COOL;
-    cc.timer_sel  = BL_LEDC_TIMER;
-    cc.intr_type  = LEDC_INTR_DISABLE;
-    cc.duty       = 0;
-    cc.hpoint     = 0;
-    ESP_ERROR_CHECK(ledc_channel_config(&cc));
-
-    ledc_channel_config_t cw = cc;
-    cw.gpio_num = FRONTLIGHT_WARM_PIN;
-    cw.channel  = BL_LEDC_CHANNEL_WARM;
-    ESP_ERROR_CHECK(ledc_channel_config(&cw));
-
+    /* Both front-light channels on one timer, off until set. */
+    bl_ledc_setup(FRONTLIGHT_COOL_PIN, BL_LEDC_TIMER, BL_LEDC_CHANNEL_COOL,
+                  BL_LEDC_DUTY_RES, BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
+    bl_ledc_setup(FRONTLIGHT_WARM_PIN, BL_LEDC_TIMER, BL_LEDC_CHANNEL_WARM,
+                  BL_LEDC_DUTY_RES, BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
 }
 
@@ -788,11 +766,9 @@ extern "C" void display_set_backlight(int percent)
     if (!s_bl_inited) return;
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
-    uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM, duty));
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM));
+    uint32_t duty = bl_ledc_percent_duty(percent, BL_LEDC_DUTY_MAX);
+    bl_ledc_write(BL_LEDC_CHANNEL_COOL, duty);
+    bl_ledc_write(BL_LEDC_CHANNEL_WARM, duty);
 }
 
 #else  /* !CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT -- Xteink X4 Classic */
@@ -1005,10 +981,8 @@ extern "C" void display_deep_sleep_prepare(void)
 {
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
     if (s_bl_inited) {
-        ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL, 0);
-        ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_COOL);
-        ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM, 0);
-        ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL_WARM);
+        bl_ledc_write(BL_LEDC_CHANNEL_COOL, 0);
+        bl_ledc_write(BL_LEDC_CHANNEL_WARM, 0);
     }
     for (int pin : { FRONTLIGHT_COOL_PIN, FRONTLIGHT_WARM_PIN }) {
         gpio_hold_dis((gpio_num_t)pin);
