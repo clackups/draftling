@@ -935,18 +935,37 @@ static const menu_item_id_t s_menu_row_ids[] = {
 };
 #define MENU_ROW_COUNT (int)(sizeof(s_menu_row_ids) / sizeof(s_menu_row_ids[0]))
 
+template <typename Id, size_t N>
+static inline Id list_id_for_index(const Id (&row_ids)[N], int idx, Id fallback)
+{
+    if (idx >= 0 && idx < (int)N) return row_ids[idx];
+    return fallback;
+}
+
+template <typename Id, size_t N>
+static inline int list_index_for_id(const Id (&row_ids)[N], Id id)
+{
+    for (int i = 0; i < (int)N; i++) {
+        if (row_ids[i] == id) return i;
+    }
+    return 0;
+}
+
+template <typename Id>
+static inline int list_move_index(int current_idx, int delta, int count)
+{
+    if (count <= 0) return 0;
+    return (current_idx + delta + count) % count;
+}
+
 static inline menu_item_id_t menu_id_for_index(int idx)
 {
-    if (idx >= 0 && idx < MENU_ROW_COUNT) return s_menu_row_ids[idx];
-    return MENU_ID_SETTINGS;
+    return list_id_for_index(s_menu_row_ids, idx, MENU_ID_SETTINGS);
 }
 
 static inline int menu_index_for_id(menu_item_id_t id)
 {
-    for (int i = 0; i < MENU_ROW_COUNT; i++) {
-        if (s_menu_row_ids[i] == id) return i;
-    }
-    return 0;
+    return list_index_for_id(s_menu_row_ids, id);
 }
 
 static inline menu_item_id_t menu_selection_id(void)
@@ -961,10 +980,7 @@ static inline void menu_set_selection_id(menu_item_id_t id)
 
 static inline void menu_move_selection(int delta)
 {
-    if (MENU_ROW_COUNT <= 0) return;
-    int idx = menu_index_for_id(menu_selection_id());
-    idx = (idx + delta + MENU_ROW_COUNT) % MENU_ROW_COUNT;
-    s_menu_sel = idx;
+    s_menu_sel = list_move_index(s_menu_sel, delta, MENU_ROW_COUNT);
 }
 
 static const settings_item_id_t s_settings_row_ids[] = {
@@ -1001,16 +1017,12 @@ static const settings_item_id_t s_settings_row_ids[] = {
 
 static inline settings_item_id_t settings_id_for_index(int idx)
 {
-    if (idx >= 0 && idx < SETTINGS_ROW_COUNT) return s_settings_row_ids[idx];
-    return SETTINGS_ID_TIMEOUT;
+    return list_id_for_index(s_settings_row_ids, idx, SETTINGS_ID_TIMEOUT);
 }
 
 static inline int settings_index_for_id(settings_item_id_t id)
 {
-    for (int i = 0; i < SETTINGS_ROW_COUNT; i++) {
-        if (s_settings_row_ids[i] == id) return i;
-    }
-    return 0;
+    return list_index_for_id(s_settings_row_ids, id);
 }
 
 static inline settings_item_id_t settings_selection_id(void)
@@ -1025,10 +1037,7 @@ static inline void settings_set_selection_id(settings_item_id_t id)
 
 static inline void settings_move_selection(int delta)
 {
-    if (SETTINGS_ROW_COUNT <= 0) return;
-    int idx = settings_index_for_id(settings_selection_id());
-    idx = (idx + delta + SETTINGS_ROW_COUNT) % SETTINGS_ROW_COUNT;
-    s_settings_sel = idx;
+    s_settings_sel = list_move_index(s_settings_sel, delta, SETTINGS_ROW_COUNT);
 }
 
 /* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
