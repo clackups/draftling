@@ -700,8 +700,9 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             const git_oid *mbp = git_oid_is_zero(&mb) ? NULL : &mb;
             ret = git_commit_list_linear(mbp, &local_head, 0, &commits, &ncommits);
             if (ret != ESP_OK) {
-                set_error(ret == ESP_ERR_NO_MEM ? "Out of memory listing local commits"
-                                                : "Cannot read the local Git history");
+                set_error(ret == ESP_ERR_NO_MEM    ? "Out of memory listing local commits" :
+                          ret == ESP_ERR_NOT_FOUND ? "History not linear -- cannot rebase"
+                                                   : "Cannot read the local Git history");
                 return ret;
             }
 

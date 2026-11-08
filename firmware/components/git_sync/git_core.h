@@ -258,8 +258,9 @@ esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out);
 bool git_is_ancestor(const git_oid *anc, const git_oid *desc);
 
 /* Collect the commits in (base, head] along first parents, oldest
- * first (all the way to the root when base is NULL or not on that
- * path). max > 0 keeps only the newest max. *out is malloc'ed. */
+ * first (all the way to the root when base is NULL). max > 0 keeps
+ * only the newest max. ESP_ERR_NOT_FOUND when base is not on head's
+ * first-parent path. *out is malloc'ed. */
 esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int max,
                                  git_oid **out, int *out_count);
 

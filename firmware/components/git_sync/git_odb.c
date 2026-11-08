@@ -1003,6 +1003,15 @@ esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int m
         git_commit_free(&c);
     }
     if (ret != ESP_OK) { free(v); return ret; }
+    /* A base that the first-parent walk never met (it was reached
+     * through a merge's second parent): the range is not a straight
+     * line, and replaying everything back to the root instead would
+     * re-apply commits the other side already has. */
+    if (base && !git_oid_is_zero(base) && git_oid_is_zero(&cur) &&
+        (max <= 0 || n < max)) {
+        free(v);
+        return ESP_ERR_NOT_FOUND;
+    }
 
     for (int i = 0; i < n / 2; i++) {               /* oldest first */
         git_oid t = v[i];

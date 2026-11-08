@@ -204,6 +204,29 @@ int main(int argc, char **argv)
     CHECK(remote_file("m.md") == "m2\n");
     CHECK(out("git --git-dir=remote.git ls-tree main m.md").find("100755") == 0);
 
+    /* 14. git_commit_list_linear(): a base off the first-parent path
+     *     is refused instead of listing everything back to the root. */
+    {
+        fprintf(stderr, "== linear range\n");
+        sh("rm -rf lin && mkdir lin");
+        CHECK(git_repo_open((T + "/lin").c_str()) == ESP_OK);
+        git_oid tree, a, b, c, both[2];
+        CHECK(git_odb_write(GIT_OBJ_TREE, "", 0, &tree) == ESP_OK);
+        const char *id = "t <t@t> 1735689600 +0000";
+        CHECK(git_commit_create(&tree, NULL, 0, id, "a", &a) == ESP_OK);
+        CHECK(git_commit_create(&tree, NULL, 0, id, "c", &c) == ESP_OK);
+        both[0] = a; both[1] = c;                      /* merge: c is 2nd parent */
+        CHECK(git_commit_create(&tree, both, 2, id, "b", &b) == ESP_OK);
+        git_oid *list = NULL; int n = -1;
+        CHECK(git_commit_list_linear(&a, &b, 0, &list, &n) == ESP_OK && n == 1);
+        free(list); list = NULL;
+        CHECK(git_commit_list_linear(&c, &b, 0, &list, &n) == ESP_ERR_NOT_FOUND);
+        free(list); list = NULL;
+        CHECK(git_commit_list_linear(NULL, &b, 0, &list, &n) == ESP_OK && n == 2);
+        free(list);
+        git_repo_close();
+    }
+
     fprintf(stderr, fails ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", fails);
     return fails ? 1 : 0;
 }
