@@ -935,6 +935,20 @@ static const menu_item_id_t s_menu_row_ids[] = {
 };
 #define MENU_ROW_COUNT (int)(sizeof(s_menu_row_ids) / sizeof(s_menu_row_ids[0]))
 
+static inline menu_item_id_t menu_id_for_index(int idx)
+{
+    if (idx >= 0 && idx < MENU_ROW_COUNT) return s_menu_row_ids[idx];
+    return MENU_ID_SETTINGS;
+}
+
+static inline int menu_index_for_id(menu_item_id_t id)
+{
+    for (int i = 0; i < MENU_ROW_COUNT; i++) {
+        if (s_menu_row_ids[i] == id) return i;
+    }
+    return 0;
+}
+
 static const settings_item_id_t s_settings_row_ids[] = {
     SETTINGS_ID_TIMEOUT,
     SETTINGS_ID_FONTSZ,
@@ -966,6 +980,20 @@ static const settings_item_id_t s_settings_row_ids[] = {
     SETTINGS_ID_BACK,
 };
 #define SETTINGS_ROW_COUNT (int)(sizeof(s_settings_row_ids) / sizeof(s_settings_row_ids[0]))
+
+static inline settings_item_id_t settings_id_for_index(int idx)
+{
+    if (idx >= 0 && idx < SETTINGS_ROW_COUNT) return s_settings_row_ids[idx];
+    return SETTINGS_ID_TIMEOUT;
+}
+
+static inline int settings_index_for_id(settings_item_id_t id)
+{
+    for (int i = 0; i < SETTINGS_ROW_COUNT; i++) {
+        if (s_settings_row_ids[i] == id) return i;
+    }
+    return 0;
+}
 
 /* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
  * card" picker replaces it with its question while it is open. */
@@ -4842,11 +4870,6 @@ struct menu_hotkey_t {
     int  pos;
 };
 
-static inline int menu_index_for_id(menu_item_id_t id)
-{
-    return (int)id;
-}
-
 static const menu_hotkey_t s_menu_hotkeys[] = {
     { MENU_ID_SETTINGS,        's', 0  },  /* "Settings..." */
     { MENU_ID_BLE_SCAN,        'l', 1  },  /* "BLE: Start scan" */
@@ -5619,6 +5642,8 @@ static void close_settings(void)
  * values), so callers can no-op the arrow keys on those rows. */
 static bool settings_cycle_item(int idx, int dir)
 {
+    settings_item_id_t item = settings_id_for_index(idx);
+    (void)item;
     if (idx == SETTINGS_IDX_TIMEOUT) {
         uint32_t cur = standby_get_timeout();
         int opt = find_timeout_option(cur);
@@ -7028,7 +7053,7 @@ static void start_project_sync(void)
 
 static void menu_activate_item(int idx)
 {
-    switch ((menu_item_id_t)idx) {
+    switch (menu_id_for_index(idx)) {
     case MENU_ID_SETTINGS:
         show_settings();
         break;
@@ -7300,9 +7325,9 @@ static void handle_menu_key(const kb_event_t *ev)
             char ch = kb_layout_shortcut_char(ev->keycode);
             for (const menu_hotkey_t &h : s_menu_hotkeys) {
                 if (ch != h.key) continue;
-                s_menu_sel = h.idx;
+                s_menu_sel = menu_index_for_id(h.id);
                 update_menu_highlight();
-                if (h.idx != MENU_IDX_KB_LAYOUT) menu_activate_item(h.idx);
+                if (h.id != MENU_ID_KB_LAYOUT) menu_activate_item(s_menu_sel);
                 break;
             }
         }
