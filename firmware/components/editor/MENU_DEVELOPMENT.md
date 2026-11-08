@@ -69,8 +69,9 @@ do not currently verify the LVGL labels or action dispatch.
 
 ## Adding or moving a setting
 
-1. Add a `SETTINGS_ID_*` entry in the settings ID definition in
-   `editor_ui.cpp`; preserve existing NVS and value semantics.
+1. Add a unique, explicit `SETTINGS_ID_*` value in
+   `include/editor_settings.h`; do not put feature guards around the ID
+   declaration or change existing NVS/value semantics.
 2. Add the ID to `s_settings_row_ids` in its desired position and add its
    registry entry to `s_settings_registry`.
 3. Supply the label/value callback and, as appropriate, a cycle or activation
@@ -80,9 +81,10 @@ do not currently verify the LVGL labels or action dispatch.
 5. Check the setting's keyboard/touch interaction, value limits, persistence,
    restart/confirmation behavior, and relevant board builds.
 
-The Settings IDs still use feature-dependent enum arithmetic and compatibility
-index aliases. Do not treat them as independent stable numeric identities or
-reorder their enum values in this transitional implementation.
+Settings IDs are explicit and feature-independent in
+`include/editor_settings.h`. Feature guards belong on the visible settings
+rows and registry entries, not around the ID declarations. Tests verify that
+the IDs remain unique and unchanged across the host feature matrix.
 
 ## Submenus and known limitations
 

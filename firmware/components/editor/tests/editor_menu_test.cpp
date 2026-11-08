@@ -1,4 +1,5 @@
 #include "editor_menu.h"
+#include "editor_settings.h"
 
 #include <climits>
 #include <cstdio>
@@ -93,6 +94,38 @@ int main()
                 (normalized(current, count) + normalized(delta, count)) % count;
             if (editor_menu_move_index(current, delta) != expected_index) {
                 return fail("menu navigation failed for a wrapped index or delta");
+            }
+        }
+    }
+
+    const settings_item_id_t setting_ids[] = {
+        SETTINGS_ID_TIMEOUT,
+        SETTINGS_ID_FONTSZ,
+        SETTINGS_ID_MAXFILE,
+        SETTINGS_ID_BACKLIGHT,
+        SETTINGS_ID_THEME,
+        SETTINGS_ID_ROTATE,
+        SETTINGS_ID_INVERT,
+        SETTINGS_ID_APPEND_ONLY,
+        SETTINGS_ID_LAYOUTS,
+        SETTINGS_ID_ORIENTATION,
+        SETTINGS_ID_UPSIDE_DOWN,
+        SETTINGS_ID_SCALE2X,
+        SETTINGS_ID_MARGIN_LEFT,
+        SETTINGS_ID_MARGIN_RIGHT,
+        SETTINGS_ID_MARGIN_TOP,
+        SETTINGS_ID_MARGIN_BOTTOM,
+        SETTINGS_ID_RESET,
+        SETTINGS_ID_BACK,
+    };
+    if (SETTINGS_ID_INVALID != -1) return fail("invalid setting ID changed");
+    for (int i = 0; i < static_cast<int>(sizeof(setting_ids) / sizeof(setting_ids[0])); ++i) {
+        if (setting_ids[i] != i) {
+            return fail("setting ID changed with build feature configuration");
+        }
+        for (int j = 0; j < i; ++j) {
+            if (setting_ids[j] == setting_ids[i]) {
+                return fail("duplicate setting ID");
             }
         }
     }

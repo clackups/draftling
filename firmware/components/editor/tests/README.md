@@ -9,5 +9,7 @@ ctest --test-dir /tmp/draftling-editor-menu-tests --output-on-failure
 ```
 
 The matrix builds the extracted menu module with USB MSC and Kermit disabled,
-enabled individually, and enabled together. It checks row order and uniqueness,
-ID/index round trips, unavailable and invalid lookups, and selection wrapping.
+enabled individually, and enabled together. It varies display-setting feature
+flags across those builds to verify setting IDs do not shift. Tests check menu
+row order and uniqueness, menu ID/index round trips, unavailable and invalid
+lookups, setting ID uniqueness/stability, and selection wrapping.

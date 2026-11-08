@@ -24,6 +24,7 @@
 
 #include "editor_ui.h"
 #include "editor_menu.h"
+#include "editor_settings.h"
 #include "editor.h"
 #include "md_parser.h"
 #include "editor_format.h"
@@ -930,7 +931,7 @@ static const settings_item_id_t s_settings_row_ids[] = {
 
 static inline settings_item_id_t settings_id_for_index(int idx)
 {
-    return list_id_for_index(s_settings_row_ids, idx, SETTINGS_ID_TIMEOUT);
+    return list_id_for_index(s_settings_row_ids, idx, SETTINGS_ID_INVALID);
 }
 
 static inline int settings_index_for_id(settings_item_id_t id)
@@ -5158,114 +5159,6 @@ static int find_timeout_option(uint32_t sec)
     }
     return 2; /* default to 10 min */
 }
-
-/* ---- Settings menu items ----
- * JSON-like stable IDs now sit alongside the legacy integer constants so the
- * settings screen can start moving away from row-number assumptions without
- * breaking the existing UI flow. The list still uses the same order, but the
- * names are now stable identifiers instead of anonymous array positions. */
-typedef enum settings_item_id_t {
-    SETTINGS_ID_TIMEOUT = 0,
-    SETTINGS_ID_FONTSZ,
-    SETTINGS_ID_MAXFILE,
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    SETTINGS_ID_BACKLIGHT,
-    _SETTINGS_ID_AFTER_BACKLIGHT,
-#else
-    _SETTINGS_ID_AFTER_BACKLIGHT,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    SETTINGS_ID_THEME = _SETTINGS_ID_AFTER_BACKLIGHT,
-    _SETTINGS_ID_AFTER_THEME = _SETTINGS_ID_AFTER_BACKLIGHT + 1,
-#else
-    _SETTINGS_ID_AFTER_THEME = _SETTINGS_ID_AFTER_BACKLIGHT,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    SETTINGS_ID_ROTATE = _SETTINGS_ID_AFTER_THEME,
-    _SETTINGS_ID_AFTER_ROTATE = _SETTINGS_ID_AFTER_THEME + 1,
-#else
-    _SETTINGS_ID_AFTER_ROTATE = _SETTINGS_ID_AFTER_THEME,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    SETTINGS_ID_INVERT = _SETTINGS_ID_AFTER_ROTATE,
-    _SETTINGS_ID_AFTER_INVERT = _SETTINGS_ID_AFTER_ROTATE + 1,
-#else
-    _SETTINGS_ID_AFTER_INVERT = _SETTINGS_ID_AFTER_ROTATE,
-#endif
-    SETTINGS_ID_APPEND_ONLY = _SETTINGS_ID_AFTER_INVERT,
-    SETTINGS_ID_LAYOUTS = _SETTINGS_ID_AFTER_INVERT + 1,
-    SETTINGS_ID_ORIENTATION = _SETTINGS_ID_AFTER_INVERT + 2,
-    _SETTINGS_ID_AFTER_ORIENTATION = _SETTINGS_ID_AFTER_INVERT + 3,
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    /* Boards with the live-apply "Rotate 180" toggle above already offer
-     * this exact turn with no restart needed; do not also offer a second,
-     * restart-requiring way to do the same thing. */
-    _SETTINGS_ID_AFTER_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION,
-#else
-    SETTINGS_ID_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION,
-    _SETTINGS_ID_AFTER_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION + 1,
-#endif
-    SETTINGS_ID_SCALE2X = _SETTINGS_ID_AFTER_UPSIDE_DOWN,
-    SETTINGS_ID_MARGIN_LEFT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 1,
-    SETTINGS_ID_MARGIN_RIGHT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 2,
-    SETTINGS_ID_MARGIN_TOP = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 3,
-    SETTINGS_ID_MARGIN_BOTTOM = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 4,
-    /* "Sleep now" used to live here; it now lives in the F1 menu. */
-    SETTINGS_ID_RESET = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 5,
-    SETTINGS_ID_BACK = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 6,
-    SETTINGS_ID_COUNT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 7,
-} settings_item_id_t;
-
-#define SETTINGS_IDX_TIMEOUT  SETTINGS_ID_TIMEOUT
-#define SETTINGS_IDX_FONTSZ   SETTINGS_ID_FONTSZ
-#define SETTINGS_IDX_MAXFILE  SETTINGS_ID_MAXFILE
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-#define SETTINGS_IDX_BACKLIGHT SETTINGS_ID_BACKLIGHT
-#define _SETTINGS_NEXT_AFTER_BACKLIGHT (_SETTINGS_ID_AFTER_BACKLIGHT)
-#else
-#define SETTINGS_IDX_BACKLIGHT (-1)
-#define _SETTINGS_NEXT_AFTER_BACKLIGHT (_SETTINGS_ID_AFTER_BACKLIGHT)
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-#define SETTINGS_IDX_THEME    SETTINGS_ID_THEME
-#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_ID_AFTER_THEME)
-#else
-#define SETTINGS_IDX_THEME    (-1)
-#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_ID_AFTER_THEME)
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-#define SETTINGS_IDX_ROTATE   SETTINGS_ID_ROTATE
-#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_ID_AFTER_ROTATE)
-#else
-#define SETTINGS_IDX_ROTATE   (-1)
-#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_ID_AFTER_ROTATE)
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-#define SETTINGS_IDX_INVERT   SETTINGS_ID_INVERT
-#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_ID_AFTER_INVERT)
-#else
-#define SETTINGS_IDX_INVERT   (-1)
-#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_ID_AFTER_INVERT)
-#endif
-#define SETTINGS_IDX_APPEND_ONLY   SETTINGS_ID_APPEND_ONLY
-#define SETTINGS_IDX_LAYOUTS       SETTINGS_ID_LAYOUTS
-#define SETTINGS_IDX_ORIENTATION   SETTINGS_ID_ORIENTATION
-#define _SETTINGS_NEXT_AFTER_ORIENTATION (_SETTINGS_ID_AFTER_ORIENTATION)
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-#define SETTINGS_IDX_UPSIDE_DOWN   (-1)
-#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN _SETTINGS_ID_AFTER_UPSIDE_DOWN
-#else
-#define SETTINGS_IDX_UPSIDE_DOWN   SETTINGS_ID_UPSIDE_DOWN
-#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN (_SETTINGS_ID_AFTER_UPSIDE_DOWN)
-#endif
-#define SETTINGS_IDX_SCALE2X       SETTINGS_ID_SCALE2X
-#define SETTINGS_IDX_MARGIN_LEFT   SETTINGS_ID_MARGIN_LEFT
-#define SETTINGS_IDX_MARGIN_RIGHT  SETTINGS_ID_MARGIN_RIGHT
-#define SETTINGS_IDX_MARGIN_TOP    SETTINGS_ID_MARGIN_TOP
-#define SETTINGS_IDX_MARGIN_BOTTOM SETTINGS_ID_MARGIN_BOTTOM
-#define SETTINGS_IDX_RESET    SETTINGS_ID_RESET
-#define SETTINGS_IDX_BACK     SETTINGS_ID_BACK
-#define SETTINGS_ITEM_COUNT   SETTINGS_ID_COUNT
 
 typedef void (*settings_label_writer_t)(char *buf, size_t len);
 typedef void (*settings_action_fn_t)(void);

@@ -17,8 +17,18 @@ function(add_editor_menu_test name)
 endfunction()
 
 add_editor_menu_test(editor_menu_base)
-add_editor_menu_test(editor_menu_usb CONFIG_DRAFTLING_HAS_USB_MSC)
-add_editor_menu_test(editor_menu_kermit CONFIG_DRAFTLING_HAS_KERMIT)
+add_editor_menu_test(editor_menu_usb
+    CONFIG_DRAFTLING_HAS_USB_MSC
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR)
+add_editor_menu_test(editor_menu_kermit
+    CONFIG_DRAFTLING_HAS_KERMIT
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
 add_editor_menu_test(editor_menu_usb_kermit
     CONFIG_DRAFTLING_HAS_USB_MSC
-    CONFIG_DRAFTLING_HAS_KERMIT)
+    CONFIG_DRAFTLING_HAS_KERMIT
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
