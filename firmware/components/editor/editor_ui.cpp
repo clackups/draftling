@@ -23,6 +23,7 @@
 #include "freertos/queue.h"
 
 #include "editor_ui.h"
+#include "editor_menu.h"
 #include "editor.h"
 #include "md_parser.h"
 #include "editor_format.h"
@@ -843,98 +844,6 @@ static int       s_menu_sel     = 0;
 static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
-/* Stable menu IDs used by the F1 menu. They intentionally mirror the
- * current positional order, so the runtime behavior stays unchanged while
- * the code gains an explicit, named identity layer that does not depend on
- * list order or row number. This is the first step of the menu refactor:
- * centralise IDs, then switch rendering / activation code to consume them
- * instead of raw integers. */
-typedef enum menu_item_id_t {
-    MENU_ID_SETTINGS = 0,
-    MENU_ID_BLE_STATUS,
-    MENU_ID_BLE_SCAN,
-    MENU_ID_WIFI_CONNECT,
-    MENU_ID_WIFI_NEW,
-    MENU_ID_WIFI_DISCONNECT,
-    MENU_ID_GIT_SYNC,
-    MENU_ID_DRAFTBOX,
-    MENU_ID_KB_LAYOUT,
-#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    MENU_ID_USB_MSC,
-    _MENU_ID_AFTER_USB_MSC,
-#else
-    _MENU_ID_AFTER_USB_MSC,
-#endif
-#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    MENU_ID_KERMIT = _MENU_ID_AFTER_USB_MSC,
-    _MENU_ID_AFTER_KERMIT = _MENU_ID_AFTER_USB_MSC + 1,
-#else
-    _MENU_ID_AFTER_KERMIT = _MENU_ID_AFTER_USB_MSC,
-#endif
-    MENU_ID_FORMAT_SD = _MENU_ID_AFTER_KERMIT,
-    MENU_ID_HWINFO = _MENU_ID_AFTER_KERMIT + 1,
-    MENU_ID_HELP = _MENU_ID_AFTER_KERMIT + 2,
-    MENU_ID_SLEEP = _MENU_ID_AFTER_KERMIT + 3,
-    MENU_ID_CLOSE = _MENU_ID_AFTER_KERMIT + 4,
-} menu_item_id_t;
-
-/* Backward-compatible aliases for the older integer-based constants; the
- * refactor keeps them working while routing new code through the stable IDs
- * above. */
-#define MENU_IDX_SETTINGS        MENU_ID_SETTINGS
-#define MENU_IDX_BLE_STATUS      MENU_ID_BLE_STATUS
-#define MENU_IDX_BLE_SCAN        MENU_ID_BLE_SCAN
-#define MENU_IDX_WIFI_CONNECT    MENU_ID_WIFI_CONNECT
-#define MENU_IDX_WIFI_NEW        MENU_ID_WIFI_NEW
-#define MENU_IDX_WIFI_DISCONNECT MENU_ID_WIFI_DISCONNECT
-#define MENU_IDX_GIT_SYNC        MENU_ID_GIT_SYNC
-#define MENU_IDX_DRAFTBOX        MENU_ID_DRAFTBOX
-#define MENU_IDX_KB_LAYOUT       MENU_ID_KB_LAYOUT
-#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-#define MENU_IDX_USB_MSC         MENU_ID_USB_MSC
-#define _MENU_NEXT_AFTER_USB_MSC _MENU_ID_AFTER_USB_MSC
-#else
-#define _MENU_NEXT_AFTER_USB_MSC _MENU_ID_AFTER_USB_MSC
-#endif
-#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-#define MENU_IDX_KERMIT          MENU_ID_KERMIT
-#define _MENU_NEXT_AFTER_KERMIT  _MENU_ID_AFTER_KERMIT
-#else
-#define _MENU_NEXT_AFTER_KERMIT  _MENU_ID_AFTER_KERMIT
-#endif
-#define MENU_IDX_FORMAT_SD    MENU_ID_FORMAT_SD
-#define MENU_IDX_HWINFO       MENU_ID_HWINFO
-#define MENU_IDX_HELP         MENU_ID_HELP
-#define MENU_IDX_SLEEP        MENU_ID_SLEEP
-#define MENU_IDX_CLOSE        MENU_ID_CLOSE
-
-/* Number of menu items */
-#define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_KERMIT + 5)
-
-static const menu_item_id_t s_menu_row_ids[] = {
-    MENU_ID_SETTINGS,
-    MENU_ID_BLE_STATUS,
-    MENU_ID_BLE_SCAN,
-    MENU_ID_WIFI_CONNECT,
-    MENU_ID_WIFI_NEW,
-    MENU_ID_WIFI_DISCONNECT,
-    MENU_ID_GIT_SYNC,
-    MENU_ID_DRAFTBOX,
-    MENU_ID_KB_LAYOUT,
-#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    MENU_ID_USB_MSC,
-#endif
-#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    MENU_ID_KERMIT,
-#endif
-    MENU_ID_FORMAT_SD,
-    MENU_ID_HWINFO,
-    MENU_ID_HELP,
-    MENU_ID_SLEEP,
-    MENU_ID_CLOSE,
-};
-#define MENU_ROW_COUNT (int)(sizeof(s_menu_row_ids) / sizeof(s_menu_row_ids[0]))
-
 template <typename Id, size_t N>
 static inline Id list_id_for_index(const Id (&row_ids)[N], int idx, Id fallback)
 {
@@ -948,24 +857,27 @@ static inline int list_index_for_id(const Id (&row_ids)[N], Id id)
     for (int i = 0; i < (int)N; i++) {
         if (row_ids[i] == id) return i;
     }
-    return 0;
+    return -1;
 }
 
-template <typename Id>
 static inline int list_move_index(int current_idx, int delta, int count)
 {
     if (count <= 0) return 0;
-    return (current_idx + delta + count) % count;
+    int current = current_idx % count;
+    int offset = delta % count;
+    if (current < 0) current += count;
+    if (offset < 0) offset += count;
+    return (current + offset) % count;
 }
 
 static inline menu_item_id_t menu_id_for_index(int idx)
 {
-    return list_id_for_index(s_menu_row_ids, idx, MENU_ID_SETTINGS);
+    return editor_menu_id_for_index(idx);
 }
 
 static inline int menu_index_for_id(menu_item_id_t id)
 {
-    return list_index_for_id(s_menu_row_ids, id);
+    return editor_menu_index_for_id(id);
 }
 
 static inline menu_item_id_t menu_selection_id(void)
@@ -975,12 +887,13 @@ static inline menu_item_id_t menu_selection_id(void)
 
 static inline void menu_set_selection_id(menu_item_id_t id)
 {
-    s_menu_sel = menu_index_for_id(id);
+    int idx = menu_index_for_id(id);
+    if (idx >= 0) s_menu_sel = idx;
 }
 
 static inline void menu_move_selection(int delta)
 {
-    s_menu_sel = list_move_index(s_menu_sel, delta, MENU_ROW_COUNT);
+    s_menu_sel = editor_menu_move_index(s_menu_sel, delta);
 }
 
 static const settings_item_id_t s_settings_row_ids[] = {
@@ -1032,7 +945,8 @@ static inline settings_item_id_t settings_selection_id(void)
 
 static inline void settings_set_selection_id(settings_item_id_t id)
 {
-    s_settings_sel = settings_index_for_id(id);
+    int idx = settings_index_for_id(id);
+    if (idx >= 0) s_settings_sel = idx;
 }
 
 static inline void settings_move_selection(int delta)
@@ -1247,7 +1161,7 @@ static bool           s_setup_busy = false;
 
 /* ---- WiFi "New connection" scan/pick flow ----
  * Selecting the F1 menu's "WiFi: New connection..." row
- * (MENU_IDX_WIFI_NEW) triggers a background scan and then reuses s_menu_list to show the
+ * (MENU_ID_WIFI_NEW) triggers a background scan and then reuses s_menu_list to show the
  * results, mirroring the "SD card via USB" mode picker's reuse of the
  * same list widget. Picking an open network connects immediately;
  * picking a secured one raises a small password-entry overlay (its
@@ -1276,7 +1190,7 @@ static char      s_wifi_pw_buf[65]  = "";     /* matches wifi_config_t.sta.passw
 static int       s_wifi_pw_pos      = 0;      /* byte cursor into s_wifi_pw_buf */
 
 /* ---- "Connect a Draftbox repository" prompt ----
- * F1 menu row MENU_IDX_DRAFTBOX. A two-step single-line prompt on the
+ * F1 menu row MENU_ID_DRAFTBOX. A two-step single-line prompt on the
  * menu screen, laid out like the WiFi password overlay. If WiFi is not
  * connected yet, the panel first connects it (DBX_STEP_WIFI, like
  * Ctrl+W) and moves on once wifi_state_cb() reports the result. Then
