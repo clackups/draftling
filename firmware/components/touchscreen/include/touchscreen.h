@@ -108,29 +108,10 @@ typedef struct {
  * Idempotent: a second call is a no-op. */
 void touchscreen_init(const touchscreen_config_t *cfg);
 
-/* True if touchscreen_init() has been called successfully. */
-bool touchscreen_is_initialized(void);
-
 /* Return the INT GPIO number passed to touchscreen_init, or -1
  * if not initialized or no INT was wired. Used by the standby
  * manager to choose the EXT0 wake source. */
 int touchscreen_get_int_gpio(void);
-
-/* Poll the controller and return the current touch state.
- *
- * Returns true if a finger is currently down. When true, *out_x /
- * *out_y carry the logical coordinates (after the configured
- * orientation transform). out_x / out_y may be NULL.
- *
- * Safe to call from any task; the driver guards I2C access with
- * its own mutex.
- */
-bool touchscreen_read(int *out_x, int *out_y);
-
-/* True if a touch was detected on the most recent poll (either via
- * the LVGL read_cb or an explicit touchscreen_read). Used by the
- * standby manager. */
-bool touchscreen_is_pressed(void);
 
 /* Optional callback fired when the touch panel's dedicated touch
  * button (the GT911 "key" zone below the visible screen on the
