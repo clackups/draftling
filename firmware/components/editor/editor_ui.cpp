@@ -843,44 +843,129 @@ static int       s_menu_sel     = 0;
 static int       s_menu_sel_prev = -1;
 static bool      s_menu_open    = false;
 
-/* F1 menu item indices. Fixed 0-8 for every board; "SD card via USB"
- * (9) only exists on boards with CONFIG_DRAFTLING_HAS_USB_MSC and
- * "Sync via browser" (next) only on boards with
- * CONFIG_DRAFTLING_HAS_KERMIT, so "Format SD card" / "Hardware
- * information" / "Help" / "Sleep now" / "Close menu" shift down on
- * boards without them.
- * Use the MENU_IDX_* constants instead of bare integers everywhere
- * downstream so the two layouts stay in lock-step (mirrors the
- * SETTINGS_IDX_* convention used by the Settings submenu below). */
-#define MENU_IDX_SETTINGS        0
-#define MENU_IDX_BLE_STATUS      1
-#define MENU_IDX_BLE_SCAN        2
-#define MENU_IDX_WIFI_CONNECT    3
-#define MENU_IDX_WIFI_NEW        4
-#define MENU_IDX_WIFI_DISCONNECT 5
-#define MENU_IDX_GIT_SYNC        6
-#define MENU_IDX_DRAFTBOX        7
-#define MENU_IDX_KB_LAYOUT       8
+/* Stable menu IDs used by the F1 menu. They intentionally mirror the
+ * current positional order, so the runtime behavior stays unchanged while
+ * the code gains an explicit, named identity layer that does not depend on
+ * list order or row number. This is the first step of the menu refactor:
+ * centralise IDs, then switch rendering / activation code to consume them
+ * instead of raw integers. */
+typedef enum menu_item_id_t {
+    MENU_ID_SETTINGS = 0,
+    MENU_ID_BLE_STATUS,
+    MENU_ID_BLE_SCAN,
+    MENU_ID_WIFI_CONNECT,
+    MENU_ID_WIFI_NEW,
+    MENU_ID_WIFI_DISCONNECT,
+    MENU_ID_GIT_SYNC,
+    MENU_ID_DRAFTBOX,
+    MENU_ID_KB_LAYOUT,
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-#define MENU_IDX_USB_MSC         9
-#define _MENU_NEXT_AFTER_USB_MSC 10
+    MENU_ID_USB_MSC,
+    _MENU_ID_AFTER_USB_MSC,
 #else
-#define _MENU_NEXT_AFTER_USB_MSC 9
+    _MENU_ID_AFTER_USB_MSC,
 #endif
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-#define MENU_IDX_KERMIT          _MENU_NEXT_AFTER_USB_MSC
-#define _MENU_NEXT_AFTER_KERMIT  (_MENU_NEXT_AFTER_USB_MSC + 1)
+    MENU_ID_KERMIT = _MENU_ID_AFTER_USB_MSC,
+    _MENU_ID_AFTER_KERMIT = _MENU_ID_AFTER_USB_MSC + 1,
 #else
-#define _MENU_NEXT_AFTER_KERMIT  _MENU_NEXT_AFTER_USB_MSC
+    _MENU_ID_AFTER_KERMIT = _MENU_ID_AFTER_USB_MSC,
 #endif
-#define MENU_IDX_FORMAT_SD    _MENU_NEXT_AFTER_KERMIT
-#define MENU_IDX_HWINFO       (_MENU_NEXT_AFTER_KERMIT + 1)
-#define MENU_IDX_HELP         (_MENU_NEXT_AFTER_KERMIT + 2)
-#define MENU_IDX_SLEEP        (_MENU_NEXT_AFTER_KERMIT + 3)
-#define MENU_IDX_CLOSE        (_MENU_NEXT_AFTER_KERMIT + 4)
+    MENU_ID_FORMAT_SD = _MENU_ID_AFTER_KERMIT,
+    MENU_ID_HWINFO = _MENU_ID_AFTER_KERMIT + 1,
+    MENU_ID_HELP = _MENU_ID_AFTER_KERMIT + 2,
+    MENU_ID_SLEEP = _MENU_ID_AFTER_KERMIT + 3,
+    MENU_ID_CLOSE = _MENU_ID_AFTER_KERMIT + 4,
+} menu_item_id_t;
+
+/* Backward-compatible aliases for the older integer-based constants; the
+ * refactor keeps them working while routing new code through the stable IDs
+ * above. */
+#define MENU_IDX_SETTINGS        MENU_ID_SETTINGS
+#define MENU_IDX_BLE_STATUS      MENU_ID_BLE_STATUS
+#define MENU_IDX_BLE_SCAN        MENU_ID_BLE_SCAN
+#define MENU_IDX_WIFI_CONNECT    MENU_ID_WIFI_CONNECT
+#define MENU_IDX_WIFI_NEW        MENU_ID_WIFI_NEW
+#define MENU_IDX_WIFI_DISCONNECT MENU_ID_WIFI_DISCONNECT
+#define MENU_IDX_GIT_SYNC        MENU_ID_GIT_SYNC
+#define MENU_IDX_DRAFTBOX        MENU_ID_DRAFTBOX
+#define MENU_IDX_KB_LAYOUT       MENU_ID_KB_LAYOUT
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+#define MENU_IDX_USB_MSC         MENU_ID_USB_MSC
+#define _MENU_NEXT_AFTER_USB_MSC _MENU_ID_AFTER_USB_MSC
+#else
+#define _MENU_NEXT_AFTER_USB_MSC _MENU_ID_AFTER_USB_MSC
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
+#define MENU_IDX_KERMIT          MENU_ID_KERMIT
+#define _MENU_NEXT_AFTER_KERMIT  _MENU_ID_AFTER_KERMIT
+#else
+#define _MENU_NEXT_AFTER_KERMIT  _MENU_ID_AFTER_KERMIT
+#endif
+#define MENU_IDX_FORMAT_SD    MENU_ID_FORMAT_SD
+#define MENU_IDX_HWINFO       MENU_ID_HWINFO
+#define MENU_IDX_HELP         MENU_ID_HELP
+#define MENU_IDX_SLEEP        MENU_ID_SLEEP
+#define MENU_IDX_CLOSE        MENU_ID_CLOSE
 
 /* Number of menu items */
 #define MENU_ITEM_COUNT (_MENU_NEXT_AFTER_KERMIT + 5)
+
+static const menu_item_id_t s_menu_row_ids[] = {
+    MENU_ID_SETTINGS,
+    MENU_ID_BLE_STATUS,
+    MENU_ID_BLE_SCAN,
+    MENU_ID_WIFI_CONNECT,
+    MENU_ID_WIFI_NEW,
+    MENU_ID_WIFI_DISCONNECT,
+    MENU_ID_GIT_SYNC,
+    MENU_ID_DRAFTBOX,
+    MENU_ID_KB_LAYOUT,
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    MENU_ID_USB_MSC,
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
+    MENU_ID_KERMIT,
+#endif
+    MENU_ID_FORMAT_SD,
+    MENU_ID_HWINFO,
+    MENU_ID_HELP,
+    MENU_ID_SLEEP,
+    MENU_ID_CLOSE,
+};
+#define MENU_ROW_COUNT (int)(sizeof(s_menu_row_ids) / sizeof(s_menu_row_ids[0]))
+
+static const settings_item_id_t s_settings_row_ids[] = {
+    SETTINGS_ID_TIMEOUT,
+    SETTINGS_ID_FONTSZ,
+    SETTINGS_ID_MAXFILE,
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+    SETTINGS_ID_BACKLIGHT,
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+    SETTINGS_ID_THEME,
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    SETTINGS_ID_ROTATE,
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    SETTINGS_ID_INVERT,
+#endif
+    SETTINGS_ID_APPEND_ONLY,
+    SETTINGS_ID_LAYOUTS,
+    SETTINGS_ID_ORIENTATION,
+#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    SETTINGS_ID_UPSIDE_DOWN,
+#endif
+    SETTINGS_ID_SCALE2X,
+    SETTINGS_ID_MARGIN_LEFT,
+    SETTINGS_ID_MARGIN_RIGHT,
+    SETTINGS_ID_MARGIN_TOP,
+    SETTINGS_ID_MARGIN_BOTTOM,
+    SETTINGS_ID_RESET,
+    SETTINGS_ID_BACK,
+};
+#define SETTINGS_ROW_COUNT (int)(sizeof(s_settings_row_ids) / sizeof(s_settings_row_ids[0]))
 
 /* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
  * card" picker replaces it with its question while it is open. */
@@ -4752,29 +4837,34 @@ static void update_list_highlight(lv_obj_t *list, int sel, int prev_sel)
  * text before the marked letter is ASCII, so the index is also a byte
  * offset. */
 struct menu_hotkey_t {
-    int  idx;
+    menu_item_id_t id;
     char key;
     int  pos;
 };
 
+static inline int menu_index_for_id(menu_item_id_t id)
+{
+    return (int)id;
+}
+
 static const menu_hotkey_t s_menu_hotkeys[] = {
-    { MENU_IDX_SETTINGS,        's', 0  },  /* "Settings..." */
-    { MENU_IDX_BLE_SCAN,        'l', 1  },  /* "BLE: Start scan" */
-    { MENU_IDX_WIFI_CONNECT,    'w', 0  },  /* "WiFi: ..." */
-    { MENU_IDX_WIFI_NEW,        'n', 6  },  /* "WiFi: New connection..." */
-    { MENU_IDX_WIFI_DISCONNECT, 'd', 6  },  /* "WiFi: Disconnect" */
-    { MENU_IDX_GIT_SYNC,        'g', 0  },  /* "Git Sync" */
-    { MENU_IDX_DRAFTBOX,        'c', 0  },  /* "Connect a Draftbox repository..." */
-    { MENU_IDX_KB_LAYOUT,       'k', 0  },  /* "Keyboard: ..." */
+    { MENU_ID_SETTINGS,        's', 0  },  /* "Settings..." */
+    { MENU_ID_BLE_SCAN,        'l', 1  },  /* "BLE: Start scan" */
+    { MENU_ID_WIFI_CONNECT,    'w', 0  },  /* "WiFi: ..." */
+    { MENU_ID_WIFI_NEW,        'n', 6  },  /* "WiFi: New connection..." */
+    { MENU_ID_WIFI_DISCONNECT, 'd', 6  },  /* "WiFi: Disconnect" */
+    { MENU_ID_GIT_SYNC,        'g', 0  },  /* "Git Sync" */
+    { MENU_ID_DRAFTBOX,        'c', 0  },  /* "Connect a Draftbox repository..." */
+    { MENU_ID_KB_LAYOUT,       'k', 0  },  /* "Keyboard: ..." */
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    { MENU_IDX_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
+    { MENU_ID_USB_MSC,         'u', 12 },  /* "SD card via USB: ..." */
 #endif
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    { MENU_IDX_KERMIT,          'b', 9  },  /* "Sync via browser..." */
+    { MENU_ID_KERMIT,          'b', 9  },  /* "Sync via browser..." */
 #endif
-    { MENU_IDX_FORMAT_SD,       'f', 0  },  /* "Format SD card..." */
-    { MENU_IDX_HWINFO,          'i', 9  },  /* "Hardware information" */
-    { MENU_IDX_HELP,            'h', 0  },  /* "Help (F10)" */
+    { MENU_ID_FORMAT_SD,       'f', 0  },  /* "Format SD card..." */
+    { MENU_ID_HWINFO,          'i', 9  },  /* "Hardware information" */
+    { MENU_ID_HELP,            'h', 0  },  /* "Help (F10)" */
 };
 
 /* Faux-bold spills a pixel or two past the label box. */
@@ -4839,7 +4929,7 @@ static void menu_hotkey_draw_cb(lv_event_t *e)
 static void menu_mark_hotkeys(void)
 {
     for (const menu_hotkey_t &h : s_menu_hotkeys) {
-        lv_obj_t *btn = lv_obj_get_child(s_menu_list, h.idx);
+        lv_obj_t *btn = lv_obj_get_child(s_menu_list, menu_index_for_id(h.id));
         lv_obj_t *lbl = btn ? lv_obj_get_child(btn, 0) : NULL;
         if (!lbl) continue;
         lv_obj_add_event_cb(lbl, menu_hotkey_ext_size_cb,
@@ -5109,68 +5199,112 @@ static int find_timeout_option(uint32_t sec)
 }
 
 /* ---- Settings menu items ----
- * Indices vary slightly between monochrome and color builds; on
- * color LCDs an extra "Color theme" item is inserted after the font
- * size. Use the SETTINGS_IDX_* constants instead of bare integers
- * everywhere downstream so the two layouts stay in lock-step.
- *
- * Backlight is gated separately on CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
- * so reflective-LCD / e-paper builds (no controllable backlight) skip
- * the entry entirely. */
-#define SETTINGS_IDX_TIMEOUT  0
-#define SETTINGS_IDX_FONTSZ   1
-#define SETTINGS_IDX_MAXFILE  2
+ * JSON-like stable IDs now sit alongside the legacy integer constants so the
+ * settings screen can start moving away from row-number assumptions without
+ * breaking the existing UI flow. The list still uses the same order, but the
+ * names are now stable identifiers instead of anonymous array positions. */
+typedef enum settings_item_id_t {
+    SETTINGS_ID_TIMEOUT = 0,
+    SETTINGS_ID_FONTSZ,
+    SETTINGS_ID_MAXFILE,
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-#define SETTINGS_IDX_BACKLIGHT 3
-#define _SETTINGS_NEXT_AFTER_BACKLIGHT 4
+    SETTINGS_ID_BACKLIGHT,
+    _SETTINGS_ID_AFTER_BACKLIGHT,
 #else
-#define SETTINGS_IDX_BACKLIGHT (-1)
-#define _SETTINGS_NEXT_AFTER_BACKLIGHT 3
+    _SETTINGS_ID_AFTER_BACKLIGHT,
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-#define SETTINGS_IDX_THEME    (_SETTINGS_NEXT_AFTER_BACKLIGHT + 0)
-#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_NEXT_AFTER_BACKLIGHT + 1)
+    SETTINGS_ID_THEME = _SETTINGS_ID_AFTER_BACKLIGHT,
+    _SETTINGS_ID_AFTER_THEME = _SETTINGS_ID_AFTER_BACKLIGHT + 1,
 #else
-#define SETTINGS_IDX_THEME    (-1)
-#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_NEXT_AFTER_BACKLIGHT + 0)
+    _SETTINGS_ID_AFTER_THEME = _SETTINGS_ID_AFTER_BACKLIGHT,
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-#define SETTINGS_IDX_ROTATE   (_SETTINGS_NEXT_AFTER_THEME + 0)
-#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 1)
+    SETTINGS_ID_ROTATE = _SETTINGS_ID_AFTER_THEME,
+    _SETTINGS_ID_AFTER_ROTATE = _SETTINGS_ID_AFTER_THEME + 1,
 #else
-#define SETTINGS_IDX_ROTATE   (-1)
-#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_NEXT_AFTER_THEME + 0)
+    _SETTINGS_ID_AFTER_ROTATE = _SETTINGS_ID_AFTER_THEME,
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-#define SETTINGS_IDX_INVERT   (_SETTINGS_NEXT_AFTER_ROTATE + 0)
-#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 1)
+    SETTINGS_ID_INVERT = _SETTINGS_ID_AFTER_ROTATE,
+    _SETTINGS_ID_AFTER_INVERT = _SETTINGS_ID_AFTER_ROTATE + 1,
+#else
+    _SETTINGS_ID_AFTER_INVERT = _SETTINGS_ID_AFTER_ROTATE,
+#endif
+    SETTINGS_ID_APPEND_ONLY = _SETTINGS_ID_AFTER_INVERT,
+    SETTINGS_ID_LAYOUTS = _SETTINGS_ID_AFTER_INVERT + 1,
+    SETTINGS_ID_ORIENTATION = _SETTINGS_ID_AFTER_INVERT + 2,
+    _SETTINGS_ID_AFTER_ORIENTATION = _SETTINGS_ID_AFTER_INVERT + 3,
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    /* Boards with the live-apply "Rotate 180" toggle above already offer
+     * this exact turn with no restart needed; do not also offer a second,
+     * restart-requiring way to do the same thing. */
+    _SETTINGS_ID_AFTER_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION,
+#else
+    SETTINGS_ID_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION,
+    _SETTINGS_ID_AFTER_UPSIDE_DOWN = _SETTINGS_ID_AFTER_ORIENTATION + 1,
+#endif
+    SETTINGS_ID_SCALE2X = _SETTINGS_ID_AFTER_UPSIDE_DOWN,
+    SETTINGS_ID_MARGIN_LEFT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 1,
+    SETTINGS_ID_MARGIN_RIGHT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 2,
+    SETTINGS_ID_MARGIN_TOP = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 3,
+    SETTINGS_ID_MARGIN_BOTTOM = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 4,
+    /* "Sleep now" used to live here; it now lives in the F1 menu. */
+    SETTINGS_ID_RESET = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 5,
+    SETTINGS_ID_BACK = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 6,
+    SETTINGS_ID_COUNT = _SETTINGS_ID_AFTER_UPSIDE_DOWN + 7,
+} settings_item_id_t;
+
+#define SETTINGS_IDX_TIMEOUT  SETTINGS_ID_TIMEOUT
+#define SETTINGS_IDX_FONTSZ   SETTINGS_ID_FONTSZ
+#define SETTINGS_IDX_MAXFILE  SETTINGS_ID_MAXFILE
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+#define SETTINGS_IDX_BACKLIGHT SETTINGS_ID_BACKLIGHT
+#define _SETTINGS_NEXT_AFTER_BACKLIGHT (_SETTINGS_ID_AFTER_BACKLIGHT)
+#else
+#define SETTINGS_IDX_BACKLIGHT (-1)
+#define _SETTINGS_NEXT_AFTER_BACKLIGHT (_SETTINGS_ID_AFTER_BACKLIGHT)
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+#define SETTINGS_IDX_THEME    SETTINGS_ID_THEME
+#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_ID_AFTER_THEME)
+#else
+#define SETTINGS_IDX_THEME    (-1)
+#define _SETTINGS_NEXT_AFTER_THEME (_SETTINGS_ID_AFTER_THEME)
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+#define SETTINGS_IDX_ROTATE   SETTINGS_ID_ROTATE
+#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_ID_AFTER_ROTATE)
+#else
+#define SETTINGS_IDX_ROTATE   (-1)
+#define _SETTINGS_NEXT_AFTER_ROTATE (_SETTINGS_ID_AFTER_ROTATE)
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+#define SETTINGS_IDX_INVERT   SETTINGS_ID_INVERT
+#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_ID_AFTER_INVERT)
 #else
 #define SETTINGS_IDX_INVERT   (-1)
-#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_NEXT_AFTER_ROTATE + 0)
+#define _SETTINGS_NEXT_AFTER_INVERT (_SETTINGS_ID_AFTER_INVERT)
 #endif
-#define SETTINGS_IDX_APPEND_ONLY   (_SETTINGS_NEXT_AFTER_INVERT + 0)
-#define SETTINGS_IDX_LAYOUTS       (_SETTINGS_NEXT_AFTER_INVERT + 1)
-#define SETTINGS_IDX_ORIENTATION   (_SETTINGS_NEXT_AFTER_INVERT + 2)
-#define _SETTINGS_NEXT_AFTER_ORIENTATION (_SETTINGS_NEXT_AFTER_INVERT + 3)
+#define SETTINGS_IDX_APPEND_ONLY   SETTINGS_ID_APPEND_ONLY
+#define SETTINGS_IDX_LAYOUTS       SETTINGS_ID_LAYOUTS
+#define SETTINGS_IDX_ORIENTATION   SETTINGS_ID_ORIENTATION
+#define _SETTINGS_NEXT_AFTER_ORIENTATION (_SETTINGS_ID_AFTER_ORIENTATION)
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-/* Boards with the live-apply "Rotate 180" toggle above already offer
- * this exact turn with no restart needed; do not also offer a second,
- * restart-requiring way to do the same thing. */
 #define SETTINGS_IDX_UPSIDE_DOWN   (-1)
-#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN _SETTINGS_NEXT_AFTER_ORIENTATION
+#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN _SETTINGS_ID_AFTER_UPSIDE_DOWN
 #else
-#define SETTINGS_IDX_UPSIDE_DOWN   (_SETTINGS_NEXT_AFTER_ORIENTATION + 0)
-#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN (_SETTINGS_NEXT_AFTER_ORIENTATION + 1)
+#define SETTINGS_IDX_UPSIDE_DOWN   SETTINGS_ID_UPSIDE_DOWN
+#define _SETTINGS_NEXT_AFTER_UPSIDE_DOWN (_SETTINGS_ID_AFTER_UPSIDE_DOWN)
 #endif
-#define SETTINGS_IDX_SCALE2X       (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 0)
-#define SETTINGS_IDX_MARGIN_LEFT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 1)
-#define SETTINGS_IDX_MARGIN_RIGHT  (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 2)
-#define SETTINGS_IDX_MARGIN_TOP    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 3)
-#define SETTINGS_IDX_MARGIN_BOTTOM (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 4)
-/* "Sleep now" used to live here; it now lives in the F1 menu. */
-#define SETTINGS_IDX_RESET    (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 5)
-#define SETTINGS_IDX_BACK     (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 6)
-#define SETTINGS_ITEM_COUNT   (_SETTINGS_NEXT_AFTER_UPSIDE_DOWN + 7)
+#define SETTINGS_IDX_SCALE2X       SETTINGS_ID_SCALE2X
+#define SETTINGS_IDX_MARGIN_LEFT   SETTINGS_ID_MARGIN_LEFT
+#define SETTINGS_IDX_MARGIN_RIGHT  SETTINGS_ID_MARGIN_RIGHT
+#define SETTINGS_IDX_MARGIN_TOP    SETTINGS_ID_MARGIN_TOP
+#define SETTINGS_IDX_MARGIN_BOTTOM SETTINGS_ID_MARGIN_BOTTOM
+#define SETTINGS_IDX_RESET    SETTINGS_ID_RESET
+#define SETTINGS_IDX_BACK     SETTINGS_ID_BACK
+#define SETTINGS_ITEM_COUNT   SETTINGS_ID_COUNT
 
 static void refresh_settings_items(void)
 {
@@ -6894,8 +7028,8 @@ static void start_project_sync(void)
 
 static void menu_activate_item(int idx)
 {
-    switch (idx) {
-    case MENU_IDX_SETTINGS:
+    switch ((menu_item_id_t)idx) {
+    case MENU_ID_SETTINGS:
         show_settings();
         break;
     case MENU_IDX_BLE_STATUS: /* no action */
