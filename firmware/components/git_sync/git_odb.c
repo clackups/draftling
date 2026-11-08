@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -550,29 +551,50 @@ static int tree_entry_cmp(const void *pa, const void *pb)
                          b->name, (b->mode & 040000) == 040000 && !(b->mode & 0100000));
 }
 
+/* Entry names git itself refuses (fsck): empty, ".", "..", ".git", or
+ * containing '/'. Trees come from the server, and an entry name ends up
+ * in a file path on the SD card. */
+static bool tree_name_ok(const uint8_t *p, size_t n)
+{
+    if (n == 0) return false;
+    if (memchr(p, '/', n)) return false;
+    if (n == 1 && p[0] == '.') return false;
+    if (n == 2 && p[0] == '.' && p[1] == '.') return false;
+    if (n == 4 && strncasecmp((const char *)p, ".git", 4) == 0) return false;
+    return true;
+}
+
 esp_err_t git_tree_parse(const uint8_t *data, size_t len, git_tree *out)
 {
     memset(out, 0, sizeof(*out));
+    esp_err_t ret = ESP_OK;
     size_t i = 0;
     while (i < len) {
         size_t sp = i;
         while (sp < len && data[sp] != ' ') sp++;
-        if (sp >= len) return ESP_FAIL;
+        if (sp >= len) { ret = ESP_FAIL; break; }
         size_t nul = sp + 1;
         while (nul < len && data[nul] != '\0') nul++;
-        if (nul + 1 + GIT_OID_RAWSZ > len) return ESP_FAIL;
+        if (nul + 1 + GIT_OID_RAWSZ > len) { ret = ESP_FAIL; break; }
 
-        if (!tree_grow(out)) return ESP_ERR_NO_MEM;
+        size_t nlen = nul - (sp + 1);
+        if (nlen >= sizeof(out->entries[0].name) ||
+            !tree_name_ok(data + sp + 1, nlen)) {
+            ESP_LOGE(TAG, "tree entry with an invalid name");
+            ret = ESP_FAIL;
+            break;
+        }
+        if (!tree_grow(out)) { ret = ESP_ERR_NO_MEM; break; }
         git_tree_entry *e = &out->entries[out->count++];
         memset(e, 0, sizeof(*e));
         e->mode = (uint32_t)strtoul((const char *)data + i, NULL, 8);
-        size_t nlen = nul - (sp + 1);
-        if (nlen >= sizeof(e->name)) return ESP_FAIL;
         memcpy(e->name, data + sp + 1, nlen);
         git_oid_from_raw(&e->oid, data + nul + 1);
         i = nul + 1 + GIT_OID_RAWSZ;
     }
-    return ESP_OK;
+    /* Callers only free the tree on success. */
+    if (ret != ESP_OK) git_tree_free(out);
+    return ret;
 }
 
 esp_err_t git_tree_load(const git_oid *oid, git_tree *out)
