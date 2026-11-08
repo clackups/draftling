@@ -2612,13 +2612,6 @@ static const dead_key_t s_dead_keys[] = {
 /* Pending dead key (a DK_* entry), or NULL. */
 static const char *s_dead = NULL;
 
-extern "C" void kb_layout_set(kb_layout_id_t layout)
-{
-    if (layout >= KB_LAYOUT_COUNT) layout = (kb_layout_id_t)0;
-    s_layout = layout;
-    s_dead = NULL;
-}
-
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
