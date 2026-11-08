@@ -62,7 +62,6 @@ esp_err_t sd_card_write_file(const char *path, const char *data, size_t len);
  * b[0, blen) (the editor saves the two halves of its gap buffer). */
 esp_err_t sd_card_write_file_parts(const char *path, const char *a, size_t alen,
                                    const char *b, size_t blen);
-esp_err_t sd_card_append_file(const char *path, const char *data, size_t len);
 bool sd_card_file_exists(const char *path);
 
 /* Replace path with the complete, synced file tmp (same folder) so

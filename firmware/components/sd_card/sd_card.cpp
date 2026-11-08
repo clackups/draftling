@@ -604,17 +604,6 @@ extern "C" esp_err_t sd_card_replace_with(const char *tmp, const char *path)
     return ESP_OK;
 }
 
-extern "C" esp_err_t sd_card_append_file(const char *path, const char *data, size_t len)
-{
-    if (!s_card) return ESP_ERR_INVALID_STATE;
-    FILE *f = fopen(path, "ab");
-    if (!f) return ESP_FAIL;
-    fwrite(data, 1, len, f);
-    fsync(fileno(f));
-    fclose(f);
-    return ESP_OK;
-}
-
 extern "C" bool sd_card_file_exists(const char *path)
 {
     struct stat st;
