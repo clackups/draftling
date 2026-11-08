@@ -974,29 +974,43 @@ esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out)
     return ret;
 }
 
-esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head,
+esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int max,
                                  git_oid **out, int *out_count)
 {
     *out = NULL;
     *out_count = 0;
 
-    git_oid stack[64];
-    int n = 0;
+    /* First-parent walk from head back to base (or the root), newest
+     * first; reversed below. max > 0 keeps only the newest max. */
+    git_oid *v = NULL;
+    int n = 0, cap = 0;
+    esp_err_t ret = ESP_OK;
     git_oid cur = *head;
-    while (!git_oid_is_zero(&cur) && !(base && git_oid_eq(&cur, base))) {
-        if (n >= (int)(sizeof(stack) / sizeof(stack[0]))) return ESP_FAIL;
-        stack[n++] = cur;
+    while (!git_oid_is_zero(&cur) && !(base && git_oid_eq(&cur, base)) &&
+           (max <= 0 || n < max)) {
+        if (n == cap) {
+            int nc = cap ? cap * 2 : 32;
+            git_oid *nv = realloc(v, (size_t)nc * sizeof(*nv));
+            if (!nv) { ret = ESP_ERR_NO_MEM; break; }
+            v = nv;
+            cap = nc;
+        }
+        v[n++] = cur;
         git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) return ESP_FAIL;
-        if (c.nparents == 0) { git_commit_free(&c); cur = (git_oid){0}; break; }
-        cur = c.parents[0];   /* first-parent walk */
+        ret = git_commit_load(&cur, &c);
+        if (ret != ESP_OK) break;
+        if (c.nparents == 0) git_oid_clear(&cur);
+        else cur = c.parents[0];
         git_commit_free(&c);
     }
+    if (ret != ESP_OK) { free(v); return ret; }
 
-    git_oid *arr = malloc((size_t)n * sizeof(*arr) + 1);
-    if (!arr && n) return ESP_ERR_NO_MEM;
-    for (int i = 0; i < n; i++) arr[i] = stack[n - 1 - i];   /* oldest first */
-    *out = arr;
+    for (int i = 0; i < n / 2; i++) {               /* oldest first */
+        git_oid t = v[i];
+        v[i] = v[n - 1 - i];
+        v[n - 1 - i] = t;
+    }
+    *out = v;
     *out_count = n;
     return ESP_OK;
 }

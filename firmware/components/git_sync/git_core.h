@@ -259,9 +259,10 @@ esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out);
 /* true if `anc` is an ancestor of (or equal to) `desc`. */
 bool git_is_ancestor(const git_oid *anc, const git_oid *desc);
 
-/* Collect the linear list of commits in (base, head], oldest first,
- * following first parents.  Fails if the range is not linear. */
-esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head,
+/* Collect the commits in (base, head] along first parents, oldest
+ * first (all the way to the root when base is NULL or not on that
+ * path). max > 0 keeps only the newest max. *out is malloc'ed. */
+esp_err_t git_commit_list_linear(const git_oid *base, const git_oid *head, int max,
                                  git_oid **out, int *out_count);
 
 /* Collect every object oid reachable from `heads` but not from `haves`

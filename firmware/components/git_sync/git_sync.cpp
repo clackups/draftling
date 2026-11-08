@@ -616,7 +616,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             int nh = 0;
             git_oid *chain = NULL;
             int nchain = 0;
-            if (git_commit_list_linear(NULL, &local_head, &chain, &nchain) == ESP_OK) {
+            if (git_commit_list_linear(NULL, &local_head, 16, &chain, &nchain) == ESP_OK) {
                 for (int i = nchain - 1; i >= 0 && nh < 16; i--) haves[nh++] = chain[i];
                 free(chain);
             }
@@ -654,8 +654,12 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             git_oid *commits = NULL;
             int ncommits = 0;
             const git_oid *mbp = git_oid_is_zero(&mb) ? NULL : &mb;
-            ret = git_commit_list_linear(mbp, &local_head, &commits, &ncommits);
-            if (ret != ESP_OK) { set_error("History not linear -- cannot rebase"); return ret; }
+            ret = git_commit_list_linear(mbp, &local_head, 0, &commits, &ncommits);
+            if (ret != ESP_OK) {
+                set_error(ret == ESP_ERR_NO_MEM ? "Out of memory listing local commits"
+                                                : "Cannot read the local Git history");
+                return ret;
+            }
 
             git_oid newbase = remote_sha;
             char ident[224];
