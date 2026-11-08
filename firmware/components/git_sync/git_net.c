@@ -151,10 +151,17 @@ esp_err_t git_http_find_ref(const git_remote *r, const char *service,
     git_buf body = GIT_BUF_INIT;
     char rb[1024];
     int n;
+    bool oom = false;
     while ((n = esp_http_client_read(c, rb, sizeof(rb))) > 0)
-        git_buf_put(&body, rb, n);
+        if (!git_buf_put(&body, rb, n)) { oom = true; break; }
     esp_http_client_close(c);
     esp_http_client_cleanup(c);
+    /* A cut-off advertisement would make a present branch look absent. */
+    if (oom || n < 0) {
+        ESP_LOGE(TAG, "info/refs: %s", oom ? "out of memory" : "read error");
+        git_buf_free(&body);
+        return oom ? ESP_ERR_NO_MEM : ESP_FAIL;
+    }
 
     /* parse pkt-lines */
     size_t i = 0;
@@ -496,8 +503,18 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
         git_buf raw = GIT_BUF_INIT;
         char rb[512];
         int n;
+        bool oom = false;
         while ((n = esp_http_client_read(c, rb, sizeof(rb))) > 0)
-            git_buf_put(&raw, rb, n);
+            if (!git_buf_put(&raw, rb, n)) { oom = true; break; }
+        if (oom || n < 0) {
+            /* The push may or may not have been applied: report it like
+             * a lost connection, so the caller retries and the next
+             * sync sees the server's real state. */
+            ESP_LOGE(TAG, "push report: %s", oom ? "out of memory" : "read error");
+            git_buf_free(&raw);
+            ret = ESP_ERR_TIMEOUT;
+            goto cleanup;
+        }
 
         /* unwrap pkt-lines into `report` */
         size_t i = 0;

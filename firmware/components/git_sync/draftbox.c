@@ -246,9 +246,16 @@ static esp_err_t post_json(const char *url, const char *body,
 
     resp = (char *)malloc(DRAFTBOX_MAX_BODY + 1);
     if (!resp) { ret = ESP_ERR_NO_MEM; goto out; }
+    n = 0;
     while (total < DRAFTBOX_MAX_BODY &&
            (n = esp_http_client_read(c, resp + total, DRAFTBOX_MAX_BODY - total)) > 0)
         total += n;
+    if (n < 0) {
+        ESP_LOGE(TAG, "read error after %d bytes", total);
+        free(resp);
+        ret = ESP_FAIL;
+        goto out;
+    }
     resp[total] = '\0';
     *resp_out = resp;
 
