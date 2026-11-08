@@ -181,6 +181,16 @@ int main(int argc, char **argv)
     CHECK(remote_file("ok.md") == "ok2\n" && remote_file("what?.md") == "q\n");
     CHECK(out("git --git-dir=remote.git ls-tree main link.md").find("120000") == 0);
 
+    /* 12. An edited document keeps its mode in the repository. */
+    fresh("file modes");
+    seed_remote("echo x > exec.md && chmod +x exec.md");
+    project("E");
+    CHECK(sync_now("E"));
+    put("sd/E/exec.md", "x2\n");
+    CHECK(sync_now("E"));
+    CHECK(remote_file("exec.md") == "x2\n");
+    CHECK(out("git --git-dir=remote.git ls-tree main exec.md").find("100755") == 0);
+
     fprintf(stderr, fails ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", fails);
     return fails ? 1 : 0;
 }

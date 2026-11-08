@@ -281,10 +281,6 @@ static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *
     git_tree t = {};
     esp_err_t ret = git_tree_load(base, &t);    /* zero oid = empty tree */
     if (ret != ESP_OK) return ret;
-    for (int i = t.count - 1; i >= 0; i--) {
-        const git_tree_entry *e = &t.entries[i];
-        if (synced_entry(e)) git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
-    }
 
     sd_card_file_entry_t *entries = NULL;
     int count = 0;
@@ -300,8 +296,22 @@ static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *
         if (ret == ESP_ERR_NOT_FOUND) { ret = ESP_OK; continue; }
         if (ret != ESP_OK) break;
 
-        if (!git_tree_set(&t, 0100644, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
+        /* A document keeps the mode it has in the tree (e.g. 100755):
+         * the card has no file modes to take a change from. */
+        const git_tree_entry *old = git_tree_get(&t, entries[i].name);
+        uint32_t mode = (old && synced_entry(old)) ? old->mode : 0100644;
+        if (!git_tree_set(&t, mode, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
         (*out_nfiles)++;
+    }
+    /* Synced documents of base that are no longer on the card were
+     * deleted there. */
+    for (int i = t.count - 1; ret == ESP_OK && i >= 0; i--) {
+        const git_tree_entry *e = &t.entries[i];
+        if (!synced_entry(e)) continue;
+        bool on_card = false;
+        for (int k = 0; k < count && !on_card; k++)
+            on_card = !entries[k].is_dir && strcmp(entries[k].name, e->name) == 0;
+        if (!on_card) git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
     }
     sd_card_free_list(entries);
 
