@@ -13,6 +13,8 @@
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 
+#include "sd_card.h"
+
 static const char *TAG = "git.odb";
 
 static char s_workdir[256];
@@ -447,9 +449,7 @@ esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const cha
         if (fclose(f) != 0) ret = ESP_FAIL;
     }
     if (ret != ESP_OK) { remove(tmp); return ret; }
-    remove(path);
-    if (rename(tmp, path) != 0) { remove(tmp); return ESP_FAIL; }
-    return ESP_OK;
+    return sd_card_replace_with(tmp, path);
 }
 
 /* ------------------------------------------------------------------ */

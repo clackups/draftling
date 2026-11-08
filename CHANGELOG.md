@@ -51,6 +51,11 @@ in the git log.
   saved in Git. Now both are kept: a document only on the card is
   added to the repository, and one on both sides is merged (with
   conflict markers where they differ).
+- **A document saved at the moment the power went off is recovered**:
+  saving replaces the old file in two steps, and a power loss between
+  them left the new contents only in a hidden temporary file, so the
+  document seemed gone. It is now put back the next time the card is
+  mounted.
 
 ## [1.0.23] - 2026-11-07
 

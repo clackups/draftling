@@ -41,6 +41,57 @@ static bool s_spi_bus_owned = false;
 static spi_device_handle_t s_keepalive_dev = NULL;
 #endif
 
+/* Atomic writes (sd_card_write_file_parts(), sd_card_replace_with())
+ * go through "<dir>/.<name>.dtmp" (being written) and
+ * "<dir>/.<name>.dnew" (complete, about to replace <name>). After a
+ * power loss a .dnew is the newest complete version of <name> and
+ * replaces it -- when the old file was already removed it is the only
+ * copy left. A .dtmp may be incomplete and is dropped. Looks at the
+ * root and one folder level (the project folders). */
+static void recover_dir(const char *dir, int depth)
+{
+    DIR *d = opendir(dir);
+    if (!d) return;
+    char *path = (char *)malloc(3 * 512);
+    if (!path) { closedir(d); return; }
+    char *tmp = path + 512, *sub = path + 1024;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        const char *n = ent->d_name;
+        size_t len = strlen(n);
+        if (ent->d_type == DT_DIR) {
+            if (depth == 0 && n[0] != '.') {
+                snprintf(sub, 512, "%s/%s", dir, n);
+                recover_dir(sub, 1);
+            }
+            continue;
+        }
+        if (len < 7 || n[0] != '.') continue;
+        bool is_tmp = strcmp(n + len - 5, ".dtmp") == 0;
+        bool is_new = strcmp(n + len - 5, ".dnew") == 0;
+        if (!is_tmp && !is_new) continue;
+        snprintf(tmp, 512, "%s/%s", dir, n);
+        if (is_tmp) {
+            ESP_LOGW(TAG, "Dropping interrupted write %s", tmp);
+            remove(tmp);
+            continue;
+        }
+        snprintf(path, 512, "%s/%.*s", dir, (int)(len - 6), n + 1);
+        remove(path);
+        if (rename(tmp, path) == 0)
+            ESP_LOGW(TAG, "Recovered %s from an interrupted save", path);
+        else
+            ESP_LOGE(TAG, "Cannot recover %s", path);
+    }
+    free(path);
+    closedir(d);
+}
+
+static void recover_interrupted_writes(void)
+{
+    recover_dir(s_mount, 0);
+}
+
 #if SOC_SDMMC_HOST_SUPPORTED
 extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_point)
 {
@@ -66,6 +117,7 @@ extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const ch
     }
     sdmmc_card_print_info(stdout, s_card);
     ESP_LOGI(TAG, "SD card mounted at %s", s_mount);
+    recover_interrupted_writes();
     return ESP_OK;
 }
 #else
@@ -358,6 +410,7 @@ extern "C" esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
     sdmmc_card_print_info(stdout, s_card);
     ESP_LOGI(TAG, "SD card mounted at %s (SPI host %d, CS=%d)",
              s_mount, spi_host, cs);
+    recover_interrupted_writes();
     return ESP_OK;
 }
 
@@ -473,21 +526,12 @@ extern "C" esp_err_t sd_card_write_file_parts(const char *path,
 {
     if (!s_card) return ESP_ERR_INVALID_STATE;
 
-    /* Atomic write: stream the new contents into a temporary file next
-     * to the target, flush it all the way down to the card, then rename
-     * it over the target. A power loss or card yank while the bytes are
-     * being written therefore never truncates or half-overwrites
-     * `path` -- the incomplete data only ever lands in the temporary
-     * file, which is removed on the next write. FAT's rename() cannot
-     * replace an existing file, so the old file is unlinked immediately
-     * before the rename; the only unguarded window is that single
-     * directory-entry swap, and the fully written replacement still
-     * exists as the temporary file if power is lost inside it.
-     *
-     * The temporary lives in the same directory as `path` (rename must
-     * stay within one filesystem) and is named ".<basename>.dtmp" so a
-     * leftover after a crash is hidden from the file browser, which
-     * skips dot-prefixed entries. */
+    /* Atomic write: stream the new contents into a hidden temporary
+     * next to the target (".<basename>.dtmp", skipped by the file
+     * browser; rename must stay within one filesystem), flush it all
+     * the way down to the card, then sd_card_replace_with() swaps it in.
+     * A power loss or card yank at any point leaves the old or the new
+     * contents, never a truncated file (see recover_interrupted_writes()). */
     char tmp[512];
     const char *slash = strrchr(path, '/');
     int n;
@@ -517,11 +561,44 @@ extern "C" esp_err_t sd_card_write_file_parts(const char *path,
         return ESP_FAIL;
     }
 
+    return sd_card_replace_with(tmp, path);
+}
+
+/* "<dir>/.<base><suffix>" for path "<dir>/<base>". */
+static bool hidden_name(const char *path, const char *suffix, char *out, size_t osz)
+{
+    const char *slash = strrchr(path, '/');
+    int n = slash ? snprintf(out, osz, "%.*s/.%s%s", (int)(slash - path), path,
+                             slash + 1, suffix)
+                  : snprintf(out, osz, ".%s%s", path, suffix);
+    return n > 0 && (size_t)n < osz;
+}
+
+extern "C" esp_err_t sd_card_replace_with(const char *tmp, const char *path)
+{
+    /* FAT cannot rename over an existing file, so the old file has to
+     * go first. The complete new contents are renamed to
+     * ".<name>.dnew" before that: if power is lost between removing
+     * the old file and the final rename, recover_interrupted_writes()
+     * finds the .dnew at the next mount and finishes the job. (A
+     * leftover .dtmp is always incomplete and is dropped.) */
+    char done[512];
+    if (!hidden_name(path, ".dnew", done, sizeof(done))) {
+        ESP_LOGE(TAG, "Path too long for atomic write: %s", path);
+        remove(tmp);
+        return ESP_FAIL;
+    }
+    remove(done);
+    if (rename(tmp, done) != 0) {
+        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", tmp, done, strerror(errno));
+        remove(tmp);
+        return ESP_FAIL;
+    }
     remove(path);
-    if (rename(tmp, path) != 0) {
-        /* Leave the temporary file in place: it holds the only complete
-         * copy of the new contents now that the old file is gone. */
-        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", tmp, path, strerror(errno));
+    if (rename(done, path) != 0) {
+        /* Leave .dnew in place: it is the only complete copy now, and
+         * the next mount moves it back. */
+        ESP_LOGE(TAG, "Rename %s -> %s failed: %s", done, path, strerror(errno));
         return ESP_FAIL;
     }
     return ESP_OK;

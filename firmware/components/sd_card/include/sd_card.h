@@ -64,6 +64,12 @@ esp_err_t sd_card_write_file_parts(const char *path, const char *a, size_t alen,
                                    const char *b, size_t blen);
 esp_err_t sd_card_append_file(const char *path, const char *data, size_t len);
 bool sd_card_file_exists(const char *path);
+
+/* Replace path with the complete, synced file tmp (same folder) so
+ * that a power loss at any point leaves either the old or the new
+ * contents, recovered at the next mount if need be. tmp should be
+ * named "<dir>/.<name>.dtmp". */
+esp_err_t sd_card_replace_with(const char *tmp, const char *path);
 esp_err_t sd_card_delete_file(const char *path);
 esp_err_t sd_card_mkdir(const char *path);
 
