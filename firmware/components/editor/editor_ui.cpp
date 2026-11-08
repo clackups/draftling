@@ -3683,8 +3683,8 @@ static void editor_ui_move_visual(int direction)
  * list code; forward-declared here so list_touch_attach can store
  * them as function pointers in the static touch contexts. */
 static void browser_activate_item(int row);
-static void menu_activate_item(int idx);
-static void settings_activate_item(int idx);
+static void menu_activate_item(menu_item_id_t id);
+static void settings_activate_item(settings_item_id_t item);
 #endif
 
 /* Defined with the exit/sleep overlay code further down; the F1 menu's
@@ -5640,18 +5640,16 @@ static void close_settings(void)
  * simple in-place value cycle (Theme opens a sub-picker instead;
  * Max file size, Factory reset and Back are actions, not
  * values), so callers can no-op the arrow keys on those rows. */
-static bool settings_cycle_item(int idx, int dir)
+static bool settings_cycle_item(settings_item_id_t item, int dir)
 {
-    settings_item_id_t item = settings_id_for_index(idx);
-    (void)item;
-    if (idx == SETTINGS_IDX_TIMEOUT) {
+    if (item == SETTINGS_ID_TIMEOUT) {
         uint32_t cur = standby_get_timeout();
         int opt = find_timeout_option(cur);
         opt = (opt + dir + TIMEOUT_OPTION_COUNT) % TIMEOUT_OPTION_COUNT;
         standby_set_timeout(TIMEOUT_OPTIONS[opt]);
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_FONTSZ) {
+    } else if (item == SETTINGS_ID_FONTSZ) {
         int fi = find_font_size_option(s_font_size);
         fi = (fi + dir + FONT_SIZE_COUNT) % FONT_SIZE_COUNT;
         s_font_size = FONT_SIZE_OPTIONS[fi];
@@ -5689,7 +5687,7 @@ static bool settings_cycle_item(int idx, int dir)
         lv_obj_invalidate(lv_scr_act());
         return true;
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    } else if (idx == SETTINGS_IDX_BACKLIGHT) {
+    } else if (item == SETTINGS_ID_BACKLIGHT) {
         int bi = find_backlight_option(s_backlight_pct);
         bi = (bi + dir + BACKLIGHT_OPTION_COUNT) % BACKLIGHT_OPTION_COUNT;
         s_backlight_pct = BACKLIGHT_OPTIONS[bi];
@@ -5699,7 +5697,7 @@ static bool settings_cycle_item(int idx, int dir)
         return true;
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    } else if (idx == SETTINGS_IDX_ROTATE) {
+    } else if (item == SETTINGS_ID_ROTATE) {
         /* Only two states, so either direction just toggles it.
          * Applied immediately so the user sees the new orientation
          * without leaving the menu; persisted in NVS and re-applied
@@ -5713,7 +5711,7 @@ static bool settings_cycle_item(int idx, int dir)
         return true;
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    } else if (idx == SETTINGS_IDX_INVERT) {
+    } else if (item == SETTINGS_ID_INVERT) {
         /* Only two states, so either direction just toggles it.
          * Applied immediately so the user sees the new polarity
          * without leaving the menu; persisted in NVS and re-applied
@@ -5726,7 +5724,7 @@ static bool settings_cycle_item(int idx, int dir)
         refresh_settings_items();
         return true;
 #endif
-    } else if (idx == SETTINGS_IDX_APPEND_ONLY) {
+    } else if (item == SETTINGS_ID_APPEND_ONLY) {
         /* Only two states, so either direction just toggles it. No
          * hardware side effects, so just flip the flag, persist it,
          * and refresh the label. */
@@ -5734,7 +5732,7 @@ static bool settings_cycle_item(int idx, int dir)
         save_append_only_to_nvs();
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_ORIENTATION) {
+    } else if (item == SETTINGS_ID_ORIENTATION) {
         /* Landscape <-> portrait. Only two states, so either direction
          * toggles. Persisted to NVS for the next boot; the LVGL
          * rotation and the whole widget tree are fixed for the session
@@ -5746,7 +5744,7 @@ static bool settings_cycle_item(int idx, int dir)
         refresh_settings_items();
         return true;
 #if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    } else if (idx == SETTINGS_IDX_UPSIDE_DOWN) {
+    } else if (item == SETTINGS_ID_UPSIDE_DOWN) {
         /* Only two states, so either direction toggles. Persisted to
          * NVS for the next boot; like the orientation above, the LVGL
          * rotation and the whole widget tree are fixed for the
@@ -5758,7 +5756,7 @@ static bool settings_cycle_item(int idx, int dir)
         refresh_settings_items();
         return true;
 #endif
-    } else if (idx == SETTINGS_IDX_SCALE2X) {
+    } else if (item == SETTINGS_ID_SCALE2X) {
         /* Only two states, so either direction toggles. The LVGL
          * canvas size is fixed for the session (see display_scale.h),
          * so request_close_settings() offers a restart on the way out. */
@@ -5767,7 +5765,7 @@ static bool settings_cycle_item(int idx, int dir)
         s_restart_needed = true;
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_MARGIN_LEFT) {
+    } else if (item == SETTINGS_ID_MARGIN_LEFT) {
         int oi = find_margin_option(s_margin_left);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_left = MARGIN_OPTIONS[oi];
@@ -5775,7 +5773,7 @@ static bool settings_cycle_item(int idx, int dir)
         s_restart_needed = true;
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_MARGIN_RIGHT) {
+    } else if (item == SETTINGS_ID_MARGIN_RIGHT) {
         int oi = find_margin_option(s_margin_right);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_right = MARGIN_OPTIONS[oi];
@@ -5783,7 +5781,7 @@ static bool settings_cycle_item(int idx, int dir)
         s_restart_needed = true;
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_MARGIN_TOP) {
+    } else if (item == SETTINGS_ID_MARGIN_TOP) {
         int oi = find_margin_option(s_margin_top);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_top = MARGIN_OPTIONS[oi];
@@ -5791,7 +5789,7 @@ static bool settings_cycle_item(int idx, int dir)
         s_restart_needed = true;
         refresh_settings_items();
         return true;
-    } else if (idx == SETTINGS_IDX_MARGIN_BOTTOM) {
+    } else if (item == SETTINGS_ID_MARGIN_BOTTOM) {
         int oi = find_margin_option(s_margin_bottom);
         oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
         s_margin_bottom = MARGIN_OPTIONS[oi];
@@ -5803,20 +5801,20 @@ static bool settings_cycle_item(int idx, int dir)
     return false;
 }
 
-static void settings_activate_item(int idx)
+static void settings_activate_item(settings_item_id_t item)
 {
     /* Moving away from the factory-reset item cancels confirmation */
-    if (idx != SETTINGS_IDX_RESET && s_factory_reset_confirm) {
+    if (item != SETTINGS_ID_RESET && s_factory_reset_confirm) {
         s_factory_reset_confirm = false;
         refresh_settings_items();
     }
 
-    if (settings_cycle_item(idx, 1)) {
+    if (settings_cycle_item(item, 1)) {
         /* Handled -- Enter always means "next value", same as before. */
-    } else if (idx == SETTINGS_IDX_MAXFILE) {
+    } else if (item == SETTINGS_ID_MAXFILE) {
         /* Read-only display of the dynamically-sized editor buffer.
          * Enter is a no-op; the value is fixed at editor_init() time. */
-    } else if (idx == SETTINGS_IDX_LAYOUTS) {
+    } else if (item == SETTINGS_ID_LAYOUTS) {
         /* Open the active-layouts checklist sub-list. Each row toggles
          * immediately on Enter (applied + persisted on the spot); Esc
          * returns to the settings list. */
@@ -5824,7 +5822,7 @@ static void settings_activate_item(int idx)
         s_layouts_picker_open = true;
         refresh_layouts_picker_items();
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    } else if (idx == SETTINGS_IDX_THEME) {
+    } else if (item == SETTINGS_ID_THEME) {
         /* Open the theme picker sub-list. The user navigates with
          * Up/Down and confirms with Enter; only on Enter is the new
          * theme persisted and the screens rebuilt. Esc returns to
@@ -5833,7 +5831,7 @@ static void settings_activate_item(int idx)
         s_theme_picker_sel = s_theme_idx;
         refresh_theme_picker_items();
 #endif
-    } else if (idx == SETTINGS_IDX_RESET) {
+    } else if (item == SETTINGS_ID_RESET) {
         /* Factory reset -- requires double-press confirmation */
         if (s_factory_reset_confirm) {
             ESP_LOGW(TAG, "Factory reset: erasing NVS and restarting");
@@ -5844,7 +5842,7 @@ static void settings_activate_item(int idx)
             s_factory_reset_confirm = true;
             refresh_settings_items();
         }
-    } else if (idx == SETTINGS_IDX_BACK) {
+    } else if (item == SETTINGS_ID_BACK) {
         request_close_settings();
     }
 }
@@ -5996,16 +5994,16 @@ static void handle_settings_key(const kb_event_t *ev)
         }
         break;
     case KB_KEY_ENTER:
-        settings_activate_item(s_settings_sel);
+        settings_activate_item(settings_id_for_index(s_settings_sel));
         break;
     case KB_KEY_LEFT:
         /* Previous value on the highlighted row, without moving the
          * highlight -- a no-op on rows settings_cycle_item() does not
          * own (Theme, Max file, Factory reset, Back). */
-        settings_cycle_item(s_settings_sel, -1);
+        settings_cycle_item(settings_id_for_index(s_settings_sel), -1);
         break;
     case KB_KEY_RIGHT:
-        settings_cycle_item(s_settings_sel, 1);
+        settings_cycle_item(settings_id_for_index(s_settings_sel), 1);
         break;
     case KB_KEY_ESCAPE:
         request_close_settings();
@@ -7051,15 +7049,15 @@ static void start_project_sync(void)
     }
 }
 
-static void menu_activate_item(int idx)
+static void menu_activate_item(menu_item_id_t id)
 {
-    switch (menu_id_for_index(idx)) {
+    switch (id) {
     case MENU_ID_SETTINGS:
         show_settings();
         break;
-    case MENU_IDX_BLE_STATUS: /* no action */
+    case MENU_ID_BLE_STATUS: /* no action */
         break;
-    case MENU_IDX_BLE_SCAN:
+    case MENU_ID_BLE_SCAN:
         /* BLE may be idle (disabled) when another keyboard owns input
          * -- e.g. a USB or Tab5 keyboard was present at boot. Re-enable
          * it first so an on-demand scan can actually start. No-op when
@@ -7069,7 +7067,7 @@ static void menu_activate_item(int idx)
         editor_ui_set_status("BLE: scanning...");
         close_menu();
         break;
-    case MENU_IDX_WIFI_CONNECT:
+    case MENU_ID_WIFI_CONNECT:
         /* Same fast reconnect-from-wifi.cfg/NVS as Ctrl+W. */
         if (!wifi_manager_is_connected()) {
             editor_ui_set_status("WiFi: connecting...");
@@ -7077,19 +7075,19 @@ static void menu_activate_item(int idx)
             wifi_connect_async();
         }
         break;
-    case MENU_IDX_WIFI_NEW:
+    case MENU_ID_WIFI_NEW:
         /* Opens the scan/pick picker in s_menu_list -- see the "WiFi
          * scan/connect picker" block above. Also usable while
          * connected: picking a network switches to it. */
         s_wifi_scan_picker_open = true;
         start_wifi_scan();
         break;
-    case MENU_IDX_WIFI_DISCONNECT:
+    case MENU_ID_WIFI_DISCONNECT:
         wifi_manager_disconnect();
         editor_ui_set_status("WiFi: disconnected");
         close_menu();
         break;
-    case MENU_IDX_GIT_SYNC:
+    case MENU_ID_GIT_SYNC:
         /* Git sync reads and writes the SD card directly (its own
          * .git/ history plus the working tree), same as any other
          * file I/O -- refuse it while the card belongs to a USB host
@@ -7111,7 +7109,7 @@ static void menu_activate_item(int idx)
         }
         start_project_sync();
         break;
-    case MENU_IDX_DRAFTBOX:
+    case MENU_ID_DRAFTBOX:
         /* Writes git.cfg on the SD card -- same guard as Git Sync. */
         if (const char *busy = sd_handed_off_msg()) {
             editor_ui_set_status(busy);
@@ -7127,12 +7125,12 @@ static void menu_activate_item(int idx)
                 wifi_connect_async();
         }
         break;
-    case MENU_IDX_KB_LAYOUT:
+    case MENU_ID_KB_LAYOUT:
         kb_layout_next();
         refresh_menu_items();
         break;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    case MENU_IDX_USB_MSC:
+    case MENU_ID_USB_MSC:
         if (usbmsc_item_disabled()) {
             editor_ui_set_status("SD card via USB: insert an SD card first");
             break;
@@ -7149,25 +7147,25 @@ static void menu_activate_item(int idx)
         break;
 #endif
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    case MENU_IDX_KERMIT:
+    case MENU_ID_KERMIT:
         s_kermit_picker_open = true;
         s_kermit_picker_sel = 0;
         refresh_kermit_picker_items();
         break;
 #endif
-    case MENU_IDX_FORMAT_SD:
+    case MENU_ID_FORMAT_SD:
         open_fmt_picker();
         break;
-    case MENU_IDX_HWINFO:
+    case MENU_ID_HWINFO:
         s_menu_open = false;
         show_hwinfo(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER);
         break;
-    case MENU_IDX_HELP:
+    case MENU_ID_HELP:
         /* The help describes the screen the menu was opened from. */
         s_menu_open = false;
         show_help(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER);
         break;
-    case MENU_IDX_SLEEP:
+    case MENU_ID_SLEEP:
         /* Leave the menu first so, if we prompt about unsaved changes,
          * the dialog is drawn on the editor screen it lives on. With no
          * unsaved changes (or if the menu was opened from the file
@@ -7179,7 +7177,7 @@ static void menu_activate_item(int idx)
             standby_enter_sleep();
         }
         break;
-    case MENU_IDX_CLOSE:
+    case MENU_ID_CLOSE:
         close_menu();
         break;
     default:
@@ -7308,7 +7306,7 @@ static void handle_menu_key(const kb_event_t *ev)
         update_menu_highlight();
         break;
     case KB_KEY_ENTER:
-        menu_activate_item(s_menu_sel);
+        menu_activate_item(menu_id_for_index(s_menu_sel));
         break;
     case KB_KEY_ESCAPE:
     case KB_KEY_F1:
@@ -7327,7 +7325,7 @@ static void handle_menu_key(const kb_event_t *ev)
                 if (ch != h.key) continue;
                 s_menu_sel = menu_index_for_id(h.id);
                 update_menu_highlight();
-                if (h.id != MENU_ID_KB_LAYOUT) menu_activate_item(s_menu_sel);
+                if (h.id != MENU_ID_KB_LAYOUT) menu_activate_item(h.id);
                 break;
             }
         }
