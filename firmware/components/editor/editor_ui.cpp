@@ -5982,12 +5982,17 @@ static void wifi_pw_prompt_confirm(void)
     wifi_connect_picked_async(ssid, s_wifi_pw_buf);
 }
 
-/* Line-editing keys shared by the single-line text prompts on the menu
- * screen (WiFi password, Draftbox site / password): cursor movement,
- * Backspace / Delete and printable text in the active keyboard layout.
- * buf is UTF-8, pos a byte offset kept on a character boundary. Enter
- * and Esc are the caller's. */
-static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t *ev)
+/* Line-editing keys shared by every single-line text prompt (WiFi
+ * password, Draftbox site / password, save-as / rename name, Find /
+ * Replace): cursor movement, Backspace / Delete and printable text in
+ * the active keyboard layout. buf is UTF-8, pos a byte offset kept on a
+ * character boundary. Enter, Esc (and Tab, where it means something)
+ * are the caller's. accept, when given, may refuse a typed text given
+ * the current length. Returns true if the text changed. */
+typedef bool (*text_accept_fn)(const char *text, size_t cur_len);
+
+static bool text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t *ev,
+                           text_accept_fn accept = NULL)
 {
     switch (ev->keycode) {
     case KB_KEY_LEFT:
@@ -5995,20 +6000,20 @@ static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t 
             do { (*pos)--; }
             while (*pos > 0 && (buf[*pos] & 0xC0) == 0x80);
         }
-        break;
+        return false;
     case KB_KEY_RIGHT:
         if (*pos < (int)strlen(buf)) {
             (*pos)++;
             while (*pos < (int)strlen(buf) && (buf[*pos] & 0xC0) == 0x80)
                 (*pos)++;
         }
-        break;
+        return false;
     case KB_KEY_HOME:
         *pos = 0;
-        break;
+        return false;
     case KB_KEY_END:
         *pos = (int)strlen(buf);
-        break;
+        return false;
     case KB_KEY_BACKSPACE:
         if (*pos > 0) {
             int prev = *pos - 1;
@@ -6016,32 +6021,33 @@ static void text_field_key(char *buf, size_t buf_sz, int *pos, const kb_event_t 
             int len = (int)strlen(buf);
             memmove(buf + prev, buf + *pos, (size_t)(len - *pos + 1));
             *pos = prev;
+            return true;
         }
-        break;
+        return false;
     case KB_KEY_DELETE: {
         int len = (int)strlen(buf);
         if (*pos < len) {
             int next = *pos + 1;
             while (next < len && (buf[next] & 0xC0) == 0x80) next++;
             memmove(buf + *pos, buf + next, (size_t)(len - next + 1));
+            return true;
         }
-        break;
+        return false;
     }
     default: {
         bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl) break; /* swallow ctrl combos */
+        if (ctrl) return false; /* swallow ctrl combos */
         const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            if ((unsigned char)text[0] < 0x20) break; /* reject control chars */
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(buf);
-            if (cur_len + tlen < buf_sz - 1) {
-                memmove(buf + *pos + tlen, buf + *pos, cur_len - (size_t)*pos + 1);
-                memcpy(buf + *pos, text, tlen);
-                *pos += (int)tlen;
-            }
-        }
-        break;
+        if (!text || !text[0]) return false;
+        if ((unsigned char)text[0] < 0x20) return false; /* reject control chars */
+        size_t tlen = strlen(text);
+        size_t cur_len = strlen(buf);
+        if (accept && !accept(text, cur_len)) return false;
+        if (cur_len + tlen >= buf_sz - 1) return false;
+        memmove(buf + *pos + tlen, buf + *pos, cur_len - (size_t)*pos + 1);
+        memcpy(buf + *pos, text, tlen);
+        *pos += (int)tlen;
+        return true;
     }
     }
 }
@@ -8607,6 +8613,19 @@ static void save_prompt_confirm(void)
     editor_ui_refresh();
 }
 
+/* What may be typed into the save-as / rename / project name field. */
+static bool save_name_accept(const char *text, size_t cur_len)
+{
+    /* No path separators. */
+    if (text[0] == '/' || text[0] == '\\') return false;
+    /* Project names: ASCII letters, digits, '-', '_', ' '. */
+    if (save_mode_is_project_name(s_save_mode) &&
+        (strlen(text) != 1 || !project_name_char_ok(text[0]) ||
+         cur_len + 1 > PROJECT_NAME_MAX))
+        return false;
+    return true;
+}
+
 static void handle_save_prompt_key(const kb_event_t *ev)
 {
     switch (ev->keycode) {
@@ -8616,78 +8635,9 @@ static void handle_save_prompt_key(const kb_event_t *ev)
     case KB_KEY_ESCAPE:
         save_prompt_cancel();
         return;
-    case KB_KEY_LEFT:
-        if (s_save_pos > 0) {
-            /* Move back one UTF-8 character */
-            do { s_save_pos--; }
-            while (s_save_pos > 0 &&
-                   (s_save_buf[s_save_pos] & 0xC0) == 0x80);
-        }
+    default:
+        text_field_key(s_save_buf, sizeof(s_save_buf), &s_save_pos, ev, save_name_accept);
         break;
-    case KB_KEY_RIGHT:
-        if (s_save_pos < (int)strlen(s_save_buf)) {
-            /* Move forward one UTF-8 character */
-            s_save_pos++;
-            while (s_save_pos < (int)strlen(s_save_buf) &&
-                   (s_save_buf[s_save_pos] & 0xC0) == 0x80)
-                s_save_pos++;
-        }
-        break;
-    case KB_KEY_HOME:
-        s_save_pos = 0;
-        break;
-    case KB_KEY_END:
-        s_save_pos = (int)strlen(s_save_buf);
-        break;
-    case KB_KEY_BACKSPACE:
-        if (s_save_pos > 0) {
-            /* Delete the previous UTF-8 character */
-            int prev = s_save_pos - 1;
-            while (prev > 0 && (s_save_buf[prev] & 0xC0) == 0x80)
-                prev--;
-            int len = (int)strlen(s_save_buf);
-            memmove(s_save_buf + prev, s_save_buf + s_save_pos,
-                    (size_t)(len - s_save_pos + 1));
-            s_save_pos = prev;
-        }
-        break;
-    case KB_KEY_DELETE: {
-        int len = (int)strlen(s_save_buf);
-        if (s_save_pos < len) {
-            /* Find end of current UTF-8 character */
-            int next = s_save_pos + 1;
-            while (next < len && (s_save_buf[next] & 0xC0) == 0x80)
-                next++;
-            memmove(s_save_buf + s_save_pos, s_save_buf + next,
-                    (size_t)(len - next + 1));
-        }
-        break;
-    }
-    default: {
-        /* Insert typed character (use layout translation) */
-        bool ctrl = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
-        if (ctrl) break; /* ignore ctrl combos in filename */
-        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(s_save_buf);
-            /* Reject path separators and control chars */
-            if (text[0] == '/' || text[0] == '\\' || text[0] < 0x20) break;
-            /* Project names: ASCII letters, digits, '-', '_', ' '. */
-            if (save_mode_is_project_name(s_save_mode) &&
-                (tlen != 1 || !project_name_char_ok(text[0]) ||
-                 cur_len + 1 > PROJECT_NAME_MAX))
-                break;
-            if (cur_len + tlen < sizeof(s_save_buf) - 1) {
-                memmove(s_save_buf + s_save_pos + tlen,
-                        s_save_buf + s_save_pos,
-                        cur_len - (size_t)s_save_pos + 1);
-                memcpy(s_save_buf + s_save_pos, text, tlen);
-                s_save_pos += (int)tlen;
-            }
-        }
-        break;
-    }
     }
     refresh_save_prompt();
 }
@@ -9328,79 +9278,13 @@ static void handle_search_prompt_key(const kb_event_t *ev)
             s_search_field = (s_search_field == 0) ? 1 : 0;
         }
         break;
-    case KB_KEY_LEFT:
-        if (*apos > 0) {
-            do { (*apos)--; }
-            while (*apos > 0 && (abuf[*apos] & 0xC0) == 0x80);
+    default:
+        /* Editing the find query invalidates the previous match. */
+        if (text_field_key(abuf, bufsz, apos, ev) && s_search_field == 0) {
+            s_search_match_start = -1;
+            s_search_match_end = -1;
         }
         break;
-    case KB_KEY_RIGHT:
-        if (*apos < (int)strlen(abuf)) {
-            (*apos)++;
-            while (*apos < (int)strlen(abuf) &&
-                   (abuf[*apos] & 0xC0) == 0x80)
-                (*apos)++;
-        }
-        break;
-    case KB_KEY_HOME:
-        *apos = 0;
-        break;
-    case KB_KEY_END:
-        *apos = (int)strlen(abuf);
-        break;
-    case KB_KEY_BACKSPACE:
-        if (*apos > 0) {
-            int prev = *apos - 1;
-            while (prev > 0 && (abuf[prev] & 0xC0) == 0x80) prev--;
-            int len = (int)strlen(abuf);
-            memmove(abuf + prev, abuf + *apos,
-                    (size_t)(len - *apos + 1));
-            *apos = prev;
-            /* Editing the find query invalidates the previous match. */
-            if (s_search_field == 0) {
-                s_search_match_start = -1;
-                s_search_match_end = -1;
-            }
-        }
-        break;
-    case KB_KEY_DELETE: {
-        int len = (int)strlen(abuf);
-        if (*apos < len) {
-            int next = *apos + 1;
-            while (next < len && (abuf[next] & 0xC0) == 0x80) next++;
-            memmove(abuf + *apos, abuf + next,
-                    (size_t)(len - next + 1));
-            if (s_search_field == 0) {
-                s_search_match_start = -1;
-                s_search_match_end = -1;
-            }
-        }
-        break;
-    }
-    default: {
-        if (ctrl) break; /* swallow other ctrl combos */
-        const char *text = kb_layout_translate(ev->keycode, ev->modifier);
-        if (text && text[0]) {
-            /* Reject control characters so the buffers stay
-             * printable; embedded newlines are not supported in the
-             * search dialog. */
-            if ((unsigned char)text[0] < 0x20) break;
-            size_t tlen = strlen(text);
-            size_t cur_len = strlen(abuf);
-            if (cur_len + tlen < bufsz - 1) {
-                memmove(abuf + *apos + tlen,
-                        abuf + *apos,
-                        cur_len - (size_t)*apos + 1);
-                memcpy(abuf + *apos, text, tlen);
-                *apos += (int)tlen;
-                if (s_search_field == 0) {
-                    s_search_match_start = -1;
-                    s_search_match_end = -1;
-                }
-            }
-        }
-        break;
-    }
     }
     refresh_search_prompt();
 }
