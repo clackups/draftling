@@ -1691,16 +1691,6 @@ static adc_oneshot_unit_handle_t s_korvo_adc = NULL;
 static adc_cali_handle_t         s_korvo_cali = NULL;
 static adc_channel_t             s_korvo_chan;
 
-static void korvo_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 /* Index of the pressed button (0 SET, 1 MODE, 2 VOL-, 3 VOL+), -1 none. */
 static int korvo_read_button(void)
 {
@@ -1727,7 +1717,7 @@ static void korvo_btn_poll_cb(void *arg)
     stable = 0;
     int released = down;
     down = b;
-    if (released >= 0 && down < 0) korvo_inject_key(kKeys[released]);
+    if (released >= 0 && down < 0) inject_key(kKeys[released]);
 }
 
 static void korvo_btn_init(void)
