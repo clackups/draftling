@@ -11349,6 +11349,11 @@ static void ble_status_text_cb(const char *text)
  * wifi_manager_connect() blocks for up to 30 seconds while waiting for
  * the connection.  Running it on a separate task keeps the LVGL render
  * loop responsive so the user sees status updates in real time. */
+/* The WiFi worker tasks below wait for the LVGL lock without a time
+ * limit (like the Draftbox worker): nothing that holds the lock waits
+ * for them, and a dropped result would leave the scan picker on
+ * "Scanning..." or the Draftbox prompt on its WiFi step for good --
+ * e-paper flushes hold the lock longer than a short timeout. */
 static void wifi_connect_task(void *arg)
 {
     (void)arg;
@@ -11357,7 +11362,7 @@ static void wifi_connect_task(void *arg)
         /* No credentials, or another connect/scan is running -- the
          * wifi_state callback will not fire, so update the status bar
          * directly. */
-        if (draftling_lvgl_port_lock(200)) {
+        if (draftling_lvgl_port_lock(-1)) {
             editor_ui_set_status(ret == ESP_ERR_NOT_FOUND
                                      ? "WiFi: no credentials found"
                                      : "WiFi: busy, try again");
@@ -11392,7 +11397,7 @@ static void wifi_scan_task(void *arg)
     int count = 0;
     esp_err_t ret = wifi_manager_scan(results, WIFI_SCAN_MAX_RESULTS, &count);
 
-    if (draftling_lvgl_port_lock(200)) {
+    if (draftling_lvgl_port_lock(-1)) {
         /* Only touch the UI if the picker is still what's on screen --
          * the user may have backed out (Esc) while the scan was in
          * flight. */
@@ -11444,7 +11449,7 @@ static void wifi_connect_picked_task(void *arg)
     if (ret == ESP_OK) {
         wifi_manager_save_to_file(args->ssid, args->password);
     } else if (ret == ESP_ERR_INVALID_STATE) {
-        if (draftling_lvgl_port_lock(200)) {
+        if (draftling_lvgl_port_lock(-1)) {
             editor_ui_set_status("WiFi: busy, try again");
             draftling_lvgl_port_unlock();
         }

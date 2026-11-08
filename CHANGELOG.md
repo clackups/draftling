@@ -63,6 +63,10 @@ in the git log.
 - **Pasting over a selection in a nearly full document**: when the
   pasted text did not fit, the selected text was deleted anyway. The
   paste is now refused and the selection kept.
+- **WiFi network list stuck on "Scanning..."**: on e-paper boards the
+  scan result could be dropped while the screen was refreshing,
+  leaving the list waiting forever (likewise the Draftbox prompt
+  waiting for WiFi). The result is now always shown.
 
 ## [1.0.23] - 2026-11-07
 
