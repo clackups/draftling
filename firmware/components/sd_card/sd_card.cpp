@@ -11,6 +11,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_heap_caps.h>
 #include <soc/soc_caps.h>
 #include <esp_vfs_fat.h>
 #include <diskio_sdmmc.h>
@@ -569,29 +570,54 @@ static int sd_entry_cmp(const void *a, const void *b)
     return strcasecmp(ea->name, eb->name);
 }
 
-extern "C" int sd_card_list_dir(const char *path, sd_card_file_entry_t *entries, int max_entries)
+extern "C" esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **out,
+                                      int *count)
 {
+    *out = NULL;
+    *count = 0;
     DIR *dir = opendir(path);
-    if (!dir) return -1;
-    int count = 0;
+    if (!dir) return ESP_FAIL;
+    sd_card_file_entry_t *v = NULL;
+    int n = 0, cap = 0;
+    esp_err_t ret = ESP_OK;
     struct dirent *ent;
-    while ((ent = readdir(dir)) != NULL && count < max_entries) {
+    while ((ent = readdir(dir)) != NULL) {
         if (ent->d_name[0] == '.') continue;
-        strncpy(entries[count].name, ent->d_name, sizeof(entries[count].name) - 1);
-        entries[count].name[sizeof(entries[count].name) - 1] = '\0';
-        entries[count].is_dir = (ent->d_type == DT_DIR);
+        if (n == cap) {
+            int nc = cap ? cap * 2 : 32;
+            sd_card_file_entry_t *nv = (sd_card_file_entry_t *)heap_caps_realloc(
+                v, (size_t)nc * sizeof(*v), MALLOC_CAP_SPIRAM);
+            if (!nv) nv = (sd_card_file_entry_t *)heap_caps_realloc(
+                v, (size_t)nc * sizeof(*v), MALLOC_CAP_DEFAULT);
+            if (!nv) { ret = ESP_ERR_NO_MEM; break; }
+            v = nv;
+            cap = nc;
+        }
+        sd_card_file_entry_t *e = &v[n];
+        strlcpy(e->name, ent->d_name, sizeof(e->name));
+        e->is_dir = (ent->d_type == DT_DIR);
 
         char full[512];
         snprintf(full, sizeof(full), "%s/%s", path, ent->d_name);
         struct stat st;
-        entries[count].size = (stat(full, &st) == 0) ? st.st_size : 0;
-        count++;
+        e->size = (stat(full, &st) == 0) ? st.st_size : 0;
+        n++;
     }
     closedir(dir);
-    if (count > 1) {
-        qsort(entries, (size_t)count, sizeof(entries[0]), sd_entry_cmp);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "list_dir %s: out of memory after %d entries", path, n);
+        heap_caps_free(v);
+        return ret;
     }
-    return count;
+    if (n > 1) qsort(v, (size_t)n, sizeof(v[0]), sd_entry_cmp);
+    *out = v;
+    *count = n;
+    return ESP_OK;
+}
+
+extern "C" void sd_card_free_list(sd_card_file_entry_t *list)
+{
+    if (list) heap_caps_free(list);
 }
 
 extern "C" long sd_card_file_size(const char *path)

@@ -30,6 +30,11 @@ in the git log.
   card), the sync still said it was complete, and the next sync then
   committed the old file over the server's version. It now stops with
   "Cannot write files to the SD card" and tries again next time.
+- **Projects with many files**: only the first 128 entries of a
+  project folder were looked at (in no particular order), so Git sync
+  committed the rest as deleted, project deletion could miss unpushed
+  files, and the file browser showed at most 64 files or projects. All
+  of them now see every file.
 
 ## [1.0.23] - 2026-11-07
 

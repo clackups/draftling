@@ -73,7 +73,14 @@ typedef struct {
     size_t size;
 } sd_card_file_entry_t;
 
-int sd_card_list_dir(const char *path, sd_card_file_entry_t *entries, int max_entries);
+/* List every entry of a directory except hidden (dot) files, sorted:
+ * folders first, then files, by name ignoring case. *out is allocated
+ * (PSRAM) and must be released with sd_card_free_list(); it is NULL
+ * when the folder is empty. Returns ESP_FAIL when the folder cannot be
+ * read and ESP_ERR_NO_MEM when the list does not fit in memory -- never
+ * a partial list. */
+esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **out, int *count);
+void sd_card_free_list(sd_card_file_entry_t *list);
 long sd_card_file_size(const char *path);
 esp_err_t sd_card_rename(const char *old_path, const char *new_path);
 

@@ -200,8 +200,6 @@ static void iso_now(char *out, size_t outsz)
 
 /* ---- working tree <-> flat tree -------------------------------- */
 
-#define WT_MAX_FILES 128
-
 /* A working-tree document: Markdown ("*.md"), a Fountain screenplay
  * ("*.fountain") or plain text ("*.txt"). Hidden files (the editor's ".<name>.meta" sidecars)
  * are never synced. */
@@ -234,12 +232,10 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
     git_oid_clear(out);
     *out_nfiles = 0;
 
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (!entries) return ESP_ERR_NO_MEM;
-
-    int count = sd_card_list_dir(s_cfg.local_path, entries, WT_MAX_FILES);
-    if (count < 0) { heap_caps_free(entries); return ESP_FAIL; }
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t lr = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (lr != ESP_OK) return lr;
 
     git_tree t = {};
     esp_err_t ret = ESP_OK;
@@ -256,7 +252,7 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
         if (!git_tree_set(&t, 0100644, entries[i].name, &blob)) { ret = ESP_ERR_NO_MEM; break; }
         (*out_nfiles)++;
     }
-    heap_caps_free(entries);
+    sd_card_free_list(entries);
 
     if (ret == ESP_OK && t.count > 0)
         ret = git_tree_write(&t, out);
@@ -304,10 +300,10 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
     }
 
     /* Delete local document files that are gone from the tree. */
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (entries) {
-        int count = sd_card_list_dir(s_cfg.local_path, entries, WT_MAX_FILES);
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    esp_err_t lr = sd_card_list_dir(s_cfg.local_path, &entries, &count);
+    if (lr == ESP_OK) {
         for (int i = 0; i < count; i++) {
             if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
             if (git_tree_get(&t, entries[i].name)) continue;
@@ -318,9 +314,9 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
                 ret = ESP_FAIL;
             }
         }
-        heap_caps_free(entries);
+        sd_card_free_list(entries);
     } else {
-        ret = ESP_ERR_NO_MEM;
+        ret = lr;
     }
 
     git_tree_free(&t);
@@ -1203,11 +1199,9 @@ static void project_status_cfg(git_cfg_t *c, const char *project_dir,
     if (!load_config(c, project_dir)) return;
     st->configured = true;
 
-    sd_card_file_entry_t *entries = (sd_card_file_entry_t *)heap_caps_malloc(
-        WT_MAX_FILES * sizeof(sd_card_file_entry_t), MALLOC_CAP_SPIRAM);
-    if (!entries) { st->error = true; return; }
-    int count = sd_card_list_dir(project_dir, entries, WT_MAX_FILES);
-    if (count < 0) { heap_caps_free(entries); st->error = true; return; }
+    sd_card_file_entry_t *entries = NULL;
+    int count = 0;
+    if (sd_card_list_dir(project_dir, &entries, &count) != ESP_OK) { st->error = true; return; }
 
     char remoteref[96];
     snprintf(remoteref, sizeof(remoteref), "refs/remotes/origin/%s", c->branch);
@@ -1255,7 +1249,7 @@ static void project_status_cfg(git_cfg_t *c, const char *project_dir,
     }
     git_tree_free(&t);
     git_repo_close();
-    heap_caps_free(entries);
+    sd_card_free_list(entries);
 }
 
 extern "C" void git_sync_project_status(const char *project_dir,

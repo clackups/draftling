@@ -1010,7 +1010,9 @@ static int  s_browser_sel    = 0;
 /* See s_menu_sel_prev. */
 static int  s_browser_sel_prev = -1;
 static int  s_browser_count  = 0;
-static sd_card_file_entry_t s_browser_entries[64];
+/* Every entry of the folder shown (sd_card_list_dir(); NULL when
+ * empty), replaced by each refresh_file_list(). */
+static sd_card_file_entry_t *s_browser_entries = NULL;
 
 /* ---- Projects (see projects.h) ----
  * The file browser has two levels: the list of projects (the folders
@@ -4197,7 +4199,7 @@ static void refresh_file_list(const char *select_name = NULL)
      * editor, and also preserves selection across a Git-sync refresh
      * that added or removed files. select_name, when given, is
      * selected instead (e.g. a file's new name after a rename). */
-    char remembered_name[sizeof(s_browser_entries[0].name)] = {0};
+    char remembered_name[sizeof(((sd_card_file_entry_t *)0)->name)] = {0};
     if (select_name) {
         strncpy(remembered_name, select_name, sizeof(remembered_name) - 1);
     } else if (s_browser_list && s_browser_sel >= 0 &&
@@ -4206,8 +4208,8 @@ static void refresh_file_list(const char *select_name = NULL)
         if (cur_btn) {
             int cur_idx = (int)(intptr_t)lv_obj_get_user_data(cur_btn);
             if (cur_idx >= 0 && cur_idx < s_browser_count) {
-                strncpy(remembered_name, s_browser_entries[cur_idx].name,
-                        sizeof(remembered_name) - 1);
+                strlcpy(remembered_name, s_browser_entries[cur_idx].name,
+                        sizeof(remembered_name));
             }
         }
     }
@@ -4219,21 +4221,29 @@ static void refresh_file_list(const char *select_name = NULL)
         s_cur_project[0] = '\0';
     }
 
+    sd_card_free_list(s_browser_entries);
+    s_browser_entries = NULL;
+    s_browser_count = 0;
+    char dir[64];
+    if (browser_at_root()) strlcpy(dir, sd_card_get_mount_point(), sizeof(dir));
+    else project_dir(s_cur_project, dir, sizeof(dir));
+    if (sd_card_list_dir(dir, &s_browser_entries, &s_browser_count) != ESP_OK) {
+        s_browser_entries = NULL;
+        s_browser_count = 0;
+        if (sd_card_get_handle()) editor_ui_set_status("Cannot read the SD card folder");
+    }
     if (browser_at_root()) {
-        /* The list of projects: the folders in the SD card root. */
-        static project_name_t names[64];
-        int n = project_list(names, 64);
-        for (int i = 0; i < n; i++) {
-            strlcpy(s_browser_entries[i].name, names[i], sizeof(s_browser_entries[i].name));
-            s_browser_entries[i].is_dir = true;
-            s_browser_entries[i].size = 0;
+        /* The list of projects: the folders in the SD card root with a
+         * valid project name (as project_list() picks them). */
+        int n = 0;
+        for (int i = 0; i < s_browser_count; i++) {
+            if (!s_browser_entries[i].is_dir ||
+                project_name_problem(s_browser_entries[i].name)) continue;
+            if (n != i) s_browser_entries[n] = s_browser_entries[i];
+            s_browser_entries[n].size = 0;
+            n++;
         }
         s_browser_count = n;
-    } else {
-        char dir[64];
-        project_dir(s_cur_project, dir, sizeof(dir));
-        s_browser_count = sd_card_list_dir(dir, s_browser_entries, 64);
-        if (s_browser_count < 0) s_browser_count = 0;
     }
 
     lv_obj_clean(s_browser_list);
