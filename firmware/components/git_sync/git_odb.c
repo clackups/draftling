@@ -515,14 +515,6 @@ esp_err_t git_ref_write(const char *name, const git_oid *oid)
     return write_whole_file(p, line, strlen(line));
 }
 
-esp_err_t git_ref_delete(const char *name)
-{
-    char p[352];
-    ref_path(name, p, sizeof(p));
-    remove(p);
-    return ESP_OK;
-}
-
 esp_err_t git_head_set_symbolic(const char *target)
 {
     char p[352];

@@ -189,7 +189,6 @@ void      git_odb_tmp_path(char *out, size_t osz, const char *name);
  * if the ref does not exist. HEAD is resolved through one symref level. */
 esp_err_t git_ref_read(const char *name, git_oid *out);
 esp_err_t git_ref_write(const char *name, const git_oid *oid);
-esp_err_t git_ref_delete(const char *name);
 /* Write "ref: <target>\n" into HEAD. */
 esp_err_t git_head_set_symbolic(const char *target);
 

@@ -585,19 +585,19 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             return ESP_FAIL;
         }
         if (!have_local_docs) {
-            if (!ref_write(localref, &remote_sha)) return ESP_FAIL;
-            local_head = remote_sha;
-            have_head = true;
-
+            /* The branch is created only once the files are on the
+             * card; a failed checkout leaves it unborn, and the next
+             * sync starts over as a first sync. */
             git_oid sub;
-            ret = subtree_for_commit(&local_head, &sub);
+            ret = subtree_for_commit(&remote_sha, &sub);
             if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL, &st->files_skipped);
             if (ret != ESP_OK) {
-                /* Start over as a first sync next time. */
-                git_ref_delete(localref);
                 set_error("Cannot write files to the SD card");
                 return ret;
             }
+            if (!ref_write(localref, &remote_sha)) return ESP_FAIL;
+            local_head = remote_sha;
+            have_head = true;
         }
     }
 
@@ -643,8 +643,12 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         ESP_LOGI(TAG, "local commit %s", newc.hex);
     }
 
-    /* The commit that matches the files on the card, for rolling back
-     * if the integrated tree cannot be written out (step 5). */
+    /* The commit that matches the files on the card. Steps 4 and 5 move
+     * the local branch past it only after the integrated tree has been
+     * written to the card: if that fails, the branch still describes
+     * the card and the next sync integrates again (instead of
+     * committing the old files on top of the integrated history and
+     * reverting the server's changes). */
     git_oid committed_head = local_head;
 
     /* 4. integrate remote */
@@ -690,7 +694,6 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         } else if (git_oid_eq(&mb, &local_head)) {
             /* fast-forward */
             local_head = remote_sha;
-            if (!ref_write(localref, &local_head)) return ESP_FAIL;
             st->fast_forwarded = true;
             ESP_LOGI(TAG, "fast-forward to %s", remote_sha.hex);
         } else {
@@ -760,7 +763,6 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             if (ret != ESP_OK) { set_error("Rebase failed"); return ret; }
 
             local_head = newbase;
-            if (!ref_write(localref, &local_head)) return ESP_FAIL;
             st->rebased = true;
         }
     } else if (remote_has_branch && git_oid_eq(&remote_sha, &local_head)) {
@@ -776,17 +778,11 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             ret = checkout_subtree(&sub, &st->files_out, &st->files_skipped);
         }
         if (ret != ESP_OK) {
-            /* Otherwise the next sync would commit the old files on
-             * top of the integrated history and revert the server's
-             * changes. Going back to the commit of the card's files
-             * makes it integrate again instead. */
-            if (!git_oid_is_zero(&committed_head))
-                git_ref_write(localref, &committed_head);
-            else
-                git_ref_delete(localref);
             set_error("Cannot write files to the SD card");
             return ret;
         }
+        if (!git_oid_eq(&local_head, &committed_head) && !ref_write(localref, &local_head))
+            return ESP_FAIL;
     }
 
     /* 6. push */
