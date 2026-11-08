@@ -186,15 +186,6 @@ bool git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ])
     return ok;
 }
 
-void git_sha1_hex(const void *data, size_t n, git_oid *out)
-{
-    git_sha1_ctx *c = git_sha1_new();
-    uint8_t raw[GIT_OID_RAWSZ];
-    git_sha1_update(c, data, n);
-    git_sha1_final(c, raw);
-    git_oid_from_raw(out, raw);
-}
-
 /* ------------------------------------------------------------------ */
 /* streaming zlib via ROM miniz                                       */
 /* ------------------------------------------------------------------ */

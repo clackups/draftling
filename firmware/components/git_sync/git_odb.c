@@ -22,7 +22,6 @@ static char s_gitdir[288];
 static bool s_open;
 
 const char *git_repo_gitdir(void)  { return s_gitdir; }
-const char *git_repo_workdir(void) { return s_workdir; }
 
 /* ------------------------------------------------------------------ */
 /* filesystem helpers                                                 */

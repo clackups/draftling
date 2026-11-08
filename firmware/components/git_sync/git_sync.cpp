@@ -72,7 +72,6 @@ static git_cfg_t s_cfg;
 static git_sync_state_t    s_state    = GIT_SYNC_IDLE;
 static git_sync_callback_t s_callback = NULL;
 static char s_last_error[128] = "";
-static char s_last_sync[32]   = "";
 
 static bool s_time_synced = false;
 
@@ -863,7 +862,6 @@ static void run_sync(git_sync_direction_t dir)
                                 i ? ", " : "", parts[i]);
             snprintf(summary + pos, sizeof(summary) - pos, ")");
         }
-        strlcpy(s_last_sync, "OK", sizeof(s_last_sync));
         notify(GIT_SYNC_SUCCESS, summary);
     } else if (s_state != GIT_SYNC_ERROR) {
         set_error("Sync failed");
@@ -1400,4 +1398,3 @@ extern "C" bool git_sync_get_remote(const char *project_dir, char *host, size_t 
 
 extern "C" const char *git_sync_get_project_dir(void) { return s_cfg.local_path; }
 extern "C" const char *git_sync_get_last_error(void) { return s_last_error; }
-extern "C" const char *git_sync_get_last_sync_time(void) { return s_last_sync; }

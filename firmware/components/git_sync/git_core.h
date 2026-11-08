@@ -72,7 +72,6 @@ void git_sha1_update(git_sha1_ctx *c, const void *data, size_t n);
 /* Frees c (NULL-safe). False -- with out zeroed -- when c is NULL or
  * any update or the final step failed. */
 bool git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]);
-void git_sha1_hex(const void *data, size_t n, git_oid *out);
 
 /* ---- streaming zlib (miniz in ROM) ------------------------------- */
 
@@ -133,7 +132,6 @@ void      git_repo_close(void);
 /* Delete leftover scratch files (an interrupted sync). */
 void      git_repo_clean_tmp(void);
 const char *git_repo_gitdir(void);   /* "<workdir>/.git" */
-const char *git_repo_workdir(void);
 
 /* Loose object store. Content is the raw object payload (no header).
  * git_odb_read() / git_odb_write() hold the whole object in RAM: use
