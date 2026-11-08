@@ -728,6 +728,11 @@ Per-board display backends behind a single C API:
   outputs that main.cpp drives before `display_init()`, so
   `display_set_shared_i2c_bus()` is a no-op here. The front-light is
   the M5PM1's PWM0 (`battery_m5pm1_set_frontlight()`).
+- **epd_fb.h** -- the 1-bpp framebuffer, dirty rectangle and RGB565
+  push shared by the e-paper backends that keep their own framebuffer
+  (ws_epd397, m5_papermono, reterminal_sticky, xteink_epd, seeed_e1001,
+  h752). Each keeps one `epd_fb_t` (`s_epdfb`) and aliases its old
+  `s_fb` / `s_width` / `s_dirty_*` names onto it.
 - **display_margins.cpp** / **display_orientation.cpp** /
   **display_flip.cpp** -- the three runtime, NVS-persisted,
   frozen-at-boot display settings that feed `SCR_W`/`SCR_H` and the

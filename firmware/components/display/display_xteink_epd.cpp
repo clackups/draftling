@@ -54,6 +54,7 @@
 #include <freertos/task.h>
 
 #include "display.h"
+#include "epd_fb.h"
 #include "display_margins.h"
 
 static const char *TAG = "DisplayXteink";
@@ -140,7 +141,15 @@ enum xteink_ctrl_t {
 };
 
 static esp_lcd_panel_io_handle_t s_io = NULL;
-static uint8_t  *s_fb = NULL;
+static epd_fb_t s_epdfb = EPD_FB_INIT(PANEL_WIDTH, PANEL_HEIGHT);
+#define s_fb              (s_epdfb.buf)
+#define s_width           (s_epdfb.width)
+#define s_height          (s_epdfb.height)
+#define s_dirty_x0        (s_epdfb.x0)
+#define s_dirty_y0        (s_epdfb.y0)
+#define s_dirty_x1        (s_epdfb.x1)
+#define s_dirty_y1        (s_epdfb.y1)
+#define s_dirty_area_sum  (s_epdfb.area)
 static uint8_t  *s_scratch = NULL;   /* UC8179/UC8279 padded/reversed staging buffer */
 static uint8_t  *s_white_scratch = NULL; /* constant all-white OLD-plane buffer, see uc8179/uc8279_display_full() */
 static uint8_t  *s_fb_inv = NULL;    /* SSD1677 bitwise-complement scratch, see ssd1677_display_full() */
@@ -151,71 +160,10 @@ static bool      s_bl_inited = false;
 static bool      s_needs_initial_full = true;
 static bool      s_force_full = true;
 static int       s_partial_count = 0;
-static int       s_width = PANEL_WIDTH;
-static int       s_height = PANEL_HEIGHT;
 static xteink_ctrl_t s_ctrl = XTEINK_CTRL_SSD1677;
 static bool       s_uc81xx_screen_on = false;
 
-static int s_dirty_x0 = -1, s_dirty_y0 = -1, s_dirty_x1 = -1, s_dirty_y1 = -1;
 static int s_clip_x0 = -1, s_clip_y0 = -1, s_clip_x1 = -1, s_clip_y1 = -1;
-
-static inline void clear_dirty(void)
-{
-    s_dirty_x0 = s_dirty_y0 = s_dirty_x1 = s_dirty_y1 = -1;
-}
-
-static inline void mark_dirty_rect(int x, int y, int w, int h)
-{
-    if (w <= 0 || h <= 0) return;
-    int x0 = std::max(0, x);
-    int y0 = std::max(0, y);
-    int x1 = std::min(s_width,  x + w);
-    int y1 = std::min(s_height, y + h);
-    if (x1 <= x0 || y1 <= y0) return;
-    if (s_dirty_x0 < 0) {
-        s_dirty_x0 = x0; s_dirty_y0 = y0;
-        s_dirty_x1 = x1 - 1; s_dirty_y1 = y1 - 1;
-        return;
-    }
-    s_dirty_x0 = std::min(s_dirty_x0, x0);
-    s_dirty_y0 = std::min(s_dirty_y0, y0);
-    s_dirty_x1 = std::max(s_dirty_x1, x1 - 1);
-    s_dirty_y1 = std::max(s_dirty_y1, y1 - 1);
-}
-
-static inline void set_panel_pixel(int x, int y, bool black)
-{
-    if ((unsigned)x >= (unsigned)s_width || (unsigned)y >= (unsigned)s_height) return;
-    size_t idx = (size_t)y * PANEL_WIDTH_BYTES + (size_t)(x >> 3);
-    uint8_t mask = (uint8_t)(0x80U >> (x & 7));
-    if (black) s_fb[idx] &= (uint8_t)~mask;
-    else       s_fb[idx] |= mask;
-}
-
-static void fill_panel_rect(int x, int y, int w, int h, bool black)
-{
-    if (!s_fb || w <= 0 || h <= 0) return;
-    int x0 = std::max(0, x);
-    int y0 = std::max(0, y);
-    int x1 = std::min(s_width, x + w);
-    int y1 = std::min(s_height, y + h);
-    if (x1 <= x0 || y1 <= y0) return;
-
-    if (x0 == 0 && x1 == s_width) {
-        for (int py = y0; py < y1; ++py) {
-            memset(s_fb + (size_t)py * PANEL_WIDTH_BYTES, black ? 0x00 : 0xFF, PANEL_WIDTH_BYTES);
-        }
-        return;
-    }
-    for (int py = y0; py < y1; ++py) {
-        for (int px = x0; px < x1; ++px) set_panel_pixel(px, py, black);
-    }
-}
-
-static inline bool rgb565_is_black(uint16_t v)
-{
-    return ((v >> 5) & 0x3F) < 32;
-}
 
 /* ---- SPI command/data framing (esp_lcd_panel_io_spi) ----
  * epd_cmd()/epd_data1()/epd_data() map 1:1 onto the FreeInk SDK's
@@ -942,7 +890,7 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     s_needs_initial_full = true;
     s_force_full = true;
     s_partial_count = 0;
-    clear_dirty();
+    epd_fb_clear_dirty(&s_epdfb);
     s_initialized = true;
 
     ESP_LOGI(TAG, "Xteink X4 e-paper initialized (%dx%d, controller=%d)",
@@ -953,7 +901,7 @@ extern "C" void display_clear(uint8_t color)
 {
     if (!s_initialized || !s_fb) return;
     memset(s_fb, color ? 0xFF : 0x00, FRAMEBUFFER_BYTES);
-    mark_dirty_rect(0, 0, s_width, s_height);
+    epd_fb_mark_dirty(&s_epdfb, 0, 0, s_width, s_height);
     s_force_full = true;
 }
 
@@ -962,8 +910,8 @@ extern "C" void display_set_pixel(uint16_t x, uint16_t y, uint8_t color)
     if (!s_initialized || !s_fb) return;
     int px = (int)x + EPD_MARGIN_LEFT;
     int py = (int)y + EPD_MARGIN_TOP;
-    fill_panel_rect(px, py, 1, 1, color == 0);
-    mark_dirty_rect(px, py, 1, 1);
+    epd_fb_fill_rect(&s_epdfb, px, py, 1, 1, color == 0);
+    epd_fb_mark_dirty(&s_epdfb, px, py, 1, 1);
 }
 
 extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *color_map)
@@ -971,14 +919,7 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *colo
     if (!s_initialized || !s_fb || !color_map || w <= 0 || h <= 0) return false;
     int ox = x + EPD_MARGIN_LEFT;
     int oy = y + EPD_MARGIN_TOP;
-    const uint16_t *src = (const uint16_t *)color_map;
-    for (int sy = 0; sy < h; ++sy) {
-        for (int sx = 0; sx < w; ++sx) {
-            bool black = rgb565_is_black(src[(size_t)sy * w + sx]);
-            set_panel_pixel(ox + sx, oy + sy, black);
-        }
-    }
-    mark_dirty_rect(ox, oy, w, h);
+    epd_fb_push_rgb565(&s_epdfb, ox, oy, w, h, color_map);
     return true;
 }
 
@@ -1002,7 +943,7 @@ extern "C" void display_flush(void)
     if (s_dirty_x0 < 0) return;
 
     int x0 = s_dirty_x0, y0 = s_dirty_y0, x1 = s_dirty_x1, y1 = s_dirty_y1;
-    clear_dirty();
+    epd_fb_clear_dirty(&s_epdfb);
 
     if (s_clip_x0 >= 0 && s_clip_y0 >= 0 && s_clip_x1 >= s_clip_x0 && s_clip_y1 >= s_clip_y0) {
         x0 = std::max(x0, s_clip_x0);
@@ -1041,7 +982,7 @@ extern "C" void display_full_refresh(void)
     if (!s_initialized) return;
     s_force_full = true;
     s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
-    mark_dirty_rect(0, 0, s_width, s_height);
+    epd_fb_mark_dirty(&s_epdfb, 0, 0, s_width, s_height);
     display_flush();
 }
 
