@@ -890,39 +890,44 @@ bool git_is_ancestor(const git_oid *anc, const git_oid *desc)
 /* BFS from `a`, record depth; then BFS from `b` and return the first
  * commit already seen from `a` (approximate LCA, good enough for the
  * linear + one-diverging-branch topology Draftling produces). */
+/* Breadth-first walk of all ancestors of start (start included) into
+ * seen; stops early at the first commit already in stop (when given)
+ * and returns it in *hit. Every commit must be present: a missing one
+ * would make the walk, and the merge base, silently wrong. */
+static esp_err_t walk_ancestors(const git_oid *start, git_oidset *seen,
+                                const git_oidset *stop, git_oid *hit)
+{
+    git_oidset q = {0};
+    esp_err_t ret = git_oidset_add(&q, start) ? ESP_OK : ESP_ERR_NO_MEM;
+    for (int i = 0; ret == ESP_OK && i < q.n; i++) {
+        git_oid cur = q.v[i];
+        if (git_oidset_has(seen, &cur)) continue;
+        if (!git_oidset_add(seen, &cur)) { ret = ESP_ERR_NO_MEM; break; }
+        if (stop && git_oidset_has(stop, &cur)) { *hit = cur; break; }
+        git_commit c;
+        ret = git_commit_load(&cur, &c);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "merge base: commit %s missing", cur.hex);
+            break;
+        }
+        for (int p = 0; p < c.nparents && ret == ESP_OK; p++)
+            if (!git_oidset_add(&q, &c.parents[p])) ret = ESP_ERR_NO_MEM;
+        git_commit_free(&c);
+    }
+    git_oidset_free(&q);
+    return ret;
+}
+
 esp_err_t git_merge_base(const git_oid *a, const git_oid *b, git_oid *out)
 {
     git_oid_clear(out);
     if (git_oid_is_zero(a) || git_oid_is_zero(b)) return ESP_OK;
     if (git_oid_eq(a, b)) { *out = *a; return ESP_OK; }
 
-    git_oidset seen_a = {0}, q = {0};
-    git_oidset_add(&q, a);
-    for (int i = 0; i < q.n; i++) {
-        git_oid cur = q.v[i];
-        if (git_oidset_has(&seen_a, &cur)) continue;
-        git_oidset_add(&seen_a, &cur);
-        git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) continue;
-        for (int p = 0; p < c.nparents; p++) git_oidset_add(&q, &c.parents[p]);
-        git_commit_free(&c);
-    }
-    git_oidset_free(&q);
-
-    git_oidset seen_b = {0};
-    git_oidset_add(&q, b);
-    esp_err_t ret = ESP_OK;
-    for (int i = 0; i < q.n; i++) {
-        git_oid cur = q.v[i];
-        if (git_oidset_has(&seen_b, &cur)) continue;
-        git_oidset_add(&seen_b, &cur);
-        if (git_oidset_has(&seen_a, &cur)) { *out = cur; break; }
-        git_commit c;
-        if (git_commit_load(&cur, &c) != ESP_OK) continue;
-        for (int p = 0; p < c.nparents; p++) git_oidset_add(&q, &c.parents[p]);
-        git_commit_free(&c);
-    }
-    git_oidset_free(&q);
+    git_oidset seen_a = {0}, seen_b = {0};
+    esp_err_t ret = walk_ancestors(a, &seen_a, NULL, NULL);
+    if (ret == ESP_OK) ret = walk_ancestors(b, &seen_b, &seen_a, out);
+    if (ret != ESP_OK) git_oid_clear(out);
     git_oidset_free(&seen_a);
     git_oidset_free(&seen_b);
     return ret;

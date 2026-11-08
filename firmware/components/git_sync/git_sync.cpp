@@ -545,7 +545,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
 
     if (!git_oid_eq(&ours_sub, &cur_sub)) {
         git_oid base_root;
-        commit_tree_oid(have_head ? &local_head : NULL, &base_root);
+        ret = commit_tree_oid(have_head ? &local_head : NULL, &base_root);
+        if (ret != ESP_OK) { set_error("Cannot read current tree"); return ret; }
         git_oid new_root;
         ret = git_tree_splice_subtree(git_oid_is_zero(&base_root) ? NULL : &base_root,
                                       s_cfg.remote_path, &ours_sub, &new_root);
@@ -608,7 +609,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         }
 
         git_oid mb;
-        git_merge_base(&local_head, &remote_sha, &mb);
+        ret = git_merge_base(&local_head, &remote_sha, &mb);
+        if (ret != ESP_OK) { set_error("Cannot compare with the server's history"); return ret; }
 
         if (git_oid_eq(&mb, &remote_sha)) {
             /* remote tip is already an ancestor -- we are ahead, nothing
@@ -638,9 +640,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
                 git_oid cparent = (cc.nparents > 0) ? cc.parents[0] : (git_oid){0};
 
                 git_oid base_sub, ours_sub2, theirs_sub;
-                subtree_for_commit(git_oid_is_zero(&cparent) ? NULL : &cparent, &base_sub);
-                subtree_for_commit(&newbase, &ours_sub2);
-                subtree_for_commit(&commits[i], &theirs_sub);
+                ret = subtree_for_commit(git_oid_is_zero(&cparent) ? NULL : &cparent, &base_sub);
+                if (ret == ESP_OK) ret = subtree_for_commit(&newbase, &ours_sub2);
+                if (ret == ESP_OK) ret = subtree_for_commit(&commits[i], &theirs_sub);
+                if (ret != ESP_OK) { git_commit_free(&cc); break; }
 
                 git_merge_path_result *res = NULL;
                 int nres = 0, nconf = 0;
@@ -655,7 +658,8 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
                 if (ret != ESP_OK) { git_commit_free(&cc); break; }
 
                 git_oid nb_root;
-                commit_tree_oid(&newbase, &nb_root);
+                ret = commit_tree_oid(&newbase, &nb_root);
+                if (ret != ESP_OK) { git_commit_free(&cc); break; }
                 git_oid new_root;
                 ret = git_tree_splice_subtree(git_oid_is_zero(&nb_root) ? NULL : &nb_root,
                                               s_cfg.remote_path, &merged_sub, &new_root);
