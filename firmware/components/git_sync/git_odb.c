@@ -64,18 +64,31 @@ static esp_err_t read_whole_file(const char *path, git_buf *out)
     return ret;
 }
 
+/* "<dir>/.<base>.dtmp", the same hidden temporary sd_card_write_file()
+ * uses. */
+static bool hidden_tmp_for(const char *path, char *out, size_t osz)
+{
+    const char *slash = strrchr(path, '/');
+    int n = slash ? snprintf(out, osz, "%.*s/.%s.dtmp", (int)(slash - path), path, slash + 1)
+                  : snprintf(out, osz, ".%s.dtmp", path);
+    return n > 0 && (size_t)n < osz;
+}
+
+/* Refs and HEAD: written in full, synced to the card, then swapped in
+ * by sd_card_replace_with(), so a power loss leaves the old or the new
+ * ref (recovered at the next mount), never none -- a missing branch
+ * ref would make the next sync start over as a first sync. */
 static esp_err_t write_whole_file(const char *path, const void *data, size_t len)
 {
-    char tmp[352];
-    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    char tmp[400];
+    if (!hidden_tmp_for(path, tmp, sizeof(tmp))) return ESP_FAIL;
     FILE *f = fopen(tmp, "wb");
     if (!f) return ESP_FAIL;
     bool ok = (len == 0) || (fwrite(data, 1, len, f) == len);
+    if (fflush(f) != 0 || fsync(fileno(f)) != 0) ok = false;
     if (fclose(f) != 0) ok = false;
     if (!ok) { remove(tmp); return ESP_FAIL; }
-    remove(path);
-    if (rename(tmp, path) != 0) { remove(tmp); return ESP_FAIL; }
-    return ESP_OK;
+    return sd_card_replace_with(tmp, path);
 }
 
 /* ------------------------------------------------------------------ */
@@ -414,16 +427,6 @@ esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size
     if (size) *size = s.size;
     git_odb_stream_close(&s);
     return ESP_OK;
-}
-
-/* "<dir>/.<base>.dtmp", the same hidden temporary sd_card_write_file()
- * uses. */
-static bool hidden_tmp_for(const char *path, char *out, size_t osz)
-{
-    const char *slash = strrchr(path, '/');
-    int n = slash ? snprintf(out, osz, "%.*s/.%s.dtmp", (int)(slash - path), path, slash + 1)
-                  : snprintf(out, osz, ".%s.dtmp", path);
-    return n > 0 && (size_t)n < osz;
 }
 
 esp_err_t git_odb_read_to_file(const git_oid *oid, git_obj_type *type, const char *path)

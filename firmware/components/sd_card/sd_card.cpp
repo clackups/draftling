@@ -47,8 +47,9 @@ static spi_device_handle_t s_keepalive_dev = NULL;
  * power loss a .dnew is the newest complete version of <name> and
  * replaces it -- when the old file was already removed it is the only
  * copy left. A .dtmp may be incomplete and is dropped. Looks at the
- * root and one folder level (the project folders). */
-static void recover_dir(const char *dir, int depth)
+ * root, the project folders and their Git repositories (refs and HEAD
+ * are written the same way), skipping .git/objects and .git/tmp. */
+static void recover_dir(const char *dir, int depth, bool in_git)
 {
     DIR *d = opendir(dir);
     if (!d) return;
@@ -60,9 +61,15 @@ static void recover_dir(const char *dir, int depth)
         const char *n = ent->d_name;
         size_t len = strlen(n);
         if (ent->d_type == DT_DIR) {
-            if (depth == 0 && n[0] != '.') {
+            bool into_git = depth == 1 && strcmp(n, ".git") == 0;
+            bool go = (depth == 0 && n[0] != '.') || into_git ||
+                      (in_git && depth < 8 && strcmp(n, ".") != 0 &&
+                       strcmp(n, "..") != 0 &&
+                       !(depth == 2 && (strcmp(n, "objects") == 0 ||
+                                        strcmp(n, "tmp") == 0)));
+            if (go) {
                 snprintf(sub, 512, "%s/%s", dir, n);
-                recover_dir(sub, 1);
+                recover_dir(sub, depth + 1, in_git || into_git);
             }
             continue;
         }
@@ -89,7 +96,7 @@ static void recover_dir(const char *dir, int depth)
 
 static void recover_interrupted_writes(void)
 {
-    recover_dir(s_mount, 0);
+    recover_dir(s_mount, 0, false);
 }
 
 #if SOC_SDMMC_HOST_SUPPORTED
