@@ -264,8 +264,10 @@ static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
     return ret;
 }
 
-/* Materialise a flat tree's blobs into the working dir; delete local
- * document files not present in the tree. */
+/* Materialise a flat tree's documents into the working dir; delete
+ * local document files not present in the tree. Every file is tried;
+ * the result is an error if any of them could not be written or
+ * deleted, since the working dir then does not match the tree. */
 static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
 {
     if (out_written) *out_written = 0;
@@ -292,10 +294,13 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
             git_oid_eq(&cur, &e->oid))
             continue;
         git_obj_type ot;
-        if (git_odb_read_type(&e->oid, &ot, NULL) != ESP_OK || ot != GIT_OBJ_BLOB)
+        if (git_odb_read_type(&e->oid, &ot, NULL) != ESP_OK || ot != GIT_OBJ_BLOB ||
+            git_odb_read_to_file(&e->oid, NULL, path) != ESP_OK) {
+            ESP_LOGE(TAG, "checkout: cannot write %s", path);
+            ret = ESP_FAIL;
             continue;
-        if (git_odb_read_to_file(&e->oid, NULL, path) == ESP_OK && out_written)
-            (*out_written)++;
+        }
+        if (out_written) (*out_written)++;
     }
 
     /* Delete local document files that are gone from the tree. */
@@ -308,13 +313,18 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
             if (git_tree_get(&t, entries[i].name)) continue;
             char path[400];
             joinp(path, sizeof(path), s_cfg.local_path, entries[i].name);
-            sd_card_delete_file(path);
+            if (sd_card_delete_file(path) != ESP_OK) {
+                ESP_LOGE(TAG, "checkout: cannot delete %s", path);
+                ret = ESP_FAIL;
+            }
         }
         heap_caps_free(entries);
+    } else {
+        ret = ESP_ERR_NO_MEM;
     }
 
     git_tree_free(&t);
-    return ESP_OK;
+    return ret;
 }
 
 /* Turn merge results into a stored flat tree. */
@@ -476,8 +486,14 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         have_head = true;
 
         git_oid sub;
-        if (subtree_for_commit(&local_head, &sub) == ESP_OK)
-            checkout_subtree(&sub, NULL);
+        ret = subtree_for_commit(&local_head, &sub);
+        if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL);
+        if (ret != ESP_OK) {
+            /* Start over as a first sync next time. */
+            git_ref_delete(localref);
+            set_error("Cannot write files to the SD card");
+            return ret;
+        }
     }
 
     /* 3. local commit from the working tree */
@@ -520,6 +536,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         st->committed_local = true;
         ESP_LOGI(TAG, "local commit %s", newc.hex);
     }
+
+    /* The commit that matches the files on the card, for rolling back
+     * if the integrated tree cannot be written out (step 5). */
+    git_oid committed_head = local_head;
 
     /* 4. integrate remote */
     bool need_integrate = remote_has_branch &&
@@ -636,9 +656,22 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     /* 5. checkout the integrated tree */
     {
         git_oid sub;
-        if (subtree_for_commit(&local_head, &sub) == ESP_OK) {
+        ret = subtree_for_commit(&local_head, &sub);
+        if (ret == ESP_OK) {
             notify(GIT_SYNC_IN_PROGRESS, "Updating working files...");
-            checkout_subtree(&sub, &st->files_out);
+            ret = checkout_subtree(&sub, &st->files_out);
+        }
+        if (ret != ESP_OK) {
+            /* Otherwise the next sync would commit the old files on
+             * top of the integrated history and revert the server's
+             * changes. Going back to the commit of the card's files
+             * makes it integrate again instead. */
+            if (!git_oid_is_zero(&committed_head))
+                git_ref_write(localref, &committed_head);
+            else
+                git_ref_delete(localref);
+            set_error("Cannot write files to the SD card");
+            return ret;
         }
     }
 

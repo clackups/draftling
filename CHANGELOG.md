@@ -25,6 +25,11 @@ in the git log.
   documents (images, a `git.cfg` someone committed, ...) were written
   into the project folder, where a committed `git.cfg` replaced the
   device's own Git settings.
+- **Git sync reports files it cannot write**: when a file from the
+  server could not be written to the SD card (for example a full
+  card), the sync still said it was complete, and the next sync then
+  committed the old file over the server's version. It now stops with
+  "Cannot write files to the SD card" and tries again next time.
 
 ## [1.0.23] - 2026-11-07
 
