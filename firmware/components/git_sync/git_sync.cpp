@@ -1221,8 +1221,8 @@ static git_sync_file_status_t file_diff_cfg(git_cfg_t *c, const char *project_di
     char path[400];
     joinp(path, sizeof(path), c->local_path, name);
     git_oid work_blob;
-    if (data) git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob);
-    else if (git_odb_hash_file(GIT_OBJ_BLOB, path, &work_blob) != ESP_OK)
+    if ((data ? git_odb_hash(GIT_OBJ_BLOB, data, len, &work_blob)
+              : git_odb_hash_file(GIT_OBJ_BLOB, path, &work_blob)) != ESP_OK)
         return GIT_SYNC_FILE_ERROR;
 
     git_sync_file_status_t result = GIT_SYNC_FILE_ERROR;

@@ -133,6 +133,7 @@ struct git_sha1_ctx {
 #else
     mbedtls_sha1_context ctx;
 #endif
+    bool err;           /* an update failed: the digest is wrong */
 };
 
 git_sha1_ctx *git_sha1_new(void)
@@ -156,23 +157,33 @@ void git_sha1_update(git_sha1_ctx *c, const void *data, size_t n)
 {
     if (!c || !n) return;
 #if ESP_IDF_VERSION_MAJOR >= 6
-    psa_hash_update(&c->op, data, n);
+    if (psa_hash_update(&c->op, data, n) != PSA_SUCCESS) c->err = true;
 #else
-    mbedtls_sha1_update(&c->ctx, data, n);
+    if (mbedtls_sha1_update(&c->ctx, data, n) != 0) c->err = true;
 #endif
 }
 
-void git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ])
+bool git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ])
 {
-    if (!c) { memset(out, 0, GIT_OID_RAWSZ); return; }
+    if (!c) { memset(out, 0, GIT_OID_RAWSZ); return false; }
+    bool ok = !c->err;
 #if ESP_IDF_VERSION_MAJOR >= 6
     size_t olen = 0;
-    psa_hash_finish(&c->op, out, GIT_OID_RAWSZ, &olen);
+    if (psa_hash_finish(&c->op, out, GIT_OID_RAWSZ, &olen) != PSA_SUCCESS ||
+        olen != GIT_OID_RAWSZ) {
+        psa_hash_abort(&c->op);
+        ok = false;
+    }
 #else
-    mbedtls_sha1_finish(&c->ctx, out);
+    if (mbedtls_sha1_finish(&c->ctx, out) != 0) ok = false;
     mbedtls_sha1_free(&c->ctx);
 #endif
     free(c);
+    if (!ok) {
+        ESP_LOGE("git.sha1", "SHA-1 computation failed");
+        memset(out, 0, GIT_OID_RAWSZ);
+    }
+    return ok;
 }
 
 void git_sha1_hex(const void *data, size_t n, git_oid *out)

@@ -415,7 +415,7 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set)
     }
 
     uint8_t trailer[GIT_OID_RAWSZ];
-    git_sha1_final(sha, trailer);
+    if (!git_sha1_final(sha, trailer) && ret == ESP_OK) ret = ESP_FAIL;
     if (ret == ESP_OK && fwrite(trailer, 1, sizeof(trailer), f) != sizeof(trailer))
         ret = ESP_FAIL;
     /* put_bytes() does not check its writes: a short one leaves the

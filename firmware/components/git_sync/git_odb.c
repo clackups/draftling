@@ -143,7 +143,7 @@ bool git_odb_exists(const git_oid *oid)
     return file_exists(p);
 }
 
-void git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
+esp_err_t git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
 {
     char hdr[32];
     int hlen = snprintf(hdr, sizeof(hdr), "%s %zu", git_obj_type_name(type), len);
@@ -151,8 +151,9 @@ void git_odb_hash(git_obj_type type, const void *data, size_t len, git_oid *out)
     uint8_t raw[GIT_OID_RAWSZ];
     git_sha1_update(c, hdr, (size_t)hlen + 1);   /* include the NUL */
     git_sha1_update(c, data, len);
-    git_sha1_final(c, raw);
+    if (!git_sha1_final(c, raw)) return ESP_FAIL;
     git_oid_from_raw(out, raw);
+    return ESP_OK;
 }
 
 #define IO_CHUNK 4096
@@ -185,7 +186,7 @@ esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out)
         if (total != (size_t)size) ret = ESP_FAIL;
     }
     uint8_t raw[GIT_OID_RAWSZ];
-    git_sha1_final(c, raw);       /* frees c (NULL-safe) */
+    if (!git_sha1_final(c, raw) && ret == ESP_OK) ret = ESP_FAIL;   /* frees c */
     if (ret == ESP_OK) git_oid_from_raw(out, raw);
     free(buf);
     fclose(f);
@@ -251,7 +252,7 @@ esp_err_t git_odb_writer_finish(git_odb_writer *w, git_oid *out_oid)
     git_zwriter_free(w->zw);
     w->zw = NULL;
     uint8_t raw[GIT_OID_RAWSZ];
-    git_sha1_final(w->sha, raw);
+    if (!git_sha1_final(w->sha, raw)) ret = ESP_FAIL;
     w->sha = NULL;
     if (fclose(w->fp) != 0) ret = ESP_FAIL;
     w->fp = NULL;
@@ -274,7 +275,8 @@ esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
                         git_oid *out_oid)
 {
     git_oid oid;
-    git_odb_hash(type, data, len, &oid);
+    esp_err_t hr = git_odb_hash(type, data, len, &oid);
+    if (hr != ESP_OK) return hr;
     if (out_oid) *out_oid = oid;
     if (git_odb_exists(&oid)) return ESP_OK;
 

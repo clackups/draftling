@@ -69,7 +69,9 @@ bool  git_buf_printf(git_buf *b, const char *fmt, ...);
 typedef struct git_sha1_ctx git_sha1_ctx;
 git_sha1_ctx *git_sha1_new(void);
 void git_sha1_update(git_sha1_ctx *c, const void *data, size_t n);
-void git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]); /* frees c */
+/* Frees c (NULL-safe). False -- with out zeroed -- when c is NULL or
+ * any update or the final step failed. */
+bool git_sha1_final(git_sha1_ctx *c, uint8_t out[GIT_OID_RAWSZ]);
 void git_sha1_hex(const void *data, size_t n, git_oid *out);
 
 /* ---- streaming zlib (miniz in ROM) ------------------------------- */
@@ -143,7 +145,7 @@ esp_err_t git_odb_read_type(const git_oid *oid, git_obj_type *type, size_t *size
 esp_err_t git_odb_write(git_obj_type type, const void *data, size_t len,
                         git_oid *out_oid);
 /* Hash without writing (used to test the working tree against HEAD). */
-void      git_odb_hash(git_obj_type type, const void *data, size_t len,
+esp_err_t git_odb_hash(git_obj_type type, const void *data, size_t len,
                        git_oid *out_oid);
 /* Hash a file's content as an object of the given type. */
 esp_err_t git_odb_hash_file(git_obj_type type, const char *path, git_oid *out_oid);
