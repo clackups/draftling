@@ -67,6 +67,10 @@ in the git log.
   scan result could be dropped while the screen was refreshing,
   leaving the list waiting forever (likewise the Draftbox prompt
   waiting for WiFi). The result is now always shown.
+- **No more restarts on a screen bus error**: on boards with an
+  ST77922, NV3041A or AXS15231B screen, a transient error while
+  updating the screen or changing the brightness restarted the device,
+  losing unsaved text. It is now logged and the next update repaints.
 
 ## [1.0.23] - 2026-11-07
 

@@ -383,8 +383,8 @@ extern "C" void display_set_backlight(int percent)
     if (percent < 0) percent = 0;
     if (percent > 100) percent = 100;
     uint32_t duty = (uint32_t)((H752_BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(H752_BL_LEDC_MODE, H752_BL_LEDC_CHANNEL));
 }
 
 extern "C" void display_sleep(void)

@@ -399,9 +399,9 @@ extern "C" void display_set_backlight(int percent)
 #if defined(CONFIG_DRAFTLING_HAS_CH422G)
     backlight_ch422g_set(percent);
 #else
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL,
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL,
                                   backlight_duty(percent)));
-    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
 #endif
 }
 

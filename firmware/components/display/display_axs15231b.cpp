@@ -255,8 +255,8 @@ extern "C" void display_set_backlight(int percent)
          * mapping: LCD_PWM_MODE_<bright> = (0xff - <bright>). */
         duty = BL_LEDC_DUTY_MAX - duty;
     }
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
 #endif
 }
 
@@ -404,7 +404,7 @@ static void spi_send_cmd(uint8_t cmd, const uint8_t *params, size_t n_params)
         tx.base.tx_buffer = params;
     }
 
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
 
     cs_high();
 }
@@ -442,7 +442,7 @@ static void spi_send_pixels_first(uint8_t operand, const uint8_t *data, size_t n
     tx.base.length    = n_bytes * 8;
     tx.base.tx_buffer = data;
 
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
 }
 
 static void spi_send_pixels_cont(const uint8_t *data, size_t n_bytes)
@@ -459,7 +459,7 @@ static void spi_send_pixels_cont(const uint8_t *data, size_t n_bytes)
     tx.base.length    = n_bytes * 8;
     tx.base.tx_buffer = data;
 
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, (spi_transaction_t *)&tx));
 }
 
 static void hw_reset(void)
@@ -1444,7 +1444,7 @@ extern "C" void display_deep_sleep_prepare(void)
         g.pin_bit_mask = (1ULL << cut_pin);
         g.pull_down_en = GPIO_PULLDOWN_DISABLE;
         g.pull_up_en   = GPIO_PULLUP_DISABLE;
-        ESP_ERROR_CHECK(gpio_config(&g));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(gpio_config(&g));
         gpio_set_level((gpio_num_t)cut_pin, 0);
     } else {
         /* Path (1): pin is already configured by backlight_pwm_init.
@@ -1457,8 +1457,8 @@ extern "C" void display_deep_sleep_prepare(void)
         gpio_set_level((gpio_num_t)cut_pin, s_bl_active_low ? 1 : 0);
 #else
         uint32_t off_duty = s_bl_active_low ? BL_LEDC_DUTY_MAX : 0;
-        ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, off_duty));
-        ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, off_duty));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
 #endif
     }
 

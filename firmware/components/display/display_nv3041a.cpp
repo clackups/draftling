@@ -217,7 +217,7 @@ static void write_reg(uint8_t cmd, const uint8_t *data, size_t len)
     t.address_bits = 24;
     t.base.length    = len * 8;
     t.base.tx_buffer = len ? data : NULL;
-    ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, &t.base));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, &t.base));
 }
 
 static void send_init_table(void)
@@ -265,7 +265,7 @@ static void write_fb_rect(int x1, int y1, int x2, int y2)
         t.address_bits = 24;
         t.base.length    = n * 16;
         t.base.tx_buffer = s_chunk;
-        ESP_ERROR_CHECK(spi_device_polling_transmit(s_spi, &t.base));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(spi_device_polling_transmit(s_spi, &t.base));
         done += n;
     }
 }
@@ -302,8 +302,8 @@ extern "C" void display_set_backlight(int percent)
     s_bl_last_pct = percent;
     if (s_cfg.bl < 0) return;
     uint32_t duty = (uint32_t)((BL_LEDC_DUTY_MAX * percent) / 100);
-    ESP_ERROR_CHECK(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_set_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL, duty));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ledc_update_duty(BL_LEDC_MODE, BL_LEDC_CHANNEL));
 }
 
 extern "C" void display_init(int /*pin_a*/, int /*pin_b*/, int /*pin_c*/,
