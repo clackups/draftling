@@ -80,6 +80,12 @@ static bool s_time_synced = false;
 #define GIT_SYNC_STACK_SIZE (24 * 1024)
 static StackType_t *s_stack_buf = NULL;
 static StaticTask_t s_task_tcb;
+/* One long-lived worker runs every sync: its static stack and TCB are
+ * never handed to a second task while the first is still winding
+ * down (a self-deleted static task stays on FreeRTOS' termination list
+ * until the idle task gets to it). */
+static TaskHandle_t s_worker = NULL;
+static volatile git_sync_direction_t s_req_dir = GIT_SYNC_BOTH;
 
 /* ---- helpers ----------------------------------------------------- */
 
@@ -811,13 +817,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
 
 /* ---- task ------------------------------------------------------- */
 
-static void sync_task(void *arg)
+static void run_sync(git_sync_direction_t dir)
 {
-    git_sync_direction_t dir = (git_sync_direction_t)(intptr_t)arg;
-
     if (!wifi_manager_is_connected()) {
         set_error("WiFi not connected");
-        vTaskDelete(NULL);
         return;
     }
 
@@ -860,8 +863,15 @@ static void sync_task(void *arg)
     } else if (s_state != GIT_SYNC_ERROR) {
         set_error("Sync failed");
     }
+}
 
-    vTaskDelete(NULL);
+static void sync_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        run_sync(s_req_dir);
+    }
 }
 
 /* ---- config --------------------------------------------------- */
@@ -1144,15 +1154,18 @@ extern "C" esp_err_t git_sync_start(const char *project_dir, git_sync_direction_
 
     s_state = GIT_SYNC_IN_PROGRESS;
 
-    if (!s_stack_buf) {
-        s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, MALLOC_CAP_SPIRAM);
-        if (!s_stack_buf) { set_error("Failed to alloc sync stack"); return ESP_ERR_NO_MEM; }
+    if (!s_worker) {
+        if (!s_stack_buf) {
+            s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, MALLOC_CAP_SPIRAM);
+            if (!s_stack_buf) { set_error("Failed to alloc sync stack"); return ESP_ERR_NO_MEM; }
+        }
+        s_worker = xTaskCreateStaticPinnedToCore(
+            sync_worker, "git_sync", GIT_SYNC_STACK_SIZE / sizeof(StackType_t),
+            NULL, 3, s_stack_buf, &s_task_tcb, 0);
+        if (!s_worker) { set_error("Failed to start sync task"); return ESP_FAIL; }
     }
-
-    TaskHandle_t h = xTaskCreateStaticPinnedToCore(
-        sync_task, "git_sync", GIT_SYNC_STACK_SIZE / sizeof(StackType_t),
-        (void *)(intptr_t)direction, 3, s_stack_buf, &s_task_tcb, 0);
-    if (!h) { set_error("Failed to start sync task"); return ESP_FAIL; }
+    s_req_dir = direction;
+    xTaskNotifyGive(s_worker);
     return ESP_OK;
 }
 
