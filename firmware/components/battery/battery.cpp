@@ -568,10 +568,24 @@ static void cw2017_ensure_profile(void)
         if (match) return; /* correct profile already loaded */
     }
 
-    for (uint8_t i = 0; i < CW2017_BATINFO_LEN; i++) {
-        cw2017_write_u8((uint8_t)(CW2017_REG_BATINFO + i), CW2017_BATINFO[i]);
+    /* Write, then read back: one lost byte leaves a wrong profile and a
+     * percentage that is off without any other sign of it. */
+    int bad = 0;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        bad = 0;
+        for (uint8_t i = 0; i < CW2017_BATINFO_LEN; i++) {
+            uint8_t reg = (uint8_t)(CW2017_REG_BATINFO + i), b = 0;
+            if (cw2017_write_u8(reg, CW2017_BATINFO[i]) != 0 ||
+                cw2017_read_u8(reg, &b) != 0 || b != CW2017_BATINFO[i])
+                bad++;
+        }
+        if (bad == 0) break;
     }
-    cw2017_write_u8(CW2017_REG_CONFIG, 0x80); /* update-enable (bit7) */
+    if (bad) {
+        ESP_LOGE(TAG, "CW2017: %d profile byte(s) did not take, battery %% may be wrong", bad);
+    }
+    if (cw2017_write_u8(CW2017_REG_CONFIG, 0x80) != 0) /* update-enable (bit7) */
+        ESP_LOGE(TAG, "CW2017: cannot enable the profile");
     vTaskDelay(pdMS_TO_TICKS(20));
     cw2017_reset();
     for (int i = 0; i < 50; i++) { /* ~1 s cap for SOC to become valid */
