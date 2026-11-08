@@ -65,6 +65,18 @@
 
 static const char *TAG = "Draftling";
 
+/* Press and release one key, as if typed on a keyboard: how the board
+ * buttons (page turn, Esc, F1, ...) drive the editor. */
+[[maybe_unused]] static void inject_key(uint8_t keycode)
+{
+    kb_event_t ev = {};
+    ev.keycode = keycode;
+    ev.pressed = true;
+    editor_ui_handle_key(&ev);
+    ev.pressed = false;
+    editor_ui_handle_key(&ev);
+}
+
 #if defined(CONFIG_DRAFTLING_DEBUG_POWER) || \
     defined(CONFIG_DRAFTLING_CHARGER_WATCHDOG_REASSERT)
 /* esp_timer handle for the periodic charger maintenance task. Created
@@ -1268,20 +1280,9 @@ static void pre_sleep_reterminal_sticky_deinit(void)
  * the editor returns to the file browser (auto-saving, see
  * editor_ui.cpp). */
 
-static void h752_inject_key(uint8_t keycode)
-{
-    ESP_LOGD(TAG, "H752 key inject: keycode=0x%02X", keycode);
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void h752_touch_button_cb(void)
 {
-    h752_inject_key(KB_KEY_ESCAPE);
+    inject_key(KB_KEY_ESCAPE);
 }
 
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
@@ -1326,7 +1327,7 @@ static void h752_user_key_poll_cb(void *arg)
     } else {
         /* Released: inject F1 only for a short press (< 2 s). */
         if (!long_press_fired) {
-            h752_inject_key(KB_KEY_F1);
+            inject_key(KB_KEY_F1);
         }
         hold_ticks       = 0;
         long_press_fired = false;
@@ -1364,16 +1365,6 @@ static void h752_user_key_init(void)
  * keeps using the generic wakeup_btn_init() path below unchanged
  * (deep-sleep wake source + 2 s hold to forget BLE keyboards). */
 
-static void xteink_x4_pro_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void xteink_x4_pro_btn_poll_cb(void *arg)
 {
     (void)arg;
@@ -1395,7 +1386,7 @@ static void xteink_x4_pro_btn_poll_cb(void *arg)
         down[i] = raw_down;
         if (!down[i]) {
             /* Inject on release, matching the H752 side-key convention. */
-            xteink_x4_pro_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
     }
 }
@@ -1441,16 +1432,6 @@ static void xteink_x4_pro_btn_init(void)
 #define XTEINK_X4C_DEBOUNCE_SAMPLES 5
 #define XTEINK_X4C_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
-static void xteink_x4_classic_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void xteink_x4_classic_power_key_poll_cb(void *arg)
 {
     (void)arg;
@@ -1486,7 +1467,7 @@ static void xteink_x4_classic_power_key_poll_cb(void *arg)
         long_press_fired = false;
     } else {
         if (!long_press_fired) {
-            xteink_x4_classic_inject_key(KB_KEY_F1);
+            inject_key(KB_KEY_F1);
         }
         hold_ticks       = 0;
         long_press_fired = false;
@@ -1517,7 +1498,7 @@ static void xteink_x4_classic_nav_poll_cb(void *arg)
         stable[i] = 0;
         down[i] = raw_down;
         if (!down[i]) {
-            xteink_x4_classic_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
     }
 }
@@ -1596,16 +1577,6 @@ static void xteink_x4_classic_btn_init(void)
  * well under normal human button-press duration. */
 #define CROWPANEL_DEBOUNCE_SAMPLES 5
 
-static void crowpanel_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
 #define CROWPANEL_MENU_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
 
@@ -1644,7 +1615,7 @@ static void crowpanel_menu_key_poll_cb(void *arg)
         long_press_fired = false;
     } else {
         if (!long_press_fired) {
-            crowpanel_inject_key(KB_KEY_F1);
+            inject_key(KB_KEY_F1);
         }
         hold_ticks       = 0;
         long_press_fired = false;
@@ -1692,7 +1663,7 @@ static void crowpanel_nav_poll_cb(void *arg)
         stable[i] = 0;
         down[i] = raw_down;
         if (!down[i]) {
-            crowpanel_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
     }
 }
@@ -1730,16 +1701,6 @@ static void crowpanel_nav_init(void)
  * CrowPanel 5.79"'s Back/dial-switch convention above. All three are
  * polled at BTN_POLL_PERIOD_MS and injected on release. */
 
-static void ws_epaper397_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void ws_epaper397_nav_poll_cb(void *arg)
 {
     (void)arg;
@@ -1761,7 +1722,7 @@ static void ws_epaper397_nav_poll_cb(void *arg)
         stable[i] = 0;
         down[i] = raw_down;
         if (!down[i]) {
-            ws_epaper397_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
     }
 }
@@ -1799,16 +1760,6 @@ static void ws_epaper397_nav_init(void)
  * below unchanged (deep-sleep wake source, short press = sleep, 2 s
  * hold = forget BLE keyboards). */
 
-static void reterminal_sticky_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void reterminal_sticky_btn_poll_cb(void *arg)
 {
     (void)arg;
@@ -1830,7 +1781,7 @@ static void reterminal_sticky_btn_poll_cb(void *arg)
         down[i] = raw_down;
         if (!down[i]) {
             /* Inject on release, matching the Xteink X4 Pro convention. */
-            reterminal_sticky_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
     }
 }
@@ -1866,16 +1817,6 @@ static void reterminal_sticky_btn_init(void)
  * wakeup_btn_poll_cb(), and B enters deep sleep through
  * sleep_button_poll_cb() (CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO). */
 
-static void papermono_inject_key(uint8_t keycode)
-{
-    kb_event_t ev = {};
-    ev.keycode = keycode;
-    ev.pressed = true;
-    editor_ui_handle_key(&ev);
-    ev.pressed = false;
-    editor_ui_handle_key(&ev);
-}
-
 static void papermono_btn_poll_cb(void *arg)
 {
     (void)arg;
@@ -1898,7 +1839,7 @@ static void papermono_btn_poll_cb(void *arg)
         stable[i] = 0;
         down[i] = raw_down;
         if (!down[i] && hold_ticks[i] < BTN_LONG_PRESS_TICKS) {
-            papermono_inject_key(kButtons[i].keycode);
+            inject_key(kButtons[i].keycode);
         }
         hold_ticks[i] = 0;
     }
