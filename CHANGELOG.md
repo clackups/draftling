@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.24] - 2026-11-08
+
 ### Added
 
 - **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
