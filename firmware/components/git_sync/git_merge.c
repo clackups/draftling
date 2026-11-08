@@ -664,16 +664,28 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
             git_merge_path_result *r = &res[nn];
             strlcpy(r->name, nm, sizeof(r->name));
             r->conflict = false;
+            /* Entries other than plain files (folders, symlinks,
+             * submodules) cannot be line-merged. */
+            bool plain = (!oe || (oe->mode & 0170000) == 0100000) &&
+                         (!te || (te->mode & 0170000) == 0100000) &&
+                         (!be || (be->mode & 0170000) == 0100000);
 
             if (git_oid_eq(&oo, &to)) {
                 r->oid = oo;                       /* identical (incl. both deleted) */
+                r->mode = oe ? oe->mode : 0;
             } else if (git_oid_eq(&oo, &bo)) {
                 r->oid = to;                       /* only theirs changed */
+                r->mode = te ? te->mode : 0;
             } else if (git_oid_eq(&to, &bo)) {
                 r->oid = oo;                       /* only ours changed */
-            } else if (git_oid_is_zero(&oo) || git_oid_is_zero(&to)) {
-                /* delete/modify conflict: keep the surviving content */
-                r->oid = git_oid_is_zero(&oo) ? to : oo;
+                r->mode = oe ? oe->mode : 0;
+            } else if (git_oid_is_zero(&oo) || git_oid_is_zero(&to) || !plain) {
+                /* delete/modify conflict: keep the surviving content;
+                 * both sides changed a folder or other non-file entry:
+                 * keep ours */
+                bool take_ours = !git_oid_is_zero(&oo);
+                r->oid = take_ours ? oo : to;
+                r->mode = take_ours ? oe->mode : te->mode;
                 r->conflict = true;
                 (*out_nconflicts)++;
             } else {
@@ -698,6 +710,7 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
                 if (ret == ESP_OK) ret = git_odb_write_file(GIT_OBJ_BLOB, pm, &r->oid);
                 remove(pb); remove(po); remove(pt); remove(pm);
                 if (ret != ESP_OK) goto done_res;
+                r->mode = oe->mode;
                 r->conflict = conflict;
                 if (conflict) (*out_nconflicts)++;
                 ESP_LOGI(TAG, "merged %s%s", nm, conflict ? " (CONFLICT)" : "");

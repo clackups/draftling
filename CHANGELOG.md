@@ -38,6 +38,11 @@ in the git log.
 - **Move / copy to project with many projects**: the Alt+M / Alt+C
   project picker (and the one for files outside projects) listed only
   the first 32 projects.
+- **Git sync keeps the repository's other files**: a sync commit
+  replaced the whole synced folder of the repository with the
+  documents on the card, deleting sub-folders, images, `.gitignore`
+  and any other file there (with no `path=` set: in the whole
+  repository). Only documents are changed now; everything else stays.
 
 ## [1.0.23] - 2026-11-07
 

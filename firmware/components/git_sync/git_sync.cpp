@@ -225,20 +225,29 @@ static void joinp(char *out, size_t osz, const char *dir, const char *name)
     strlcat(out, name, osz);
 }
 
-/* Build a flat tree object from the document files in the working dir.
- * Returns the tree oid (zero-cleared when there are no files). */
-static esp_err_t build_worktree_subtree(git_oid *out, int *out_nfiles)
+/* Build the synced sub-tree from the document files in the working
+ * dir. Only documents are synced, so everything else in base (the
+ * current sub-tree: folders, images, README files...) is kept as it
+ * is; its documents are replaced by the ones on the card. Returns the
+ * tree oid (zero-cleared when the tree ends up empty). */
+static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *out_nfiles)
 {
     git_oid_clear(out);
     *out_nfiles = 0;
 
+    git_tree t = {};
+    esp_err_t ret = git_tree_load(base, &t);    /* zero oid = empty tree */
+    if (ret != ESP_OK) return ret;
+    for (int i = t.count - 1; i >= 0; i--) {
+        const git_tree_entry *e = &t.entries[i];
+        if ((e->mode & 040000) != 040000 && is_doc(e->name))
+            git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
+    }
+
     sd_card_file_entry_t *entries = NULL;
     int count = 0;
     esp_err_t lr = sd_card_list_dir(s_cfg.local_path, &entries, &count);
-    if (lr != ESP_OK) return lr;
-
-    git_tree t = {};
-    esp_err_t ret = ESP_OK;
+    if (lr != ESP_OK) { git_tree_free(&t); return lr; }
     for (int i = 0; i < count; i++) {
         if (entries[i].is_dir || !is_doc(entries[i].name)) continue;
 
@@ -329,7 +338,7 @@ static esp_err_t results_to_tree(const git_merge_path_result *res, int n, git_oi
     git_tree t = {};
     for (int i = 0; i < n; i++) {
         if (git_oid_is_zero(&res[i].oid)) continue;      /* deleted */
-        if (!git_tree_set(&t, 0100644, res[i].name, &res[i].oid)) {
+        if (!git_tree_set(&t, res[i].mode, res[i].name, &res[i].oid)) {
             git_tree_free(&t);
             return ESP_ERR_NO_MEM;
         }
@@ -496,14 +505,14 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     notify(GIT_SYNC_IN_PROGRESS, "Committing local changes...");
     ensure_time();
 
-    git_oid ours_sub;
-    int nfiles = 0;
-    ret = build_worktree_subtree(&ours_sub, &nfiles);
-    if (ret != ESP_OK) { set_error("Cannot read working tree"); return ret; }
-
     git_oid cur_sub;
     ret = subtree_for_commit(have_head ? &local_head : NULL, &cur_sub);
     if (ret != ESP_OK) { set_error("Cannot read current tree"); return ret; }
+
+    git_oid ours_sub;
+    int nfiles = 0;
+    ret = build_worktree_subtree(&cur_sub, &ours_sub, &nfiles);
+    if (ret != ESP_OK) { set_error("Cannot read working tree"); return ret; }
 
     if (!git_oid_eq(&ours_sub, &cur_sub)) {
         git_oid base_root;

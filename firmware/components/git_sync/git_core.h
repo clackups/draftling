@@ -315,9 +315,10 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
 
 typedef struct {
     /* per-path result */
-    char    name[256];
-    git_oid oid;                /* resulting blob (0 => deleted) */
-    bool    conflict;
+    char     name[256];
+    git_oid  oid;               /* resulting entry (0 => deleted) */
+    uint32_t mode;              /* its tree mode (0100644, 040000, ...) */
+    bool     conflict;
 } git_merge_path_result;
 
 /* Merge two flat "name -> blob oid" trees against a common `base` tree.
