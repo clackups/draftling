@@ -21,7 +21,12 @@ files on the "card" and in the repository afterwards:
 5. first sync of an empty project, 6. into an empty repository,
 7. 200 files, 8. more than 32 refs on the server,
 9. invalid branch names are refused,
-10. a rebase of 70 unpushed local commits.
+10. a rebase of 70 unpushed local commits,
+11. documents the card cannot hold (a FAT-invalid name, a symlink) are
+    skipped and kept as they are on the server,
+12. an edited document keeps its file mode,
+13. a mode change on the server survives a local edit of the file,
+14. a rebase range whose base is off the first-parent path is refused.
 
 Run it after changing anything under `components/git_sync/`:
 
