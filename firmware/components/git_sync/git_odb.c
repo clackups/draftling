@@ -34,7 +34,7 @@ static int mkdir_p(const char *path)
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
-            if (mkdir(tmp, 0777) != 0 && errno != EEXIST) { *p = '/'; }
+            mkdir(tmp, 0777);    /* the final mkdir() below reports failure */
             *p = '/';
         }
     }
@@ -58,6 +58,7 @@ static esp_err_t read_whole_file(const char *path, git_buf *out)
     while ((r = fread(chunk, 1, sizeof(chunk), f)) > 0) {
         if (!git_buf_put(out, chunk, r)) { ret = ESP_ERR_NO_MEM; break; }
     }
+    if (ret == ESP_OK && ferror(f)) ret = ESP_FAIL;
     fclose(f);
     return ret;
 }
@@ -88,18 +89,22 @@ esp_err_t git_repo_open(const char *workdir)
     snprintf(s_gitdir, sizeof(s_gitdir), "%s/.git", s_workdir);
 
     char path[320];
-    if (mkdir_p(s_gitdir) != 0) {
-        ESP_LOGE(TAG, "cannot create %s", s_gitdir);
-        return ESP_FAIL;
+    static const char *const dirs[] = { "", "/objects", "/refs/heads",
+                                        "/refs/remotes/origin", "/tmp" };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        snprintf(path, sizeof(path), "%s%s", s_gitdir, dirs[i]);
+        if (mkdir_p(path) != 0) {
+            ESP_LOGE(TAG, "cannot create %s", path);
+            return ESP_FAIL;
+        }
     }
-    snprintf(path, sizeof(path), "%s/objects", s_gitdir);  mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/refs/heads", s_gitdir); mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/refs/remotes/origin", s_gitdir); mkdir_p(path);
-    snprintf(path, sizeof(path), "%s/tmp", s_gitdir); mkdir_p(path);
 
     snprintf(path, sizeof(path), "%s/HEAD", s_gitdir);
-    if (!file_exists(path))
-        write_whole_file(path, "ref: refs/heads/main\n", 21);
+    if (!file_exists(path) &&
+        write_whole_file(path, "ref: refs/heads/main\n", 21) != ESP_OK) {
+        ESP_LOGE(TAG, "cannot write %s", path);
+        return ESP_FAIL;
+    }
 
     s_open = true;
     return ESP_OK;
@@ -456,14 +461,20 @@ static void ref_path(const char *name, char *out, size_t outsz)
     snprintf(out, outsz, "%s/%s", s_gitdir, name);
 }
 
-esp_err_t git_ref_read(const char *name, git_oid *out)
+static esp_err_t ref_read_depth(const char *name, git_oid *out, int depth)
 {
+    if (depth > 5) {                       /* "ref: X" loops */
+        ESP_LOGE(TAG, "symbolic ref loop at %s", name);
+        return ESP_FAIL;
+    }
     char p[352];
     ref_path(name, p, sizeof(p));
 
     git_buf b = GIT_BUF_INIT;
     esp_err_t ret = read_whole_file(p, &b);
-    if (ret != ESP_OK) { git_buf_free(&b); return ESP_ERR_NOT_FOUND; }
+    /* ESP_ERR_NOT_FOUND = no such ref; anything else is a read error,
+     * which must not look like "no commit yet". */
+    if (ret != ESP_OK) { git_buf_free(&b); return ret; }
 
     /* trim */
     while (b.len && (b.data[b.len - 1] == '\n' || b.data[b.len - 1] == '\r' ||
@@ -474,14 +485,26 @@ esp_err_t git_ref_read(const char *name, git_oid *out)
         char target[128];
         strlcpy(target, (char *)b.data + 5, sizeof(target));
         git_buf_free(&b);
-        return git_ref_read(target, out);
+        return ref_read_depth(target, out, depth + 1);
     }
 
     if (b.len < GIT_OID_HEXSZ) { git_buf_free(&b); return ESP_FAIL; }
-    memcpy(out->hex, b.data, GIT_OID_HEXSZ);
-    out->hex[GIT_OID_HEXSZ] = '\0';
+    git_oid oid;
+    memcpy(oid.hex, b.data, GIT_OID_HEXSZ);
+    oid.hex[GIT_OID_HEXSZ] = '\0';
     git_buf_free(&b);
+    uint8_t raw[GIT_OID_RAWSZ];
+    if (!git_oid_to_raw(raw, &oid)) {
+        ESP_LOGE(TAG, "ref %s is not an object id", name);
+        return ESP_FAIL;
+    }
+    *out = oid;
     return ESP_OK;
+}
+
+esp_err_t git_ref_read(const char *name, git_oid *out)
+{
+    return ref_read_depth(name, out, 0);
 }
 
 esp_err_t git_ref_write(const char *name, const git_oid *oid)

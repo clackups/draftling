@@ -496,8 +496,14 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
      * as some garbage non-zero SHA instead of "no commit". */
     git_oid local_head;
     git_oid_clear(&local_head);
-    bool have_head = (git_ref_read(localref, &local_head) == ESP_OK) &&
-                     !git_oid_is_zero(&local_head);
+    esp_err_t rr = git_ref_read(localref, &local_head);
+    if (rr != ESP_OK && rr != ESP_ERR_NOT_FOUND) {
+        /* Not "no commit yet": treating it so would start over as a
+         * first sync. */
+        set_error("Cannot read the local Git history");
+        return rr;
+    }
+    bool have_head = rr == ESP_OK && !git_oid_is_zero(&local_head);
 
     /* 2. initial clone */
     if (!have_head && remote_has_branch) {
