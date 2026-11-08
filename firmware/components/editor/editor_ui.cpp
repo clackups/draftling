@@ -195,26 +195,6 @@ static int s_char_w       = 6;
 #define VISIBLE_LINES (s_line_h > 0 ? (s_rp->h / s_line_h) : 1)
 #define CHAR_W        s_char_w
 
-/* How far to jump the viewport when the cursor falls outside it, as a
- * fraction of VISIBLE_LINES. Snapping the cursor to the very edge row
- * (the old behavior: scroll = cur_line, or cur_line - VISIBLE_LINES +
- * 1) means the next line of continued typing or navigation in the
- * same direction immediately falls outside the viewport again,
- * re-triggering a scroll -- and its full-screen re-render -- on
- * every single line. Jumping a majority of the screen height instead
- * leaves headroom so several more lines fit before another scroll is
- * needed, trading a slightly larger jump for far fewer redraws
- * (particularly noticeable on e-paper boards, where every redraw is
- * a visible, non-instant refresh). Used by every scroll-adjustment
- * site in this file, including refresh_active_pane()'s word-wrap
- * correction loop below, so a scroll is never just one line whether
- * it is triggered by ensure_cursor_visible(), editor_ui_move_visual(),
- * or a paragraph wrapping into more rows than expected.
- *
- * Defined near s_rp below (VISIBLE_LINES expands to an s_rp
- * dereference), rather than here alongside VISIBLE_LINES itself. */
-#define SCROLL_JUMP_FRACTION 0.6f
-
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
 static int utf8_cells_in_bytes(const char *text, size_t byte_len);
@@ -1580,14 +1560,6 @@ static pane_t  s_panes[EDITOR_MAX_PANES];
 static pane_t *s_rp          = &s_panes[0];  /* current render / active pane */
 static int     s_pane_count  = 1;            /* 1 = single, 2 = split */
 static int     s_focus       = 0;            /* focused pane index (0..count-1) */
-
-/* See the SCROLL_JUMP_FRACTION comment above; defined here (rather
- * than alongside it) because VISIBLE_LINES dereferences s_rp. */
-static inline int scroll_jump_step(void)
-{
-    int step = (int)(VISIBLE_LINES * SCROLL_JUMP_FRACTION);
-    return step > 0 ? step : 1;
-}
 
 /* Current pane's in-line pixel offset of the scroll line (see
  * pane_t::top_px); 0 once the scroll line or document has changed. */
@@ -3219,38 +3191,24 @@ static void refresh_active_pane(bool draw_cursor)
          * height) -- fall back to the full pool size. */
         if (!counted_visible) s_visible_line_count = MAX_LINE_LABELS;
 
-        /* If the cursor line is in the expected range but wrapped lines
-         * pushed it off-screen, scroll and re-render. Jump by
-         * scroll_jump_step() rather than a single line, same as every
-         * other scroll site in this file (see SCROLL_JUMP_FRACTION) --
-         * otherwise a wrapped paragraph near the bottom of the screen
-         * made this correction nudge by exactly one line while an
-         * unwrapped one jumped by ~60% via ensure_cursor_visible(),
-         * which felt like inconsistent, unpredictable scrolling.
-         * Clamped to cur_line so the jump cannot scroll past the very
-         * line it is trying to bring into view. Use cur_y + cur_h to
-         * ensure the full cursor row is visible. */
+        /* If wrapped lines pushed the cursor below the viewport, start
+         * the next page at its logical line so the cursor appears at
+         * the top, like a Page Down transition. */
         if (scroll < cur_line &&
             (!cur_rendered || cur_y + cur_h > s_rp->h)) {
-            int new_scroll = scroll + scroll_jump_step();
-            if (new_scroll > cur_line) new_scroll = cur_line;
-            editor_set_scroll_line(new_scroll);
+            editor_set_scroll_line(cur_line);
             continue;
         }
 
         /* The cursor is inside the scroll line itself: a paragraph
          * taller than the pane (or one partly hidden above the top
          * edge) has no further whole line to scroll to, so shift the
-         * line within the pane instead (pane_t::top_px). The cursor
-         * row lands about SCROLL_JUMP_FRACTION of a screen away from
-         * the edge it crossed, like the line-granular jumps above,
-         * and top_px is kept a whole number of visual rows so no row
-         * is cut at the top edge. */
+         * line within the pane instead (pane_t::top_px). Keep the
+         * cursor at the opposite edge after the page redraw, and keep
+         * top_px aligned to whole visual rows. */
         if (cur_line == scroll && cur_rendered && !s_touch_panning &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
-            int step_px = scroll_jump_step() * first_pitch;
-            int tgt = (cur_y < 0) ? step_px - cur_h
-                                  : s_rp->h - step_px;
+            int tgt = (cur_y < 0) ? s_rp->h - cur_h : 0;
             if (tgt < 0) tgt = 0;
             if (tgt > s_rp->h - cur_h) tgt = s_rp->h - cur_h;
             int new_top = top_px + cur_y - tgt;
@@ -3351,19 +3309,14 @@ static void ensure_cursor_visible(void)
     editor_get_cursor_pos(&cur_line, &cur_col);
     int scroll = editor_get_scroll_line();
     if (cur_line < scroll) {
-        int new_scroll = scroll - scroll_jump_step();
-        if (new_scroll < 0) new_scroll = 0;
-        /* The cursor jumped further than one scroll step (Ctrl+Home,
-         * Find, goto-line, ...) -- a partial jump would still leave
-         * it off-screen, so land on it exactly instead. */
-        if (cur_line < new_scroll) new_scroll = cur_line;
-        editor_set_scroll_line(new_scroll);
-    } else if (cur_line >= scroll + VISIBLE_LINES) {
-        int new_scroll = scroll + scroll_jump_step();
-        if (cur_line >= new_scroll + VISIBLE_LINES) {
-            new_scroll = cur_line - VISIBLE_LINES + 1;
-        }
-        editor_set_scroll_line(new_scroll);
+        /* Keep the cursor at the bottom of the newly drawn page while
+         * moving toward the start of the document. */
+        int new_scroll = cur_line - page_line_count() + 1;
+        editor_set_scroll_line(new_scroll > 0 ? new_scroll : 0);
+    } else if (cur_line >= scroll + page_line_count()) {
+        /* Keep the cursor at the top of the newly drawn page while
+         * moving toward the end of the document. */
+        editor_set_scroll_line(cur_line);
     }
 }
 
@@ -3537,15 +3490,9 @@ static void editor_ui_move_visual(int direction)
     }
 
     /* If the target visual row is outside the rendered editor area,
-     * scroll and re-render so the row above/below becomes addressable
-     * via ui_point_to_offset(). Jumping by scroll_jump_step() rather
-     * than a single line means holding Up/Down at the edge of the
-     * viewport needs a scroll (and its refresh) only once every few
-     * rows instead of on every keypress -- see the comment on
-     * SCROLL_JUMP_FRACTION. This does not change which visual row the
-     * cursor lands on: target_y is still exactly one row above/below
-     * the cursor's own (not-yet-moved) rendered position, wherever
-     * that ends up after the jump. */
+     * redraw a full page so the next row lands at the opposite edge.
+     * This keeps e-paper redraws page-based rather than refreshing the
+     * whole screen for each cursor step. */
     for (int attempt = 0; attempt < 2; attempt++) {
         if (target_y >= 0 && target_y < s_rp->h) break;
         int sc = editor_get_scroll_line();
@@ -3560,7 +3507,7 @@ static void editor_ui_move_visual(int direction)
              * and the target row is part of it: shift the paragraph
              * within the pane (pane_t::top_px) instead of jumping
              * whole lines, which would skip the rest of it. */
-            int step_px = scroll_jump_step() * ch;
+            int step_px = ch;
             int top = pane_top_px() + (direction < 0 ? -step_px : step_px);
             int max_top = s_prev_line_y[0] + pane_top_px() +
                           s_prev_line_h[0] - ch;
@@ -3572,7 +3519,7 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            int new_sc = sc - scroll_jump_step();
+            int new_sc = sc - page_line_count();
             if (new_sc < 0) new_sc = 0;
             editor_set_scroll_line(new_sc);
         } else {
@@ -3582,11 +3529,9 @@ static void editor_ui_move_visual(int direction)
                 s_visual_goal_x = gx;
                 return;
             }
-            int new_sc = sc + scroll_jump_step();
+            int new_sc = sc + page_line_count();
+            if (new_sc > cur_line + 1) new_sc = cur_line + 1;
             if (new_sc > total - 1) new_sc = total - 1;
-            /* Never scroll past the cursor's own line: its remaining
-             * rows (a tall paragraph) would be skipped. */
-            if (new_sc > cur_line) new_sc = cur_line;
             editor_set_scroll_line(new_sc);
         }
         refresh_focused_pane();
