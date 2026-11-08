@@ -168,6 +168,19 @@ int main(int argc, char **argv)
     CHECK(sync_now("L"));
     CHECK(remote_file("l.md") == "local 69\n" && remote_file("r.md") == "remote\n");
 
+    /* 11. Documents the card cannot hold are skipped, not fatal, and
+     *     stay as they are on the server. */
+    fresh("unwritable documents");
+    seed_remote("echo ok > ok.md && echo q > 'what?.md' && ln -s ok.md link.md");
+    project("U");
+    CHECK(sync_now("U"));
+    CHECK(last_msg.find("2 not copied") != std::string::npos);
+    CHECK(get("sd/U/ok.md") == "ok\n" && !exists("sd/U/what?.md") && !exists("sd/U/link.md"));
+    put("sd/U/ok.md", "ok2\n");
+    CHECK(sync_now("U"));
+    CHECK(remote_file("ok.md") == "ok2\n" && remote_file("what?.md") == "q\n");
+    CHECK(out("git --git-dir=remote.git ls-tree main link.md").find("120000") == 0);
+
     fprintf(stderr, fails ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", fails);
     return fails ? 1 : 0;
 }

@@ -223,6 +223,29 @@ static bool is_doc(const char *name)
             has_suffix(name, l, ".txt"));
 }
 
+/* A name the SD card's FAT file system can store: none of
+ * \ / : * ? " < > |, no control character, no trailing dot or space. */
+static bool fat_name_ok(const char *name)
+{
+    size_t l = strlen(name);
+    if (l == 0 || name[l - 1] == '.' || name[l - 1] == ' ') return false;
+    for (const char *p = name; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || strchr("\\/:*?\"<>|", c)) return false;
+    }
+    return true;
+}
+
+/* A tree entry the sync keeps in step with the card: a plain file
+ * (not a folder, symlink or submodule) that is a document and whose
+ * name the card can store. Every other entry stays in Git untouched:
+ * never written to the card, never removed from the tree. */
+static bool synced_entry(const git_tree_entry *e)
+{
+    uint32_t type = e->mode & 0170000;
+    return type == 0100000 && is_doc(e->name) && fat_name_ok(e->name);
+}
+
 /* "<dir>/<name>" without tripping -Wformat-truncation. */
 static void joinp(char *out, size_t osz, const char *dir, const char *name)
 {
@@ -260,8 +283,7 @@ static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *
     if (ret != ESP_OK) return ret;
     for (int i = t.count - 1; i >= 0; i--) {
         const git_tree_entry *e = &t.entries[i];
-        if ((e->mode & 040000) != 040000 && is_doc(e->name))
-            git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
+        if (synced_entry(e)) git_tree_set(&t, e->mode, e->name, NULL);   /* remove */
     }
 
     sd_card_file_entry_t *entries = NULL;
@@ -292,10 +314,16 @@ static esp_err_t build_worktree_subtree(const git_oid *base, git_oid *out, int *
 /* Materialise a flat tree's documents into the working dir; delete
  * local document files not present in the tree. Every file is tried;
  * the result is an error if any of them could not be written or
- * deleted, since the working dir then does not match the tree. */
-static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
+ * deleted, since the working dir then does not match the tree.
+ * Entries synced_entry() refuses (a name FAT cannot store, a symlink
+ * or submodule named like a document) are counted in *out_skipped,
+ * not treated as errors: they could never be written, and failing on
+ * them would block the project's sync for good. */
+static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written,
+                                  int *out_skipped)
 {
     if (out_written) *out_written = 0;
+    if (out_skipped) *out_skipped = 0;
 
     git_tree t = {};
     esp_err_t ret = git_tree_load(tree_oid, &t);
@@ -309,6 +337,12 @@ static esp_err_t checkout_subtree(const git_oid *tree_oid, int *out_written)
          * into the project folder could overwrite the device's own
          * git.cfg or files the sync never commits back. */
         if (!is_doc(e->name)) continue;
+        if (!synced_entry(e)) {
+            ESP_LOGW(TAG, "checkout: skipping %s (not a plain file, or a name "
+                          "the SD card cannot store)", e->name);
+            if (out_skipped) (*out_skipped)++;
+            continue;
+        }
 
         char path[400];
         joinp(path, sizeof(path), s_cfg.local_path, e->name);
@@ -420,6 +454,7 @@ struct sync_stats {
     bool pushed;
     int  nconflicts;
     int  files_out;
+    int  files_skipped;
 };
 
 static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
@@ -546,7 +581,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
 
             git_oid sub;
             ret = subtree_for_commit(&local_head, &sub);
-            if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL);
+            if (ret == ESP_OK) ret = checkout_subtree(&sub, NULL, &st->files_skipped);
             if (ret != ESP_OK) {
                 /* Start over as a first sync next time. */
                 git_ref_delete(localref);
@@ -727,7 +762,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         ret = subtree_for_commit(&local_head, &sub);
         if (ret == ESP_OK) {
             notify(GIT_SYNC_IN_PROGRESS, "Updating working files...");
-            ret = checkout_subtree(&sub, &st->files_out);
+            ret = checkout_subtree(&sub, &st->files_out, &st->files_skipped);
         }
         if (ret != ESP_OK) {
             /* Otherwise the next sync would commit the old files on
@@ -847,13 +882,17 @@ static void run_sync(git_sync_direction_t dir)
         pos += snprintf(summary + pos, sizeof(summary) - pos,
                         st.nconflicts ? "Sync done, %d conflict(s)" : "Sync complete",
                         st.nconflicts);
-        const char *parts[5];
+        const char *parts[6];
         int np = 0;
-        char b1[24], b2[24];
+        char b1[24], b2[24], b3[32];
         if (st.committed_local) parts[np++] = "committed";
         if (st.fast_forwarded)  parts[np++] = "fast-forward";
         if (st.rebased)         parts[np++] = "rebased";
         if (st.files_out) { snprintf(b1, sizeof(b1), "%d file(s) updated", st.files_out); parts[np++] = b1; }
+        if (st.files_skipped) {
+            snprintf(b3, sizeof(b3), "%d not copied to the card", st.files_skipped);
+            parts[np++] = b3;
+        }
         if (st.pushed) { snprintf(b2, sizeof(b2), "pushed"); parts[np++] = b2; }
         if (np) {
             pos += snprintf(summary + pos, sizeof(summary) - pos, " (");
