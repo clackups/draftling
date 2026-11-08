@@ -18,6 +18,7 @@
  * be used for sync. "branch" is newer than the other fields; an older
  * server leaves it out. */
 #include "draftbox.h"
+#include "git_core.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -322,7 +323,8 @@ esp_err_t draftbox_token_exchange(const char *site, const char *otp,
             json_get_string(resp, "access", access, sizeof(access));
             res->read_only = (strcmp(access, "read") == 0);
             if (cfg_safe(res->token) && cfg_safe(res->clone_url) &&
-                cfg_safe(res->user) && cfg_safe(res->branch)) {
+                cfg_safe(res->user) && cfg_safe(res->branch) &&
+                (!res->branch[0] || git_branch_name_ok(res->branch))) {
                 ret = ESP_OK;
             } else {
                 snprintf(res->error, sizeof(res->error), "invalid server response");

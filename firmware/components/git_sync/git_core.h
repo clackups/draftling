@@ -285,6 +285,11 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set);
 
 /* ---- transport (smart HTTP) ------------------------------------- */
 
+/* Whether s is a branch name git accepts (git check-ref-format
+ * --branch, roughly): no "..", "//", "@{", control characters, space,
+ * ~ ^ : ? * [ \, no leading / trailing '/' or '.', no ".lock" end. */
+bool git_branch_name_ok(const char *s);
+
 typedef struct {
     char base_url[320];         /* ".../repo.git" (no trailing slash) */
     char auth_basic[420];       /* pre-computed "Basic xxx" or "" */

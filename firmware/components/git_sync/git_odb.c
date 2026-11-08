@@ -533,6 +533,22 @@ esp_err_t git_head_set_symbolic(const char *target)
     return write_whole_file(p, line, strlen(line));
 }
 
+bool git_branch_name_ok(const char *s)
+{
+    size_t n = strlen(s);
+    if (n == 0 || s[0] == '/' || s[0] == '.' || s[0] == '-' ||
+        s[n - 1] == '/' || s[n - 1] == '.')
+        return false;
+    if (n >= 5 && strcmp(s + n - 5, ".lock") == 0) return false;
+    if (strstr(s, "..") || strstr(s, "//") || strstr(s, "@{") || strstr(s, "/."))
+        return false;
+    for (const char *p = s; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c <= 0x20 || c == 0x7f || strchr("~^:?*[\\", c)) return false;
+    }
+    return true;
+}
+
 /* ------------------------------------------------------------------ */
 /* trees                                                              */
 /* ------------------------------------------------------------------ */

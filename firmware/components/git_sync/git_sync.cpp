@@ -61,6 +61,7 @@ typedef struct {
     char author_email[96];
     char local_path[160];      /* project folder, e.g. "/sdcard/MyDrafts" */
     bool configured;
+    bool bad_branch;           /* branch= is not a valid branch name */
 } git_cfg_t;
 
 /* Configuration of the project being synced. Written only by
@@ -927,8 +928,11 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         }
     }
 
-    c->configured = (c->repo_url[0] != '\0');
     if (c->branch[0] == '\0') strlcpy(c->branch, "main", sizeof(c->branch));
+    /* The branch name becomes a path under .git/refs: refuse one that
+     * is not a valid name (and would reach elsewhere). */
+    c->bad_branch = !git_branch_name_ok(c->branch);
+    c->configured = (c->repo_url[0] != '\0') && !c->bad_branch;
 }
 
 /* "<dir>/git.cfg" */
@@ -1105,7 +1109,8 @@ static esp_err_t draftbox_connect(const char *dir, const char *site, const char 
         /* The remote-tracking ref describes what is on the *previous*
          * server; git_sync_file_status() must not take it as proof that
          * a file is stored on the new one. The next sync recreates it. */
-        if (prev->repo_url[0] && strcmp(prev->repo_url, res->clone_url) != 0) {
+        if (prev->repo_url[0] && !prev->bad_branch &&
+            strcmp(prev->repo_url, res->clone_url) != 0) {
             char refpath[400];
             snprintf(refpath, sizeof(refpath), "%s/.git/refs/remotes/origin/%s",
                      dir, prev->branch);
@@ -1148,7 +1153,10 @@ extern "C" esp_err_t git_sync_start(const char *project_dir, git_sync_direction_
     if (s_state == GIT_SYNC_IN_PROGRESS) { set_error("Sync already in progress"); return ESP_ERR_INVALID_STATE; }
     if (s_draftbox_busy) { set_error("Draftbox connection in progress"); return ESP_ERR_INVALID_STATE; }
     if (!project_dir || !project_dir[0]) { set_error("No project selected"); return ESP_ERR_INVALID_ARG; }
-    if (!load_config(&s_cfg, project_dir)) { set_error("Not configured"); return ESP_ERR_INVALID_STATE; }
+    if (!load_config(&s_cfg, project_dir)) {
+        set_error(s_cfg.bad_branch ? "Invalid branch name in git.cfg" : "Not configured");
+        return ESP_ERR_INVALID_STATE;
+    }
     ESP_LOGI(TAG, "Sync %s: %s branch=%s path=%s", project_dir, s_cfg.repo_url,
              s_cfg.branch, s_cfg.remote_path[0] ? s_cfg.remote_path : "(root)");
 
