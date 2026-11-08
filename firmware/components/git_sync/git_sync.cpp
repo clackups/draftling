@@ -396,6 +396,17 @@ static esp_err_t subtree_for_commit(const git_oid *commit_oid, git_oid *out)
 
 /* ---- the sync itself ------------------------------------------- */
 
+/* Update a ref; on failure report it (set_error()) and
+ * return false. The refs are what the next sync starts from, so a lost
+ * update must not pass silently. */
+static bool ref_write(const char *ref, const git_oid *oid)
+{
+    if (git_ref_write(ref, oid) == ESP_OK) return true;
+    ESP_LOGE(TAG, "cannot write ref %s", ref);
+    set_error("Cannot write to the SD card");
+    return false;
+}
+
 struct sync_stats {
     bool committed_local;
     bool fast_forwarded;
@@ -449,7 +460,10 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         return ESP_FAIL;
     }
     git_repo_clean_tmp();
-    git_head_set_symbolic(localref);
+    if (git_head_set_symbolic(localref) != ESP_OK) {
+        set_error("Cannot write to the SD card");
+        return ESP_FAIL;
+    }
 
     char host[96];
     remote_host(host, sizeof(host));
@@ -499,7 +513,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         remove(pack);
         if (ret != ESP_OK) { set_error("Cannot unpack fetched history"); return ret; }
 
-        git_ref_write(remoteref, &remote_sha);
+        if (!ref_write(remoteref, &remote_sha)) return ESP_FAIL;
 
         /* Documents already on the card were never committed: checking
          * the server's tree out over them would delete or overwrite
@@ -514,7 +528,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             return ESP_FAIL;
         }
         if (!have_local_docs) {
-            git_ref_write(localref, &remote_sha);
+            if (!ref_write(localref, &remote_sha)) return ESP_FAIL;
             local_head = remote_sha;
             have_head = true;
 
@@ -565,7 +579,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         ret = git_commit_create(&new_root, parents, np, ident, msg, &newc);
         if (ret != ESP_OK) { set_error("Cannot create local commit"); return ret; }
 
-        git_ref_write(localref, &newc);
+        if (!ref_write(localref, &newc)) return ESP_FAIL;
         local_head = newc;
         have_head = true;
         st->committed_local = true;
@@ -619,7 +633,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         } else if (git_oid_eq(&mb, &local_head)) {
             /* fast-forward */
             local_head = remote_sha;
-            git_ref_write(localref, &local_head);
+            if (!ref_write(localref, &local_head)) return ESP_FAIL;
             st->fast_forwarded = true;
             ESP_LOGI(TAG, "fast-forward to %s", remote_sha.hex);
         } else {
@@ -684,11 +698,11 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
             if (ret != ESP_OK) { set_error("Rebase failed"); return ret; }
 
             local_head = newbase;
-            git_ref_write(localref, &local_head);
+            if (!ref_write(localref, &local_head)) return ESP_FAIL;
             st->rebased = true;
         }
     } else if (remote_has_branch && git_oid_eq(&remote_sha, &local_head)) {
-        git_ref_write(remoteref, &remote_sha);
+        if (!ref_write(remoteref, &remote_sha)) return ESP_FAIL;
     }
 
     /* 5. checkout the integrated tree */
@@ -779,7 +793,9 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
         }
         git_buf_free(&report);
 
-        git_ref_write(remoteref, &local_head);
+        /* The push went through; without the record the files only look
+         * not pushed (Del refuses them) until the next sync. */
+        if (!ref_write(remoteref, &local_head)) return ESP_FAIL;
         st->pushed = true;
         ESP_LOGI(TAG, "pushed %s", local_head.hex);
     }
