@@ -35,6 +35,9 @@ in the git log.
   committed the rest as deleted, project deletion could miss unpushed
   files, and the file browser showed at most 64 files or projects. All
   of them now see every file.
+- **Move / copy to project with many projects**: the Alt+M / Alt+C
+  project picker (and the one for files outside projects) listed only
+  the first 32 projects.
 
 ## [1.0.23] - 2026-11-07
 

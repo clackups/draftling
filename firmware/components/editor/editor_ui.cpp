@@ -1091,7 +1091,6 @@ static bool      s_save_from_inpane = false;
 /* ---- Move / copy a file to a project (Alt+M / Alt+C) ----
  * A project picker on the menu screen (s_menu_list), like the Format SD
  * card picker; then, when needed, the name prompt above. */
-#define XFER_MAX_PROJECTS 32
 static bool           s_xfer_open = false;
 static bool           s_xfer_copy = false;
 static bool           s_xfer_from_inpane = false;
@@ -1100,7 +1099,7 @@ static int            s_xfer_sel_prev = -1;
 static project_name_t s_xfer_src_project = "";
 static char           s_xfer_src_name[256] = "";
 static project_name_t s_xfer_dst_project = "";
-static project_name_t s_xfer_projects[XFER_MAX_PROJECTS];
+static project_name_t *s_xfer_projects = NULL;  /* malloc'ed, see xfer_set_projects() */
 static int            s_xfer_nprojects = 0;  /* rows before "New project..." */
 /* The picker moves the files found outside any project (see
  * check_project_setup()) instead of one file. */
@@ -4390,8 +4389,7 @@ static void check_project_setup(void)
             snprintf(more, sizeof(more), "  ...and %d more\n", ndocs - SHOW);
             text += more;
         }
-        project_name_t one[1];
-        bool have_projects = project_list(one, 1) > 0;
+        bool have_projects = project_any();
         if (have_projects)
             text += ndocs == 1 ? "Move it to a project?" : "Move them to a project?";
         else
@@ -4410,8 +4408,7 @@ static void check_project_setup(void)
                               : "Enter: move to a new project  Esc: power off");
         return;
     }
-    project_name_t one[1];
-    if (project_list(one, 1) == 0) {
+    if (!project_any()) {
         show_name_prompt(SAVE_MODE_PROJECT_FIRST, "Create a project (Enter):",
                          PROJECT_DEFAULT_NAME);
         set_status_with_timeout("Files are kept in projects. Name the first one", 0);
@@ -6124,8 +6121,7 @@ static void show_migrate_picker(void);
 static void migrate_popup_accept(void)
 {
     close_msg_popup();
-    project_name_t one[1];
-    if (project_list(one, 1) > 0) {
+    if (project_any()) {
         /* Existing projects to choose from, or a new one. */
         show_migrate_picker();
         return;
@@ -8284,15 +8280,30 @@ static void migrate_into_project(const char *name)
     set_status_with_timeout(msg, 6000);
 }
 
+/* Fill the picker rows with every project on the card except exclude;
+ * first (when given) leads the list. */
+static void xfer_set_projects(const char *first, const char *exclude)
+{
+    int n = 0;
+    project_name_t *all = project_list(&n);
+    free(s_xfer_projects);
+    s_xfer_projects = (project_name_t *)malloc((size_t)(n + 1) * sizeof(project_name_t));
+    s_xfer_nprojects = 0;
+    if (s_xfer_projects) {
+        if (first) strlcpy(s_xfer_projects[s_xfer_nprojects++], first, sizeof(project_name_t));
+        for (int i = 0; i < n; i++) {
+            if (exclude && strcmp(all[i], exclude) == 0) continue;
+            strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
+        }
+    }
+    free(all);
+}
+
 /* "Files outside projects" dialog with projects on the card: pick one
  * of them, or "New project...". Esc returns to the dialog. */
 static void show_migrate_picker(void)
 {
-    static project_name_t all[64];
-    int n = project_list(all, 64);
-    s_xfer_nprojects = 0;
-    for (int i = 0; i < n && s_xfer_nprojects < XFER_MAX_PROJECTS; i++)
-        strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
+    xfer_set_projects(NULL, NULL);
     s_xfer_copy = false;
     s_xfer_src_project[0] = '\0';
     s_xfer_from_inpane = s_inpane_browser_open;
@@ -8322,14 +8333,7 @@ static void show_xfer_picker(bool copy)
     strlcpy(s_xfer_src_name, e->name, sizeof(s_xfer_src_name));
     browser_remember_selection();
 
-    static project_name_t all[64];
-    int n = project_list(all, 64);
-    s_xfer_nprojects = 0;
-    if (copy) strlcpy(s_xfer_projects[s_xfer_nprojects++], s_cur_project, sizeof(project_name_t));
-    for (int i = 0; i < n && s_xfer_nprojects < XFER_MAX_PROJECTS; i++) {
-        if (strcmp(all[i], s_cur_project) == 0) continue;
-        strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
-    }
+    xfer_set_projects(copy ? s_cur_project : NULL, s_cur_project);
 
     if (s_inpane_browser_open) close_inpane_browser();
     show_menu();
@@ -8962,8 +8966,7 @@ static void delete_prompt_activate(void)
         }
         snprintf(msg, sizeof(msg), "Deleted project %.32s", pname);
         editor_ui_set_status(msg);
-        project_name_t one[1];
-        if (project_list(one, 1) == 0)
+        if (!project_any())
             show_name_prompt(SAVE_MODE_PROJECT_FIRST, "Create a project (Enter):",
                              PROJECT_DEFAULT_NAME);
         return;

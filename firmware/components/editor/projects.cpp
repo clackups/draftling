@@ -59,19 +59,31 @@ static bool scan_dir(const char *dir, sd_card_file_entry_t **out, int *count)
     return sd_card_list_dir(dir, out, count) == ESP_OK;
 }
 
-extern "C" int project_list(project_name_t *out, int max)
+extern "C" project_name_t *project_list(int *out_count)
 {
+    *out_count = 0;
     int count = 0;
     sd_card_file_entry_t *e = NULL;
-    if (!scan_dir(mount(), &e, &count)) return 0;
+    if (!scan_dir(mount(), &e, &count)) return NULL;
+    project_name_t *out = count ? (project_name_t *)malloc((size_t)count * sizeof(*out)) : NULL;
     int n = 0;
     /* sd_card_list_dir() sorts case-insensitively by name. */
-    for (int i = 0; i < count && n < max; i++) {
+    for (int i = 0; out && i < count; i++) {
         if (!e[i].is_dir || project_name_problem(e[i].name)) continue;
         strlcpy(out[n++], e[i].name, sizeof(project_name_t));
     }
     sd_card_free_list(e);
-    return n;
+    if (n == 0) { free(out); out = NULL; }
+    *out_count = n;
+    return out;
+}
+
+extern "C" bool project_any(void)
+{
+    int n = 0;
+    project_name_t *all = project_list(&n);
+    free(all);
+    return n > 0;
 }
 
 extern "C" bool project_exists(const char *name)
