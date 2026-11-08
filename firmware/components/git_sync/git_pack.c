@@ -418,6 +418,9 @@ esp_err_t git_pack_write_file(const char *path, const git_oidset *set)
     git_sha1_final(sha, trailer);
     if (ret == ESP_OK && fwrite(trailer, 1, sizeof(trailer), f) != sizeof(trailer))
         ret = ESP_FAIL;
+    /* put_bytes() does not check its writes: a short one leaves the
+     * stream's error flag set. */
+    if (ret == ESP_OK && ferror(f)) ret = ESP_FAIL;
 
     git_zwriter_free(zw);
     free(buf);

@@ -316,7 +316,8 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
                 if (seen_ack || sec == SEC_PACKFILE) {
                     fseek(rf, pos, SEEK_SET);
                     size_t k;
-                    while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
+                    while ((k = fread(pkt, 1, 4096, rf)) > 0)
+                        if (fwrite(pkt, 1, k, fp) != k) { err = true; ESP_LOGE(TAG, "packfile: SD write error"); break; }
                     wrote = true;
                 }
                 break;
@@ -342,7 +343,11 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
                 if (pll < 1) continue;
                 uint8_t band = pl[0];
                 if (band == 1) {
-                    if (fwrite(pl + 1, 1, pll - 1, fp) != (size_t)(pll - 1)) { err = true; break; }
+                    if (fwrite(pl + 1, 1, pll - 1, fp) != (size_t)(pll - 1)) {
+                        ESP_LOGE(TAG, "packfile: SD write error");
+                        err = true;
+                        break;
+                    }
                     wrote = true;
                 } else if (band == 3) {
                     ESP_LOGE(TAG, "remote: %.*s", pll - 1, (const char *)pl + 1);
@@ -385,13 +390,15 @@ esp_err_t git_http_fetch_pack(const git_remote *r,
             }
             if (found >= 0) {
                 fseek(rf, found, SEEK_SET);
-                while ((k = fread(pkt, 1, 4096, rf)) > 0) fwrite(pkt, 1, k, fp);
+                while ((k = fread(pkt, 1, 4096, rf)) > 0)
+                    if (fwrite(pkt, 1, k, fp) != k) { err = true; ESP_LOGE(TAG, "packfile: SD write error"); break; }
                 wrote = true;
             }
         }
 
         if (fclose(fp) != 0) wrote = false;
         fp = NULL;
+        if (ferror(rf)) err = true;      /* the response could not be read back */
         ret = (wrote && !err) ? ESP_OK : ESP_FAIL;
         if (ret != ESP_OK) {
             remove(out_pack_path);
