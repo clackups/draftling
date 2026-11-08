@@ -508,6 +508,9 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
             int len = hex4((char *)raw.data + i);
             if (len < 0) break;
             if (len == 0) { i += 4; continue; }
+            /* 1..3 are delim / response-end / reserved pkts: no payload,
+             * and len - 4 would be negative. */
+            if (len < 4) { i += 4; continue; }
             if (i + (size_t)len > raw.len) break;
             const char *line2 = (char *)raw.data + i + 4;
             int llen = len - 4;
