@@ -1585,11 +1585,8 @@ extern "C" bool editor_cut(void)
 extern "C" bool editor_paste(void)
 {
     if (s_clip_len == 0) return true;
-    if (!s_clip_in_file) {
-        editor_delete_selection();
-        return editor_insert_text(s_clipboard, s_clip_len);
-    }
-    /* Read the clipboard file straight into the gap. */
+    /* Check the room first: the selection is replaced, and deleting it
+     * before finding out the paste does not fit would lose it. */
     size_t sel_s = s_gap_start, sel_e = s_gap_start;
     if (editor_selection_active()) editor_get_selection_range(&sel_s, &sel_e);
     if (content_len() - (sel_e - sel_s) + s_clip_len > s_buf_size - 64) {
@@ -1597,8 +1594,20 @@ extern "C" bool editor_paste(void)
                  (unsigned)(s_buf_size / 1024), s_clip_len);
         return false;
     }
+    if (!s_clip_in_file) {
+        editor_delete_selection();
+        return editor_insert_text(s_clipboard, s_clip_len);
+    }
+    /* Read the clipboard file straight into the gap. */
     FILE *f = fopen(CLIPBOARD_FILE, "rb");
     if (!f) return false;
+    long fsz = -1;
+    if (fseek(f, 0, SEEK_END) == 0) fsz = ftell(f);
+    if (fsz != (long)s_clip_len || fseek(f, 0, SEEK_SET) != 0) {
+        ESP_LOGW(TAG, "Clipboard file missing or changed, paste refused");
+        fclose(f);
+        return false;
+    }
     editor_delete_selection();
     size_t pos = s_gap_start;
     size_t got = fread(s_buf + s_gap_start, 1, s_clip_len, f);

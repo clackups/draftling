@@ -60,6 +60,9 @@ in the git log.
   complete**: when a file could not be read from the SD card part-way
   through, the computer received a cut-off copy as if it were the whole
   file. The transfer is now aborted with "SD card read error".
+- **Pasting over a selection in a nearly full document**: when the
+  pasted text did not fit, the selected text was deleted anyway. The
+  paste is now refused and the selection kept.
 
 ## [1.0.23] - 2026-11-07
 
