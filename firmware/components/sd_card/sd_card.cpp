@@ -438,16 +438,23 @@ extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t 
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
 
-    fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (sz < 0) { fclose(f); return ESP_FAIL; }
+    long sz = -1;
+    if (fseek(f, 0, SEEK_END) == 0) sz = ftell(f);
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return ESP_FAIL; }
 
     char *buf = (char *)malloc(sz + 1);
     if (!buf) { fclose(f); return ESP_ERR_NO_MEM; }
 
     size_t rd = fread(buf, 1, sz, f);
+    bool err = ferror(f);
     fclose(f);
+    if (err || rd != (size_t)sz) {
+        /* A partial read must not pass for the whole file (git.cfg,
+         * wifi.cfg, metadata). */
+        ESP_LOGE(TAG, "Read failed: %s (%zu/%ld bytes)", path, rd, sz);
+        free(buf);
+        return ESP_FAIL;
+    }
     buf[rd] = '\0';
 
     *out_buf = buf;
