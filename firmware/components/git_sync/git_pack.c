@@ -2,6 +2,8 @@
  * non-delta packfile writer. */
 #include "git_core.h"
 
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -278,11 +280,13 @@ esp_err_t git_pack_unpack_file(FILE *fp)
         int shift = 4;
         while (c & 0x80) {
             c = rd_u8(fp);
-            if (c < 0) { ret = ESP_FAIL; break; }
+            /* past 60 bits the shift would overflow (undefined) */
+            if (c < 0 || shift > 60) { ret = ESP_FAIL; break; }
             size |= (uint64_t)(c & 0x7f) << shift;
             shift += 7;
         }
         if (ret != ESP_OK) break;
+        if (size > SIZE_MAX) { ret = ESP_FAIL; break; }
 
         git_oid oid;
         if (type == GIT_OBJ_OFS_DELTA || type == GIT_OBJ_REF_DELTA) {
@@ -293,7 +297,7 @@ esp_err_t git_pack_unpack_file(FILE *fp)
                 uint64_t off = (uint64_t)(b & 0x7f);
                 while (b & 0x80) {
                     b = rd_u8(fp);
-                    if (b < 0) { ret = ESP_FAIL; break; }
+                    if (b < 0 || off > ((uint64_t)LONG_MAX >> 7)) { ret = ESP_FAIL; break; }
                     off = ((off + 1) << 7) | (uint64_t)(b & 0x7f);
                 }
                 if (ret != ESP_OK) break;
@@ -311,13 +315,15 @@ esp_err_t git_pack_unpack_file(FILE *fp)
             }
             ret = base_load(&base, &base_oid);
             if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "delta base %s missing", base_oid.hex);
+                ESP_LOGE(TAG, "delta base %s %s", base_oid.hex,
+                         ret == ESP_ERR_NOT_FOUND ? "missing" : "cannot be loaded");
                 break;
             }
             git_zreader_start(z, fp);
             zb->pos = zb->have = 0;
             ret = apply_delta(&base, zb, scratch, &oid);
-            if (ret == ESP_OK) off_map_add(&omap, obj_off, &oid, base.type);
+            if (ret == ESP_OK && !off_map_add(&omap, obj_off, &oid, base.type))
+                ret = ESP_ERR_NO_MEM;
         } else if (type == GIT_OBJ_COMMIT || type == GIT_OBJ_TREE ||
                    type == GIT_OBJ_BLOB || type == GIT_OBJ_TAG) {
             git_odb_writer w;
@@ -334,7 +340,8 @@ esp_err_t git_pack_unpack_file(FILE *fp)
             if (ret == ESP_OK && !git_zreader_finish(z)) ret = ESP_FAIL;
             if (ret == ESP_OK) ret = git_odb_writer_finish(&w, &oid);
             else git_odb_writer_abort(&w);
-            if (ret == ESP_OK) off_map_add(&omap, obj_off, &oid, type);
+            if (ret == ESP_OK && !off_map_add(&omap, obj_off, &oid, type))
+                ret = ESP_ERR_NO_MEM;
         } else {
             ESP_LOGE(TAG, "unknown pack object type %d", type);
             ret = ESP_FAIL;
