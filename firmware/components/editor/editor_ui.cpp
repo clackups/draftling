@@ -5353,102 +5353,375 @@ typedef enum settings_item_id_t {
 #define SETTINGS_IDX_BACK     SETTINGS_ID_BACK
 #define SETTINGS_ITEM_COUNT   SETTINGS_ID_COUNT
 
-static void refresh_settings_items(void)
+typedef void (*settings_label_writer_t)(char *buf, size_t len);
+typedef void (*settings_action_fn_t)(void);
+typedef bool (*settings_cycle_fn_t)(int dir);
+
+typedef struct settings_registry_entry_t {
+    settings_item_id_t id;
+    settings_label_writer_t label_writer;
+    settings_action_fn_t action_fn;
+    settings_cycle_fn_t cycle_fn;
+} settings_registry_entry_t;
+
+static void settings_label_timeout(char *buf, size_t len)
 {
-    std::vector<std::string> rows;
-    char buf[80];
     uint32_t cur = standby_get_timeout();
     const char *cur_label = "custom";
     int idx = find_timeout_option(cur);
     if (idx >= 0 && idx < TIMEOUT_OPTION_COUNT)
         cur_label = TIMEOUT_LABELS[idx];
+    snprintf(buf, len, "Standby timeout: %s", cur_label);
+}
 
-    snprintf(buf, sizeof(buf), "Standby timeout: %s", cur_label);
-    rows.emplace_back(buf);
+static void settings_label_fontsize(char *buf, size_t len)
+{
+    int fi = find_font_size_option(s_font_size);
+    snprintf(buf, len, "Base font size: %s", FONT_SIZE_LABELS[fi]);
+}
 
-    {
-        int fi = find_font_size_option(s_font_size);
-        snprintf(buf, sizeof(buf), "Base font size: %s",
-                 FONT_SIZE_LABELS[fi]);
-        rows.emplace_back(buf);
-    }
-
-    snprintf(buf, sizeof(buf), "Max file size: %u KB (read-only)",
+static void settings_label_maxfile(char *buf, size_t len)
+{
+    snprintf(buf, len, "Max file size: %u KB (read-only)",
              (unsigned)(editor_get_max_doc_size() / 1024));
-    rows.emplace_back(buf);
+}
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    snprintf(buf, sizeof(buf), "Backlight: %d%%", s_backlight_pct);
-    rows.emplace_back(buf);
+static void settings_label_backlight(char *buf, size_t len)
+{
+    snprintf(buf, len, "Backlight: %d%%", s_backlight_pct);
+}
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    snprintf(buf, sizeof(buf), "Color theme: %s",
-             COLOR_THEMES[s_theme_idx].name);
-    rows.emplace_back(buf);
+static void settings_label_theme(char *buf, size_t len)
+{
+    snprintf(buf, len, "Color theme: %s", COLOR_THEMES[s_theme_idx].name);
+}
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    snprintf(buf, sizeof(buf), "Rotate 180: %s",
-             s_rotate180 ? "on" : "off");
-    rows.emplace_back(buf);
+static void settings_label_rotate(char *buf, size_t len)
+{
+    snprintf(buf, len, "Rotate 180: %s", s_rotate180 ? "on" : "off");
+}
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    snprintf(buf, sizeof(buf), "Inverted screen: %s",
-             s_invert ? "on" : "off");
-    rows.emplace_back(buf);
+static void settings_label_invert(char *buf, size_t len)
+{
+    snprintf(buf, len, "Inverted screen: %s", s_invert ? "on" : "off");
+}
 #endif
 
-    snprintf(buf, sizeof(buf), "Append-only editing: %s",
-             s_append_only ? "on" : "off");
-    rows.emplace_back(buf);
+static void settings_label_append_only(char *buf, size_t len)
+{
+    snprintf(buf, len, "Append-only editing: %s", s_append_only ? "on" : "off");
+}
 
-    {
-        char names[200] = "";
-        for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
-            kb_layout_id_t id = (kb_layout_id_t)i;
-            if (!kb_layout_is_active(id)) continue;
-            if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
-            strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
-        }
-        if (strlen(names) > 40) {
-            snprintf(names, sizeof(names), "%d layouts", kb_layout_active_count());
-        }
-        snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
-        rows.emplace_back(buf);
+static void settings_label_layouts(char *buf, size_t len)
+{
+    char names[200] = "";
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        kb_layout_id_t id = (kb_layout_id_t)i;
+        if (!kb_layout_is_active(id)) continue;
+        if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+        strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
     }
+    if (strlen(names) > 40) {
+        snprintf(names, sizeof(names), "%d layouts", kb_layout_active_count());
+    }
+    snprintf(buf, len, "Active layouts: %s (Enter to edit)", names);
+}
 
-    snprintf(buf, sizeof(buf), "Display orientation: %s (restart to apply)",
+static void settings_label_orientation(char *buf, size_t len)
+{
+    snprintf(buf, len, "Display orientation: %s (restart to apply)",
              s_pending_portrait ? "Portrait" : "Landscape");
-    rows.emplace_back(buf);
+}
 
 #if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    snprintf(buf, sizeof(buf), "Display upside down: %s (restart to apply)",
+static void settings_label_upside_down(char *buf, size_t len)
+{
+    snprintf(buf, len, "Display upside down: %s (restart to apply)",
              s_pending_upside_down ? "On" : "Off");
-    rows.emplace_back(buf);
+}
 #endif
 
-    snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
+static void settings_label_scale2x(char *buf, size_t len)
+{
+    snprintf(buf, len, "2x scale (large view): %s (restart to apply)",
              s_pending_scale2x ? "On" : "Off");
-    rows.emplace_back(buf);
+}
 
-    snprintf(buf, sizeof(buf), "Margin left: %dpx (restart to apply)", s_margin_left);
-    rows.emplace_back(buf);
-    snprintf(buf, sizeof(buf), "Margin right: %dpx (restart to apply)", s_margin_right);
-    rows.emplace_back(buf);
-    snprintf(buf, sizeof(buf), "Margin top: %dpx (restart to apply)", s_margin_top);
-    rows.emplace_back(buf);
-    snprintf(buf, sizeof(buf), "Margin bottom: %dpx (restart to apply)", s_margin_bottom);
-    rows.emplace_back(buf);
+static void settings_label_margin_left(char *buf, size_t len)
+{
+    snprintf(buf, len, "Margin left: %dpx (restart to apply)", s_margin_left);
+}
 
+static void settings_label_margin_right(char *buf, size_t len)
+{
+    snprintf(buf, len, "Margin right: %dpx (restart to apply)", s_margin_right);
+}
+
+static void settings_label_margin_top(char *buf, size_t len)
+{
+    snprintf(buf, len, "Margin top: %dpx (restart to apply)", s_margin_top);
+}
+
+static void settings_label_margin_bottom(char *buf, size_t len)
+{
+    snprintf(buf, len, "Margin bottom: %dpx (restart to apply)", s_margin_bottom);
+}
+
+static void settings_label_reset(char *buf, size_t len)
+{
     if (s_factory_reset_confirm) {
-        rows.emplace_back("Factory reset -- ENTER again to confirm");
+        snprintf(buf, len, "Factory reset -- ENTER again to confirm");
     } else {
-        rows.emplace_back("Factory reset");
+        snprintf(buf, len, "Factory reset");
     }
+}
 
-    rows.emplace_back("Back (Esc)");
+static void settings_label_back(char *buf, size_t len)
+{
+    snprintf(buf, len, "Back (Esc)");
+}
+
+static bool settings_cycle_timeout_value(int dir)
+{
+    uint32_t cur = standby_get_timeout();
+    int opt = find_timeout_option(cur);
+    opt = (opt + dir + TIMEOUT_OPTION_COUNT) % TIMEOUT_OPTION_COUNT;
+    standby_set_timeout(TIMEOUT_OPTIONS[opt]);
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_fontsize_value(int dir)
+{
+    int fi = find_font_size_option(s_font_size);
+    fi = (fi + dir + FONT_SIZE_COUNT) % FONT_SIZE_COUNT;
+    s_font_size = FONT_SIZE_OPTIONS[fi];
+    save_font_size_to_nvs();
+    init_styles();
+    refresh_settings_items();
+#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND)
+    display_clear(0x00);
+#else
+    display_clear(0xFF);
+#endif
+    draftling_lvgl_port_clear_buffers();
+    invalidate_all_render_caches();
+    lv_obj_invalidate(lv_scr_act());
+    return true;
+}
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+static bool settings_cycle_backlight_value(int dir)
+{
+    int bi = find_backlight_option(s_backlight_pct);
+    bi = (bi + dir + BACKLIGHT_OPTION_COUNT) % BACKLIGHT_OPTION_COUNT;
+    s_backlight_pct = BACKLIGHT_OPTIONS[bi];
+    save_backlight_to_nvs();
+    display_set_backlight(s_backlight_pct);
+    refresh_settings_items();
+    return true;
+}
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+static bool settings_cycle_rotate_value(int dir)
+{
+    (void)dir;
+    s_rotate180 = !s_rotate180;
+    save_rotate180_to_nvs();
+    draftling_lvgl_port_set_flip180(s_rotate180);
+    refresh_settings_items();
+    return true;
+}
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+static bool settings_cycle_invert_value(int dir)
+{
+    (void)dir;
+    s_invert = !s_invert;
+    save_invert_to_nvs();
+    display_set_invert(s_invert);
+    refresh_settings_items();
+    return true;
+}
+#endif
+
+static bool settings_cycle_append_only_value(int dir)
+{
+    (void)dir;
+    s_append_only = !s_append_only;
+    save_append_only_to_nvs();
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_orientation_value(int dir)
+{
+    (void)dir;
+    s_pending_portrait = !s_pending_portrait;
+    display_orientation_set_portrait(s_pending_portrait);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+static bool settings_cycle_upside_down_value(int dir)
+{
+    (void)dir;
+    s_pending_upside_down = !s_pending_upside_down;
+    display_flip_set_upside_down(s_pending_upside_down);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+#endif
+
+static bool settings_cycle_scale2x_value(int dir)
+{
+    (void)dir;
+    s_pending_scale2x = !s_pending_scale2x;
+    display_scale_set_2x(s_pending_scale2x);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_margin_left_value(int dir)
+{
+    int oi = find_margin_option(s_margin_left);
+    oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+    s_margin_left = MARGIN_OPTIONS[oi];
+    display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_margin_right_value(int dir)
+{
+    int oi = find_margin_option(s_margin_right);
+    oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+    s_margin_right = MARGIN_OPTIONS[oi];
+    display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_margin_top_value(int dir)
+{
+    int oi = find_margin_option(s_margin_top);
+    oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+    s_margin_top = MARGIN_OPTIONS[oi];
+    display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_cycle_margin_bottom_value(int dir)
+{
+    int oi = find_margin_option(s_margin_bottom);
+    oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
+    s_margin_bottom = MARGIN_OPTIONS[oi];
+    display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
+    s_restart_needed = true;
+    refresh_settings_items();
+    return true;
+}
+
+static void settings_activate_layouts(void)
+{
+    s_layouts_picker_sel = 0;
+    s_layouts_picker_open = true;
+    refresh_layouts_picker_items();
+}
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+static void settings_activate_theme(void)
+{
+    s_theme_picker_open = true;
+    s_theme_picker_sel = s_theme_idx;
+    refresh_theme_picker_items();
+}
+#endif
+
+static void settings_activate_reset(void)
+{
+    if (s_factory_reset_confirm) {
+        ESP_LOGW(TAG, "Factory reset: erasing NVS and restarting");
+        nvs_flash_erase();
+        esp_restart();
+    } else {
+        s_factory_reset_confirm = true;
+        refresh_settings_items();
+    }
+}
+
+static void settings_activate_back(void)
+{
+    request_close_settings();
+}
+
+static const settings_registry_entry_t s_settings_registry[] = {
+    { SETTINGS_ID_TIMEOUT, settings_label_timeout, NULL, settings_cycle_timeout_value },
+    { SETTINGS_ID_FONTSZ, settings_label_fontsize, NULL, settings_cycle_fontsize_value },
+    { SETTINGS_ID_MAXFILE, settings_label_maxfile, NULL, NULL },
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+    { SETTINGS_ID_BACKLIGHT, settings_label_backlight, NULL, settings_cycle_backlight_value },
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
+    { SETTINGS_ID_THEME, settings_label_theme, settings_activate_theme, NULL },
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    { SETTINGS_ID_ROTATE, settings_label_rotate, NULL, settings_cycle_rotate_value },
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+    { SETTINGS_ID_INVERT, settings_label_invert, NULL, settings_cycle_invert_value },
+#endif
+    { SETTINGS_ID_APPEND_ONLY, settings_label_append_only, NULL, settings_cycle_append_only_value },
+    { SETTINGS_ID_LAYOUTS, settings_label_layouts, settings_activate_layouts, NULL },
+    { SETTINGS_ID_ORIENTATION, settings_label_orientation, NULL, settings_cycle_orientation_value },
+#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+    { SETTINGS_ID_UPSIDE_DOWN, settings_label_upside_down, NULL, settings_cycle_upside_down_value },
+#endif
+    { SETTINGS_ID_SCALE2X, settings_label_scale2x, NULL, settings_cycle_scale2x_value },
+    { SETTINGS_ID_MARGIN_LEFT, settings_label_margin_left, NULL, settings_cycle_margin_left_value },
+    { SETTINGS_ID_MARGIN_RIGHT, settings_label_margin_right, NULL, settings_cycle_margin_right_value },
+    { SETTINGS_ID_MARGIN_TOP, settings_label_margin_top, NULL, settings_cycle_margin_top_value },
+    { SETTINGS_ID_MARGIN_BOTTOM, settings_label_margin_bottom, NULL, settings_cycle_margin_bottom_value },
+    { SETTINGS_ID_RESET, settings_label_reset, settings_activate_reset, NULL },
+    { SETTINGS_ID_BACK, settings_label_back, settings_activate_back, NULL },
+};
+
+static const settings_registry_entry_t *settings_registry_entry_for_id(settings_item_id_t id)
+{
+    for (const settings_registry_entry_t &entry : s_settings_registry) {
+        if (entry.id == id) return &entry;
+    }
+    return NULL;
+}
+
+static void refresh_settings_items(void)
+{
+    std::vector<std::string> rows;
+    char buf[80];
+
+    for (const settings_registry_entry_t &entry : s_settings_registry) {
+        if (entry.label_writer) {
+            entry.label_writer(buf, sizeof(buf));
+            rows.emplace_back(buf);
+        }
+    }
 
     render_string_list(s_settings_list, rows);
     apply_list_selection_styles(s_settings_list, s_settings_sel);
@@ -5626,168 +5899,12 @@ static void close_settings(void)
  * keys reuse this exact logic (dir=-1 for Left, dir=+1 for Right) so
  * a row can be adjusted either direction without repeatedly wrapping
  * all the way around via Enter. Returns false for rows that are not a
- * simple in-place value cycle (Theme opens a sub-picker instead;
- * Max file size, Factory reset and Back are actions, not
- * values), so callers can no-op the arrow keys on those rows. */
+ * simple in-place value cycle. */
 static bool settings_cycle_item(settings_item_id_t item, int dir)
 {
-    if (item == SETTINGS_ID_TIMEOUT) {
-        uint32_t cur = standby_get_timeout();
-        int opt = find_timeout_option(cur);
-        opt = (opt + dir + TIMEOUT_OPTION_COUNT) % TIMEOUT_OPTION_COUNT;
-        standby_set_timeout(TIMEOUT_OPTIONS[opt]);
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_FONTSZ) {
-        int fi = find_font_size_option(s_font_size);
-        fi = (fi + dir + FONT_SIZE_COUNT) % FONT_SIZE_COUNT;
-        s_font_size = FONT_SIZE_OPTIONS[fi];
-        save_font_size_to_nvs();
-        init_styles();
-        refresh_settings_items();
-        /* The new font changes widget geometry on every screen and in
-         * every pane. Pixels left over from the previous (differently
-         * sized) layout would otherwise survive in the persistent
-         * display buffer -- and stale line geometry lingers in each
-         * pane's render cache -- and reappear as garbage the next time
-         * the editor screen is drawn (for example after re-opening a
-         * file). Wipe the framebuffer, drop every pane's cached line
-         * geometry so each label is fully re-laid-out, and invalidate
-         * the active screen so LVGL repaints everything. This runs on
-         * all backends because both the e-paper and the persistent
-         * framebuffer LCDs keep stale pixels in regions the new layout
-         * no longer covers. display_clear() also promotes the next
-         * flush to a flashing full refresh on e-paper, clearing any
-         * accumulated ghosting. */
-#if defined(CONFIG_DRAFTLING_EPD_BLACK_BACKGROUND)
-        display_clear(0x00);
-#else
-        display_clear(0xFF);
-#endif
-        /* Also wipe LVGL's own draw buffers. On the reflective-LCD
-         * FULL render-mode path LVGL keeps two screen-sized buffers
-         * and can flush a stale one (holding the pre-change layout)
-         * when the next screen is only partially invalidated -- for
-         * example after re-opening a file -- which surfaces as garbage
-         * in the untouched regions. display_clear() only wipes the
-         * panel framebuffer, not these buffers. */
-        draftling_lvgl_port_clear_buffers();
-        invalidate_all_render_caches();
-        lv_obj_invalidate(lv_scr_act());
-        return true;
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    } else if (item == SETTINGS_ID_BACKLIGHT) {
-        int bi = find_backlight_option(s_backlight_pct);
-        bi = (bi + dir + BACKLIGHT_OPTION_COUNT) % BACKLIGHT_OPTION_COUNT;
-        s_backlight_pct = BACKLIGHT_OPTIONS[bi];
-        save_backlight_to_nvs();
-        display_set_backlight(s_backlight_pct);
-        refresh_settings_items();
-        return true;
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    } else if (item == SETTINGS_ID_ROTATE) {
-        /* Only two states, so either direction just toggles it.
-         * Applied immediately so the user sees the new orientation
-         * without leaving the menu; persisted in NVS and re-applied
-         * at boot. A 180 flip does not change the reported
-         * resolution, so the widget tree stays valid -- the LVGL port
-         * just repaints the whole panel in the new orientation. */
-        s_rotate180 = !s_rotate180;
-        save_rotate180_to_nvs();
-        draftling_lvgl_port_set_flip180(s_rotate180);
-        refresh_settings_items();
-        return true;
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    } else if (item == SETTINGS_ID_INVERT) {
-        /* Only two states, so either direction just toggles it.
-         * Applied immediately so the user sees the new polarity
-         * without leaving the menu; persisted in NVS and re-applied
-         * at boot. display_set_invert() only changes what
-         * display_flush() sends to the panel, so no repaint of the
-         * LVGL widget tree is needed. */
-        s_invert = !s_invert;
-        save_invert_to_nvs();
-        display_set_invert(s_invert);
-        refresh_settings_items();
-        return true;
-#endif
-    } else if (item == SETTINGS_ID_APPEND_ONLY) {
-        /* Only two states, so either direction just toggles it. No
-         * hardware side effects, so just flip the flag, persist it,
-         * and refresh the label. */
-        s_append_only = !s_append_only;
-        save_append_only_to_nvs();
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_ORIENTATION) {
-        /* Landscape <-> portrait. Only two states, so either direction
-         * toggles. Persisted to NVS for the next boot; the LVGL
-         * rotation and the whole widget tree are fixed for the session
-         * (see display_orientation.h), so request_close_settings()
-         * offers a restart on the way out. */
-        s_pending_portrait = !s_pending_portrait;
-        display_orientation_set_portrait(s_pending_portrait);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    } else if (item == SETTINGS_ID_UPSIDE_DOWN) {
-        /* Only two states, so either direction toggles. Persisted to
-         * NVS for the next boot; like the orientation above, the LVGL
-         * rotation and the whole widget tree are fixed for the
-         * session (see display_flip.h), so request_close_settings()
-         * offers a restart on the way out. */
-        s_pending_upside_down = !s_pending_upside_down;
-        display_flip_set_upside_down(s_pending_upside_down);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-#endif
-    } else if (item == SETTINGS_ID_SCALE2X) {
-        /* Only two states, so either direction toggles. The LVGL
-         * canvas size is fixed for the session (see display_scale.h),
-         * so request_close_settings() offers a restart on the way out. */
-        s_pending_scale2x = !s_pending_scale2x;
-        display_scale_set_2x(s_pending_scale2x);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_MARGIN_LEFT) {
-        int oi = find_margin_option(s_margin_left);
-        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
-        s_margin_left = MARGIN_OPTIONS[oi];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_MARGIN_RIGHT) {
-        int oi = find_margin_option(s_margin_right);
-        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
-        s_margin_right = MARGIN_OPTIONS[oi];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_MARGIN_TOP) {
-        int oi = find_margin_option(s_margin_top);
-        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
-        s_margin_top = MARGIN_OPTIONS[oi];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-    } else if (item == SETTINGS_ID_MARGIN_BOTTOM) {
-        int oi = find_margin_option(s_margin_bottom);
-        oi = (oi + dir + MARGIN_OPTION_COUNT) % MARGIN_OPTION_COUNT;
-        s_margin_bottom = MARGIN_OPTIONS[oi];
-        display_margins_set(s_margin_left, s_margin_right, s_margin_top, s_margin_bottom);
-        s_restart_needed = true;
-        refresh_settings_items();
-        return true;
-    }
-    return false;
+    const settings_registry_entry_t *entry = settings_registry_entry_for_id(item);
+    if (!entry || !entry->cycle_fn) return false;
+    return entry->cycle_fn(dir);
 }
 
 static void settings_activate_item(settings_item_id_t item)
@@ -5798,41 +5915,16 @@ static void settings_activate_item(settings_item_id_t item)
         refresh_settings_items();
     }
 
+    const settings_registry_entry_t *entry = settings_registry_entry_for_id(item);
+    if (!entry) return;
+
+    if (entry->action_fn) {
+        entry->action_fn();
+        return;
+    }
+
     if (settings_cycle_item(item, 1)) {
         /* Handled -- Enter always means "next value", same as before. */
-    } else if (item == SETTINGS_ID_MAXFILE) {
-        /* Read-only display of the dynamically-sized editor buffer.
-         * Enter is a no-op; the value is fixed at editor_init() time. */
-    } else if (item == SETTINGS_ID_LAYOUTS) {
-        /* Open the active-layouts checklist sub-list. Each row toggles
-         * immediately on Enter (applied + persisted on the spot); Esc
-         * returns to the settings list. */
-        s_layouts_picker_sel = 0;
-        s_layouts_picker_open = true;
-        refresh_layouts_picker_items();
-#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    } else if (item == SETTINGS_ID_THEME) {
-        /* Open the theme picker sub-list. The user navigates with
-         * Up/Down and confirms with Enter; only on Enter is the new
-         * theme persisted and the screens rebuilt. Esc returns to
-         * the settings list without changes. */
-        s_theme_picker_open = true;
-        s_theme_picker_sel = s_theme_idx;
-        refresh_theme_picker_items();
-#endif
-    } else if (item == SETTINGS_ID_RESET) {
-        /* Factory reset -- requires double-press confirmation */
-        if (s_factory_reset_confirm) {
-            ESP_LOGW(TAG, "Factory reset: erasing NVS and restarting");
-            nvs_flash_erase();
-            esp_restart();
-            /* does not return */
-        } else {
-            s_factory_reset_confirm = true;
-            refresh_settings_items();
-        }
-    } else if (item == SETTINGS_ID_BACK) {
-        request_close_settings();
     }
 }
 
