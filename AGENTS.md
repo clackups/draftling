@@ -1516,8 +1516,7 @@ PaperMono) and stubbed out otherwise. The M5IOE1 (fixed address 0x4F)
 is a register-addressed 14-pin expander: each GPIO setting is a
 16-bit little-endian register pair, one bit per pin (PYG1 = bit 0).
 Only digital outputs are implemented: `m5ioe1_set_pin(pin, level)`
-makes PYG<pin> a push-pull output without pulls and drives it, and
-`m5ioe1_release_pin()` returns it to a high-impedance input.
+makes PYG<pin> a push-pull output without pulls and drives it.
 `m5ioe1_init()` probes the chip (which wakes it from I2C idle sleep)
 and disables its idle sleep (register 0x23). On the PaperMono,
 main.cpp uses it before `display_init()` to power the e-paper panel,
@@ -1525,7 +1524,7 @@ the FT6336G touch controller and the MicroSD card and to pulse the
 panel and touch reset lines, and the pre-sleep hook switches those
 supplies off again.
 
-Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`, `m5ioe1_release_pin()`.
+Public API: `m5ioe1_init()`, `m5ioe1_set_pin()`.
 
 A third driver, NXP PCA9557 (`io_expander_pca9557.cpp`), is compiled
 in only with `CONFIG_DRAFTLING_HAS_PCA9557` (the Elecrow CrowPanel
@@ -1633,7 +1632,7 @@ remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
 
 Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
-`kb_layout_set()`, `kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_get()`, `kb_layout_name()`,
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
 `kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
@@ -2011,14 +2010,13 @@ returning `true`. That flag drives two things: the editor's WiFi
 status icon switches to the "6"-badged variant (see
 `components/editor/wifi_icon.c` below), and `git_sync`'s HTTP layer
 (`git_net.c`) prefers the Git server's `AAAA` record, falling back to
-`A` if the connection attempt fails. The flag (and the cached address
-string from `wifi_manager_get_ipv6()`) resets on disconnect and at the
-start of every new connection attempt.
+`A` if the connection attempt fails. The flag resets on disconnect and
+at the start of every new connection attempt.
 
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
 `wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
-`wifi_manager_has_global_ipv6()`, `wifi_manager_get_ipv6()`,
+`wifi_manager_has_global_ipv6()`,
 `wifi_manager_get_configured()` (SSID + password Ctrl+W would use),
 `wifi_manager_forget()` (disconnect and erase the `wifi` NVS namespace
 plus the WiFi driver's own saved station config: `esp_wifi_restore()`
