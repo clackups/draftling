@@ -715,6 +715,17 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
                 if (conflict) (*out_nconflicts)++;
                 ESP_LOGI(TAG, "merged %s%s", nm, conflict ? " (CONFLICT)" : "");
             }
+            /* The mode is merged on its own, like git does: a change of
+             * mode on one side (100644 -> 100755) survives even where
+             * the content came from the other side or did not change.
+             * Both sides changing it differently keeps ours. A mode of
+             * another entry type than the content taken is not used. */
+            if (!git_oid_is_zero(&r->oid)) {
+                uint32_t bm = be ? be->mode : 0, om = oe ? oe->mode : 0,
+                         tm = te ? te->mode : 0;
+                uint32_t m = (om == tm) ? om : (om == bm) ? tm : om;
+                if (m && (m & 0170000) == (r->mode & 0170000)) r->mode = m;
+            }
             nn++;
         }
     }

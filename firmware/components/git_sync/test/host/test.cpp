@@ -191,6 +191,19 @@ int main(int argc, char **argv)
     CHECK(remote_file("exec.md") == "x2\n");
     CHECK(out("git --git-dir=remote.git ls-tree main exec.md").find("100755") == 0);
 
+    /* 13. A mode change on the server survives a rebase of a local
+     *     edit of the same file. */
+    fresh("mode merge");
+    seed_remote("echo m > m.md && echo o > o.md");
+    project("G");
+    CHECK(sync_now("G"));
+    sh("cd work && git pull -q origin main && chmod +x m.md && git commit -qam mode && "
+       "git push -q origin HEAD:main");
+    put("sd/G/m.md", "m2\n");
+    CHECK(sync_now("G"));
+    CHECK(remote_file("m.md") == "m2\n");
+    CHECK(out("git --git-dir=remote.git ls-tree main m.md").find("100755") == 0);
+
     fprintf(stderr, fails ? "\n%d check(s) FAILED\n" : "\nall checks passed\n", fails);
     return fails ? 1 : 0;
 }
