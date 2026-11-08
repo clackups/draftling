@@ -5001,24 +5001,19 @@ static void menu_mark_hotkeys(void)
 
 static void refresh_menu_items(void)
 {
-    lv_obj_clean(s_menu_list);
-
+    std::vector<std::string> rows;
     char buf[80];
 
-    /* 0: Settings */
-    lv_list_add_btn(s_menu_list, NULL, "Settings...");
+    rows.emplace_back("Settings...");
 
-    /* 1: BLE status */
     snprintf(buf, sizeof(buf), "BLE: %s",
              ble_keyboard_is_connected()
                  ? ble_keyboard_get_device_name()
                  : "not connected");
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* 2: BLE scan */
-    lv_list_add_btn(s_menu_list, NULL, "BLE: Start scan");
+    rows.emplace_back("BLE: Start scan");
 
-    /* 3: WiFi status / connect to the configured (wifi.cfg / NVS) SSID */
     if (wifi_manager_is_connected()) {
         snprintf(buf, sizeof(buf), "WiFi: %s (%s)",
                  wifi_manager_get_ssid(), wifi_manager_get_ip());
@@ -5030,15 +5025,11 @@ static void refresh_menu_items(void)
             snprintf(buf, sizeof(buf), "WiFi: Connect (not configured)");
         }
     }
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* 4: WiFi scan / pick a new network */
-    lv_list_add_btn(s_menu_list, NULL, "WiFi: New connection...");
+    rows.emplace_back("WiFi: New connection...");
+    rows.emplace_back("WiFi: Disconnect");
 
-    /* 5: WiFi disconnect */
-    lv_list_add_btn(s_menu_list, NULL, "WiFi: Disconnect");
-
-    /* 6: Git sync of the project the user works in */
     {
         project_name_t p;
         char dir[64];
@@ -5050,35 +5041,25 @@ static void refresh_menu_items(void)
             snprintf(buf, sizeof(buf), "Git Sync (no project selected)");
         }
     }
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* 7: Draftbox one-time password -> <project>/git.cfg */
-    lv_list_add_btn(s_menu_list, NULL, "Connect a Draftbox repository...");
+    rows.emplace_back("Connect a Draftbox repository...");
 
-    /* 8: Keyboard layout */
     snprintf(buf, sizeof(buf), "Keyboard: %s  (Enter to cycle)",
              kb_layout_name(kb_layout_get()));
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
-    /* 9: SD card via USB. Shows the staged choice (s_usbmsc_pending_mode),
-     * not necessarily what usb_msc is doing right now -- see the
-     * picker opened from menu_activate_item() and applied by
-     * commit_usb_msc_pending_mode(). See usbmsc_item_disabled() for
-     * when it is disabled instead. */
     if (usbmsc_item_disabled()) {
         snprintf(buf, sizeof(buf), "SD card via USB: (no SD card)");
     } else {
         snprintf(buf, sizeof(buf), "SD card via USB: %s  (Enter to change)",
                  usb_msc_mode_name(s_usbmsc_pending_mode));
     }
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
-    /* Sync via browser: Kermit server on the serial console, serving
-     * the project the user works in (see kermit_start()). The hotkey
-     * letter stays at index 9 ("Sync via b..."). */
     {
         project_name_t p;
         if (context_project(p, sizeof(p)))
@@ -5086,26 +5067,16 @@ static void refresh_menu_items(void)
         else
             snprintf(buf, sizeof(buf), "Sync via browser (no project selected)");
     }
-    lv_list_add_btn(s_menu_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
-    /* Format SD card */
-    lv_list_add_btn(s_menu_list, NULL,
-                    sd_card_get_handle() ? "Format SD card..."
-                                         : "Format SD card... (no SD card)");
+    rows.emplace_back(sd_card_get_handle() ? "Format SD card..." : "Format SD card... (no SD card)");
+    rows.emplace_back("Hardware information");
+    rows.emplace_back("Help (F10)");
+    rows.emplace_back("Sleep now");
+    rows.emplace_back("Close menu (Esc / F1)");
 
-    /* Hardware information */
-    lv_list_add_btn(s_menu_list, NULL, "Hardware information");
-
-    /* Help */
-    lv_list_add_btn(s_menu_list, NULL, "Help (F10)");
-
-    /* Sleep now */
-    lv_list_add_btn(s_menu_list, NULL, "Sleep now");
-
-    /* Close menu */
-    lv_list_add_btn(s_menu_list, NULL, "Close menu (Esc / F1)");
-
+    render_string_list(s_menu_list, rows);
     menu_mark_hotkeys();
 
     /* Highlight selection */
@@ -5123,6 +5094,14 @@ static void refresh_menu_items(void)
 #endif
 
     sync_battery_labels();
+}
+
+static void render_string_list(lv_obj_t *list, const std::vector<std::string> &rows)
+{
+    lv_obj_clean(list);
+    for (const std::string &row : rows) {
+        lv_list_add_btn(list, NULL, row.c_str());
+    }
 }
 
 /* Move only the highlight bar without rebuilding the list. */
@@ -5367,8 +5346,7 @@ typedef enum settings_item_id_t {
 
 static void refresh_settings_items(void)
 {
-    lv_obj_clean(s_settings_list);
-
+    std::vector<std::string> rows;
     char buf[80];
     uint32_t cur = standby_get_timeout();
     const char *cur_label = "custom";
@@ -5376,60 +5354,47 @@ static void refresh_settings_items(void)
     if (idx >= 0 && idx < TIMEOUT_OPTION_COUNT)
         cur_label = TIMEOUT_LABELS[idx];
 
-    /* Standby timeout */
     snprintf(buf, sizeof(buf), "Standby timeout: %s", cur_label);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* Base font size */
     {
         int fi = find_font_size_option(s_font_size);
         snprintf(buf, sizeof(buf), "Base font size: %s",
                  FONT_SIZE_LABELS[fi]);
-        lv_list_add_btn(s_settings_list, NULL, buf);
+        rows.emplace_back(buf);
     }
 
-    /* Max file size (read-only).
-     * Sized dynamically by editor_init() from the PSRAM that was free
-     * at boot; surface it here so the user knows the hard upper limit
-     * for files they can open. */
     snprintf(buf, sizeof(buf), "Max file size: %u KB (read-only)",
              (unsigned)(editor_get_max_doc_size() / 1024));
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    /* Backlight brightness (LCD boards with a controllable backlight) */
     snprintf(buf, sizeof(buf), "Backlight: %d%%", s_backlight_pct);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    /* Color theme (color LCDs only) */
     snprintf(buf, sizeof(buf), "Color theme: %s",
              COLOR_THEMES[s_theme_idx].name);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    /* Runtime 180-degree display flip */
     snprintf(buf, sizeof(buf), "Rotate 180: %s",
              s_rotate180 ? "on" : "off");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    /* Inverted screen */
     snprintf(buf, sizeof(buf), "Inverted screen: %s",
              s_invert ? "on" : "off");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
-    /* Append-only editing */
     snprintf(buf, sizeof(buf), "Append-only editing: %s",
              s_append_only ? "on" : "off");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* Active language layouts -- comma-separated summary of the
-     * layouts Ctrl+L / Win+Space currently rotate through. */
     {
         char names[200] = "";
         for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
@@ -5438,66 +5403,45 @@ static void refresh_settings_items(void)
             if (names[0]) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
             strncat(names, kb_layout_name(id), sizeof(names) - strlen(names) - 1);
         }
-        /* A long list would not fit the row: give the count instead. */
         if (strlen(names) > 40) {
             snprintf(names, sizeof(names), "%d layouts", kb_layout_active_count());
         }
         snprintf(buf, sizeof(buf), "Active layouts: %s (Enter to edit)", names);
-        lv_list_add_btn(s_settings_list, NULL, buf);
+        rows.emplace_back(buf);
     }
 
-    /* Display orientation -- landscape (default) or portrait (the whole
-     * UI turned another 90 degrees). Frozen for the session like the
-     * margins below, so it only takes effect on a restart. */
     snprintf(buf, sizeof(buf), "Display orientation: %s (restart to apply)",
              s_pending_portrait ? "Portrait" : "Landscape");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
 #if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    /* Display upside down -- adds a further 180-degree turn on top of
-     * whatever the orientation setting above already produces. Frozen
-     * for the session like the orientation, so it only takes effect on
-     * a restart. Boards with the live-apply "Rotate 180" toggle
-     * (CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE) skip this row -- see the
-     * SETTINGS_IDX_UPSIDE_DOWN comment above. */
     snprintf(buf, sizeof(buf), "Display upside down: %s (restart to apply)",
              s_pending_upside_down ? "On" : "Off");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 #endif
 
-    /* 2x scale for the visually impaired: every pixel drawn as a 2x2
-     * block. The LVGL canvas size is fixed for the session, so it only
-     * takes effect on a restart. */
     snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
              s_pending_scale2x ? "On" : "Off");
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* Screen margins -- pixels of panel hidden under the enclosure on
-     * each edge. Zero by default; the LVGL display resolution is fixed
-     * for the session, so a change is not visible until a restart --
-     * request_close_settings() offers one as soon as the user leaves
-     * this screen with a pending change, hence the reminder suffix. */
     snprintf(buf, sizeof(buf), "Margin left: %dpx (restart to apply)", s_margin_left);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
     snprintf(buf, sizeof(buf), "Margin right: %dpx (restart to apply)", s_margin_right);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
     snprintf(buf, sizeof(buf), "Margin top: %dpx (restart to apply)", s_margin_top);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
     snprintf(buf, sizeof(buf), "Margin bottom: %dpx (restart to apply)", s_margin_bottom);
-    lv_list_add_btn(s_settings_list, NULL, buf);
+    rows.emplace_back(buf);
 
-    /* Factory reset */
     if (s_factory_reset_confirm) {
-        lv_list_add_btn(s_settings_list, NULL,
-                        "Factory reset -- ENTER again to confirm");
+        rows.emplace_back("Factory reset -- ENTER again to confirm");
     } else {
-        lv_list_add_btn(s_settings_list, NULL, "Factory reset");
+        rows.emplace_back("Factory reset");
     }
 
-    /* Back */
-    lv_list_add_btn(s_settings_list, NULL, "Back (Esc)");
+    rows.emplace_back("Back (Esc)");
 
-    /* Highlight selection */
+    render_string_list(s_settings_list, rows);
     apply_list_selection_styles(s_settings_list, s_settings_sel);
     s_settings_sel_prev = s_settings_sel;
 
