@@ -8288,6 +8288,10 @@ static void xfer_set_projects(const char *first, const char *exclude)
 {
     int n = 0;
     project_name_t *all = project_list(&n);
+    if (n < 0) {
+        editor_ui_set_status("Cannot read the list of projects");
+        n = 0;
+    }
     free(s_xfer_projects);
     s_xfer_projects = (project_name_t *)malloc((size_t)(n + 1) * sizeof(project_name_t));
     s_xfer_nprojects = 0;

@@ -61,11 +61,16 @@ static bool scan_dir(const char *dir, sd_card_file_entry_t **out, int *count)
 
 extern "C" project_name_t *project_list(int *out_count)
 {
-    *out_count = 0;
+    *out_count = -1;
     int count = 0;
     sd_card_file_entry_t *e = NULL;
     if (!scan_dir(mount(), &e, &count)) return NULL;
     project_name_t *out = count ? (project_name_t *)malloc((size_t)count * sizeof(*out)) : NULL;
+    if (count && !out) {
+        ESP_LOGE(TAG, "project list: out of memory");
+        sd_card_free_list(e);
+        return NULL;
+    }
     int n = 0;
     /* sd_card_list_dir() sorts case-insensitively by name. */
     for (int i = 0; out && i < count; i++) {
@@ -83,7 +88,7 @@ extern "C" bool project_any(void)
     int n = 0;
     project_name_t *all = project_list(&n);
     free(all);
-    return n > 0;
+    return n != 0;
 }
 
 extern "C" bool project_exists(const char *name)
