@@ -56,6 +56,10 @@ in the git log.
   them left the new contents only in a hidden temporary file, so the
   document seemed gone. It is now put back the next time the card is
   mounted.
+- **Sync via browser no longer passes off a damaged download as
+  complete**: when a file could not be read from the SD card part-way
+  through, the computer received a cut-off copy as if it were the whole
+  file. The transfer is now aborted with "SD card read error".
 
 ## [1.0.23] - 2026-11-07
 
