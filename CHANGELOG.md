@@ -13,6 +13,11 @@ in the git log.
   menus and dialogs are twice as large (with a quarter of the content
   on screen). Applied on the next restart, which is offered when you
   leave the Settings screen.
+- **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
+  Espressif's ESP32-S31-Korvo-1 board with the
+  ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
+  in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
+  board Draftling supports. Not yet tested on the device.
 
 ### Fixed
 
@@ -103,11 +108,6 @@ in the git log.
   the center of the rocker wheel now wakes the device from sleep, the
   same button whose 2-second hold puts it to sleep. The BOOT button
   still wakes it too.
-- **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
-  Espressif's ESP32-S31-Korvo-1 board with the
-  ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
-  in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
-  board Draftling supports. Not yet tested on the device.
 
 ### Changed
 
