@@ -949,6 +949,24 @@ static inline int menu_index_for_id(menu_item_id_t id)
     return 0;
 }
 
+static inline menu_item_id_t menu_selection_id(void)
+{
+    return menu_id_for_index(s_menu_sel);
+}
+
+static inline void menu_set_selection_id(menu_item_id_t id)
+{
+    s_menu_sel = menu_index_for_id(id);
+}
+
+static inline void menu_move_selection(int delta)
+{
+    if (MENU_ROW_COUNT <= 0) return;
+    int idx = menu_index_for_id(menu_selection_id());
+    idx = (idx + delta + MENU_ROW_COUNT) % MENU_ROW_COUNT;
+    s_menu_sel = idx;
+}
+
 static const settings_item_id_t s_settings_row_ids[] = {
     SETTINGS_ID_TIMEOUT,
     SETTINGS_ID_FONTSZ,
@@ -993,6 +1011,24 @@ static inline int settings_index_for_id(settings_item_id_t id)
         if (s_settings_row_ids[i] == id) return i;
     }
     return 0;
+}
+
+static inline settings_item_id_t settings_selection_id(void)
+{
+    return settings_id_for_index(s_settings_sel);
+}
+
+static inline void settings_set_selection_id(settings_item_id_t id)
+{
+    s_settings_sel = settings_index_for_id(id);
+}
+
+static inline void settings_move_selection(int delta)
+{
+    if (SETTINGS_ROW_COUNT <= 0) return;
+    int idx = settings_index_for_id(settings_selection_id());
+    idx = (idx + delta + SETTINGS_ROW_COUNT) % SETTINGS_ROW_COUNT;
+    s_settings_sel = idx;
 }
 
 /* Header line of the F1 menu screen (s_lbl_menu_hdr); the "Format SD
@@ -5099,7 +5135,7 @@ static void update_menu_highlight(void)
 static void show_menu(void)
 {
     s_menu_open = true;
-    s_menu_sel = 0;
+    menu_set_selection_id(MENU_ID_SETTINGS);
     /* Defensive reset: every normal exit from the picker / password
      * prompt (Enter or Esc) already clears these, so this is only a
      * safety net against a stale flag surviving some other path back
@@ -5604,7 +5640,7 @@ static void show_settings(void)
 {
     s_settings_open = true;
     s_menu_open = false;
-    s_settings_sel = 0;
+    settings_set_selection_id(SETTINGS_ID_TIMEOUT);
     s_factory_reset_confirm = false;
     s_restart_needed = false;
     s_restart_confirm_open = false;
@@ -5974,7 +6010,7 @@ static void handle_settings_key(const kb_event_t *ev)
 
     switch (ev->keycode) {
     case KB_KEY_UP:
-        if (s_settings_sel > 0) s_settings_sel--;
+        settings_move_selection(-1);
         if (s_factory_reset_confirm) {
             /* Cancelling confirmation changes the item label, so we
              * need a full rebuild; otherwise just move the highlight. */
@@ -5985,7 +6021,7 @@ static void handle_settings_key(const kb_event_t *ev)
         }
         break;
     case KB_KEY_DOWN:
-        if (s_settings_sel < SETTINGS_ITEM_COUNT - 1) s_settings_sel++;
+        settings_move_selection(1);
         if (s_factory_reset_confirm) {
             s_factory_reset_confirm = false;
             refresh_settings_items();
@@ -5994,16 +6030,16 @@ static void handle_settings_key(const kb_event_t *ev)
         }
         break;
     case KB_KEY_ENTER:
-        settings_activate_item(settings_id_for_index(s_settings_sel));
+        settings_activate_item(settings_selection_id());
         break;
     case KB_KEY_LEFT:
         /* Previous value on the highlighted row, without moving the
          * highlight -- a no-op on rows settings_cycle_item() does not
          * own (Theme, Max file, Factory reset, Back). */
-        settings_cycle_item(settings_id_for_index(s_settings_sel), -1);
+        settings_cycle_item(settings_selection_id(), -1);
         break;
     case KB_KEY_RIGHT:
-        settings_cycle_item(settings_id_for_index(s_settings_sel), 1);
+        settings_cycle_item(settings_selection_id(), 1);
         break;
     case KB_KEY_ESCAPE:
         request_close_settings();
@@ -7298,15 +7334,15 @@ static void handle_menu_key(const kb_event_t *ev)
 
     switch (ev->keycode) {
     case KB_KEY_UP:
-        if (s_menu_sel > 0) s_menu_sel--;
+        menu_move_selection(-1);
         update_menu_highlight();
         break;
     case KB_KEY_DOWN:
-        if (s_menu_sel < MENU_ITEM_COUNT - 1) s_menu_sel++;
+        menu_move_selection(1);
         update_menu_highlight();
         break;
     case KB_KEY_ENTER:
-        menu_activate_item(menu_id_for_index(s_menu_sel));
+        menu_activate_item(menu_selection_id());
         break;
     case KB_KEY_ESCAPE:
     case KB_KEY_F1:
@@ -7323,7 +7359,7 @@ static void handle_menu_key(const kb_event_t *ev)
             char ch = kb_layout_shortcut_char(ev->keycode);
             for (const menu_hotkey_t &h : s_menu_hotkeys) {
                 if (ch != h.key) continue;
-                s_menu_sel = menu_index_for_id(h.id);
+                menu_set_selection_id(h.id);
                 update_menu_highlight();
                 if (h.id != MENU_ID_KB_LAYOUT) menu_activate_item(h.id);
                 break;
