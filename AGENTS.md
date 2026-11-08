@@ -1377,6 +1377,11 @@ Source layout (all in-tree, no managed components):
   becomes a whole-file conflict. `git_diff_line_counts()` (Alt+I) uses
   the same diff on hashes of the whole texts.
 
+Host test: `test/host/run.sh` builds this component for the host
+(stub ESP-IDF headers, the SD card as a folder, `esp_http_client`
+replaced by `git http-backend` against a real bare repository) and
+runs whole syncs; run it after changing anything here.
+
 Convention: a `const git_oid *` parameter that represents an optional
 commit/tree ("no parent", "no base", "not cloned yet") is passed as a
 literal `NULL`, not a pointer to a zero-filled `git_oid`. Every function
