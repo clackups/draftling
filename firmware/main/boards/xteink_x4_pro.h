@@ -12,7 +12,7 @@
  * the FreeInk SDK (https://github.com/Free-Ink/freeink-sdk, MIT
  * licensed), which reverse-engineered the OEM firmware's exact
  * register values. This board has been tested on physical hardware
- * (see HARDWARE.md for the on-hardware bring-up notes).
+ * (bring-up findings: display_xteink_epd.cpp and the touch notes below).
  *
  * Included by main/app_config.h when
  * CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO is selected.

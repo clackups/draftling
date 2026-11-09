@@ -29,7 +29,7 @@
  * ESPHome driver at github.com/samperk1/esphome-crowpanel-579, which
  * reverse-engineered and photograph-verified it against real CrowPanel
  * 5.79" hardware. This backend has since been extensively verified on
- * its own physical hardware too -- see HARDWARE.md and PR #47
+ * its own physical hardware too -- see PR #47
  * (github.com/clackups/draftling/pull/47) for that investigation.
  *
  * Framebuffer layout

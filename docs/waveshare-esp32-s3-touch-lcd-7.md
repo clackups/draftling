@@ -10,7 +10,7 @@ a GT911 capacitive touch controller and a MicroSD slot, both wired
 behind an on-board CH422G I2C IO-expander instead of direct GPIOs.
 It shares the same `components/display/display_rgb.cpp` backend as
 the Sunton ESP32-8048S0xx family (see
-[docs/sunton-esp32-8048S070c.md](sunton-esp32-8048S070c.md)), extended
+[docs/sunton-esp32-8048s0xx.md](sunton-esp32-8048s0xx.md)), extended
 with a CH422G-aware backlight / reset path.
 
 References:
@@ -83,8 +83,7 @@ GPIO CS that the driver would have held low for the same duration.
 The RGB panel is driven by the same `components/display/display_rgb.cpp`
 backend as the Sunton ESP32-8048S0xx family (framebuffer in PSRAM,
 dirty-bbox `display_push_rgb565()` / `display_flush()` path -- see
-[docs/sunton-esp32-8048S070c.md](sunton-esp32-8048S070c.md) for the
-shared architecture). This board selects a third pin/timing branch
+`display_rgb.cpp` under `components/display/` in AGENTS.md). This board selects a third pin/timing branch
 via `CONFIG_DRAFTLING_HAS_CH422G`.
 
 ### Panel pins and timings

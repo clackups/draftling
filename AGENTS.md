@@ -654,8 +654,13 @@ Per-board display backends behind a single C API:
   Activation trigger on this panel can leave an incomplete pixel
   transition regardless of waveform or RAM content; `display_flush()`
   runs both the full and partial refresh paths twice, back-to-back, to
-  reliably complete it (matching what pressing Ctrl+R always did) --
-  see HARDWARE.md's CrowPanel section and PR #47 for the full
+  reliably complete it (matching what pressing Ctrl+R always did).
+  The repeat must rewrite the RAM: a bare second trigger on unchanged
+  RAM erased the content just drawn. Ruled out on hardware first: a
+  large union dirty box, the dual-chip cascade setting (register
+  0x21), Old RAM not resynced after a partial refresh, settle time
+  (100-2500 ms) and the waveform (factory fast LUT and two custom
+  LUTs showed the same symptom). See PR #47 for the full
   investigation.
 - **display_ws_epd397.cpp** -- from-scratch SPI e-paper backend for
   the Waveshare ESP32-S3-ePaper-3.97, gated on
