@@ -110,7 +110,7 @@ so no axis swap or mirror is needed
 
 The board builds with the same layouts as every other board. Only
 US-English is active at first; turn on others (for example German
-QWERTZ) in F1 -> Settings -> Active layouts and cycle with `Ctrl+L` or
+QWERTZ) in F1 -> Settings -> Keyboard -> Active layouts and cycle with `Ctrl+L` or
 `Win+Space`.
 
 The author's keyboard has no dedicated ESC key, so `Ctrl+Q` is wired as an
@@ -127,7 +127,7 @@ identically. This substitution is global, so it works on every board.
 The USB-C connector and MicroSD slot are on the opposite edge of the
 board compared to the 7" ESP32-8048S070C, so depending on how the
 board is mounted the image may need to be flipped end-for-end. The F1
--> Settings menu has a runtime **Rotate 180** toggle (on / off) for
+-> Settings -> Display menu has a runtime **Rotate 180** toggle (on / off) for
 this. It is offered on any board with `DRAFTLING_DISPLAY_CAN_ROTATE`
 (derived: on for the parallel-RGB boards).
 
@@ -172,7 +172,7 @@ and enables the GT911 touchscreen.
 - `main/app_config.h` -- `CONFIG_DRAFTLING_MODEL_SUNTON_8048S043` block (SD / touch / wakeup pins).
 - `main/Kconfig.projbuild` -- model choice, `DRAFTLING_DISPLAY_RGB` + `DRAFTLING_RGB_BOARD_S043` derived flags, width/height (800x480), `DRAFTLING_DISPLAY_HIDPI` (Hack fonts), GT911 / touch-RST defaults.
 - `main/main.cpp` -- `display_init()` branch under `CONFIG_DRAFTLING_DISPLAY_RGB` (shared with the 7" board).
-- `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+Q -> Escape substitution; F1 -> Settings "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
+- `components/editor/editor_ui.cpp` -- `process_key_event()` Ctrl+Q -> Escape substitution; F1 -> Settings -> Display "Rotate 180" item (NVS key `rot180`, boot-apply in `editor_ui_init()`).
 - `components/display/lvgl_port.cpp` -- `draftling_lvgl_port_set_flip180()` runtime 180-degree flip.
 - `sdkconfig.defaults.sunton_8048s043` -- board selection + DIO flash + touch enable.
 - `docs/sunton-esp32-8048S070c.md` -- the 7" sibling board.

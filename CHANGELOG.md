@@ -6,6 +6,27 @@ in the git log.
 
 ## [Unreleased]
 
+### Changed
+
+- **Reorganized F1 menu**: the menu is shorter and grouped into
+  sub-menus: Settings, Keyboard layout (shown only when more than one
+  layout is active), Sync (Synchronize, Connect a Draftbox repository,
+  Sync via browser), Connectivity (Bluetooth: status and scan for a
+  keyboard; WiFi: status, connect / disconnect and choose a network),
+  System & Storage (Hardware information, SD card via USB, Format SD
+  card), Sleep now and Help. Enter opens a sub-menu, Esc goes back one
+  level and F1 closes the menu. The bold letter keys now pick items on
+  the current level (for example F1, Y, S starts a sync).
+- **Reorganized Settings**: the settings are grouped into Editor (font
+  size, append-only editing), Display (backlight, color theme,
+  orientation, rotate 180, invert display, 2x scale and the screen
+  margins), Keyboard (active layouts) and System (standby timeout,
+  factory reset). After a change that needs a restart, the restart is
+  offered when you leave the Display settings. "Display upside down" is
+  now called "Rotate 180".
+- **Maximum file size moved to Hardware information**: the largest
+  document the device can open is shown there instead of in Settings.
+
 ## [1.0.24] - 2026-11-08
 
 ### Added

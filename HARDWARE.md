@@ -309,14 +309,15 @@ this board was added; the pins, panel timings and setup sequence come
 from community projects for this board (see
 `firmware/main/boards/waveshare_lcd_316.h`).
 
-- **Backlight**: dimmable from F1 -> Settings or `Ctrl+B`, from 25 % to
+- **Backlight**: dimmable from F1 -> Settings -> Display or `Ctrl+B`, from 25 % to
   100 %.
 - **Battery**: the cell voltage is read through a divider on GPIO4 and
   shown as a percentage; charging state is not detectable.
 - **BOOT button** (GPIO0): wakes the device from deep sleep; hold for
   2 seconds to forget paired BLE keyboards.
 - **SD card via USB**: the USB-C port is wired to the ESP32-S3's
-  native USB, so F1 -> "SD card via USB" is offered.
+  native USB, so F1 -> System & Storage -> "SD card via USB" is
+  offered.
 - The on-board QMI8658 motion sensor and PCF85063 real-time clock are
   not used. To save power, Draftling puts the motion sensor into its
   power-down mode at every boot and switches off the clock chip's
@@ -379,7 +380,7 @@ MISO) and sends the matching init sequence. The ST7789 sequence
 follows TFT_eSPI's, as the upstream firmware's `rev_5_st7789` build
 does (BGR color order, display inversion off). If no ID can be read
 back, it assumes the ILI9341; the boot log ("Display controller
-probe: ...") and F1 -> Hardware information show which controller was
+probe: ...") and F1 -> System & Storage -> Hardware information show which controller was
 used.
 
 ESP32-S3 N16R8 writerdeck with a 2.8" SPI color LCD, configured
@@ -421,10 +422,11 @@ the SDMMC 1-bit peripheral. No battery. BOOT (GPIO0) wakes from deep
 sleep. Tested on physical hardware.
 
 The transflective panel stays readable in daylight without the
-backlight, so the backlight setting (F1 -> Settings, or `Ctrl+B`)
+backlight, so the backlight setting (F1 -> Settings -> Display, or `Ctrl+B`)
 cycles all the way down to 0 %, which switches the backlight off --
 the same as the e-paper front-lights. The USB-C port is wired to the
-ESP32-S3's native USB, so F1 -> "SD card via USB" works on this board.
+ESP32-S3's native USB, so F1 -> System & Storage -> "SD card via USB"
+works on this board.
 
 Build with the `viewe_uedx24320028_ueed035hv` preset.
 
@@ -454,8 +456,8 @@ MicroSD on SDMMC 1-bit.
 The enclosure's cover overlaps the panel unevenly -- on the unit this
 was tuned on, about 12 px on the left edge and 8 px on top, 0 on the
 right and bottom -- hiding that band from view. Screen margins are a
-user-adjustable setting (F1 -> Settings -> Margin Left/Right/Top/
-Bottom, 0-40 px in 2 px steps, zero by default; see AGENTS.md's
+user-adjustable setting (F1 -> Settings -> Display -> Screen margins ->
+Left/Right/Top/Bottom, 0-40 px in 2 px steps, zero by default; see AGENTS.md's
 "Screen margins" section), not a per-board compile-time default, so
 dial them in to match your own unit and restart to apply. They shrink
 the editor/LVGL canvas by that much and the display backend offsets
@@ -563,8 +565,7 @@ No touchscreen. On-board MicroSD on its own SPI bus. Five buttons:
 Menu, Back, a 3-way dial switch (Up/Down/OK), plus RESET and BOOT.
 
 The Menu button (GPIO2) is the deep-sleep wake source and, during
-normal operation, doubles as an F1 key (open/close the Settings
-menu) on a short press / "forget all BLE keyboards" on a 2 s hold --
+normal operation, doubles as an F1 key (open/close the menu) on a short press / "forget all BLE keyboards" on a 2 s hold --
 the same convention as the LilyGO T5 E-Paper S3 Pro H752's side key.
 The Back button and the dial switch round out full menu navigation
 without a keyboard: Back injects Esc, the dial's Up/Down positions
@@ -830,7 +831,7 @@ preset) runs on both.
   single-SSD1677 differential-refresh protocol as the Waveshare
   ESP32-S3-ePaper-3.97, on SPI2 (SCLK=15, MOSI=14, CS=16, DC=17,
   BUSY=18). The device is natively portrait; Draftling starts in
-  landscape, and F1 -> Settings -> Display orientation switches to
+  landscape, and F1 -> Settings -> Display -> Orientation switches to
   portrait.
 - **Power chips**: two M5Stack chips on the system I2C bus (SDA=47,
   SCL=48) switch most of the board's peripherals. The M5IOE1 IO
@@ -844,8 +845,8 @@ preset) runs on both.
 - **Battery**: voltage read from the M5PM1; the percentage comes from
   the LiPo discharge table. The charging mark shows while USB powers
   the device.
-- **Front-light**: M5PM1 PWM output, set from F1 -> Settings ->
-  Backlight or with Ctrl+B.
+- **Front-light**: M5PM1 PWM output, set from F1 -> Settings -> Display
+  -> Backlight or with Ctrl+B.
 - **Touch**: FT6336G on the system I2C bus, INT on GPIO4.
 - **MicroSD**: SDMMC, used in 1-bit mode (CLK=13, CMD=12, D0=11).
 - **Buttons**: Button A (GPIO2) = Page Up, and it wakes the device from
@@ -890,8 +891,8 @@ ESP32-C5 limits the usability.
   the MicroSD slot to different pins, so the display is driven by the
   chip's PARLIO peripheral working as a 1-bit SPI port (DC=4, CS=5,
   SCK=6, MOSI=7). Backlight on GPIO25, adjustable from F1 -> Settings
-  -> Backlight or with Ctrl+B. If the picture comes out upside down,
-  turn on F1 -> Settings -> Display upside down.
+  -> Display -> Backlight or with Ctrl+B. If the picture comes out
+  upside down, turn on F1 -> Settings -> Display -> Rotate 180.
 - **Touch**: capacitive, on I2C (SDA=24, SCL=23, INT=1). The vendor's
   example talks to a CST816D at address 0x15, while its product manual
   lists an FT6336G (0x38); the firmware works with either.
