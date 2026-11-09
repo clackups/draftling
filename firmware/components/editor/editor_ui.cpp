@@ -886,7 +886,6 @@ enum menu_item_t {
     MENU_ITEM_SYSTEM_MENU,
     MENU_ITEM_SLEEP,
     MENU_ITEM_HELP,
-    MENU_ITEM_CLOSE,
     /* Sync */
     MENU_ITEM_GIT_SYNC,
     MENU_ITEM_DRAFTBOX,
@@ -4993,7 +4992,6 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_SYSTEM_MENU, "System & Storage...");
         menu_add(MENU_ITEM_SLEEP, "Sleep now");
         menu_add(MENU_ITEM_HELP, "Help (F10)");
-        menu_add(MENU_ITEM_CLOSE, "Close menu (Esc / F1)");
         break;
 
     case MENU_LVL_SYNC:
@@ -7097,7 +7095,68 @@ static void save_modified_doc_cb(editor_doc_t *doc, void *ctx);
 /* Ctrl+G and F1 -> Git Sync: sync the project the user works in (see
  * context_project()), after saving every open document so the sync
  * task (which reads the files) picks up the latest edits. */
-static void start_project_sync(void)
+/* Project that F1 -> Sync -> Synchronize will sync once the WiFi
+ * connection it started is up ("" = none pending). Resolved by
+ * sync_wifi_done() from wifi_state_cb() / wifi_connect_task(). */
+static project_name_t s_sync_after_wifi = "";
+
+/* Sync project p (see start_project_sync()); with connect_wifi, a
+ * missing WiFi connection is brought up first (from wifi.cfg / NVS, as
+ * Ctrl+W does) and the sync starts when it is connected. */
+static void sync_project(const char *p, bool connect_wifi)
+{
+    char dir[64];
+    project_dir(p, dir, sizeof(dir));
+    char sbuf[128];
+    if (!git_sync_is_configured(dir)) {
+        snprintf(sbuf, sizeof(sbuf), "Git: %.32s not configured (no git.cfg)", p);
+        editor_ui_set_status(sbuf);
+        return;
+    }
+    if (!wifi_manager_is_connected()) {
+        if (!connect_wifi) {
+            editor_ui_set_status("Git: connect WiFi first (F1)");
+            return;
+        }
+        strlcpy(s_sync_after_wifi, p, sizeof(s_sync_after_wifi));
+        /* An attempt already running reports to wifi_state_cb() too. */
+        if (wifi_manager_get_state() != WIFI_STATE_CONNECTING) {
+            editor_ui_set_status("WiFi: connecting...");
+            wifi_connect_async();
+        }
+        return;
+    }
+    editor_doc_foreach(save_modified_doc_cb, NULL);
+    pane_bind_focus();
+    if (git_sync_start(dir, GIT_SYNC_BOTH) == ESP_OK) {
+        snprintf(sbuf, sizeof(sbuf), "Git: syncing %.32s...", p);
+        editor_ui_set_status(sbuf);
+    } else {
+        const char *err = git_sync_get_last_error();
+        snprintf(sbuf, sizeof(sbuf), "Git: %s",
+                 (err && err[0]) ? err : "failed to start sync");
+        editor_ui_set_status(sbuf);
+    }
+}
+
+/* Outcome of the WiFi connection a pending Synchronize waits for
+ * (LVGL lock held). On failure the WiFi status message stays. */
+static void sync_wifi_done(bool connected)
+{
+    if (!s_sync_after_wifi[0]) return;
+    project_name_t p;
+    strlcpy(p, s_sync_after_wifi, sizeof(p));
+    s_sync_after_wifi[0] = '\0';
+    if (!connected) return;
+    if (const char *busy = sd_handed_off_msg()) {
+        editor_ui_set_status(busy);
+        return;
+    }
+    if (!project_exists(p)) return;
+    sync_project(p, false);
+}
+
+static void start_project_sync_ex(bool connect_wifi)
 {
     if (const char *busy = sd_handed_off_msg()) {
         editor_ui_set_status(busy);
@@ -7108,29 +7167,12 @@ static void start_project_sync(void)
         editor_ui_set_status("Git: select a project first");
         return;
     }
-    char dir[64];
-    project_dir(p, dir, sizeof(dir));
-    editor_doc_foreach(save_modified_doc_cb, NULL);
-    pane_bind_focus();
-    char sbuf[128];
-    if (!git_sync_is_configured(dir)) {
-        snprintf(sbuf, sizeof(sbuf), "Git: %.32s not configured (no git.cfg)", p);
-        editor_ui_set_status(sbuf);
-        return;
-    }
-    if (!wifi_manager_is_connected()) {
-        editor_ui_set_status("Git: connect WiFi first (F1)");
-        return;
-    }
-    if (git_sync_start(dir, GIT_SYNC_BOTH) == ESP_OK) {
-        snprintf(sbuf, sizeof(sbuf), "Git: syncing %.32s...", p);
-        editor_ui_set_status(sbuf);
-    } else {
-        const char *err = git_sync_get_last_error();
-        snprintf(sbuf, sizeof(sbuf), "Git: %s",
-                 (err && err[0]) ? err : "failed to start sync");
-        editor_ui_set_status(sbuf);
-    }
+    sync_project(p, connect_wifi);
+}
+
+static void start_project_sync(void)
+{
+    start_project_sync_ex(false);
 }
 
 static void menu_activate_item(int row)
@@ -7202,7 +7244,10 @@ static void menu_activate_item(int row)
             editor_ui_set_status(busy);
             break;
         }
-        if (git_sync_get_state() != GIT_SYNC_IN_PROGRESS && wifi_manager_is_connected()) {
+        /* Close the menu when the sync (or the WiFi connection it
+         * needs first) can start; otherwise stay with the reason in
+         * the status bar. */
+        if (git_sync_get_state() != GIT_SYNC_IN_PROGRESS) {
             project_name_t p;
             char dir[64];
             if (context_project(p, sizeof(p))) {
@@ -7210,7 +7255,7 @@ static void menu_activate_item(int row)
                 if (git_sync_is_configured(dir)) close_menu();
             }
         }
-        start_project_sync();
+        start_project_sync_ex(true);
         break;
     case MENU_ITEM_DRAFTBOX:
         /* Writes git.cfg on the SD card -- same guard as Git Sync. */
@@ -7279,9 +7324,6 @@ static void menu_activate_item(int row)
         } else {
             standby_enter_sleep();
         }
-        break;
-    case MENU_ITEM_CLOSE:
-        close_menu();
         break;
     default:
         break;
@@ -11458,6 +11500,7 @@ static void wifi_connect_task(void *arg)
                 ? "No WiFi network is configured. Use F1 -> "
                   "Connectivity -> WiFi -> \"Choose network...\" first."
                 : "WiFi is busy, try again.");
+            sync_wifi_done(false);
             draftling_lvgl_port_unlock();
         }
     }
@@ -11472,6 +11515,7 @@ static void wifi_connect_async(void)
     if (rc != pdPASS) {
         editor_ui_set_status("WiFi: failed to start task");
         dbx_wifi_done(false, "Failed to start the WiFi task.");
+        sync_wifi_done(false);
     }
 }
 
@@ -11713,7 +11757,9 @@ static void wifi_state_cb(wifi_state_t state)
      * here: a new attempt drops the old association first. */
     if (state == WIFI_STATE_CONNECTED) {
         dbx_wifi_done(true, NULL);
+        sync_wifi_done(true);
     } else if (state == WIFI_STATE_ERROR) {
+        sync_wifi_done(false);
         char reason[96];
         const char *ssid = wifi_manager_get_ssid();
         bool auth = wifi_manager_last_failure_was_auth();
