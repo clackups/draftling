@@ -28,10 +28,10 @@
  * No on-board battery ADC or fuel gauge was found in the vendor
  * Eagle schematic (net "BAT" is a bare JST connector with no
  * resistive divider wired to any GPIO) or in any of the vendor's
- * Arduino examples -- see HARDWARE.md.
+ * Arduino examples.
  *
  * This board has been extensively tested on physical hardware (see
- * HARDWARE.md, PR #47). Pin assignments come from the vendor's
+ * PR #47 and display_ssd1683.cpp). Pin assignments come from the vendor's
  * Arduino examples and Eagle schematic
  * (github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-
  * Display-with-272-792) cross-checked against the community ESPHome

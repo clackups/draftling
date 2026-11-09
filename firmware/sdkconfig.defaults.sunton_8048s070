@@ -5,5 +5,5 @@ CONFIG_IDF_TARGET="esp32s3"
 CONFIG_DRAFTLING_MODEL_SUNTON_8048S070=y
 
 # This board's flash is wired for DIO, overriding the QIO default in
-# sdkconfig.defaults.esp32s3. See docs/sunton-esp32-8048S070c.md.
+# sdkconfig.defaults.esp32s3. See docs/sunton-esp32-8048s0xx.md.
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y

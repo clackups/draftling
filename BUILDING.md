@@ -134,7 +134,7 @@ Found at the top-level **DRAFTLING Configuration** menu.
 | **Standby: wake from deep sleep on touchscreen tap** | bool | y on JC3248W535, n otherwise | Arm EXT0 on the touch INT line so any tap wakes the device. |
 
 Backlight brightness on color-LCD boards is not a menuconfig option:
-it is set at runtime from F1 -> Settings -> Backlight (or the
+it is set at runtime from F1 -> Settings -> Display -> Backlight (or the
 Ctrl+B shortcut) and persisted in NVS (default 50%). The backend
 drives the BL GPIO with an LEDC PWM signal (~5 kHz, 10-bit). 0% =
 off, 100% = full brightness.

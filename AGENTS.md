@@ -150,7 +150,8 @@ ESP32-C6, over SDIO with `espressif/esp_hosted ~3.1.0`
 has no supply until `main.cpp` enables WLAN_PWR_EN through the BSP and
 then calls `esp_hosted_init()` itself. `main.cpp` then reads the C6's
 version (`esp_hosted_get_coprocessor_fwversion()`), shows it on the
-F1 -> Hardware information page (`editor_ui_set_coprocessor()`) and
+F1 -> System & Storage -> Hardware information page
+(`editor_ui_set_coprocessor()`) and
 halts with an on-screen message below 3.1: ESP-Hosted 3.x keeps the link up with
 older C6 firmware, but the Bluetooth bring-up in `ble_keyboard.cpp`
 (`esp_hosted_bt_host_stack_setup()`, `CONFIG_ESP_HOSTED_HOST_FEAT_BT`)
@@ -661,8 +662,13 @@ Per-board display backends behind a single C API:
   Activation trigger on this panel can leave an incomplete pixel
   transition regardless of waveform or RAM content; `display_flush()`
   runs both the full and partial refresh paths twice, back-to-back, to
-  reliably complete it (matching what pressing Ctrl+R always did) --
-  see HARDWARE.md's CrowPanel section and PR #47 for the full
+  reliably complete it (matching what pressing Ctrl+R always did).
+  The repeat must rewrite the RAM: a bare second trigger on unchanged
+  RAM erased the content just drawn. Ruled out on hardware first: a
+  large union dirty box, the dual-chip cascade setting (register
+  0x21), Old RAM not resynced after a partial refresh, settle time
+  (100-2500 ms) and the waveform (factory fast LUT and two custom
+  LUTs showed the same symptom). See PR #47 for the full
   investigation.
 - **display_ws_epd397.cpp** -- from-scratch SPI e-paper backend for
   the Waveshare ESP32-S3-ePaper-3.97, gated on
@@ -807,7 +813,8 @@ The largest component. Contains:
   so a failed open keeps the old text, and UTF-16 files are transcoded
   from the file in a stream). A copy too large for a PSRAM block goes
   to `/sdcard/.clipboard` and is pasted from there into the gap. Exposes `editor_get_max_doc_size()`
-  for the UI, which surfaces the value read-only in F1 -> Settings.
+  for the UI, which shows it on the F1 -> System & Storage ->
+  Hardware information page ("Max file size").
   Provides cursor movement, selection, clipboard, insert/delete, and
   file I/O. Per-keystroke cost does not grow with the document: the
   newline counts before the gap and in total are kept up to date by
@@ -939,7 +946,7 @@ keyboard connects. The prompts reuse the save-as overlay with a
 `save_mode_t` (`s_save_mode`; project-name modes filter characters).
 `context_project()` is the project commands act on: the focused
 document's (an untitled one: `s_last_project`) in the editor, else the
-browsed or highlighted project; Ctrl+G / F1 Git Sync
+browsed or highlighted project; Ctrl+G / F1 -> Sync -> Synchronize
 (`start_project_sync()`), Draftbox and Sync via browser (the Kermit
 server is rooted at the project folder, so Draftbridge sees the
 pre-project layout) use it. In the list of projects N / Ctrl+N creates
@@ -998,7 +1005,8 @@ overlay); `editor_delete_file()` then removes the file and its
 `.meta` sidecar, refusing while the file is open in a pane. The next
 sync commits the deletion.
 
-**Format SD card.** The F1 row `MENU_IDX_FORMAT_SD` (letter `F`) opens a
+**Format SD card.** The F1 -> System & Storage row
+`MENU_ITEM_FORMAT_SD` (letter `F`) opens a
 picker rendered into `s_menu_list` like the "SD card via USB" one, with
 the question in the menu header (`s_lbl_menu_hdr`, reset to
 `MENU_HDR_TEXT` on close). Steps (`fmt_step_t`): `FMT_STEP_WIFI` keep /
@@ -1013,9 +1021,8 @@ documents back, shows the busy message pop-up and runs `fmt_task()`:
 pointing at the deleted files (open documents, Git repository,
 `git.cfg`).
 
-**Sync via browser.** The F1 row `MENU_IDX_KERMIT` (letter `B`, only
-on boards with `CONFIG_DRAFTLING_HAS_KERMIT`; the rows after it shift up
-elsewhere, like after "SD card via USB"; its label names
+**Sync via browser.** The F1 -> Sync row `MENU_ITEM_KERMIT` (letter `B`,
+only on boards with `CONFIG_DRAFTLING_HAS_KERMIT`; its label names
 `context_project()`, "Sync via browser: <project>...", like the Git Sync
 row) opens a
 Start / Cancel picker rendered into `s_menu_list`, with the question in
@@ -1051,7 +1058,8 @@ All of it is compiled out without `CONFIG_DRAFTLING_HAS_KERMIT`.
 someone else" (SD via USB or the Kermit server) used by the editor, both
 file browsers, Git sync, Draftbox and Format SD card.
 
-**Hardware information.** The F1 row `MENU_IDX_HWINFO` (letter `I`)
+**Hardware information.** The F1 -> System & Storage row
+`MENU_ITEM_HWINFO` (letter `I`)
 shows `build_hwinfo_text()` on the help screen (`show_hwinfo()`, which
 shares `show_help_page()` and the key / touch handling with the help
 page): the board name main.cpp passes in through
@@ -1086,41 +1094,92 @@ total size, server / repository (`git_sync_get_remote()`: the
 `repo_url` path without `.git`) / branch and `git_sync_project_status()`). In the
 list of projects it shows only the project information.
 
-**F1 menu letter keys.** `s_menu_hotkeys[]` in `editor_ui.cpp` maps
-a letter (resolved with `kb_layout_shortcut_char()`, no Ctrl / Alt /
-Win) to a menu row and the character index of that letter in the
-row's label; `handle_menu_key()` activates the row (`K` only moves the
-highlight to the keyboard-layout row). There is no bold font, so
+**F1 menu levels.** The F1 menu is a tree (`menu_level_t`):
+
+```
+Settings...
+Keyboard: <layout>        (only when more than one layout is active)
+Sync...                   Synchronize: <project> / Connect a Draftbox
+                          repository... / Sync via browser: <project>...
+Connectivity...           Bluetooth... (Status, Scan for keyboard)
+                          WiFi... (Status, Connect to <SSID> | Disconnect,
+                          Choose network...)
+System & Storage...       Hardware information / SD card via USB /
+                          Format SD card...
+Sleep now
+Help (F10)
+Close menu (Esc / F1)
+```
+
+`refresh_menu_items()` builds the rows of `s_menu_level` into
+`s_menu_items[]` (a `menu_item_t` per row, rows a board or the current
+state does not offer left out), so code must map a row through
+`s_menu_items[]`, never assume a fixed index. Every sub-level ends with
+"Back (Esc)"; `menu_enter_level()` / `menu_go_back()` keep the parent's
+selection on `s_menu_sel_stack[]`. Esc goes up one level (closing the
+menu on the top level), F1 closes it from any level; "Close menu" is the top
+level's counterpart of the sub-levels' "Back (Esc)" row.
+Sync -> Synchronize (`start_project_sync_ex(true)`) connects WiFi
+first when it is down (`wifi_connect_async()`, as Ctrl+W does) and
+leaves the project in `s_sync_after_wifi`; `sync_wifi_done()`, called
+from `wifi_state_cb()` / `wifi_connect_task()`, starts the sync on
+CONNECTED and drops it on failure. Ctrl+G still only asks for WiFi. The header
+(`s_lbl_menu_hdr`) names the level's path (`menu_level_header()`).
+Pickers rendered into `s_menu_list` (WiFi scan, SD card via USB, Sync
+via browser, Format SD card) return to the level they were opened from.
+`show_menu()` always starts on the top level.
+
+**F1 menu letter keys.** `menu_item_hotkey()` in `editor_ui.cpp` gives
+the letter (resolved with `kb_layout_shortcut_char()`, no Ctrl / Alt /
+Win) that picks a row on its level; `handle_menu_key()` activates the
+row (`K` only moves the highlight to the keyboard-layout row).
+`list_mark_hotkey()` paints the first occurrence of the letter (either
+case) in the row's label: there is no bold font, so
 `menu_hotkey_draw_cb()` (`LV_EVENT_DRAW_MAIN_END` on the row label)
 redraws the letter 1 px to the right, following the circular-scroll
 offset of an overflowing `lv_list` label (read from
-`lv_label_private.h`). Keep the index in sync when a label changes.
+`lv_label_private.h`). Make sure the letter still occurs in the label
+when a label changes.
 
-**Settings** is the first item in the F1 menu (moved to the top so it
-is a single Enter away without navigating past the connectivity
-items). It opens an in-line list with: standby timeout, base font
-size, **Backlight** (NN%, only on boards with
-`CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` -- the value is persisted
-in NVS under the `editor` namespace and applied at boot via
-`display_set_backlight()`; default 50%), color theme (only on
-`CONFIG_DRAFTLING_DISPLAY_COLOR`), append-only editing, **display
-orientation** (Landscape / Portrait -- see the "Display orientation"
-section below), **display upside down** (On / Off -- see the "Display
-upside down" section below; hidden on boards that already expose the
-live-apply "Rotate 180" toggle, `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`),
-four screen margins (Left/Right/Top/Bottom, 0-40 px in
-2 px steps, zero by default -- see the "Screen margins" section above),
-factory reset and back. The orientation, upside-down and margin rows
-are persisted immediately but only take effect after a restart, hence
-the "(restart to apply)" suffix on their labels; leaving Settings with
-any of them changed this visit (`s_restart_needed`) raises the shared
-"Restart now to apply changes" prompt. ("Sleep now" used to sit here; it is now a top-level F1 menu item
--- see below.) Picking a new color theme does NOT reboot the device:
+**Settings** is the first item in the F1 menu. It is a tree like the
+F1 menu (`settings_level_t`, rows `settings_item_t` in
+`s_settings_items[]`, `settings_enter_level()` / `settings_go_back()`,
+header `s_lbl_settings_hdr`):
+
+```
+Editor...     Base font size, Append-only editing
+Display...    Backlight, Color theme, Orientation, Rotate 180,
+              Invert display, 2x scale, Screen margins... (Left,
+              Right, Top, Bottom)
+Keyboard...   Active layouts
+System...     Standby timeout, Factory reset
+```
+
+**Backlight** (NN%) is only on boards with
+`CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` (the value is persisted in NVS
+under the `editor` namespace and applied at boot via
+`display_set_backlight()`; default 50%), color theme only on
+`CONFIG_DRAFTLING_DISPLAY_COLOR`, invert only on
+`CONFIG_DRAFTLING_DISPLAY_CAN_INVERT`. **Rotate 180** is the live
+toggle on `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE` boards
+(`SET_ITEM_ROTATE`) and the restart-to-apply "Display upside down"
+setting elsewhere (`SET_ITEM_UPSIDE_DOWN`, see the "Display upside
+down" section below). The orientation, restart-to-apply rotate, 2x
+scale and margin rows (see the "Screen margins" / "Display
+orientation" sections) are persisted immediately but only take effect
+after a restart, hence the "(restart to apply)" suffix on their
+labels; leaving the Display level with any of them changed
+(`s_restart_needed`) raises the "Restart now to apply changes" prompt
+(`s_restart_confirm_open`); "Keep editing" goes back to the Settings
+top level without asking again. The maximum document size, a
+read-only value, is shown on the Hardware information page.
+Picking a new color theme does NOT reboot the device:
 `rebuild_screens_for_theme()` deletes every screen / overlay /
 screen-bound timer, re-runs `init_styles()` under the new palette,
 calls `build_screens()` again and restores the screen the user was
-on. The persistent state (open document, NVS-backed font size /
-theme / backlight / standby timeout) survives the rebuild.
+on (in Settings: the level, selection and pending restart). The
+persistent state (open document, NVS-backed font size / theme /
+backlight / standby timeout) survives the rebuild.
 
 Public API: `editor_init()`, `editor_open_file()`, `editor_save_file()`,
 `editor_rename_file()`, `editor_get_format()` / `editor_set_format()`,
@@ -1476,7 +1535,8 @@ changes it also deletes `refs/remotes/origin/<branch>`, which
 described the previous server, so `git_sync_file_status()` does not
 report files as safely pushed to the new one. `git_sync_start()`
 refuses to run while a connect is in progress. The UI is the F1 menu
-row "Connect a Draftbox repository..." (`MENU_IDX_DRAFTBOX`, letter
+row F1 -> Sync -> "Connect a Draftbox repository..."
+(`MENU_ITEM_DRAFTBOX`, letter
 `C`): a two-step prompt on the menu screen (`s_dbx_panel`, site name
 then digits-only password). When WiFi is down it first shows
 `DBX_STEP_WIFI` and starts `wifi_connect_async()` (unless an attempt is
@@ -1618,7 +1678,7 @@ user-configurable "active set" -- see `kb_layout_set_active()` /
 `kb_layout_is_active()` / `kb_layout_get_active_mask()` /
 `kb_layout_set_active_mask()`. `components/editor/editor_ui.cpp` owns
 persisting this set to NVS and exposes it as the "Active layouts" row
-in the F1 -> Settings menu; it defaults to US only, plus the
+in F1 -> Settings -> Keyboard; it defaults to US only, plus the
 input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
 
@@ -1713,8 +1773,8 @@ Public API: `ime_init()`, `ime_builtin_ja_dict()`,
 
 ### components/kermit/
 
-Kermit file-transfer server on the serial console, behind F1 -> "Sync
-via browser". User docs: `docs/sync-via-browser.md`.
+Kermit file-transfer server on the serial console, behind F1 -> Sync ->
+"Sync via browser". User docs: `docs/sync-via-browser.md`.
 
 Only usable on boards whose USB port is wired to the ESP32-S3's native
 USB (USB-Serial/JTAG) -- the `DRAFTLING_HAS_USB_MSC` board list. On
@@ -1976,7 +2036,8 @@ the editor key handler is shared verbatim. The Tab5 keyboard coexists
 with USB and BLE rather than replacing them: on the Tab5 the built-in
 keyboard and a USB keyboard both feed the editor, and when neither a
 USB nor BLE keyboard is connected the user can still start a BLE scan
-on demand from the F1 menu ("BLE: Start scan", which re-enables BLE
+on demand from F1 -> Connectivity -> Bluetooth -> "Scan for keyboard"
+(which re-enables BLE
 if it was left idle at boot).
 
 Only the registers Draftling needs are implemented here; the full
@@ -2011,7 +2072,7 @@ transition, so a connect after a scan or after an earlier attempt
 never reached the AP). It first drops any current association, clears
 stale event-group bits, and on failure disables the auto-retry logic
 and stops the driver, so the next attempt (e.g. `Ctrl+W` back to the
-`wifi.cfg` network after a failed F1 -> "WiFi: New connection...")
+`wifi.cfg` network after a failed F1 -> Connectivity -> WiFi -> "Choose network...")
 starts from a clean state. Connect and `wifi_manager_scan()` are
 serialized by a mutex; a second request while one is running returns
 `ESP_ERR_INVALID_STATE`.
@@ -2629,11 +2690,14 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   and for 50 ms after it, then `tcfg.rst = -1`), like on the X4 Pro:
   with INT floating the chip came up at 0x14 and never reported a
   touch. Switching off is a real power-off on battery:
-  `pre_sleep_reterminal_sticky_deinit()` drives the power latch
-  (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46) LOW and holds it there, and only
-  on USB does `standby_enter_sleep()` go on to deep sleep. The Power
-  button keeps the rail up while held, so `app_main()` sets the latch
-  HIGH in its very first lines, and the board's sdkconfig skips the
+  `pre_sleep_reterminal_sticky_deinit()` clears the power latch and
+  only on USB does `standby_enter_sleep()` go on to deep sleep. The
+  latch is a 74AHC1G79 positive-edge D flip-flop (D = PWR_HOLD=GPIO45,
+  clock = PWR_LOCK=GPIO46): set PWR_HOLD first, then raise PWR_LOCK;
+  driving both pins LOW changes nothing (until the fix it left the
+  board on and deep-sleeping on battery). The Power button keeps the
+  rail up while held, so `app_main()` sets the latch in its very
+  first lines, and the board's sdkconfig skips the
   PSRAM test to shorten the press. Holding the latch through deep
   sleep, as before, drained the cell; once it was empty the chip
   hung, and only the RESET pinhole brought it back.
@@ -2752,7 +2816,8 @@ which `main.cpp` calls immediately after `nvs_flash_init()` -- before
 `display_init()` / `draftling_lvgl_port_init()` -- so every consumer
 sees it from the first frame) and `display_margins_set()` /
 `display_margins_get_pending()` (write/read the raw NVS value for the
-*next* boot; the editor's F1 -> Settings menu uses these to let the
+*next* boot; the editor's F1 -> Settings -> Display -> Screen margins
+menu uses these to let the
 user cycle each margin 0-40 px in 2 px steps). Zero on every board on
 a fresh install.
 
@@ -2789,8 +2854,8 @@ modelled exactly on the screen margins above:
 `display_orientation_is_portrait()` (frozen, session-lifetime, loaded
 by `display_orientation_init()` which `main.cpp` calls right after
 `display_margins_init()`), plus `display_orientation_set_portrait()` /
-`display_orientation_get_pending_portrait()` for the F1 -> Settings
-"Display orientation" row. NVS namespace `disporient`, key `portrait`
+`display_orientation_get_pending_portrait()` for the F1 -> Settings ->
+Display "Orientation" row. NVS namespace `disporient`, key `portrait`
 (u8). Landscape on a fresh install.
 
 Portrait adds a quarter turn to the board's build-time base rotation:
@@ -2828,8 +2893,9 @@ split top/bottom instead of left/right when portrait (the split always
 follows the display's long axis). Frozen for the session for the same
 reason as the margins -- the LVGL canvas and widget tree are built once
 at boot -- so a change only applies after a restart, offered by
-`request_close_settings()` (shared with the margin-change prompt via
-`s_restart_needed` / the "Restart now to apply changes" list).
+`settings_go_back()` when the user leaves Settings -> Display (shared
+with the margin-change prompt via `s_restart_needed` / the "Restart now
+to apply changes" list).
 
 ### Display upside down (user-adjustable, not a Kconfig setting)
 
@@ -2839,8 +2905,9 @@ modelled exactly on the "Display orientation" setting above:
 `display_flip_is_upside_down()` (frozen, session-lifetime, loaded by
 `display_flip_init()`, which `main.cpp` calls right after
 `display_orientation_init()`), plus `display_flip_set_upside_down()` /
-`display_flip_get_pending_upside_down()` for the F1 -> Settings
-"Display upside down" row. NVS namespace `dispflip`, key `updown`
+`display_flip_get_pending_upside_down()` for the F1 -> Settings ->
+Display "Rotate 180" row (labelled like the live toggle below, with a
+"restart to apply" suffix). NVS namespace `dispflip`, key `updown`
 (u8). Off on a fresh install.
 
 When on, it adds a further 180 degrees on top of whatever
@@ -2856,10 +2923,10 @@ rotation (`flush_cb` in `lvgl_port.cpp`) and touch-point rotation stay
 correct for free. Frozen for the session for the same reason as the
 margins and orientation -- the LVGL rotation angle is fixed at
 `draftling_lvgl_port_init()` time -- so a change only applies after a
-restart, offered by `request_close_settings()` alongside the margin
+restart, offered by `settings_go_back()` alongside the margin
 and orientation prompts.
 
-This setting is hidden from F1 -> Settings on boards where
+This setting is replaced in F1 -> Settings -> Display on boards where
 `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE` is set (currently the
 parallel-RGB boards -- see "Display Rotation" below): those boards
 already expose a "Rotate 180" toggle that does the same 180-degree
@@ -2867,10 +2934,10 @@ turn, applied immediately via `draftling_lvgl_port_set_flip180()`
 with no restart needed (a 180 flip never changes the reported
 resolution, so the LVGL widget tree does not need rebuilding).
 Offering both at once on the same board would be two redundant
-controls for the same turn; `editor_ui.cpp`'s
-`SETTINGS_IDX_UPSIDE_DOWN` is `-1` (and the row and its Enter/arrow
-handling compiled out) whenever `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE`
-is defined.
+controls for the same turn; `editor_ui.cpp` adds `SET_ITEM_ROTATE`
+instead of `SET_ITEM_UPSIDE_DOWN` (whose Enter/arrow handling is
+compiled out) whenever `CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE` is
+defined.
 
 ### 2x scale (user-adjustable, not a Kconfig setting)
 
@@ -2880,8 +2947,8 @@ modelled on "Display upside down":
 `display_scale_factor()` (1 or 2, frozen for the session, loaded by
 `display_scale_init()`, which `main.cpp` calls right after
 `display_flip_init()`), plus `display_scale_set_2x()` /
-`display_scale_get_pending_2x()` for the F1 -> Settings "2x scale
-(large view)" row (`SETTINGS_IDX_SCALE2X`, restart to apply via
+`display_scale_get_pending_2x()` for the F1 -> Settings -> Display
+"2x scale (large view)" row (`SET_ITEM_SCALE2X`, restart to apply via
 `s_restart_needed`). NVS namespace `dispscale`, key `x2` (u8).
 
 `app_config.h`'s `DISPLAY_SCALE` is passed as the fourth argument of
@@ -2945,7 +3012,7 @@ in C / C++ code:
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0", ESP32-S31-Korvo-1), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, ESP32-S31-Korvo-1 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
@@ -2954,7 +3021,7 @@ in C / C++ code:
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
-| DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
+| DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> Sync -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
 | DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, MicroJournal Rev 5, ESP32-S31-Korvo-1 |
 | DRAFTLING_USB_HOST_BSP_MANAGED    | USB PHY, VBUS and the USB Host library task are owned by the board BSP (`bsp_usb_host_start()`); otherwise `usb_kbd_init()` installs the host library and its task itself (ESP32-S3 native USB-OTG) | M5Stack Tab5 |
 | DRAFTLING_USB_HOST_DEP            | `int` mirror (0/1) of DRAFTLING_HAS_USB_HOST, tested by the `espressif/usb_host_hid` rule in `components/usb_kbd/idf_component.yml` (the component manager reads `sdkconfig.json`, which omits hidden bool symbols that are n); `components/usb_kbd/` registers as an empty component when DRAFTLING_HAS_USB_HOST is unset, so neither it nor `usb_host_hid` is compiled on other boards | M5Stack Tab5, MicroJournal Rev 5 |
@@ -2982,7 +3049,8 @@ Tab5 and the Waveshare LCD-3.16 to 270 so the editor renders landscape. The sele
 exposed as the hidden `int` symbol **DRAFTLING_DISPLAY_ROTATE_ANGLE**,
 consumed in `app_config.h` as `DISPLAY_ROTATE`.
 
-The runtime **"Display orientation"** setting (F1 -> Settings; see the
+The runtime **"Display orientation"** setting (F1 -> Settings ->
+Display; see the
 "Display orientation" section below) adds
 `DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE` degrees on top of this for
 portrait -- a second non-prompted derived `int` in this file, default
@@ -3063,7 +3131,7 @@ The `sdkconfig.defaults.lang_<pack>` files set every layout explicitly.
 
 Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
-Settings), independent of this Kconfig menu -- see the `kb_layout`
+Settings -> Keyboard), independent of this Kconfig menu -- see the `kb_layout`
 component writeup above. Its NVS key differs per pack (`actlayouts`,
 `actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`), because the bit
 order follows the compiled-in layouts.

@@ -38,16 +38,19 @@
 
 #define BOARD_NAME      "Seeed reTerminal Sticky"
 
-/* Power-rail latch: PWR_HOLD (GPIO45) and PWR_LOCK (GPIO46) must both
- * be driven HIGH first thing in boot or the board's own power switch
- * drops the rail as soon as the case button is released (FreeInk:
- * "Power-rail latch pins a battery-powered board must drive HIGH
- * early in boot to keep itself on"). Neither pin is RTC-capable
+/* Power-rail latch: a 74AHC1G79 positive-edge D flip-flop (U3 in
+ * Seeed's schematic) whose Q keeps the rail on. PWR_HOLD (GPIO45) is
+ * its D input and PWR_LOCK (GPIO46) its clock: a rising edge of
+ * PWR_LOCK stores PWR_HOLD, and nothing else changes it. It must be
+ * set (HOLD HIGH, then a LOCK rising edge) first thing in boot or the
+ * board's own power switch drops the rail as soon as the case button
+ * is released; clearing it (HOLD LOW, then a LOCK rising edge) is the
+ * power-off. Driving both pins LOW does nothing. Neither pin is RTC-capable
  * (outside the ESP32-S3's GPIO0-21 RTC-IO range), so without an
  * explicit gpio_hold_en() + gpio_deep_sleep_hold_en() the pad would
  * lose its driven level the instant deep sleep powers down the
- * digital IOMUX domain. main.cpp drives both HIGH first thing in
- * app_main(), and its pre-sleep hook drives them LOW: a real power-off
+ * digital IOMUX domain. main.cpp sets the latch first thing in
+ * app_main(), and its pre-sleep hook clears it: a real power-off
  * on battery (the Power button then cold-boots the board and has to
  * be held until app_main() runs), deep sleep on USB. Holding the
  * latch through deep sleep instead, as Draftling once did, slowly

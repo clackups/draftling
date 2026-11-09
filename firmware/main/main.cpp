@@ -1235,18 +1235,25 @@ static void pre_sleep_reterminal_sticky_deinit(void)
     gpio_hold_en((gpio_num_t)CHARGE_EN_PIN);
     gpio_deep_sleep_hold_en();
 
-    /* Real power-off: release the power latch (PWR_HOLD / PWR_LOCK
-     * LOW). On battery the rail drops here and nothing below runs;
-     * the Power button then cold-boots the board. Holding the latch
-     * through deep sleep instead (as before) slowly drained the cell,
-     * and once it was empty the chip hung: the Power button did
-     * nothing and only the RESET pinhole recovered it. On USB the
-     * rail stays up, standby_enter_sleep() falls through to deep
-     * sleep as before, and unplugging USB later switches the board
-     * off. The pins are held LOW (also the safe strapping level of
-     * GPIO45 / GPIO46) so they cannot float back up while asleep. */
-    ESP_LOGI(TAG, "Releasing power latch (power off on battery)");
+    /* Real power-off: clear the power latch. The latch is a D
+     * flip-flop (74AHC1G79, D = PWR_HOLD, clock = PWR_LOCK) that only
+     * changes on a rising edge of PWR_LOCK, so PWR_HOLD goes LOW first
+     * and a LOW -> HIGH edge on PWR_LOCK then clocks it in. Driving
+     * both pins LOW, as this hook used to, left the latch set: the
+     * board stayed powered and deep-slept on the battery.
+     *
+     * On battery the rail drops here and nothing below runs; the Power
+     * button then cold-boots the board. On USB the rail stays up,
+     * standby_enter_sleep() falls through to deep sleep, and
+     * unplugging USB later switches the board off. Both pins end LOW
+     * (the safe strapping level of GPIO45 / GPIO46; a falling clock
+     * edge does not change the latch) and are held there. */
+    ESP_LOGI(TAG, "Clearing power latch (power off on battery)");
+    gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 0);
     gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 0);
+    esp_rom_delay_us(10);
+    gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);   /* clock D = LOW in */
+    esp_rom_delay_us(10);
     gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 0);
     gpio_hold_en((gpio_num_t)PWR_HOLD_PIN);
     gpio_hold_en((gpio_num_t)PWR_LOCK_PIN);
@@ -2108,12 +2115,14 @@ static void pre_sleep_tab5_deinit(void)
 extern "C" void app_main(void)
 {
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
-    /* Power-rail latch (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46): must both
-     * be driven HIGH as early as possible. The pre-sleep hook releases
-     * the latch (a real power-off on battery), so on power-on the
-     * Power button keeps the rail up only while it is held; the
-     * sooner the latch is set, the shorter the press can be -- see
-     * the board header comment. Release any hold left by
+    /* Power-rail latch (D flip-flop, D = PWR_HOLD=GPIO45, clock =
+     * PWR_LOCK=GPIO46): must be set as early as possible. The
+     * pre-sleep hook clears the latch (a real power-off on battery),
+     * so on power-on the Power button keeps the rail up only while it
+     * is held; the sooner the latch is set, the shorter the press can
+     * be -- see the board header comment. The latch only takes D on a
+     * rising edge of PWR_LOCK, so PWR_LOCK is driven LOW first, then
+     * PWR_HOLD HIGH, then PWR_LOCK HIGH. Release any hold left by
      * pre_sleep_reterminal_sticky_deinit() from before this wake
      * first.
      *
@@ -2144,9 +2153,11 @@ extern "C" void app_main(void)
         g.mode         = GPIO_MODE_OUTPUT;
         g.pin_bit_mask = (1ULL << PWR_HOLD_PIN) | (1ULL << PWR_LOCK_PIN) |
                          (1ULL << CHARGE_EN_PIN);
-        gpio_config(&g);
+        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 0);
         gpio_set_level((gpio_num_t)PWR_HOLD_PIN, 1);
-        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);
+        gpio_config(&g);
+        esp_rom_delay_us(10);
+        gpio_set_level((gpio_num_t)PWR_LOCK_PIN, 1);   /* clock D = HIGH in */
         gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 0);
     }
 #endif

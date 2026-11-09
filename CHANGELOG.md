@@ -8,16 +8,52 @@ in the git log.
 
 ### Added
 
-- **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
-  (large view)"): draws every screen pixel as a 2x2 block, so text,
-  menus and dialogs are twice as large (with a quarter of the content
-  on screen). Applied on the next restart, which is offered when you
-  leave the Settings screen.
 - **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
   Espressif's ESP32-S31-Korvo-1 board with the
   ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
   in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
   board Draftling supports. Not yet tested on the device.
+
+### Changed
+
+- **Reorganized F1 menu**: the menu is shorter and grouped into
+  sub-menus: Settings, Keyboard layout (shown only when more than one
+  layout is active), Sync (Synchronize, Connect a Draftbox repository,
+  Sync via browser), Connectivity (Bluetooth: status and scan for a
+  keyboard; WiFi: status, connect / disconnect and choose a network),
+  System & Storage (Hardware information, SD card via USB, Format SD
+  card), Sleep now and Help. Enter opens a sub-menu, Esc goes back one
+  level and F1 closes the menu. The bold letter keys now pick items on
+  the current level (for example F1, Y, S starts a sync).
+- **Sync -> Synchronize connects WiFi first**: when WiFi is not
+  connected, the device connects to the configured network (as Ctrl+W
+  does) and starts the sync as soon as the connection is up.
+- **Reorganized Settings**: the settings are grouped into Editor (font
+  size, append-only editing), Display (backlight, color theme,
+  orientation, rotate 180, invert display, 2x scale and the screen
+  margins), Keyboard (active layouts) and System (standby timeout,
+  factory reset). After a change that needs a restart, the restart is
+  offered when you leave the Display settings. "Display upside down" is
+  now called "Rotate 180".
+- **Maximum file size moved to Hardware information**: the largest
+  document the device can open is shown there instead of in Settings.
+
+### Fixed
+
+- **Seeed reTerminal Sticky drained the battery while switched off**:
+  switching off on battery did not actually cut the power, so the
+  device stayed in deep sleep and kept drawing current. It now powers
+  off completely, as intended.
+
+## [1.0.24] - 2026-11-08
+
+### Added
+
+- **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
+  (large view)"): draws every screen pixel as a 2x2 block, so text,
+  menus and dialogs are twice as large (with a quarter of the content
+  on screen). Applied on the next restart, which is offered when you
+  leave the Settings screen.
 
 ### Fixed
 
