@@ -2676,11 +2676,14 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   and for 50 ms after it, then `tcfg.rst = -1`), like on the X4 Pro:
   with INT floating the chip came up at 0x14 and never reported a
   touch. Switching off is a real power-off on battery:
-  `pre_sleep_reterminal_sticky_deinit()` drives the power latch
-  (PWR_HOLD=GPIO45, PWR_LOCK=GPIO46) LOW and holds it there, and only
-  on USB does `standby_enter_sleep()` go on to deep sleep. The Power
-  button keeps the rail up while held, so `app_main()` sets the latch
-  HIGH in its very first lines, and the board's sdkconfig skips the
+  `pre_sleep_reterminal_sticky_deinit()` clears the power latch and
+  only on USB does `standby_enter_sleep()` go on to deep sleep. The
+  latch is a 74AHC1G79 positive-edge D flip-flop (D = PWR_HOLD=GPIO45,
+  clock = PWR_LOCK=GPIO46): set PWR_HOLD first, then raise PWR_LOCK;
+  driving both pins LOW changes nothing (until the fix it left the
+  board on and deep-sleeping on battery). The Power button keeps the
+  rail up while held, so `app_main()` sets the latch in its very
+  first lines, and the board's sdkconfig skips the
   PSRAM test to shorten the press. Holding the latch through deep
   sleep, as before, drained the cell; once it was empty the chip
   hung, and only the RESET pinhole brought it back.

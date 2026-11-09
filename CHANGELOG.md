@@ -30,6 +30,13 @@ in the git log.
 - **Maximum file size moved to Hardware information**: the largest
   document the device can open is shown there instead of in Settings.
 
+### Fixed
+
+- **Seeed reTerminal Sticky drained the battery while switched off**:
+  switching off on battery did not actually cut the power, so the
+  device stayed in deep sleep and kept drawing current. It now powers
+  off completely, as intended.
+
 ## [1.0.24] - 2026-11-08
 
 ### Added
