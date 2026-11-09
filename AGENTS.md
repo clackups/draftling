@@ -1095,6 +1095,7 @@ System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
 Sleep now
 Help (F10)
+Close menu (Esc / F1)
 ```
 
 `refresh_menu_items()` builds the rows of `s_menu_level` into
@@ -1103,8 +1104,8 @@ state does not offer left out), so code must map a row through
 `s_menu_items[]`, never assume a fixed index. Every sub-level ends with
 "Back (Esc)"; `menu_enter_level()` / `menu_go_back()` keep the parent's
 selection on `s_menu_sel_stack[]`. Esc goes up one level (closing the
-menu on the top level), F1 closes it from any level; there is no
-"Close menu" row, the header names the keys.
+menu on the top level), F1 closes it from any level; "Close menu" is the top
+level's counterpart of the sub-levels' "Back (Esc)" row.
 Sync -> Synchronize (`start_project_sync_ex(true)`) connects WiFi
 first when it is down (`wifi_connect_async()`, as Ctrl+W does) and
 leaves the project in `s_sync_after_wifi`; `sync_wifi_done()`, called

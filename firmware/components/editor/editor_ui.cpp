@@ -886,6 +886,7 @@ enum menu_item_t {
     MENU_ITEM_SYSTEM_MENU,
     MENU_ITEM_SLEEP,
     MENU_ITEM_HELP,
+    MENU_ITEM_CLOSE,         /* the top level's counterpart of "Back" */
     /* Sync */
     MENU_ITEM_GIT_SYNC,
     MENU_ITEM_DRAFTBOX,
@@ -4992,6 +4993,7 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_SYSTEM_MENU, "System & Storage...");
         menu_add(MENU_ITEM_SLEEP, "Sleep now");
         menu_add(MENU_ITEM_HELP, "Help (F10)");
+        menu_add(MENU_ITEM_CLOSE, "Close menu (Esc / F1)");
         break;
 
     case MENU_LVL_SYNC:
@@ -7199,6 +7201,9 @@ static void menu_activate_item(int row)
         break;
     case MENU_ITEM_BACK:
         menu_go_back();
+        break;
+    case MENU_ITEM_CLOSE:
+        close_menu();
         break;
     case MENU_ITEM_BLE_STATUS:  /* no action */
     case MENU_ITEM_WIFI_STATUS:

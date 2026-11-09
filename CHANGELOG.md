@@ -16,8 +16,7 @@ in the git log.
   System & Storage (Hardware information, SD card via USB, Format SD
   card), Sleep now and Help. Enter opens a sub-menu, Esc goes back one
   level and F1 closes the menu. The bold letter keys now pick items on
-  the current level (for example F1, Y, S starts a sync). The "Close
-  menu" row is gone: Esc or F1 closes the menu, as the header says.
+  the current level (for example F1, Y, S starts a sync).
 - **Sync -> Synchronize connects WiFi first**: when WiFi is not
   connected, the device connects to the configured network (as Ctrl+W
   does) and starts the sync as soon as the connection is up.
