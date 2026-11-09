@@ -85,7 +85,7 @@ load the firmware quickly without having to compile it.
   windows. The split follows the display's long side -- left/right in
   landscape, top/bottom in portrait.
 
-- **Portrait or landscape**: F1 -> Settings -> "Display orientation"
+- **Portrait or landscape**: F1 -> Settings -> Display -> "Orientation"
   turns the whole UI 90 degrees. Takes effect after a restart.
 
 - **Synchronizing your files with a Git repository** using a real,
@@ -99,7 +99,7 @@ load the firmware quickly without having to compile it.
   project is synced with its own repository. The WiFi client is
   configured in `wifi.cfg` on the SD card and the Git credentials in
   each project's `git.cfg` -- or, for WiFi, picked from an on-device
-  scan (F1 -> WiFi: New connection), which writes `wifi.cfg` for you. Public
+  scan (F1 -> Connectivity -> WiFi -> Choose network), which writes `wifi.cfg` for you. Public
   and private repositories on GitHub and other standard Git HTTP hosts
   are supported. See [docs/git-sync.md](docs/git-sync.md).
 
@@ -114,11 +114,11 @@ load the firmware quickly without having to compile it.
   `*.md`, `*.fountain` and `*.txt` files).
 
 - **Color themes** On color LCD boards the editor offers a
-  runtime-selectable color theme (F1 -> Settings -> Color theme):
+  runtime-selectable color theme (F1 -> Settings -> Display -> Color theme):
   light green on black (default), amber on dark red, amber on black,
   white on black, or black on beige.
 
-- **Sync via browser** F1 -> "Sync via browser..." -> Start turns the
+- **Sync via browser** F1 -> Sync -> "Sync via browser..." -> Start turns the
   serial console into a Kermit file server and asks you to open
   https://bridge.draftling.art/ on a computer connected to the
   device's USB port, which synchronizes the SD card with a Git
@@ -138,7 +138,7 @@ load the firmware quickly without having to compile it.
   Classic, LilyGO T5 E-Paper S3 Pro / Pro Lite / H752, M5Stack
   PaperS3 and PaperMono, Waveshare ESP32-S3-ePaper-3.97, ESP32-S3-RLCD-4.2,
   ESP32-S3-Touch-LCD-7, ESP32-S3-Touch-LCD-3.49 and ESP32-S3-LCD-3.16, all four
-  Freenove FNK0104 boards, and the Viewe UEDX24320028E-WB-A), F1 -> "SD card via USB" opens a picker
+  Freenove FNK0104 boards, and the Viewe UEDX24320028E-WB-A), F1 -> System & Storage -> "SD card via USB" opens a picker
   for Off / Read-only / Read-write; the choice applies as soon as you
   leave that picker (Enter to confirm, or Esc to back out unchanged),
   exposing the SD card to a connected computer as a normal USB
@@ -157,7 +157,7 @@ load the firmware quickly without having to compile it.
 
 | Shortcut | Action |
 |----------|--------|
-| F1 | Open main menu (BLE, WiFi, Git, Layout, Settings...). Inside the menu, the letter drawn bold picks its item: S Settings, L BLE scan, W WiFi connect, N new WiFi connection, D WiFi disconnect, G Git sync, K keyboard layout, U SD card via USB, B Sync via browser, F Format SD card, I Hardware information, H Help |
+| F1 | Open the main menu: Settings, Keyboard layout (when more than one is active), Sync, Connectivity (Bluetooth, WiFi), System & Storage, Sleep now, Help. Enter opens a sub-menu, Esc goes back one level, F1 closes the menu. The letter drawn bold picks its item on the current level: S Settings, K keyboard layout, Y Sync, C Connectivity, T System & Storage, H Help; in Sync: S Synchronize, C Connect a Draftbox repository, B Sync via browser; in Connectivity: B Bluetooth, W WiFi; in Bluetooth: S Scan; in WiFi: C Connect / D Disconnect, N Choose network; in System & Storage: I Hardware information, U SD card via USB, F Format SD card |
 | F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn (or Ctrl+Up/Down), Home/End scroll; Esc or Enter closes it |
 | Arrow keys | Move cursor |
 | Home / End | Start / end of line |
@@ -258,7 +258,7 @@ file into the same project under another name. When the name is
 already taken in the target project, you are asked for another one.
 You stay in the original project afterwards.
 
-Git sync (Ctrl+G or F1 -> Git Sync), "Connect a Draftbox repository"
+Git sync (Ctrl+G or F1 -> Sync -> Synchronize), "Connect a Draftbox repository"
 and "Sync via browser" work on the current project: the project of
 the document being edited, or the project shown or selected in the
 file browser. In split-screen mode the two panes can show files from
@@ -314,7 +314,7 @@ holding the cursor. Two editing helpers are available:
 ## Sleep
 
 The device enters deep sleep automatically after the inactivity timeout
-(F1 -> Settings -> "Standby timeout"), and you can put it to sleep on
+(F1 -> Settings -> System -> "Standby timeout"), and you can put it to sleep on
 demand with **Ctrl+P** or the **F1 -> "Sleep now"** menu entry. Wake
 with the boot / power button, or a touchscreen tap on boards that
 support it.
@@ -356,8 +356,8 @@ screen into two equal panes; **Ctrl+3** makes the first pane bigger
 single pane.
 
 The split always divides the display's **long side**: in landscape you
-get left / right panes, in portrait (F1 -> Settings -> "Display
-orientation") you get top / bottom panes. "First pane" is the left one
+get left / right panes, in portrait (F1 -> Settings -> Display ->
+"Orientation") you get top / bottom panes. "First pane" is the left one
 in landscape, the top one in portrait.
 
 Each pane opens a file for itself: while split, **Ctrl+O** opens the
@@ -455,8 +455,8 @@ the accent alone. The key left of Z on European keyboards (`<` `>`)
 works on all of these layouts.
 
 All of them are compiled into the default firmware, but only
-US-English is active at first. Turn the others on in F1 -> Settings -> Active
-layouts; Ctrl+L cycles through the active ones. The current layout is
+US-English is active at first. Turn the others on in F1 -> Settings -> Keyboard ->
+Active layouts; Ctrl+L cycles through the active ones. The current layout is
 shown in the title bar when more than one is active.
 
 Vietnamese, Korean, Japanese and Simplified Chinese come in separate
@@ -469,7 +469,7 @@ building them.
 
 ## Formatting the SD card
 
-F1 -> "Format SD card..." erases everything on the card (all
+F1 -> System & Storage -> "Format SD card..." erases everything on the card (all
 projects with their documents, `git.cfg` files and Git histories, and
 `wifi.cfg`) and creates a fresh
 FAT file system on it. If a WiFi network is configured, you are first
@@ -494,11 +494,11 @@ MySSID
 MyPassword
 ```
 
-You do not have to edit this file by hand: F1 -> "WiFi: New
-connection..." scans for visible networks, lets you pick one and (if
+You do not have to edit this file by hand: F1 -> Connectivity -> WiFi ->
+"Choose network..." scans for visible networks, lets you pick one and (if
 it is not open) type its password, then writes `wifi.cfg` for you on a
 successful connection. Editing the file directly still works too --
-F1 -> "WiFi: Connect to <SSID>" and `Ctrl+W` (quick reconnect, no
+F1 -> Connectivity -> WiFi -> "Connect to <SSID>" and `Ctrl+W` (quick reconnect, no
 scan) read it fresh on every call, so a hand-edited file always takes
 effect on the next connect.
 
@@ -537,7 +537,7 @@ author_email=jane@example.com
 With a [Draftbox](https://github.com/clackups/draftbox) server (such as
 `draftbox.art`) you do not have to write `git.cfg` yourself. On the
 Draftbox website, create an access token for your repository with a
-one-time password. Then, in the project to connect, choose F1 ->
+one-time password. Then, in the project to connect, choose F1 -> Sync ->
 "Connect a Draftbox repository..." (if WiFi is not connected yet, the device first
 connects to the network from `wifi.cfg`, as `Ctrl+W` does): confirm or change the site name,
 press Enter, type the 8-digit password and press Enter again. The

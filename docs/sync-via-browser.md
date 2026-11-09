@@ -1,6 +1,6 @@
 # Sync via browser (Kermit server)
 
-F1 -> "Sync via browser" turns Draftling into a Kermit file server on
+F1 -> Sync -> "Sync via browser" turns Draftling into a Kermit file server on
 its serial console, so a computer connected to the device's USB port
 can list, download, upload, rename and delete the files of the current
 project: the project of the document being edited, or the one shown or
@@ -18,7 +18,8 @@ that implements the protocol over the browser's Web Serial API.
 
 ## Starting and stopping
 
-1. Press F1, select "Sync via browser: <project>..." (letter B; the
+1. Press F1, open Sync (letter Y) and select "Sync via browser:
+   <project>..." (letter B; the
    row names the project that will be served) and choose
    **Start** (or **Cancel** to go back to the menu).
 2. Draftling saves every open document, closes the editor and shows

@@ -40,7 +40,8 @@ history and repository:
     ...
 ```
 
-Ctrl+G (or F1 -> Git Sync) syncs the current project: the project of
+Ctrl+G (or F1 -> Sync -> Synchronize, which also connects WiFi first
+when it is down) syncs the current project: the project of
 the document being edited, or the one shown or selected in the file
 browser. A project without `git.cfg` is not synced. Only one sync runs
 at a time.
@@ -58,7 +59,7 @@ Crypto; TLS + HTTP by `esp_http_client` / `esp-tls`.
 
 ## What one sync does
 
-Triggered by `Ctrl+G`, by the F1 -> Git Sync menu entry, or automatically
+Triggered by `Ctrl+G`, by the F1 -> Sync -> Synchronize menu entry, or automatically
 before deep sleep. The sync task runs these steps in order:
 
 1. **Advertise** -- contact the remote and read its branch tip.
