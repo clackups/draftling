@@ -8,11 +8,19 @@ in the git log.
 
 ### Added
 
-- **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
-  (large view)"): draws every screen pixel as a 2x2 block, so text,
+- **2x scale for the visually impaired** (F1 -> Settings -> Display ->
+  "2x scale (large view)"): draws every screen pixel as a 2x2 block, so text,
   menus and dialogs are twice as large (with a quarter of the content
   on screen). Applied on the next restart, which is offered when you
   leave the Settings screen.
+
+### Changed
+
+- **Settings are organized by category**: font and editing options are
+  under Editor; display controls and screen margins are under Display;
+  active keyboard layouts, standby timeout and factory reset are under
+  Keyboard, Power and System. Press Esc to return to the previous
+  category.
 
 ## [1.0.23] - 2026-11-07
 
@@ -28,7 +36,8 @@ in the git log.
   UK, Swedish / Finnish, Norwegian, Danish, Polish (programmers),
   Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian and Turkish
   Q, and the screen fonts now show the Central and Eastern European
-  and Turkish letters (Latin Extended-A). Turn them on in F1 -> Settings -> Active layouts, then
+  and Turkish letters (Latin Extended-A). Turn them on in F1 -> Settings
+  -> Keyboard -> Active layouts, then
   switch with Ctrl+L. Accents are typed as on a computer: press the
   accent key, then the letter.
 - **Caps Lock on accented-letter keys**: on the Swiss and Italian
@@ -67,13 +76,13 @@ in the git log.
   firmware shows a message saying so instead of starting.
 - **Only US-English layout active by default**: on a fresh install of
   the default firmware, Ctrl+L no longer cycles through Ukrainian.
-  Turn other layouts on in F1 -> Settings -> Active layouts. Devices
+  Turn other layouts on in F1 -> Settings -> Keyboard -> Active layouts. Devices
   that already have a saved layout selection keep it.
 - **Sunton ESP32-8048S043: all layouts of the language pack**: this
   board used to build with only the US and German layouts; it now has
   the same layouts as every other board. Devices that had German
   active show Ukrainian in its place after the update: pick German
-  again once in F1 -> Settings -> Active layouts.
+  again once in F1 -> Settings -> Keyboard -> Active layouts.
 - **ESP-IDF 6.1 is the minimum version for building**: building the
   firmware yourself now needs ESP-IDF v6.1 or later; older versions
   stop with an error. After updating, delete your existing build

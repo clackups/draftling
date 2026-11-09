@@ -24,7 +24,21 @@ typedef enum settings_item_id_t {
     SETTINGS_ID_MARGIN_BOTTOM = 15,
     SETTINGS_ID_RESET = 16,
     SETTINGS_ID_BACK = 17,
+    SETTINGS_ID_ROOT = 18,
+    SETTINGS_ID_EDITOR = 19,
+    SETTINGS_ID_DISPLAY = 20,
+    SETTINGS_ID_KEYBOARD = 21,
+    SETTINGS_ID_POWER = 22,
+    SETTINGS_ID_SYSTEM = 23,
+    SETTINGS_ID_MARGINS = 24,
 } settings_item_id_t;
+
+int editor_settings_row_count(settings_item_id_t parent);
+settings_item_id_t editor_settings_id_for_index(settings_item_id_t parent, int index);
+int editor_settings_index_for_id(settings_item_id_t parent, settings_item_id_t id);
+settings_item_id_t editor_settings_parent_for_id(settings_item_id_t id);
+const char *editor_settings_title(settings_item_id_t id);
+int editor_settings_validate(void);
 
 #ifdef __cplusplus
 }

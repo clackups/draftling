@@ -11,10 +11,12 @@ navigation stack tracks the root and nested categories; keyboard and touch
 activate the same selected row, and Escape returns to the parent before
 closing at the root.
 
-The Settings screen is also flat. Its setting IDs, feature-gated row list,
-label/value callbacks, and action/cycle callbacks are in `editor_ui.cpp`.
-Existing persistence and hardware behavior stays in those callbacks and in
-the existing component APIs.
+Settings uses the same static parent/child model, with stable IDs and
+feature-gated row order in `editor_settings.cpp`. `editor_ui.cpp` provides
+dynamic labels and reuses the existing action/cycle callbacks. The nested
+screen uses Escape to return to its parent, with a bounded path of
+Settings -> Display -> Screen margins. Existing persistence and hardware
+behavior stays in the callbacks and component APIs.
 
 ## Current F1 hierarchy
 
@@ -50,18 +52,40 @@ Unsupported USB MSC and Kermit rows are omitted at compile time. Their stable
 IDs remain fixed across configurations. Project information reuses the
 existing project-info view and reports when there is no selected project.
 
-## Current Settings order
+## Settings hierarchy
 
-The flat Settings rows are: standby timeout, base font size, maximum file
-size, backlight when adjustable backlight is supported, color theme on color
-displays, live rotation where supported, inversion where supported,
-append-only editing, active keyboard layouts, display orientation, display
-upside down where the live rotation control is absent, 2x scale, left/right/
-top/bottom screen margins, factory reset, and Back.
+```text
+Settings
+|- Editor
+|  |- Base font size
+|  |- Append-only editing
+|  `- Maximum file size (read-only)
+|- Display
+|  |- Brightness / backlight (when adjustable)
+|  |- Color theme (color displays)
+|  |- Orientation
+|  |- Rotate 180 (the live or restart-applied control supported by the board)
+|  |- Invert display (when supported)
+|  |- 2x scale
+|  `- Screen margins
+|     |- Left
+|     |- Right
+|     |- Top
+|     `- Bottom
+|- Keyboard
+|  `- Active layouts
+|- Power
+|  `- Standby timeout
+`- System
+   `- Factory reset
+```
 
-Backlight, theme, rotation, inversion, and upside-down rows are conditionally
-compiled. Do not remove their existing conditions or change their callbacks'
-NVS keys, ranges, defaults, confirmation prompts, or restart behavior.
+The maximum file-size row remains visible and read-only. Backlight, color
+theme, live rotation, inversion, and restart-applied 180-degree rotation
+follow their existing board feature conditions. Escape returns to the
+previous Settings category; at the Settings root it returns to the F1 menu.
+Do not change existing callbacks' NVS keys, ranges, defaults, confirmation
+prompts, or restart behavior when moving a setting.
 
 ## Adding or moving an F1 item
 
@@ -88,8 +112,8 @@ currently verify the LVGL labels, touch interaction, or action dispatch.
 1. Add a unique, explicit `SETTINGS_ID_*` value in
    `include/editor_settings.h`; do not put feature guards around the ID
    declaration or change existing NVS/value semantics.
-2. Add the ID to `s_settings_row_ids` in its desired position and add its
-   registry entry to `s_settings_registry`.
+2. Add the feature-gated parent/child descriptor to `editor_settings.cpp`
+   and add its label/action entry to `s_settings_registry`.
 3. Supply the label/value callback and, as appropriate, a cycle or activation
    callback. Reuse the current component and persistence APIs.
 4. Add the same feature condition to the ID, row, registry entry, and any
@@ -104,10 +128,8 @@ the IDs remain unique and unchanged across the host feature matrix.
 
 ## Known limitations
 
-Settings categories from the larger design are not yet implemented; Settings
-still opens the existing flat list. The menu descriptor table records stable
-IDs, parent, order, and static titles, while specialized action behavior and
-dynamic labels remain in `editor_ui.cpp`. The host regression matrix validates
-the F1 hierarchy, feature-gated visibility, ID/index lookups, and selection
-wrapping for USB MSC and Kermit combinations. It does not validate the full
-firmware, LVGL interactions, settings persistence, or hardware behavior.
+The descriptor tables record stable IDs, parent, order, and static titles,
+while specialized action behavior and dynamic labels remain in `editor_ui.cpp`.
+The host regression matrix validates F1 and Settings hierarchy, feature-gated
+visibility, stable IDs, and lookups. It does not validate the full firmware,
+LVGL interactions, settings persistence, or hardware behavior.

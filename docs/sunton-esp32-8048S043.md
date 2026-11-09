@@ -110,7 +110,7 @@ so no axis swap or mirror is needed
 
 The board builds with the same layouts as every other board. Only
 US-English is active at first; turn on others (for example German
-QWERTZ) in F1 -> Settings -> Active layouts and cycle with `Ctrl+L` or
+QWERTZ) in F1 -> Settings -> Keyboard -> Active layouts and cycle with `Ctrl+L` or
 `Win+Space`.
 
 The author's keyboard has no dedicated ESC key, so `Ctrl+Q` is wired as an

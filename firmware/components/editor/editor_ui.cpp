@@ -110,14 +110,14 @@ static const char *TAG = "EditorUI";
  * LVGL canvas render 1:1 at the panel resolution (no framebuffer
  * upscaling; high-density boards use a larger font instead), minus
  * the user-adjustable screen margins (display_margin_*(), zero by
- * default on every board -- see Settings -> Screen margins and
+ * default on every board -- see Settings -> Display -> Screen margins and
  * app_config.h's DISPLAY_LOGICAL_WIDTH/HEIGHT).
  *
  * The LVGL logical canvas has the panel's width and height swapped
  * whenever the *effective* rotation is 90 or 270 degrees. That happens
  * when the board's build-time base rotation
  * (CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE) is 90/270, OR when the user
- * picked portrait orientation (Settings -> Display orientation, which
+ * picked portrait orientation (Settings -> Display -> Orientation, which
  * adds a quarter turn -- 90 or 270 degrees, per
  * CONFIG_DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE), but not both -- an
  * XOR (both 90 and 270 flip the swap either way, so the exact quarter
@@ -709,19 +709,19 @@ static void save_active_layouts_to_nvs(void)
  * display_margins.h). */
 static int s_margin_left = 0, s_margin_right = 0, s_margin_top = 0, s_margin_bottom = 0;
 
-/* Pending display orientation (Settings -> Display orientation). Like
+/* Pending display orientation (Settings -> Display -> Orientation). Like
  * the margins, this is frozen for the session (see
  * display_orientation.h); this local tracks the NVS-persisted value
  * that will apply on the next restart. */
 static bool s_pending_portrait = false;
 
-/* Pending "Display upside down" flag (Settings -> Display upside
+/* Pending "Rotate 180" flag (Settings -> Display -> Rotate 180
  * down). Like the orientation above, this is frozen for the session
  * (see display_flip.h); this local tracks the NVS-persisted value
  * that will apply on the next restart. */
 static bool s_pending_upside_down = false;
 
-/* Pending "2x scale" flag (Settings -> 2x scale). Frozen for the
+/* Pending "2x scale" flag (Settings -> Display -> 2x scale). Frozen for the
  * session like the orientation (see display_scale.h); this local
  * tracks the NVS-persisted value that will apply on the next restart. */
 static bool s_pending_scale2x = false;
@@ -949,48 +949,29 @@ static const char *menu_header_text(void)
     return header;
 }
 
-static const settings_item_id_t s_settings_row_ids[] = {
-    SETTINGS_ID_TIMEOUT,
-    SETTINGS_ID_FONTSZ,
-    SETTINGS_ID_MAXFILE,
-#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
-    SETTINGS_ID_BACKLIGHT,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
-    SETTINGS_ID_THEME,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    SETTINGS_ID_ROTATE,
-#endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
-    SETTINGS_ID_INVERT,
-#endif
-    SETTINGS_ID_APPEND_ONLY,
-    SETTINGS_ID_LAYOUTS,
-    SETTINGS_ID_ORIENTATION,
-#if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
-    SETTINGS_ID_UPSIDE_DOWN,
-#endif
-    SETTINGS_ID_SCALE2X,
-    SETTINGS_ID_MARGIN_LEFT,
-    SETTINGS_ID_MARGIN_RIGHT,
-    SETTINGS_ID_MARGIN_TOP,
-    SETTINGS_ID_MARGIN_BOTTOM,
-    SETTINGS_ID_RESET,
-    SETTINGS_ID_BACK,
-};
-#define SETTINGS_ROW_COUNT (int)(sizeof(s_settings_row_ids) / sizeof(s_settings_row_ids[0]))
-
+static settings_item_id_t s_settings_nav_stack[3] = { SETTINGS_ID_ROOT };
+static int s_settings_nav_depth = 1;
+static int s_settings_saved_sel[3] = { 0, 0, 0 };
 static int s_settings_sel = 0;
+
+static inline settings_item_id_t settings_current_parent(void)
+{
+    if (s_settings_nav_depth <= 0 ||
+        s_settings_nav_depth > (int)(sizeof(s_settings_nav_stack) /
+                                     sizeof(s_settings_nav_stack[0]))) {
+        return SETTINGS_ID_ROOT;
+    }
+    return s_settings_nav_stack[s_settings_nav_depth - 1];
+}
 
 static inline settings_item_id_t settings_id_for_index(int idx)
 {
-    return list_id_for_index(s_settings_row_ids, idx, SETTINGS_ID_INVALID);
+    return editor_settings_id_for_index(settings_current_parent(), idx);
 }
 
 static inline int settings_index_for_id(settings_item_id_t id)
 {
-    return list_index_for_id(s_settings_row_ids, id);
+    return editor_settings_index_for_id(settings_current_parent(), id);
 }
 
 static inline settings_item_id_t settings_selection_id(void)
@@ -1006,7 +987,8 @@ static inline void settings_set_selection_id(settings_item_id_t id)
 
 static inline void settings_move_selection(int delta)
 {
-    s_settings_sel = list_move_index(s_settings_sel, delta, SETTINGS_ROW_COUNT);
+    s_settings_sel = list_move_index(
+        s_settings_sel, delta, editor_settings_row_count(settings_current_parent()));
 }
 
 /* "Format SD card" picker: three steps rendered into s_menu_list (like
@@ -1132,6 +1114,7 @@ static bool s_setup_dismissed = false;
 /* Settings screen objects */
 static lv_obj_t *s_scr_settings  = NULL;
 static lv_obj_t *s_settings_list = NULL;
+static lv_obj_t *s_lbl_settings_hdr = NULL;
 /* See s_menu_sel_prev above. */
 static int       s_settings_sel_prev = -1;
 static bool      s_settings_open = false;
@@ -1500,7 +1483,7 @@ static const char *TIMEOUT_LABELS[]     = { "Off", "5 min", "10 min",
 #define TIMEOUT_OPTION_COUNT  6
 
 /* Line label pool. Sized to fill the editor body on the smaller
- * panels in portrait orientation (Settings -> Display orientation),
+ * panels in portrait orientation (Settings -> Display -> Orientation),
  * where the tall side becomes the editor height -- e.g. the Xteink X4
  * Pro is ~19 body rows tall in landscape but ~33 in portrait. The
  * largest panels (Tab5, 7" Sunton) still cap the visible-line count in
@@ -1718,7 +1701,7 @@ static void pane_set_top_px(int px)
  * Driven by the Ctrl+1 / Ctrl+2 / Ctrl+3 shortcuts.
  *
  * "First" is the left pane in landscape and the top pane in portrait
- * (Settings -> Display orientation) -- the split always divides the
+ * (Settings -> Display -> Orientation) -- the split always divides the
  * long side, so a portrait screen splits into top/bottom rather than
  * left/right. The SPLIT_LEFT_* names are historical; read them as
  * "first pane = 2/3" etc. */
@@ -1942,7 +1925,7 @@ static void split_first_fraction(int total, int *first)
  *
  *   - landscape: left / right panes (vary x + width, full height), so
  *     each pane wraps text to its own narrower width;
- *   - portrait (Settings -> Display orientation): top / bottom panes
+ *   - portrait (Settings -> Display -> Orientation): top / bottom panes
  *     (vary y + height, full width), so each pane shows fewer rows.
  *
  * The first pane's share of the long axis is set by s_split_mode. */
@@ -3739,6 +3722,7 @@ static void browser_activate_item(int row);
 static void menu_activate_item(menu_item_id_t id);
 static void menu_activate_index(int idx);
 static void settings_activate_item(settings_item_id_t item);
+static void settings_activate_index(int idx);
 #endif
 
 /* Defined with the exit/sleep overlay code further down; the F1 menu's
@@ -5364,7 +5348,7 @@ static void settings_label_rotate(char *buf, size_t len)
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
 static void settings_label_invert(char *buf, size_t len)
 {
-    snprintf(buf, len, "Inverted screen: %s", s_invert ? "on" : "off");
+    snprintf(buf, len, "Invert display: %s", s_invert ? "on" : "off");
 }
 #endif
 
@@ -5397,7 +5381,7 @@ static void settings_label_orientation(char *buf, size_t len)
 #if !defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
 static void settings_label_upside_down(char *buf, size_t len)
 {
-    snprintf(buf, len, "Display upside down: %s (restart to apply)",
+    snprintf(buf, len, "Rotate 180: %s (restart to apply)",
              s_pending_upside_down ? "On" : "Off");
 }
 #endif
@@ -5435,11 +5419,6 @@ static void settings_label_reset(char *buf, size_t len)
     } else {
         snprintf(buf, len, "Factory reset");
     }
-}
-
-static void settings_label_back(char *buf, size_t len)
-{
-    snprintf(buf, len, "Back (Esc)");
 }
 
 static bool settings_cycle_timeout_value(int dir)
@@ -5621,11 +5600,6 @@ static void settings_activate_reset(void)
     }
 }
 
-static void settings_activate_back(void)
-{
-    request_close_settings();
-}
-
 static const settings_registry_entry_t s_settings_registry[] = {
     { SETTINGS_ID_TIMEOUT, settings_label_timeout, NULL, settings_cycle_timeout_value },
     { SETTINGS_ID_FONTSZ, settings_label_fontsize, NULL, settings_cycle_fontsize_value },
@@ -5654,7 +5628,6 @@ static const settings_registry_entry_t s_settings_registry[] = {
     { SETTINGS_ID_MARGIN_TOP, settings_label_margin_top, NULL, settings_cycle_margin_top_value },
     { SETTINGS_ID_MARGIN_BOTTOM, settings_label_margin_bottom, NULL, settings_cycle_margin_bottom_value },
     { SETTINGS_ID_RESET, settings_label_reset, settings_activate_reset, NULL },
-    { SETTINGS_ID_BACK, settings_label_back, settings_activate_back, NULL },
 };
 
 static const settings_registry_entry_t *settings_registry_entry_for_id(settings_item_id_t id)
@@ -5665,16 +5638,89 @@ static const settings_registry_entry_t *settings_registry_entry_for_id(settings_
     return NULL;
 }
 
+static const char *settings_header_text(void)
+{
+    static char header[128];
+    size_t used = (size_t)snprintf(header, sizeof(header), "Settings");
+
+    for (int i = 1; i < s_settings_nav_depth; ++i) {
+        const char *title = editor_settings_title(s_settings_nav_stack[i]);
+        if (!title || used >= sizeof(header)) continue;
+        int written = snprintf(header + used, sizeof(header) - used,
+                               " > %s", title);
+        if (written < 0 || (size_t)written >= sizeof(header) - used) {
+            header[sizeof(header) - 1] = '\0';
+            return header;
+        }
+        used += (size_t)written;
+    }
+
+    snprintf(header + used, sizeof(header) - used, "%s",
+             s_settings_nav_depth > 1 ? " - Esc: back" : " - Esc: close");
+    return header;
+}
+
+static bool settings_enter_submenu(settings_item_id_t id)
+{
+    const int capacity =
+        (int)(sizeof(s_settings_nav_stack) / sizeof(s_settings_nav_stack[0]));
+    if (editor_settings_index_for_id(settings_current_parent(), id) < 0 ||
+        editor_settings_row_count(id) <= 0 ||
+        s_settings_nav_depth >= capacity) {
+        return false;
+    }
+
+    s_settings_saved_sel[s_settings_nav_depth - 1] = s_settings_sel;
+    s_settings_nav_stack[s_settings_nav_depth++] = id;
+    s_settings_sel = 0;
+    s_settings_sel_prev = -1;
+    if (s_lbl_settings_hdr) {
+        lv_label_set_text(s_lbl_settings_hdr, settings_header_text());
+    }
+    refresh_settings_items();
+    return true;
+}
+
+static bool settings_leave_submenu(void)
+{
+    if (s_settings_nav_depth <= 1) return false;
+
+    --s_settings_nav_depth;
+    s_settings_sel = s_settings_saved_sel[s_settings_nav_depth - 1];
+    s_settings_sel_prev = -1;
+    s_factory_reset_confirm = false;
+    if (s_lbl_settings_hdr) {
+        lv_label_set_text(s_lbl_settings_hdr, settings_header_text());
+    }
+    refresh_settings_items();
+    return true;
+}
+
 static void refresh_settings_items(void)
 {
     std::vector<std::string> rows;
-    char buf[80];
+    char buf[128];
+    settings_item_id_t parent = settings_current_parent();
+    const int count = editor_settings_row_count(parent);
 
-    for (const settings_registry_entry_t &entry : s_settings_registry) {
-        if (entry.label_writer) {
-            entry.label_writer(buf, sizeof(buf));
+    if (s_lbl_settings_hdr) {
+        lv_label_set_text(s_lbl_settings_hdr, settings_header_text());
+    }
+
+    if (s_settings_sel < 0 || s_settings_sel >= count) s_settings_sel = 0;
+    for (int i = 0; i < count; ++i) {
+        settings_item_id_t id = editor_settings_id_for_index(parent, i);
+        const char *title = editor_settings_title(id);
+        if (title) {
+            snprintf(buf, sizeof(buf), "%s...", title);
             rows.emplace_back(buf);
+            continue;
         }
+
+        const settings_registry_entry_t *entry = settings_registry_entry_for_id(id);
+        if (!entry || !entry->label_writer) continue;
+        entry->label_writer(buf, sizeof(buf));
+        rows.emplace_back(buf);
     }
 
     render_string_list(s_settings_list, rows);
@@ -5684,7 +5730,8 @@ static void refresh_settings_items(void)
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
     s_settings_touch_ctx.p_sel      = &s_settings_sel;
     s_settings_touch_ctx.p_sel_prev = &s_settings_sel_prev;
-    s_settings_touch_ctx.activate   = settings_activate_item;
+    s_settings_touch_ctx.activate   = settings_activate_index;
+    s_settings_touch_ctx.count      = count;
     list_touch_attach(s_settings_list, &s_settings_touch_ctx);
 #endif
 
@@ -5820,7 +5867,12 @@ static void show_settings(void)
 {
     s_settings_open = true;
     s_menu_open = false;
-    settings_set_selection_id(SETTINGS_ID_TIMEOUT);
+    s_settings_nav_stack[0] = SETTINGS_ID_ROOT;
+    s_settings_nav_depth = 1;
+    s_settings_saved_sel[0] = 0;
+    s_settings_sel = 0;
+    settings_set_selection_id(SETTINGS_ID_EDITOR);
+    s_settings_sel_prev = -1;
     s_factory_reset_confirm = false;
     s_restart_needed = false;
     s_restart_confirm_open = false;
@@ -5869,6 +5921,8 @@ static void settings_activate_item(settings_item_id_t item)
         refresh_settings_items();
     }
 
+    if (settings_enter_submenu(item)) return;
+
     const settings_registry_entry_t *entry = settings_registry_entry_for_id(item);
     if (!entry) return;
 
@@ -5881,6 +5935,14 @@ static void settings_activate_item(settings_item_id_t item)
         /* Handled -- Enter always means "next value", same as before. */
     }
 }
+
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static void settings_activate_index(int idx)
+{
+    settings_activate_item(editor_settings_id_for_index(
+        settings_current_parent(), idx));
+}
+#endif
 
 static void handle_settings_key(const kb_event_t *ev)
 {
@@ -6041,7 +6103,7 @@ static void handle_settings_key(const kb_event_t *ev)
         settings_cycle_item(settings_selection_id(), 1);
         break;
     case KB_KEY_ESCAPE:
-        request_close_settings();
+        if (!settings_leave_submenu()) request_close_settings();
         break;
     default:
         break;
@@ -9818,7 +9880,7 @@ static bool cursor_line_is_rtl(void)
  *
  * The editor shows one pane by default. The split always divides the
  * display's long axis -- left/right in landscape, top/bottom in
- * portrait (Settings -> Display orientation) -- and is driven entirely
+ * portrait (Settings -> Display -> Orientation) -- and is driven entirely
  * by three shortcuts:
  *   Ctrl+1  single pane
  *   Ctrl+2  two equal panes (first = 1/2)
@@ -12526,11 +12588,11 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_settings, theme_bg(), 0);
 
     lv_obj_t *set_hdr = lv_label_create(s_scr_settings);
+    s_lbl_settings_hdr = set_hdr;
     lv_obj_set_pos(set_hdr, 2, 0);
     lv_obj_set_style_text_font(set_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(set_hdr, theme_fg(), 0);
-    lv_label_set_text(set_hdr,
-                      "Settings - Up/Down, Arrows to change, Esc to go back");
+    lv_label_set_text(set_hdr, "Settings");
 
     s_settings_list = lv_list_create(s_scr_settings);
     lv_obj_set_pos(s_settings_list, 0, HEADER_H);
@@ -12909,6 +12971,7 @@ static void teardown_screens(void)
     s_menu_list = s_lbl_menu_hdr = NULL;
     s_lbl_help_hdr = s_help_cont = s_help_lbl = NULL;
     s_settings_list = NULL;
+    s_lbl_settings_hdr = NULL;
     s_ble_prompt_lbl = NULL;
     s_passkey_panel = s_passkey_label = NULL;
     s_save_panel = s_save_hdr_lbl = s_save_name_lbl = s_save_cur = NULL;
@@ -12993,7 +13056,11 @@ static void rebuild_screens_for_theme(void)
     } else if (was_menu) {
         show_menu();        /* refreshes items + loads s_scr_menu */
     } else if (was_settings) {
-        show_settings();    /* refreshes items + loads s_scr_settings */
+        s_settings_open = true;
+        s_menu_open = false;
+        refresh_settings_items();
+        sync_battery_labels();
+        lv_scr_load(s_scr_settings);
     } else if (was_ble_prompt) {
         lv_scr_load(s_scr_ble_prompt);
     } else {
