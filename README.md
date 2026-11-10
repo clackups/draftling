@@ -298,7 +298,7 @@ following the Fountain rules:
   file) shows its keys in bold.
 
 Markers such as the forcing characters are hidden except on the line
-holding the cursor. Two editing helpers are available:
+holding the cursor. Three editing helpers are available:
 
 - **Enter** at the end of a scene heading or transition also inserts
   the blank line that must follow it (Shift+Enter inserts a single
@@ -308,6 +308,12 @@ holding the cursor. Two editing helpers are available:
   last speaker; on a partly typed line (e.g. `br` or `int`) it offers
   matching character names, scene headings and transitions. Press Tab
   again for the next suggestion.
+- **Name suggestions**: while you type a character cue (capitals after
+  a blank line, or a name forced with `@`), the known character names
+  that start with the typed letters drop down under the cursor. Up/Down
+  pick a name, Enter or Tab inserts it, Esc closes the list; any other
+  key just keeps typing. Turn it off with F1 -> Settings -> Editor ->
+  "Suggest character names".
 
 
 

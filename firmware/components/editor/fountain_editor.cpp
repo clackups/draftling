@@ -307,6 +307,88 @@ static bool ftn_tab(bool append_only)
     return true;
 }
 
+/* ---- Character name suggestions ----
+ *
+ * While the user types a Character cue -- upper-case text (or text
+ * forced with "@") on a line after a blank one, with the cursor at its
+ * end -- the editor shows the known Character names that start with
+ * it, most recent first. The names are collected from the whole
+ * script, which is cached while only the cue line changes. */
+static struct {
+    const editor_doc_t *doc;
+    size_t          line_start;
+    size_t          rest_len;     /* document length minus the cue line */
+    int             line_count;
+    bool            valid;
+    std::vector<std::string> names;
+} s_sugg_cache;
+
+static void suggest_names(int line, size_t ls, size_t ll, std::vector<std::string> &out)
+{
+    const editor_doc_t *doc = editor_get_active();
+    size_t rest = editor_get_length() - ll;
+    int count = editor_get_line_count();
+    if (!s_sugg_cache.valid || s_sugg_cache.doc != doc ||
+        s_sugg_cache.line_start != ls || s_sugg_cache.rest_len != rest ||
+        s_sugg_cache.line_count != count) {
+        collect_t c;
+        c.cur_line = line;
+        walk_lines(-1, collect_cb, &c);
+        s_sugg_cache.names.clear();
+        append_by_recency(c.names, line, s_sugg_cache.names);
+        s_sugg_cache.doc = doc;
+        s_sugg_cache.line_start = ls;
+        s_sugg_cache.rest_len = rest;
+        s_sugg_cache.line_count = count;
+        s_sugg_cache.valid = true;
+    }
+    out = s_sugg_cache.names;
+}
+
+static bool ftn_suggest(fmt_suggest_t *sg)
+{
+    sg->count = 0;
+    if (editor_selection_active()) return false;
+    int line;
+    const char *lt;
+    size_t ll;
+    if (!cursor_at_line_end(&line, &lt, &ll)) return false;
+    if (line > 0) {
+        size_t pl;
+        const char *pt = editor_get_line(line - 1, &pl);
+        if (!text_is_blank(pt, pl)) return false;   /* a cue follows a blank line */
+    }
+    size_t ls;
+    lt = editor_get_line_off(line, &ll, &ls);
+
+    size_t p = 0;
+    while (p < ll && (lt[p] == ' ' || lt[p] == '\t')) p++;
+    bool forced = (p < ll && lt[p] == '@');
+    if (forced) p++;
+    if (p >= ll) return false;
+    bool has_letter = false;
+    for (size_t i = p; i < ll; i++) {
+        unsigned char ch = (unsigned char)lt[i];
+        if (ch == '(' || ch == '^') return false;   /* extension or dual dialogue */
+        if (!forced && ch >= 'a' && ch <= 'z') return false;   /* not a cue */
+        if (isalpha(ch) || ch >= 0x80) has_letter = true;
+    }
+    if (!has_letter) return false;
+    std::string prefix(lt + p, ll - p);
+
+    std::vector<std::string> names;
+    suggest_names(line, ls, ll, names);
+    for (const auto &n : names) {
+        if (sg->count >= FMT_SUGGEST_MAX) break;
+        if (n.size() >= FMT_SUGGEST_LEN || !longer_with_prefix_nocase(n, prefix)) continue;
+        memcpy(sg->names[sg->count], n.c_str(), n.size() + 1);
+        sg->count++;
+    }
+    sg->start = ls + p;
+    sg->len = ll - p;
+    return sg->count > 0;
+}
+
 static const fmt_help_row_t ftn_help[] = {
     { "INT. / EXT.",  "Scene heading after a blank line; force with a leading ." },
     { "NAME",         "Character: all caps after a blank line; force with @" },
@@ -326,6 +408,7 @@ static const fmt_help_row_t ftn_help[] = {
     { "[[note]]",     "Note" },
     { "/* .. */",     "Boneyard: text left out of the script" },
     { "Tab",          "Complete a character name or scene heading" },
+    { "NA...",        "Known character names starting with the typed letters drop down: Up/Down, Enter or Tab inserts, Esc closes" },
     { "Enter",        "After a scene heading or transition, also adds the blank line" },
     { "Shift+Enter",  "Single new line" },
     { NULL, NULL },
@@ -341,4 +424,5 @@ extern const editor_format_t fountain_editor_format = {
     ftn_tab,
     "Fountain formatting",
     ftn_help,
+    ftn_suggest,
 };

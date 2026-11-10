@@ -650,6 +650,36 @@ static void save_append_only_to_nvs(void)
     }
 }
 
+/* ---- Name suggestions ----
+ * Toggled from F1 -> Settings -> Editor and persisted in NVS; on by
+ * default. While the user types the start of a known name (in
+ * Fountain: a Character cue), the matching names drop down under the
+ * cursor -- see the format's suggest hook and suggest_update(). */
+#define NVS_KEY_NAME_SUGGEST "namesugg"
+static bool s_name_suggest = true;
+
+static void load_name_suggest_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 1;
+        if (nvs_get_u8(h, NVS_KEY_NAME_SUGGEST, &v) == ESP_OK) {
+            s_name_suggest = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_name_suggest_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_NAME_SUGGEST, s_name_suggest ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 /* ---- Active language layouts ----
  * Toggled from the F1 -> Settings menu and persisted in NVS. Selects
  * which of the compiled-in keyboard layouts (see kb_layout.h) Ctrl+L /
@@ -1272,6 +1302,10 @@ typedef enum {
 
 #define NEWFMT_COUNT 3
 static lv_obj_t *s_newfmt_panel = NULL;
+/* Name-suggestion drop-down (editor screen, see suggest_update()) */
+static lv_obj_t *s_sugg_panel = NULL;
+static lv_obj_t *s_sugg_lbl[FMT_SUGGEST_MAX];
+static void suggest_hide(void);
 static lv_obj_t *s_newfmt_opt_lbl[NEWFMT_COUNT] = { NULL, NULL, NULL };
 static bool      s_newfmt_open  = false;
 static int       s_newfmt_sel   = 0;
@@ -3834,6 +3868,7 @@ static void editor_touch_event_cb(lv_event_t *e)
         return;
     }
     if (!s_editor_screen_active) return;
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) suggest_hide();
 
     /* The tapped pane index was stored in the container's user_data at
      * creation. Focus is NOT moved here: a drag / swipe only pans the
@@ -5294,6 +5329,7 @@ enum settings_item_t {
     /* Editor */
     SET_ITEM_FONTSZ,
     SET_ITEM_APPEND_ONLY,
+    SET_ITEM_NAME_SUGGEST,
     /* Display */
     SET_ITEM_BACKLIGHT,      /* HAS_BACKLIGHT && !BACKLIGHT_BINARY */
     SET_ITEM_THEME,          /* DISPLAY_COLOR */
@@ -5388,6 +5424,10 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "Append-only editing: %s",
                  s_append_only ? "on" : "off");
         settings_add(SET_ITEM_APPEND_ONLY, buf);
+        /* Drop-down of known names while typing (Fountain characters) */
+        snprintf(buf, sizeof(buf), "Suggest character names: %s",
+                 s_name_suggest ? "on" : "off");
+        settings_add(SET_ITEM_NAME_SUGGEST, buf);
         break;
 
     case SET_LVL_DISPLAY:
@@ -5796,6 +5836,12 @@ static bool settings_cycle_item(int row, int dir)
          * and refresh the label. */
         s_append_only = !s_append_only;
         save_append_only_to_nvs();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_NAME_SUGGEST) {
+        /* Only two states, so either direction toggles it. */
+        s_name_suggest = !s_name_suggest;
+        save_name_suggest_to_nvs();
         refresh_settings_items();
         return true;
     } else if (idx == SET_ITEM_ORIENTATION) {
@@ -9958,7 +10004,195 @@ static void ime_finish(void)
 }
 #endif
 
+/* ---- Name-suggestion drop-down ----
+ *
+ * After a key that changed the focused document, the format's suggest
+ * hook (Fountain: known Character names starting with the cue being
+ * typed) is asked for completions, which drop down under the cursor.
+ * While the list is shown Up / Down pick a name, Enter or Tab replaces
+ * the typed text with it, and Esc closes the list until the cursor
+ * goes to another line; any other key goes to the editor as usual and
+ * the list follows the new text (or closes). */
+static fmt_suggest_t s_sugg;
+static bool   s_sugg_open = false;
+static int    s_sugg_sel = 0;
+static size_t s_sugg_dismissed = SIZE_MAX;   /* s_sugg.start of an Esc'd list */
+static bool   s_sugg_kept = false;   /* the last editor key left the list open */
+
+static void suggest_hide(void)
+{
+    if (!s_sugg_open) return;
+    s_sugg_open = false;
+    if (s_sugg_panel) lv_obj_add_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void suggest_paint_selection(void)
+{
+    for (int i = 0; i < s_sugg.count; i++) {
+        bool sel = (i == s_sugg_sel);
+        lv_obj_set_style_bg_color(s_sugg_lbl[i], sel ? theme_fg() : theme_bg(), 0);
+        lv_obj_set_style_text_color(s_sugg_lbl[i], sel ? theme_bg() : theme_fg(), 0);
+    }
+}
+
+/* Lay the list out under (or, without room, above) the typed text in
+ * the focused pane. Returns false when the cursor is not on screen. */
+static bool suggest_place(void)
+{
+    pane_bind_focus();
+    if (!s_sugg_panel || !s_cursor || !s_cursor_on_screen) return false;
+    const lv_font_t *font = body_font();
+    int cw = char_width_for_font(font);
+    int lh = lv_font_get_line_height(font);
+    const int pad = 2, border = 1;
+
+    int cells = 0;
+    for (int i = 0; i < FMT_SUGGEST_MAX; i++) {
+        if (i < s_sugg.count) {
+            int c = utf8_cells_in_bytes(s_sugg.names[i], strlen(s_sugg.names[i]));
+            if (c > cells) cells = c;
+            lv_label_set_text(s_sugg_lbl[i], s_sugg.names[i]);
+            lv_obj_set_style_text_font(s_sugg_lbl[i], font, 0);
+            lv_obj_set_pos(s_sugg_lbl[i], 0, i * lh);
+            lv_obj_set_height(s_sugg_lbl[i], lh);
+            lv_obj_remove_flag(s_sugg_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_sugg_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    int inner_w = (cells + 1) * cw;
+    for (int i = 0; i < s_sugg.count; i++) lv_obj_set_width(s_sugg_lbl[i], inner_w);
+    int w = inner_w + 2 * (pad + border);
+    int h = s_sugg.count * lh + 2 * (pad + border);
+    if (w > SCR_W) w = SCR_W;
+
+    /* The typed text ends at the cursor; the list starts under its
+     * first character. */
+    size_t cur = editor_get_cursor();
+    size_t tl;
+    const char *typed = NULL;
+    {
+        int line, col;
+        editor_get_cursor_pos(&line, &col);
+        size_t ls;
+        typed = editor_get_line_off(line, &tl, &ls);
+        if (s_sugg.start >= ls && cur >= s_sugg.start && cur - ls <= tl) {
+            typed += s_sugg.start - ls;
+            tl = cur - s_sugg.start;
+        } else {
+            tl = 0;
+        }
+    }
+    int cx = s_rp->x + lv_obj_get_x(s_cursor);
+    int cy = s_rp->y + lv_obj_get_y(s_cursor);
+    int ch = lv_obj_get_height(s_cursor);
+    int x = cx - (tl ? utf8_cells_in_bytes(typed, tl) * cw : 0) - pad - border;
+    if (x + w > SCR_W) x = SCR_W - w;
+    if (x < 0) x = 0;
+    int y = cy + ch + 1;
+    if (y + h > s_rp->y + s_rp->h && cy - h - 1 >= 0) y = cy - h - 1;
+
+    lv_obj_set_size(s_sugg_panel, w, h);
+    lv_obj_set_pos(s_sugg_panel, x, y);
+    return true;
+}
+
+/* Re-evaluate the list after an editor key; typed says whether the key
+ * changed the text. Returns true when the list was shown, hidden or
+ * changed (the screen needs more than the typing fast path). */
+static bool suggest_update(bool typed)
+{
+    bool was_open = s_sugg_open;
+    const editor_format_t *f = editor_format_active();
+    fmt_suggest_t sg;
+    sg.count = 0;
+    bool found = typed && s_name_suggest && f->suggest && f->suggest(&sg);
+    if (!found || sg.start == s_sugg_dismissed) {
+        /* An Esc'd list stays closed while its text is being typed. */
+        if (!found && typed) s_sugg_dismissed = SIZE_MAX;
+        suggest_hide();
+        s_sugg_kept = false;
+        return was_open;
+    }
+    s_sugg_dismissed = SIZE_MAX;
+    /* Keep the highlighted name when it is still offered. */
+    int sel = 0;
+    if (was_open && s_sugg_sel < s_sugg.count) {
+        for (int i = 0; i < sg.count; i++) {
+            if (strcmp(sg.names[i], s_sugg.names[s_sugg_sel]) == 0) { sel = i; break; }
+        }
+    }
+    s_sugg = sg;
+    s_sugg_sel = sel;
+    if (!suggest_place()) {
+        suggest_hide();
+        s_sugg_kept = false;
+        return was_open;
+    }
+    suggest_paint_selection();
+    lv_obj_remove_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_sugg_panel);
+    s_sugg_open = true;
+    s_sugg_kept = true;
+    return true;
+}
+
+/* Replace the typed text with the highlighted name. */
+static void suggest_accept(void)
+{
+    const char *name = s_sugg.names[s_sugg_sel];
+    size_t nl = strlen(name);
+    suggest_hide();
+    bool ok;
+    if (s_append_only) {
+        /* Nothing may be replaced: add the rest of the name. */
+        ok = nl > s_sugg.len && editor_insert_text(name + s_sugg.len, nl - s_sugg.len);
+    } else {
+        ok = editor_replace_range(s_sugg.start, s_sugg.start + s_sugg.len, name) == ESP_OK;
+    }
+    if (!ok) editor_ui_set_status("Buffer full -- increase editor size in menuconfig");
+    ensure_cursor_visible();
+    editor_ui_refresh();
+}
+
+/* Keys the open list takes; returns false for every other key. */
+static bool suggest_handle_key(const kb_event_t *ev)
+{
+    if (!s_sugg_open || ev->modifier != 0) return false;
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        s_sugg_sel = (s_sugg_sel + s_sugg.count - 1) % s_sugg.count;
+        suggest_paint_selection();
+        s_sugg_kept = true;
+        return true;
+    case KB_KEY_DOWN:
+        s_sugg_sel = (s_sugg_sel + 1) % s_sugg.count;
+        suggest_paint_selection();
+        s_sugg_kept = true;
+        return true;
+    case KB_KEY_ENTER:
+    case KB_KEY_TAB:
+        suggest_accept();
+        return true;
+    case KB_KEY_ESCAPE:
+        s_sugg_dismissed = s_sugg.start;
+        suggest_hide();
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void handle_editor_key_main(const kb_event_t *ev);
+
 static void handle_editor_key(const kb_event_t *ev)
+{
+    s_sugg_kept = false;
+    handle_editor_key_main(ev);
+    if (!s_sugg_kept) suggest_hide();
+}
+
+static void handle_editor_key_main(const kb_event_t *ev)
 {
     bool ctrl  = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
     bool shift = (ev->modifier & (KB_MOD_LSHIFT | KB_MOD_RSHIFT)) != 0;
@@ -9989,6 +10223,10 @@ static void handle_editor_key(const kb_event_t *ev)
     if (ev->keycode != KB_KEY_UP && ev->keycode != KB_KEY_DOWN) {
         s_visual_goal_x = -1;
     }
+
+    /* The name-suggestion list, when shown, takes Up / Down / Enter /
+     * Tab / Esc. */
+    if (suggest_handle_key(ev)) return;
 
 #ifdef DRAFTLING_HAS_IME
     /* Shortcuts, function keys and Alt / Win combinations are not for
@@ -10457,6 +10695,13 @@ static void handle_editor_key(const kb_event_t *ev)
          * pane so the caret can never end up drawn in the other pane
          * when the cursor reaches the beginning / end of the text. */
         refresh_focused_pane_and_title();
+    }
+    /* Show, follow or close the name-suggestion list. The typing fast
+     * path would clip the list's area out of the refresh. */
+    if (suggest_update(content_changed)) {
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+        fast_path_eligible = false;
+#endif
     }
     /* Partial-refresh clip is set/cleared by ClipGuard's destructor
      * on the M5Stack PaperS3 backend. */
@@ -12621,6 +12866,29 @@ static void build_screens(void)
         }
     }
 
+    /* ---- Name-suggestion drop-down (editor screen; laid out by
+     * suggest_place()) ---- */
+    {
+        s_sugg_open = false;
+        s_sugg_panel = lv_obj_create(s_scr);
+        lv_obj_set_style_bg_color(s_sugg_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_sugg_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_sugg_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_sugg_panel, 1, 0);
+        lv_obj_set_style_radius(s_sugg_panel, 0, 0);
+        lv_obj_set_style_pad_all(s_sugg_panel, 2, 0);
+        lv_obj_remove_flag(s_sugg_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < FMT_SUGGEST_MAX; i++) {
+            s_sugg_lbl[i] = lv_label_create(s_sugg_panel);
+            lv_label_set_long_mode(s_sugg_lbl[i], LV_LABEL_LONG_CLIP);
+            lv_obj_set_style_bg_opa(s_sugg_lbl[i], LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(s_sugg_lbl[i], theme_bg(), 0);
+            lv_obj_set_style_text_color(s_sugg_lbl[i], theme_fg(), 0);
+            lv_label_set_text(s_sugg_lbl[i], "");
+        }
+    }
+
     /* ---- Message pop-up (moved onto the active screen when shown) ---- */
     {
         s_msg_panel = lv_obj_create(s_scr);
@@ -12985,6 +13253,7 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+    load_name_suggest_from_nvs();
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();

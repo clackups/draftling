@@ -872,7 +872,16 @@ The largest component. Contains:
   (`line_is_plain`; always false for Fountain) and Enter / Tab hooks
   (Fountain: a blank line after a scene heading / transition, and
   Slugline-style Tab completion of character names and scene
-  headings). The plain-text format classifies every line as a
+  headings) and the optional `suggest` hook (Fountain: the known
+  Character names starting with the cue being typed, `ftn_suggest()`,
+  the name list cached while only the cue line changes). After every
+  editor key that changes the text, `suggest_update()` in
+  `editor_ui.cpp` asks the hook and shows the result in a drop-down
+  under the cursor (`s_sugg_panel`); while it is open Up / Down / Enter
+  / Tab / Esc go to `suggest_handle_key()`, and any other key closes or
+  refreshes it. Gated on F1 -> Settings -> Editor -> "Suggest character
+  names" (`s_name_suggest`, NVS key `namesugg`, on by default). The
+  plain-text format classifies every line as a
   paragraph (or empty) with no spans, markers or decorations, so the
   text displays exactly as typed (tabs still expand to four cells).
   Keep format-specific code in these files rather than in
@@ -1139,7 +1148,8 @@ F1 menu (`settings_level_t`, rows `settings_item_t` in
 header `s_lbl_settings_hdr`):
 
 ```
-Editor...     Base font size, Append-only editing
+Editor...     Base font size, Append-only editing, Suggest character
+              names
 Display...    Backlight, Color theme, Orientation, Rotate 180,
               Invert display, 2x scale, Screen margins... (Left,
               Right, Top, Bottom)

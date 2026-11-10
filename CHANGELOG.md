@@ -6,6 +6,15 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Character name suggestions in screenplays**: in a Fountain
+  document, typing the first letters of a character cue drops down the
+  character names already used in the script that start with them,
+  most recent first. Up/Down pick a name, Enter or Tab inserts it and
+  Esc closes the list. On by default; switch it off with F1 ->
+  Settings -> Editor -> "Suggest character names".
+
 ### Changed
 
 - **Reorganized F1 menu**: the menu is shorter and grouped into
