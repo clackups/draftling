@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.25] - 2026-11-10
+
 ### Added
 
 - **Character name suggestions in screenplays**: in a Fountain

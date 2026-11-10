@@ -3215,16 +3215,28 @@ tree referenced in steps 1-4.
    `CHANGELOG.md` `[Unreleased]` entries under a new `[X.Y.Z]` heading
    (see "Changelog" above), commit, and push `main` (along with
    whatever else is going into the release).
-2. For each board with prebuilt binaries, build at the commit that
-   will be tagged and sanity-check the output:
+2. Build every board with prebuilt binaries, in every language pack,
+   at the commit that will be tagged -- always in parallel, with
+   `firmware/build_release.sh` (never one `idf.py` build after
+   another):
    ```bash
    cd firmware
-   idf.py --preset m5stack_papers3 build
-   idf.py --preset xteink_x4_pro build
-   idf.py --preset xteink_x4_classic build
-   idf.py --preset waveshare_epaper_397 build
-   # ...and so on for every board in the release
+   ./build_release.sh                  # every flasher board x pack
+   ./build_release.sh xteink_x4_pro    # or just the boards named
    ```
+   The script runs `PARALLEL` builds at once (default: half the CPUs),
+   each with `IDF_PY_BUILD_JOBS` compile jobs (default 4), which keeps
+   every CPU busy through the single-threaded CMake and link steps;
+   logs go to `build/release-logs/<board>-<pack>.log` and the failures
+   are listed at the end. Builds of one tree share
+   `managed_components/` and `dependencies.lock`, and the component
+   manager deletes the components the board it configures does not
+   use, so only boards with the same dependency set may build at the
+   same time: the script's `DEP_GROUPS` lists one group per set (plain
+   ESP32-S3; USB-host ESP32-S3; ESP32-P4), runs the groups one after
+   the other and, in each, one build alone first. When a board joins
+   the web flasher, add it to the group matching its dependencies (a
+   new group if no group matches), then sanity-check the output.
 3. Tag and push:
    ```bash
    git tag -a vX.Y.Z -m "Release X.Y.Z"
