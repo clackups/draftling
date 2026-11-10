@@ -3226,17 +3226,20 @@ tree referenced in steps 1-4.
    ```
    The script runs `PARALLEL` builds at once (default: half the CPUs),
    each with `IDF_PY_BUILD_JOBS` compile jobs (default 4), which keeps
-   every CPU busy through the single-threaded CMake and link steps;
+   every CPU busy through the single-threaded link steps;
    logs go to `build/release-logs/<board>-<pack>.log` and the failures
    are listed at the end. Builds of one tree share
-   `managed_components/` and `dependencies.lock`, and the component
-   manager deletes the components the board it configures does not
-   use, so only boards with the same dependency set may build at the
-   same time: the script's `DEP_GROUPS` lists one group per set (plain
-   ESP32-S3; USB-host ESP32-S3; ESP32-P4), runs the groups one after
-   the other and, in each, one build alone first. When a board joins
-   the web flasher, add it to the group matching its dependencies (a
-   new group if no group matches), then sanity-check the output.
+   `managed_components/`, `dependencies.lock` and the component
+   manager's cache (two CMake runs at once fail on the lock of its
+   epdiy git checkout), and the component manager deletes the
+   components the board it configures does not use. So the script runs
+   the CMake step (`idf.py reconfigure`) for one build at a time and
+   only the compile / link step (`idf.py build`) in parallel, and only
+   for boards with the same dependency set: `DEP_GROUPS` lists one
+   group per set (plain ESP32-S3; USB-host ESP32-S3; ESP32-P4) and the
+   groups run one after the other. When a board joins the web flasher,
+   add it to the group matching its dependencies (a new group if none
+   matches), then sanity-check the output.
 3. Tag and push:
    ```bash
    git tag -a vX.Y.Z -m "Release X.Y.Z"

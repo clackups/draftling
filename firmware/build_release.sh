@@ -5,18 +5,22 @@
 #   ./build_release.sh                 # all flasher boards, all packs
 #   ./build_release.sh xteink_x4_pro   # only the boards named
 #
-# Builds of one project tree share managed_components/ and
-# dependencies.lock, and the component manager deletes the components
-# the board being configured does not use. Only builds with the same
-# dependency set may therefore run at the same time: the boards are
-# split into groups by dependency set, the groups run one after the
-# other, and in each group one build runs alone first (it settles
-# managed_components/) and the rest run in parallel.
+# Builds of one project tree share managed_components/,
+# dependencies.lock and the component manager's cache (its git checkout
+# of epdiy takes a lock, so two CMake runs at once fail), and the
+# component manager deletes the components the board being configured
+# does not use. So the CMake step (where the component manager runs)
+# is done for one build at a time ("reconfigure"), and only the
+# compile / link step ("build", which then finds nothing to
+# reconfigure) runs in parallel. Even that may only overlap for boards
+# with the same dependency set: the boards are split into groups by
+# dependency set, and the groups run one after the other.
 #
 # PARALLEL builds run at once (default: half the CPUs), each with
 # IDF_PY_BUILD_JOBS compile jobs (default: 4). Incremental builds spend
-# much of their time in single-threaded steps (CMake, linking), so the
-# two together deliberately oversubscribe the CPUs. Logs go to
+# much of their time in single-threaded steps (linking, image
+# generation), so the two together deliberately oversubscribe the
+# CPUs. Logs go to
 # build/release-logs/<board>-<pack>.log.
 
 set -u
@@ -45,9 +49,18 @@ wanted() {   # board
 }
 ONLY=("$@")
 
+configure_one() {   # board pack
+    local log="$LOGDIR/$1-$2.log"
+    if ! idf.py --preset "$1" --lang-pack "$2" reconfigure > "$log" 2>&1; then
+        echo "FAILED  $1 $2 configure (see $log)"
+        echo "$1 $2" >> "$LOGDIR/failed"
+    fi
+}
+
 build_one() {   # board pack
     local log="$LOGDIR/$1-$2.log"
-    if idf.py --preset "$1" --lang-pack "$2" build > "$log" 2>&1; then
+    grep -qx "$1 $2" "$LOGDIR/failed" && return   # configure failed
+    if idf.py --preset "$1" --lang-pack "$2" build >> "$log" 2>&1; then
         echo "ok      $1 $2"
     else
         echo "FAILED  $1 $2 (see $log)"
@@ -65,8 +78,8 @@ for group in "${DEP_GROUPS[@]}"; do
         fi
     done
     [ ${#queue[@]} -eq 0 ] && continue
-    build_one ${queue[0]}
-    printf '%s\n' "${queue[@]:1}" |
+    for item in "${queue[@]}"; do configure_one $item; done
+    printf '%s\n' "${queue[@]}" |
         xargs -r -P "$PARALLEL" -L 1 bash -c 'build_one "$0" "$1"'
 done
 
