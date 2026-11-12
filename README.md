@@ -453,6 +453,7 @@ The editor supports 21 keyboard layouts that can be switched with
 | RO | Romanian, standard (QWERTY) |
 | HR/SI | Croatian / Slovenian (QWERTZ) |
 | TR | Turkish Q (QWERTY) |
+| FR-CA | Canadian French, traditional (QWERTY) |
 
 The accent keys of the European layouts are dead keys, as on a
 computer: press the accent, then the

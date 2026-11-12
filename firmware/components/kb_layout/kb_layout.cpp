@@ -2375,6 +2375,78 @@ static const key_entry_t TR_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_TR */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+/* ------------------------------------------------------------------ */
+/* Canadian French, traditional (QWERTY)                              */
+/* ------------------------------------------------------------------ */
+/* Windows "Canadian French" (KBDCA), XKB "ca": e-acute right of the
+ * period key, dead circumflex / cedilla / diaeresis / grave on the
+ * bracket and quote keys, # | on the key left of 1, guillemets on the
+ * ISO key, the Latin-1 symbols on AltGr. */
+static const char *FR_CA_NORMAL[] = {
+    LETTERS_QWERTY, DIGITS, CTRL_KEYS,
+    /* 2D */ "-",
+    /* 2E */ "=",
+    /* 2F */ DK_CIRC,
+    /* 30 */ DK_CEDIL,
+    /* 31 */ "<",
+    /* 32 */ "<",
+    /* 33 */ ";",
+    /* 34 */ DK_GRAVE,
+    /* 35 */ "#",
+    /* 36 */ ",", ".", CH_e_ACU,
+};
+
+static const char *FR_CA_SHIFT[] = {
+    LETTERS_QWERTY_UP,
+    "!","\x22","/","$","%","?","&","*","(",")",
+    CTRL_KEYS,
+    /* 2D */ "_",
+    /* 2E */ "+",
+    /* 2F */ DK_CIRC,
+    /* 30 */ DK_DIAER,
+    /* 31 */ ">",
+    /* 32 */ ">",
+    /* 33 */ ":",
+    /* 34 */ DK_GRAVE,
+    /* 35 */ "|",
+    /* 36 */ "'", ".", CH_E_ACU,
+};
+
+static const key_entry_t FR_CA_EXTRA[] = {
+    { 0x1E,   L_ALTGR,  "\xC2\xB1" },   /* 1: U+00B1 plus-minus */
+    { 0x1F,   L_ALTGR,  "@" },          /* 2 */
+    { 0x20,   L_ALTGR,  CH_POUND },     /* 3 */
+    { 0x21,   L_ALTGR,  CH_CENT },      /* 4 */
+    { 0x22,   L_ALTGR,  "\xC2\xA4" },   /* 5: U+00A4 currency sign */
+    { 0x23,   L_ALTGR,  CH_NOT },       /* 6 */
+    { 0x24,   L_ALTGR,  CH_BROKEN },    /* 7 */
+    { 0x25,   L_ALTGR,  "\xC2\xB2" },   /* 8: U+00B2 superscript 2 */
+    { 0x26,   L_ALTGR,  "\xC2\xB3" },   /* 9: U+00B3 superscript 3 */
+    { 0x27,   L_ALTGR,  "\xC2\xBC" },   /* 0: U+00BC one quarter */
+    { 0x2D,   L_ALTGR,  "\xC2\xBD" },   /* - key: U+00BD one half */
+    { 0x2E,   L_ALTGR,  "\xC2\xBE" },   /* = key: U+00BE three quarters */
+    { 0x12,   L_ALTGR,  CH_SECT },      /* o */
+    { 0x13,   L_ALTGR,  "\xC2\xB6" },   /* p: U+00B6 pilcrow */
+    { 0x10,   L_ALTGR,  CH_MICRO },     /* m */
+    { 0x2F,   L_ALTGR,  "[" },          /* circumflex key */
+    { 0x30,   L_ALTGR,  "]" },          /* cedilla key */
+    { 0x31,   L_ALTGR,  "}" },          /* < > key */
+    { 0x32,   L_ALTGR,  "}" },
+    { 0x33,   L_ALTGR,  "~" },          /* ; key */
+    { 0x34,   L_ALTGR,  "{" },          /* grave key */
+    { 0x35,   L_ALTGR,  "\\" },         /* # key */
+    { 0x36,   L_ALTGR,  "\xC2\xAF" },   /* , key: U+00AF macron */
+    { 0x37,   L_ALTGR,  "\xC2\xAD" },   /* . key: U+00AD soft hyphen */
+    { 0x38,   L_ALTGR,  DK_ACUTE },     /* e-acute key */
+    { 0x2C,   L_ALTGR,  "\xC2\xA0" },   /* Space: U+00A0 no-break space */
+    { KC_ISO, L_NORMAL, CH_LAQUO },
+    { KC_ISO, L_SHIFT,  CH_RAQUO },
+    { KC_ISO, L_ALTGR,  CH_DEG },
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_FR_CA */
+
 /* ------------------------------------------------------------------ */
 /* Layout table structure                                             */
 /* ------------------------------------------------------------------ */
@@ -2457,6 +2529,9 @@ CHECK_TABLE(HR_NORMAL); CHECK_TABLE(HR_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
 CHECK_TABLE(TR_NORMAL); CHECK_TABLE(TR_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+CHECK_TABLE(FR_CA_NORMAL); CHECK_TABLE(FR_CA_SHIFT);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #endif
@@ -2528,6 +2603,9 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
     [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", KB_IME_NONE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
     [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", KB_IME_TELEX, true },

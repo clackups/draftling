@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Canadian French keyboard layout**: the default firmware now
+  includes the traditional Canadian French layout (FR-CA, the Windows
+  "Canadian French" layout), with e-acute on its own key and the
+  circumflex, cedilla, diaeresis, grave and acute (AltGr) dead keys.
+  Turn it on in F1 -> Settings -> Keyboard -> Active layouts.
+
 ### Changed
 
 - **Choosing the Draftbox server**: F1 -> Sync -> "Connect a Draftbox

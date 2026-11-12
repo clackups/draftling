@@ -1630,7 +1630,8 @@ for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
 via LVGL's bidi engine), Swiss German / Swiss French (QWERTZ), Italian,
 Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
 Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
-Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q, Korean
+Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q,
+Canadian French (traditional), Korean
 (Dubeolsik; the letter keys give Hangul Compatibility Jamo) and the
 US-based Vietnamese, Japanese and Chinese layouts.
 
@@ -2382,7 +2383,8 @@ since HIDPI's base font sizes top out at 20 px.
 
 A language pack is the set of layouts, input methods and font subsets
 of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
-IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR),
+IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR,
+FR-CA),
 `vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
 ZH). Each is a separate image; the board preset picks the hardware and
@@ -3079,6 +3081,7 @@ follows the pack:
 | KB_LAYOUT_ENABLE_RO | Romanian, standard (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_HR | Croatian / Slovenian (QWERTZ) | y in the default pack |
 | KB_LAYOUT_ENABLE_TR | Turkish Q (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_FR_CA | Canadian French, traditional (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_VI | Vietnamese (Telex) | y in the vietnamese pack |
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |

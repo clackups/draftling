@@ -79,6 +79,9 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
     KB_LAYOUT_TR,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+    KB_LAYOUT_FR_CA,
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
     KB_LAYOUT_VI,
 #endif

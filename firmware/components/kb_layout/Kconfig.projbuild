@@ -13,7 +13,7 @@ choice DRAFTLING_LANG_PACK
         individually.
 
     config DRAFTLING_LANG_PACK_DEFAULT
-        bool "Default (US, Ukrainian, German, French, Hebrew and 16 more European layouts)"
+        bool "Default (US, Ukrainian, German, French, Hebrew and 17 more European and Canadian layouts)"
 
     config DRAFTLING_LANG_PACK_VIETNAMESE
         bool "Vietnamese (US, Vietnamese Telex)"
@@ -207,6 +207,15 @@ config KB_LAYOUT_ENABLE_TR
     help
         Enable the Turkish Q keyboard layout (dotless i, g-breve, s-cedilla). Pulls in the Latin Extended-A font
         subset.
+
+config KB_LAYOUT_ENABLE_FR_CA
+    bool "Canadian French, traditional (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the traditional Canadian French QWERTY keyboard layout
+        (Windows "Canadian French", XKB "ca"): e-acute on its own key,
+        circumflex / cedilla / diaeresis / grave dead keys, guillemets
+        on the key left of Z.
 
 config KB_LAYOUT_ENABLE_VI
     bool "Vietnamese (Telex input)"
