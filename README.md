@@ -545,8 +545,10 @@ With a [Draftbox](https://github.com/clackups/draftbox) server (such as
 Draftbox website, create an access token for your repository with a
 one-time password. Then, in the project to connect, choose F1 -> Sync ->
 "Connect a Draftbox repository..." (if WiFi is not connected yet, the device first
-connects to the network from `wifi.cfg`, as `Ctrl+W` does): confirm or change the site name,
-press Enter, type the 8-digit password and press Enter again. The
+connects to the network from `wifi.cfg`, as `Ctrl+W` does): choose
+`draftbox.art` or "connect to a different server..." with Up/Down and
+press Enter (for a different server, type its name and press Enter), then type the 8-digit
+password and press Enter again. The
 device exchanges the password for the token over HTTPS and writes the
 repository URL, token, user name and branch it receives into the
 project's `git.cfg` (`repo_url`, `token`, `username`, `branch`). Any previous `path` line

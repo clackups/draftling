@@ -1192,21 +1192,25 @@ static int       s_wifi_pw_pos      = 0;      /* byte cursor into s_wifi_pw_buf 
  * menu screen, laid out like the WiFi password overlay. If WiFi is not
  * connected yet, the panel first connects it (DBX_STEP_WIFI, like
  * Ctrl+W) and moves on once wifi_state_cb() reports the result. Then
- * the Draftbox site name (pre-filled with draftbox.art, or whatever was
- * typed last time), then the 8-digit one-time password. Enter on the
+ * the server choice (DBX_STEP_SERVER: draftbox.art or a custom
+ * server), for a custom server its site name (DBX_STEP_SITE, whatever
+ * was typed last time), then the 8-digit one-time password. Enter on the
  * password runs git_sync_draftbox_connect() on a background task,
  * which exchanges the password for an access token and writes the
  * clone URL and token into git.cfg; the result goes to the status bar. */
 #define DBX_STEP_SITE 0
 #define DBX_STEP_OTP  1
 #define DBX_STEP_WIFI 2   /* waiting for the WiFi connection */
+#define DBX_STEP_SERVER 3 /* draftbox.art or a custom server */
+#define DBX_DEFAULT_SITE "draftbox.art"
 static lv_obj_t *s_dbx_panel    = NULL;
 static lv_obj_t *s_dbx_hdr_lbl  = NULL;
 static lv_obj_t *s_dbx_val_lbl  = NULL;
 static lv_obj_t *s_dbx_cur      = NULL;
 static bool      s_dbx_open     = false;
 static int       s_dbx_step     = DBX_STEP_SITE;
-static char      s_dbx_site[128] = "draftbox.art";
+static char      s_dbx_site[128] = "";       /* custom server name */
+static bool      s_dbx_custom   = false;     /* custom server chosen */
 static int       s_dbx_site_pos = 0;
 static char      s_dbx_otp[10]  = "";        /* 8 digits; see text_field_key() */
 static int       s_dbx_otp_pos  = 0;
@@ -6411,6 +6415,23 @@ static void msg_popup_touch_cb(lv_event_t *e)
 #endif
 
 /* ---- Draftbox prompt (see s_dbx_panel) ---- */
+
+/* Size the panel for `rows` value rows (the server choice needs two)
+ * and keep it centred on the screen. */
+static void dbx_panel_fit(int rows)
+{
+    int line_h = lv_font_get_line_height(FONT_11);
+    int h = overlay_row_y() + rows * line_h + 2 * OVERLAY_PAD;
+    lv_obj_set_height(s_dbx_panel, h);
+    lv_obj_set_y(s_dbx_panel, (SCR_H - h) / 2);
+}
+
+/* The site the password is exchanged with. */
+static const char *dbx_site(void)
+{
+    return s_dbx_custom ? s_dbx_site : DBX_DEFAULT_SITE;
+}
+
 static void refresh_dbx_prompt(void)
 {
     if (!s_dbx_panel) return;
@@ -6425,15 +6446,28 @@ static void refresh_dbx_prompt(void)
         lv_label_set_text(s_dbx_hdr_lbl, hdr);
         lv_label_set_text(s_dbx_val_lbl, "");
         lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+        dbx_panel_fit(1);
         return;
     }
+
+    if (s_dbx_step == DBX_STEP_SERVER) {
+        lv_label_set_text(s_dbx_hdr_lbl,
+            "Draftbox server (Up/Down, Enter: next, Esc: cancel):");
+        lv_label_set_text(s_dbx_val_lbl, s_dbx_custom
+            ? "  " DBX_DEFAULT_SITE "\n> connect to a different server..."
+            : "> " DBX_DEFAULT_SITE "\n  connect to a different server...");
+        lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+        dbx_panel_fit(2);
+        return;
+    }
+    dbx_panel_fit(1);
 
     bool site = (s_dbx_step == DBX_STEP_SITE);
     const char *buf = site ? s_dbx_site : s_dbx_otp;
     int pos = site ? s_dbx_site_pos : s_dbx_otp_pos;
 
     lv_label_set_text(s_dbx_hdr_lbl, site
-        ? "Draftbox site name (Enter: next, Esc: cancel):"
+        ? "Draftbox server name (Enter: next, Esc: back):"
         : "8-digit one-time password (Enter/Esc):");
     lv_label_set_text(s_dbx_val_lbl, buf);
 
@@ -6448,7 +6482,7 @@ static void refresh_dbx_prompt(void)
 
 static void show_dbx_prompt(bool wait_wifi)
 {
-    s_dbx_step = wait_wifi ? DBX_STEP_WIFI : DBX_STEP_SITE;
+    s_dbx_step = wait_wifi ? DBX_STEP_WIFI : DBX_STEP_SERVER;
     s_dbx_site_pos = (int)strlen(s_dbx_site);
     memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
     s_dbx_otp_pos = 0;
@@ -6473,7 +6507,7 @@ static void dbx_wifi_done(bool connected, const char *reason)
 {
     if (!s_dbx_open || s_dbx_step != DBX_STEP_WIFI) return;
     if (connected) {
-        s_dbx_step = DBX_STEP_SITE;
+        s_dbx_step = DBX_STEP_SERVER;
         refresh_dbx_prompt();
     } else {
         close_dbx_prompt();
@@ -6492,6 +6526,26 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         if (ev->keycode == KB_KEY_ESCAPE) close_dbx_prompt();
         return;
     }
+    if (s_dbx_step == DBX_STEP_SERVER) {
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+        case KB_KEY_DOWN:
+        case KB_KEY_TAB:
+            s_dbx_custom = !s_dbx_custom;
+            break;
+        case KB_KEY_ENTER:
+            s_dbx_step = s_dbx_custom ? DBX_STEP_SITE : DBX_STEP_OTP;
+            s_dbx_site_pos = (int)strlen(s_dbx_site);
+            break;
+        case KB_KEY_ESCAPE:
+            close_dbx_prompt();
+            return;
+        default:
+            return;
+        }
+        refresh_dbx_prompt();
+        return;
+    }
     switch (ev->keycode) {
     case KB_KEY_ENTER:
         if (s_dbx_step == DBX_STEP_SITE) {
@@ -6501,7 +6555,7 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
             if (strlen(s_dbx_otp) != 8) return; /* keep editing */
             char site[sizeof(s_dbx_site)];
             char otp[sizeof(s_dbx_otp)];
-            strlcpy(site, s_dbx_site, sizeof(site));
+            strlcpy(site, dbx_site(), sizeof(site));
             strlcpy(otp, s_dbx_otp, sizeof(otp));
             close_dbx_prompt();
             /* The menu stays open underneath; the pop-up shows the
@@ -6516,14 +6570,16 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         break;
     case KB_KEY_ESCAPE:
         if (s_dbx_step == DBX_STEP_OTP) {
-            /* Back to the site name, e.g. to fix a typo. */
+            /* Back to the site name (custom server, e.g. to fix a
+             * typo) or to the server choice. */
             memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
             s_dbx_otp_pos = 0;
-            s_dbx_step = DBX_STEP_SITE;
+            s_dbx_step = s_dbx_custom ? DBX_STEP_SITE : DBX_STEP_SERVER;
             break;
         }
-        close_dbx_prompt();
-        return;
+        /* Site name: back to the server choice. */
+        s_dbx_step = DBX_STEP_SERVER;
+        break;
     default:
         if (s_dbx_step == DBX_STEP_SITE) {
             text_field_key(s_dbx_site, sizeof(s_dbx_site), &s_dbx_site_pos, ev);

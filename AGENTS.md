@@ -1539,11 +1539,14 @@ report files as safely pushed to the new one. `git_sync_start()`
 refuses to run while a connect is in progress. The UI is the F1 menu
 row F1 -> Sync -> "Connect a Draftbox repository..."
 (`MENU_ITEM_DRAFTBOX`, letter
-`C`): a two-step prompt on the menu screen (`s_dbx_panel`, site name
-then digits-only password). When WiFi is down it first shows
+`C`): a prompt on the menu screen (`s_dbx_panel`): the server choice
+(`DBX_STEP_SERVER`, `draftbox.art` or "connect to a different server...",
+`s_dbx_custom`; the panel grows to two rows via `dbx_panel_fit()`),
+for a custom server its name (`DBX_STEP_SITE`), then the digits-only
+password; Esc goes back one step. When WiFi is down it first shows
 `DBX_STEP_WIFI` and starts `wifi_connect_async()` (unless an attempt is
 already running); `wifi_state_cb()` calls `dbx_wifi_done()`, which
-advances to the site on CONNECTED and on ERROR (or when
+advances to the server choice on CONNECTED and on ERROR (or when
 `wifi_connect_task()` finds no credentials / is busy) closes the prompt
 and explains the failure in the message pop-up. The Draftbox progress
 ("Connecting to <site>...") and result are shown in the generic

@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Changed
+
+- **Choosing the Draftbox server**: F1 -> Sync -> "Connect a Draftbox
+  repository..." now first offers a choice between `draftbox.art` and
+  "connect to a different server..." instead of a site name field
+  pre-filled with `draftbox.art`. Only a different server asks for the
+  server name.
+
 ## [1.0.25] - 2026-11-10
 
 ### Added
