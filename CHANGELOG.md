@@ -36,6 +36,13 @@ in the git log.
   connects to WiFi first when it is not connected and then starts the
   sync, instead of asking you to connect WiFi.
 
+### Fixed
+
+- **Keyboard reconnect on the NiceMCU-C5E-DEV_2.8IPS**: after a
+  keyboard had connected once, every later connection attempt failed
+  ("Connection failed: no link, reason 0x100") until the board was
+  restarted. It now reconnects normally.
+
 ## [1.0.25] - 2026-11-10
 
 ### Added

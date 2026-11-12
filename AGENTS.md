@@ -145,6 +145,9 @@ is a stub there), `gpio_hold_en()` holds a pad through deep sleep on
 its own (`gpio_deep_sleep_hold_en()` does not exist), no EXT0 wake
 and deep-sleep wake only on GPIO0-6 (the board wakes by RESET), the
 `vroland/epdiy` component is pulled in only for `target == esp32s3`,
+BLE 5.0 features off in `sdkconfig.defaults.bluetooth.esp32c5` (as on the
+C61: Bluedroid otherwise reconnects with LE Extended Create Connection,
+which the controller refuses after legacy scanning, reason 0x100),
 and IDF's C5 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` needs
 `-Wno-missing-field-initializers` in `components/ble_keyboard`. On
 the board, everything is tested on physical hardware.
