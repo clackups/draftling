@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.26] - 2026-11-12
+
 ### Added
 
 - **Canadian French keyboard layout**: the default firmware now
