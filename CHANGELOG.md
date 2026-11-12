@@ -27,6 +27,8 @@ in the git log.
   "connect to a different server..." instead of a site name field
   pre-filled with `draftbox.art`. Only a different server asks for the
   server name.
+- **WiFi first in Connectivity**: F1 -> Connectivity now lists
+  "WiFi..." above "Bluetooth...".
 - **Ctrl+G connects WiFi**: like F1 -> Sync -> Synchronize, Ctrl+G now
   connects to WiFi first when it is not connected and then starts the
   sync, instead of asking you to connect WiFi.

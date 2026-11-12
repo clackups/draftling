@@ -1102,9 +1102,9 @@ Settings...
 Keyboard: <layout>        (only when more than one layout is active)
 Sync...                   Synchronize: <project> / Connect a Draftbox
                           repository... / Sync via browser: <project>...
-Connectivity...           Bluetooth... (Status, Scan for keyboard)
-                          WiFi... (Status, Connect to <SSID> | Disconnect,
+Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
                           Choose network...)
+                          Bluetooth... (Status, Scan for keyboard)
 System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
 Sleep now

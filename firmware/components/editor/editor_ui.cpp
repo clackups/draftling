@@ -5067,8 +5067,8 @@ static void refresh_menu_items(void)
         break;
 
     case MENU_LVL_CONN:
-        menu_add(MENU_ITEM_BLE_MENU, "Bluetooth...");
         menu_add(MENU_ITEM_WIFI_MENU, "WiFi...");
+        menu_add(MENU_ITEM_BLE_MENU, "Bluetooth...");
         menu_add(MENU_ITEM_BACK, "Back (Esc)");
         break;
 
