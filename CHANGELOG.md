@@ -13,6 +13,12 @@ in the git log.
   "Canadian French" layout), with e-acute on its own key and the
   circumflex, cedilla, diaeresis, grave and acute (AltGr) dead keys.
   Turn it on in F1 -> Settings -> Keyboard -> Active layouts.
+- **OnePage Reader support**: the OnePage Reader (ESP32-C61, 800x480
+  e-paper) is a new supported board. Without a keyboard, holding Power
+  for 2 seconds puts it to sleep and holding the Up (PREV) side key
+  for 2 seconds forgets the paired keyboards. With a keyboard
+  connected, Power opens the F1 menu, the side keys are Up / Down and
+  the four front keys are Esc / Left / Right / Enter.
 
 ### Changed
 

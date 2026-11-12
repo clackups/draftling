@@ -1259,6 +1259,39 @@ static void pre_sleep_reterminal_sticky_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY */
 
+#if defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+static void pre_sleep_onepage_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: OnePage Reader peripheral teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+
+    /* EPD_RST_PIN also powers the MicroSD card and the microphone
+     * (see the board header). Park every line that could feed the
+     * unpowered card or microphone through their protection diodes
+     * LOW first, then cut the rail and hold it off through deep sleep.
+     * The display backend still owns the SPI bus; reconfiguring the
+     * pins as plain outputs detaches them from it, which is fine this
+     * close to sleep. */
+    static const int kLow[] = { EPD_SCLK_PIN, EPD_MOSI_PIN, EPD_CS_PIN,
+                                SD_SPI_CS_PIN, PDM_CLK_PIN, EPD_RST_PIN };
+    for (int pin : kLow) {
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = 1ULL << pin;
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)pin, 0);
+    }
+    gpio_reset_pin((gpio_num_t)PDM_DIN_PIN);   /* input, high impedance */
+    gpio_hold_en((gpio_num_t)EPD_RST_PIN);
+    /* Keep the charger enabled while asleep. */
+    gpio_hold_en((gpio_num_t)CHARGE_EN_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ONEPAGE_C61 */
+
 /* Poll period and long-press threshold shared by the board button
  * pollers below. */
 #define BTN_POLL_PERIOD_MS    30
@@ -1517,6 +1550,133 @@ static void xteink_x4_classic_btn_init(void)
              BTN_CONFIRM_PIN, BTN_BACK_PIN);
 }
 #endif /* CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC */
+
+#if defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+/* ---- OnePage Reader buttons ----
+ *
+ * Modelled on the Xteink X4 Classic's buttons: Power
+ * (WAKEUP_GPIO_NUM) is F1 on a short press and sleep on a 2 s hold
+ * (through the editor, like Ctrl+P, so unsaved changes get the Save /
+ * Discard / Cancel prompt first); the side keys are Up / Down, and a
+ * 2 s hold of Up (PREV) forgets every stored BLE keyboard; the four
+ * front keys, read through one ADC resistor ladder, are Esc / Left /
+ * Right / Enter. All are injected on release, debounced over 5
+ * samples like the X4 Classic (an e-paper refresh can disturb the
+ * lines), and only while a keyboard is connected (see
+ * onepage_kbd_attached()). */
+#define ONEPAGE_DEBOUNCE_SAMPLES 5
+
+/* Until a keyboard is connected the buttons only sleep (Power hold)
+ * and forget keyboards (Up hold), as on the other boards: short
+ * presses would otherwise open the F1 menu over the keyboard prompt.
+ * The C61 has no USB host, so BLE is the only keyboard. */
+static bool onepage_kbd_attached(void)
+{
+    return ble_keyboard_is_connected();
+}
+
+static void onepage_power_key_poll_cb(void *arg)
+{
+    (void)arg;
+    static btn_state_t st;
+    bool raw_down = gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM) == 0;
+    switch (btn_update(&st, raw_down, ONEPAGE_DEBOUNCE_SAMPLES,
+                       BTN_LONG_PRESS_TICKS)) {
+    case BTN_EV_LONG:
+        ESP_LOGI(TAG, "OnePage Power button: 2 s long press -- "
+                      "requesting deep sleep (GPIO%d)", WAKEUP_GPIO_NUM);
+        editor_ui_request_sleep();
+        break;
+    case BTN_EV_SHORT:
+        if (onepage_kbd_attached()) inject_key(KB_KEY_F1);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Front key on the ADC ladder, 0 = none. */
+static uint8_t onepage_ladder_key(void)
+{
+    int mv = battery_read_aux_mv(BTN_LADDER_ADC_PIN);
+    if (mv < 0) return 0;
+    if (mv <= BTN_LADDER_CONFIRM_MV_MAX) return KB_KEY_ENTER;
+    if (mv >= BTN_LADDER_RIGHT_MV_MIN && mv <= BTN_LADDER_RIGHT_MV_MAX)
+        return KB_KEY_RIGHT;
+    if (mv >= BTN_LADDER_LEFT_MV_MIN && mv <= BTN_LADDER_LEFT_MV_MAX)
+        return KB_KEY_LEFT;
+    if (mv >= BTN_LADDER_BACK_MV_MIN && mv <= BTN_LADDER_BACK_MV_MAX)
+        return KB_KEY_ESCAPE;
+    return 0;
+}
+
+static void onepage_nav_poll_cb(void *arg)
+{
+    (void)arg;
+    /* Up: short = Up, 2 s hold = forget keyboards (no Up then). */
+    static btn_state_t up_st, down_st;
+    switch (btn_update(&up_st, gpio_get_level((gpio_num_t)BTN_UP_PIN) == 0,
+                       ONEPAGE_DEBOUNCE_SAMPLES, BTN_LONG_PRESS_TICKS)) {
+    case BTN_EV_LONG:
+        ESP_LOGI(TAG, "OnePage Up button: 2 s long press -- "
+                      "forgetting all keyboards");
+        ble_keyboard_forget_all();
+        break;
+    case BTN_EV_SHORT:
+        if (onepage_kbd_attached()) inject_key(KB_KEY_UP);
+        break;
+    default:
+        break;
+    }
+    if (btn_update(&down_st, gpio_get_level((gpio_num_t)BTN_DOWN_PIN) == 0,
+                   ONEPAGE_DEBOUNCE_SAMPLES, 0) == BTN_EV_SHORT &&
+        onepage_kbd_attached())
+        inject_key(KB_KEY_DOWN);
+
+    /* The ladder reports one key at a time; each key gets its own
+     * debounce state and is injected on release. */
+    static const uint8_t kLadder[] = { KB_KEY_ESCAPE, KB_KEY_LEFT,
+                                       KB_KEY_RIGHT, KB_KEY_ENTER };
+    static btn_state_t ladder_st[4];
+    uint8_t key = onepage_ladder_key();
+    for (int i = 0; i < 4; i++) {
+        if (btn_update(&ladder_st[i], key == kLadder[i],
+                       ONEPAGE_DEBOUNCE_SAMPLES, 0) == BTN_EV_SHORT &&
+            onepage_kbd_attached())
+            inject_key(kLadder[i]);
+    }
+}
+
+static void onepage_btn_init(void)
+{
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = (1ULL << WAKEUP_GPIO_NUM) |
+                     (1ULL << BTN_UP_PIN) | (1ULL << BTN_DOWN_PIN);
+    g.pull_up_en   = GPIO_PULLUP_ENABLE;
+    g.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
+
+    esp_timer_create_args_t pargs = {};
+    pargs.callback = onepage_power_key_poll_cb;
+    pargs.name     = "onepage_power";
+    esp_timer_handle_t pt = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&pargs, &pt));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(pt, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+
+    esp_timer_create_args_t nargs = {};
+    nargs.callback = onepage_nav_poll_cb;
+    nargs.name     = "onepage_nav";
+    esp_timer_handle_t nt = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&nargs, &nt));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(nt, (uint64_t)BTN_POLL_PERIOD_MS * 1000));
+
+    ESP_LOGI(TAG, "OnePage button pollers started (Power=GPIO%d, "
+                  "Up=GPIO%d, Down=GPIO%d, front keys on ADC GPIO%d)",
+             WAKEUP_GPIO_NUM, BTN_UP_PIN, BTN_DOWN_PIN, BTN_LADDER_ADC_PIN);
+}
+#endif /* CONFIG_DRAFTLING_MODEL_ONEPAGE_C61 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579)
 /* ---- CrowPanel 5.79in Menu button + Back button/dial switch ----
@@ -1784,7 +1944,8 @@ static void papermono_btn_init(void)
 #if CONFIG_DRAFTLING_WAKEUP_GPIO >= 0 && \
     !defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752) && \
     !defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579) && \
-    !defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC)
+    !defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC) && \
+    !defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
 
 /* Poll period BTN_POLL_PERIOD_MS ms; BTN_LONG_PRESS_TICKS ticks = 2 s hold. */
 #define WAKEUP_BTN_LONG_PRESS_TICKS BTN_LONG_PRESS_TICKS
@@ -1857,7 +2018,8 @@ static void wakeup_btn_init(void)
 }
 #endif /* !CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 &&
         * !CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_579 &&
-        * !CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC */
+        * !CONFIG_DRAFTLING_MODEL_XTEINK_X4_CLASSIC &&
+        * !CONFIG_DRAFTLING_MODEL_ONEPAGE_C61 */
 
 /* ---- Generic button long-press-to-sleep handler ----
  *
@@ -2222,6 +2384,26 @@ extern "C" void app_main(void)
         g.pin_bit_mask = (1ULL << XTEINK_POWER_LATCH_PIN);
         gpio_config(&g);
         gpio_set_level((gpio_num_t)XTEINK_POWER_LATCH_PIN, 1);
+    }
+#endif
+#if defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+    /* Power the shared MicroSD / microphone / panel-reset rail
+     * (EPD_RST_PIN, released from the hold the pre-sleep hook left on
+     * it) and park the card's CS high before display_init() talks to
+     * the panel on the shared bus. Keep the charger enabled. */
+    {
+        gpio_hold_dis((gpio_num_t)EPD_RST_PIN);
+        gpio_hold_dis((gpio_num_t)CHARGE_EN_PIN);
+        gpio_config_t g = {};
+        g.intr_type    = GPIO_INTR_DISABLE;
+        g.mode         = GPIO_MODE_OUTPUT;
+        g.pin_bit_mask = (1ULL << EPD_RST_PIN) | (1ULL << SD_SPI_CS_PIN) |
+                         (1ULL << CHARGE_EN_PIN);
+        gpio_config(&g);
+        gpio_set_level((gpio_num_t)CHARGE_EN_PIN, 1);
+        gpio_set_level((gpio_num_t)SD_SPI_CS_PIN, 1);
+        gpio_set_level((gpio_num_t)EPD_RST_PIN, 1);
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 #endif
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
@@ -2717,6 +2899,32 @@ extern "C" void app_main(void)
      * reset were handled through the M5IOE1 above. Pin parameters
      * are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_SSD1677_SPI)
+    /* Generic SSD1677 SPI e-paper backend (OnePage Reader); pins come
+     * from the board header. This call also stands up the SPI bus the
+     * MicroSD card below shares with the panel. */
+    {
+        display_ssd1677_spi_config_t ec = {};
+        ec.spi_host     = EPD_SPI_HOST;
+        ec.sclk         = EPD_SCLK_PIN;
+        ec.mosi         = EPD_MOSI_PIN;
+        ec.miso         = EPD_MISO_PIN;
+        ec.cs           = EPD_CS_PIN;
+        ec.dc           = EPD_DC_PIN;
+        ec.rst          = EPD_RST_PIN;
+        ec.busy         = EPD_BUSY_PIN;
+        ec.spi_clock_hz = EPD_SPI_CLOCK_HZ;
+        ec.rst_low_ms    = EPD_RST_LOW_MS;
+        ec.rst_settle_ms = EPD_RST_SETTLE_MS;
+        display_ssd1677_spi_config(&ec);
+    }
+    display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+#if defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+    /* One drive-strength step down on the fast shared-bus lines, as
+     * the vendor firmware does (ringing made the SD card drop out). */
+    gpio_set_drive_capability((gpio_num_t)EPD_SCLK_PIN, GPIO_DRIVE_CAP_1);
+    gpio_set_drive_capability((gpio_num_t)EPD_MOSI_PIN, GPIO_DRIVE_CAP_1);
+#endif
 #elif defined(CONFIG_DRAFTLING_DISPLAY_SEEED_E1001)
     /* Seeed Studio reTerminal E1001 (7.5" 800x480 UC8179 e-paper).
      * Owns all panel GPIOs internally (see display_seeed_e1001.cpp). */
@@ -2882,6 +3090,10 @@ extern "C" void app_main(void)
     }
 #else
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
+#endif
+#if defined(USB_DET_PIN)
+    /* "Charging" glyph while USB powers the board (active LOW). */
+    battery_set_usb_detect_gpio(USB_DET_PIN, 0);
 #endif
 
 #if defined(CONFIG_DRAFTLING_CHARGER_BQ25896)
@@ -3561,6 +3773,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_reterminal_sticky_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERMONO)
     standby_set_pre_sleep_cb(pre_sleep_papermono_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+    standby_set_pre_sleep_cb(pre_sleep_onepage_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
@@ -3600,6 +3814,10 @@ extern "C" void app_main(void)
      * on 2 s long press. Six nav keys (Up/Down/Left/Right/Enter/Esc)
      * drive the rest -- same buttons-only model as the CrowPanel. */
     xteink_x4_classic_btn_init();
+#elif defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+    /* Power = F1 / forget keyboards, side keys Up / Down, front keys
+     * Esc / Left / Right / Enter -- the X4 Classic model. */
+    onepage_btn_init();
 #else
     /* Generic wakeup-button long-press monitor: hold 2 s to forget
      * all stored BLE keyboard pairings and start a fresh scan (and,

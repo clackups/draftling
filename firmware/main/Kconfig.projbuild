@@ -443,6 +443,29 @@ config DRAFTLING_MODEL_NICEMCU_C5_28IPS
         RESET button. Tested on physical hardware.
         See https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS
 
+config DRAFTLING_MODEL_ONEPAGE_C61
+    bool "OnePage Reader (ESP32-C61, SSD1677, 800x480 e-paper)"
+    depends on IDF_TARGET_ESP32C61
+    help
+        OnePage Reader (github.com/MoveCall/onepage-reader), open
+        hardware e-reader, board revision V1 2026-08-19: ESP32-C61HR2
+        (2 MB quad PSRAM, run at 40 MHz), 16 MB flash, an 800x480
+        SSD1677 e-paper panel (the Xteink X4 panel) driven by the
+        generic components/display/display_ssd1677_spi.cpp, and a
+        MicroSD card on the panel's SPI bus. The panel's RST line also
+        switches the supply of the MicroSD card and the microphone.
+        Buttons: Power (GPIO2, deep-sleep wake through EXT1), two side
+        keys (GPIO6 / GPIO9) and four front keys on one ADC
+        resistor ladder (GPIO4). Battery voltage through a 1:2 divider
+        on GPIO5. No touch, no front-light. The USB-C port is the
+        chip's USB-Serial/JTAG, so there is no SD card via USB or Sync
+        via browser.
+
+        Pin numbers come from the vendor's MIT-licensed Arduino board
+        support (github.com/MoveCall/onepage-reader-sdk-arduino) and
+        CrossPoint port (github.com/MoveCall/crosspoint-onepage).
+        Tested on physical hardware.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -758,6 +781,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    default y if DRAFTLING_MODEL_ONEPAGE_C61
     default n
 
 # DRAFTLING_DISPLAY_EPDIY is set automatically when the selected
@@ -829,6 +853,14 @@ config DRAFTLING_DISPLAY_SSD1683
 config DRAFTLING_DISPLAY_WS_EPD397
     bool
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default n
+
+# DRAFTLING_DISPLAY_SSD1677_SPI selects the generic SSD1677 800x480 SPI
+# e-paper backend (components/display/display_ssd1677_spi.cpp), whose
+# pins come from the board header via display_ssd1677_spi_config().
+config DRAFTLING_DISPLAY_SSD1677_SPI
+    bool
+    default y if DRAFTLING_MODEL_ONEPAGE_C61
     default n
 
 # DRAFTLING_DISPLAY_SEEED_E1001 selects the from-scratch SPI e-paper
@@ -1066,6 +1098,8 @@ config DRAFTLING_HAS_BATTERY
     # M5Stack PaperMono: battery voltage read from the M5PM1
     # power-management chip (DRAFTLING_BATTERY_M5PM1 below).
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # OnePage Reader: cell voltage through a 1:2 divider on GPIO5.
+    default y if DRAFTLING_MODEL_ONEPAGE_C61
     default n
 
 # Selects the M5Stack M5PM1 power-management backend in
@@ -1461,7 +1495,20 @@ config DRAFTLING_WAKEUP_GPIO
     # has no EXT0, so standby arms no GPIO wake and the RESET button
     # wakes the device.
     default 28 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
+    # OnePage Reader: Power button on GPIO2 (active-low, an LP IO, so
+    # it can wake the ESP32-C61 through EXT1; the chip has no EXT0).
+    default 2  if DRAFTLING_MODEL_ONEPAGE_C61
     default 0
+
+# DRAFTLING_WAKEUP_EXT1: arm DRAFTLING_WAKEUP_GPIO through EXT1
+# (any-low) instead of EXT0, on targets that have EXT1 but no EXT0
+# (ESP32-C61). Opt-in per board, since on other EXT0-less targets
+# the configured wake GPIO is not an LP IO or is used for something
+# else (the Tab5's GPIO0 is the keyboard I2C bus).
+config DRAFTLING_WAKEUP_EXT1
+    bool
+    default y if DRAFTLING_MODEL_ONEPAGE_C61
+    default n
 
 # DRAFTLING_WAKEUP_GPIO_EXTRA is an optional second active-low
 # RTC-capable GPIO that also wakes the device from deep sleep, armed
@@ -1843,6 +1890,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 800 if DRAFTLING_MODEL_XTEINK_X4
     default 792 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 800 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default 800 if DRAFTLING_MODEL_ONEPAGE_C61
     default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default 800 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default 800 if DRAFTLING_MODEL_M5STACK_PAPERMONO
@@ -1879,6 +1927,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_XTEINK_X4
     default 272 if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
     default 480 if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    default 480 if DRAFTLING_MODEL_ONEPAGE_C61
     default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default 480 if DRAFTLING_MODEL_M5STACK_PAPERMONO
@@ -1962,6 +2011,8 @@ config DRAFTLING_DISPLAY_HIDPI
     # ~235 DPI, even denser than the Xteink X4 Pro's 800x480 on 4.26"
     # (~219 DPI) above -- use the same Hack-font HIDPI path.
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
+    # OnePage Reader: the Xteink X4's 800x480 4.26" panel.
+    default y if DRAFTLING_MODEL_ONEPAGE_C61
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
 
     # Seeed reTerminal Sticky: same 3.97" 800x480 panel class as the

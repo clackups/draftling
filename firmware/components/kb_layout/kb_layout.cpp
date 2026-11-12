@@ -168,7 +168,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* unshifted: keycodes 0x04..0x38 */
-static const char *US_NORMAL[] = {
+static const char *const US_NORMAL[] = {
     "a","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F */
     "m","n","o","p","q","r","s","t","u","v","w","x",  /* 10-1B */
     "y","z",                                          /* 1C-1D */
@@ -179,7 +179,7 @@ static const char *US_NORMAL[] = {
 };
 
 /* shifted */
-static const char *US_SHIFT[] = {
+static const char *const US_SHIFT[] = {
     "A","B","C","D","E","F","G","H","I","J","K","L",
     "M","N","O","P","Q","R","S","T","U","V","W","X",
     "Y","Z",
@@ -202,7 +202,7 @@ static const char *US_SHIFT[] = {
  *   ss = \xC3\x9F
  */
 
-static const char *DE_NORMAL[] = {
+static const char *const DE_NORMAL[] = {
     "a","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F */
     "m","n","o","p","q","r","s","t","u","v","w","x",  /* 10-1B */
     "z","y",                                          /* 1C-1D: Y and Z swapped */
@@ -220,7 +220,7 @@ static const char *DE_NORMAL[] = {
     ",",".","-",                                       /* 36-38 */
 };
 
-static const char *DE_SHIFT[] = {
+static const char *const DE_SHIFT[] = {
     "A","B","C","D","E","F","G","H","I","J","K","L",
     "M","N","O","P","Q","R","S","T","U","V","W","X",
     "Z","Y",
@@ -271,7 +271,7 @@ static const key_entry_t DE_EXTRA[] = {
  *   c-cedilla = \xC3\xA7, C-cedilla = \xC3\x87
  */
 
-static const char *FR_NORMAL[] = {
+static const char *const FR_NORMAL[] = {
     "q","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F: a->q */
     ",","n","o","p","a","r","s","t","u","v","z","x",  /* 10-1B: m->,q->a,w->z */
     "y","w",                                          /* 1C-1D: z->w (AZERTY) */
@@ -299,7 +299,7 @@ static const char *FR_NORMAL[] = {
     "!",                                              /* 38 */
 };
 
-static const char *FR_SHIFT[] = {
+static const char *const FR_SHIFT[] = {
     "Q","B","C","D","E","F","G","H","I","J","K","L",
     "?","N","O","P","A","R","S","T","U","V","Z","X",
     "Y","W",
@@ -359,7 +359,7 @@ static const key_entry_t FR_EXTRA[] = {
  * Cyrillic block: U+0400..U+04FF -> UTF-8: 0xD0 0x80..0xBF, 0xD1 0x80..0xBF
  */
 
-static const char *UA_NORMAL[] = {
+static const char *const UA_NORMAL[] = {
     /* 04 a */ "\xD1\x84",   /* f (Cyrillic) */
     /* 05 b */ "\xD0\xB8",   /* i (short) */
     /* 06 c */ "\xD1\x81",   /* s */
@@ -412,7 +412,7 @@ static const char *UA_NORMAL[] = {
 };
 
 /* Uppercase Ukrainian */
-static const char *UA_SHIFT[] = {
+static const char *const UA_SHIFT[] = {
     /* 04 A */ "\xD0\xA4",   /* F */
     /* 05 B */ "\xD0\x98",   /* I (short) */
     /* 06 C */ "\xD0\xA1",   /* S */
@@ -479,7 +479,7 @@ static const char *UA_SHIFT[] = {
  * Hebrew letter UTF-8 encoding: U+05D0..U+05EA -> 0xD7 0x90..0xAA
  */
 
-static const char *HE_NORMAL[] = {
+static const char *const HE_NORMAL[] = {
     /* 04 a */ "\xD7\xA9",   /* shin     U+05E9 */
     /* 05 b */ "\xD7\xA0",   /* nun      U+05E0 */
     /* 06 c */ "\xD7\x91",   /* bet      U+05D1 */
@@ -531,7 +531,7 @@ static const char *HE_NORMAL[] = {
     /* 38 / */ ".",
 };
 
-static const char *HE_SHIFT[] = {
+static const char *const HE_SHIFT[] = {
     /* Shifted letter keys produce Latin uppercase per SI 1452-2 */
     /* 04 A */ "A",
     /* 05 B */ "B",
@@ -594,7 +594,7 @@ static const char *HE_SHIFT[] = {
  * Hangul input method composes them into syllables. Shift only
  * changes the five keys with a tense / extra form (Q W E R T -> the
  * double consonants, O P -> yae / ye); digits and symbols are US. */
-static const char *KO_NORMAL[] = {
+static const char *const KO_NORMAL[] = {
     "\xE3\x85\x81", /* 04 a: mieum */
     "\xE3\x85\xA0", /* 05 b: yu */
     "\xE3\x85\x8A", /* 06 c: chieuch */
@@ -627,7 +627,7 @@ static const char *KO_NORMAL[] = {
     NULL,";","'","`",",",".","/",                      /* 32-38 */
 };
 
-static const char *KO_SHIFT[] = {
+static const char *const KO_SHIFT[] = {
     "\xE3\x85\x81", /* 04 A: mieum */
     "\xE3\x85\xA0", /* 05 B: yu */
     "\xE3\x85\x8A", /* 06 C: chieuch */
@@ -697,7 +697,7 @@ static const char *KO_SHIFT[] = {
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-static const char *DE_CH_NORMAL[] = {
+static const char *const DE_CH_NORMAL[] = {
     LETTERS_QWERTZ, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ DK_CIRC,
@@ -711,7 +711,7 @@ static const char *DE_CH_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *DE_CH_SHIFT[] = {
+static const char *const DE_CH_SHIFT[] = {
     LETTERS_QWERTZ_UP, CH_SHIFT_DIGITS, CTRL_KEYS,
     /* 2D */ "?",
     /* 2E */ DK_GRAVE,
@@ -736,7 +736,7 @@ static const key_entry_t DE_CH_EXTRA[] = {
 #endif /* CONFIG_KB_LAYOUT_ENABLE_DE_CH */
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-static const char *FR_CH_NORMAL[] = {
+static const char *const FR_CH_NORMAL[] = {
     LETTERS_QWERTZ, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ DK_CIRC,
@@ -750,7 +750,7 @@ static const char *FR_CH_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *FR_CH_SHIFT[] = {
+static const char *const FR_CH_SHIFT[] = {
     LETTERS_QWERTZ_UP, CH_SHIFT_DIGITS, CTRL_KEYS,
     /* 2D */ "?",
     /* 2E */ DK_GRAVE,
@@ -780,7 +780,7 @@ static const key_entry_t FR_CH_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Accented vowels have their own keys, so there are no dead keys.
  * Braces are Shift+AltGr on the bracket keys, as on Windows. */
-static const char *IT_NORMAL[] = {
+static const char *const IT_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_i_GRV,
@@ -794,7 +794,7 @@ static const char *IT_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *IT_SHIFT[] = {
+static const char *const IT_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_POUND,"$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -837,7 +837,7 @@ static const key_entry_t IT_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Acute / grave and tilde / circumflex are dead keys (a + tilde ->
  * a-tilde); the diaeresis is AltGr on the + key. */
-static const char *PT_NORMAL[] = {
+static const char *const PT_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_LAQUO,
@@ -851,7 +851,7 @@ static const char *PT_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *PT_SHIFT[] = {
+static const char *const PT_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22","#","$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -891,7 +891,7 @@ static const key_entry_t PT_EXTRA[] = {
 /* Accented vowels are typed with the acute / grave / circumflex /
  * diaeresis dead keys (acute + a -> a-acute); n-tilde has its own
  * key. */
-static const char *ES_NORMAL[] = {
+static const char *const ES_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_IEXCL,
@@ -905,7 +905,7 @@ static const char *ES_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *ES_SHIFT[] = {
+static const char *const ES_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_MIDDOT,"$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -948,7 +948,7 @@ static const key_entry_t ES_EXTRA[] = {
 /* Differs from US in the symbols: Shift+2 is ", Shift+3 the pound
  * sign, @ is Shift+', and the key left of Enter is # / ~. AltGr +
  * vowel types the acute vowels, as on Windows. */
-static const char *GB_NORMAL[] = {
+static const char *const GB_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "-",
     /* 2E */ "=",
@@ -962,7 +962,7 @@ static const char *GB_NORMAL[] = {
     /* 36 */ ",", ".", "/",
 };
 
-static const char *GB_SHIFT[] = {
+static const char *const GB_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_POUND,"$","%","^","&","*","(",")",
     CTRL_KEYS,
@@ -1003,7 +1003,7 @@ static const key_entry_t GB_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Swedish and Finnish share one layout. Acute / grave and diaeresis /
  * circumflex are dead keys; AltGr + the diaeresis key is a dead tilde. */
-static const char *SE_FI_NORMAL[] = {
+static const char *const SE_FI_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1059,7 +1059,7 @@ static const char *SE_FI_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *SE_FI_SHIFT[] = {
+static const char *const SE_FI_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1140,7 +1140,7 @@ static const key_entry_t SE_FI_EXTRA[] = {
 /* Norwegian (QWERTY)                                                 */
 /* ------------------------------------------------------------------ */
 /* Grave / circumflex / diaeresis and (AltGr) acute / tilde are dead keys. */
-static const char *NO_NORMAL[] = {
+static const char *const NO_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1196,7 +1196,7 @@ static const char *NO_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *NO_SHIFT[] = {
+static const char *const NO_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1276,7 +1276,7 @@ static const key_entry_t NO_EXTRA[] = {
 /* Danish (QWERTY)                                                    */
 /* ------------------------------------------------------------------ */
 /* Acute / grave, diaeresis / circumflex and (AltGr) tilde are dead keys. */
-static const char *DK_NORMAL[] = {
+static const char *const DK_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1332,7 +1332,7 @@ static const char *DK_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *DK_SHIFT[] = {
+static const char *const DK_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1448,7 +1448,7 @@ static const key_entry_t PL_EXTRA[] = {
  * caron and ring dead keys; AltGr + the digits are the other
  * accents (caron, circumflex, breve, ring, ogonek, dot, acute,
  * double acute) as dead keys. */
-static const char *CZ_NORMAL[] = {
+static const char *const CZ_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1504,7 +1504,7 @@ static const char *CZ_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *CZ_SHIFT[] = {
+static const char *const CZ_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1611,7 +1611,7 @@ static const key_entry_t CZ_EXTRA[] = {
 /* Accented letters on the number row (digits with Shift), acute /
  * caron and ring dead keys; AltGr + the digits are the other
  * accents as dead keys, as on the Czech layout. */
-static const char *SK_NORMAL[] = {
+static const char *const SK_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1667,7 +1667,7 @@ static const char *SK_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *SK_SHIFT[] = {
+static const char *const SK_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1776,7 +1776,7 @@ static const key_entry_t SK_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Every Hungarian letter has its own key (i-acute is the ISO key
  * left of Y); 0 is left of 1. AltGr + the digits are dead accents. */
-static const char *HU_NORMAL[] = {
+static const char *const HU_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1832,7 +1832,7 @@ static const char *HU_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *HU_SHIFT[] = {
+static const char *const HU_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1930,7 +1930,7 @@ static const key_entry_t HU_EXTRA[] = {
 /* Romanian standard layout (SR 13392): s and t with comma below,
  * a-breve, a / i-circumflex on their own keys, low / high quotes left
  * of 1, and AltGr + the digits as dead accents. */
-static const char *RO_NORMAL[] = {
+static const char *const RO_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1986,7 +1986,7 @@ static const char *RO_NORMAL[] = {
     /* 38 */ "/",
 };
 
-static const char *RO_SHIFT[] = {
+static const char *const RO_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2089,7 +2089,7 @@ static const key_entry_t RO_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Croatian and Slovenian share one layout. Cedilla / diaeresis left
  * of 1 are dead keys; AltGr + the digits are the other accents. */
-static const char *HR_NORMAL[] = {
+static const char *const HR_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -2145,7 +2145,7 @@ static const char *HR_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *HR_SHIFT[] = {
+static const char *const HR_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2236,7 +2236,7 @@ static const key_entry_t HR_EXTRA[] = {
 /* The i key types dotless i (Shift: I) and the key right of L types
  * i (Shift: I-dot), as on Turkish keyboards. Shift+3 is a dead
  * circumflex; AltGr gives the other dead accents. */
-static const char *TR_NORMAL[] = {
+static const char *const TR_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -2292,7 +2292,7 @@ static const char *TR_NORMAL[] = {
     /* 38 */ ".",
 };
 
-static const char *TR_SHIFT[] = {
+static const char *const TR_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2383,7 +2383,7 @@ static const key_entry_t TR_EXTRA[] = {
  * period key, dead circumflex / cedilla / diaeresis / grave on the
  * bracket and quote keys, # | on the key left of 1, guillemets on the
  * ISO key, the Latin-1 symbols on AltGr. */
-static const char *FR_CA_NORMAL[] = {
+static const char *const FR_CA_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "-",
     /* 2E */ "=",
@@ -2397,7 +2397,7 @@ static const char *FR_CA_NORMAL[] = {
     /* 36 */ ",", ".", CH_e_ACU,
 };
 
-static const char *FR_CA_SHIFT[] = {
+static const char *const FR_CA_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22","/","$","%","?","&","*","(",")",
     CTRL_KEYS,
@@ -2457,8 +2457,8 @@ static const key_entry_t FR_CA_EXTRA[] = {
  * fall back to the US physical key position (non-Latin scripts, which
  * have no national Latin letter to remap a shortcut to). */
 typedef struct {
-    const char **normal;       /* keycodes 0x04..0x38 */
-    const char **shift;        /* keycodes 0x04..0x38 */
+    const char *const *normal;    /* keycodes 0x04..0x38 */
+    const char *const *shift;     /* keycodes 0x04..0x38 */
     const key_entry_t *extra;  /* AltGr layers, keys past 0x38; or NULL */
     const char *name;
     kb_ime_t ime;

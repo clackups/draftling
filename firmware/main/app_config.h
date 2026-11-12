@@ -115,6 +115,8 @@
 #include "boards/m5stack_papermono.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_NICEMCU_C5_28IPS)
 #include "boards/nicemcu_c5_28ips.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_ONEPAGE_C61)
+#include "boards/onepage_c61.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

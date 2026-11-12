@@ -68,8 +68,10 @@ endif()
 ## ESP-IDF's esp32c5 esp_bt.h (6.0 and still 6.1) leaves the cca_drop_mode /
 ## cca_low_tx_pwr members out of BT_CONTROLLER_INIT_CONFIG_DEFAULT(),
 ## which trips -Wmissing-field-initializers (an error with -Werror)
-## where ble_keyboard.cpp expands the macro. The gap is in the IDF
-## header, so silence that warning for this component on the C5 only.
-if(CONFIG_IDF_TARGET_ESP32C5)
+## where ble_keyboard.cpp expands the macro. The ESP32-C61 uses the
+## esp32c6 header, which has the same gap (plus scan_allow_adi_filter).
+## The gap is in the IDF header, so silence that warning for this
+## component on those targets only.
+if(CONFIG_IDF_TARGET_ESP32C5 OR CONFIG_IDF_TARGET_ESP32C61)
     target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-missing-field-initializers)
 endif()
