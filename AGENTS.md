@@ -1074,7 +1074,8 @@ PSRAM size (`esp_psram_get_size()`), the flash size
 (every display backend implements it; the Xteink and reTerminal Sticky
 backends return the controller detected at boot), the touch controller
 from the `DRAFTLING_TOUCH_*` flags, the panel resolution and text
-area, the SD card from `sd_card_get_handle()` and
+area, the font set (Hack with `CONFIG_DRAFTLING_DISPLAY_HIDPI`, else
+Greybeard), the SD card from `sd_card_get_handle()` and
 `sd_card_get_fs_space()`, the connected keyboards (with the BLE
 keyboard's address from `ble_keyboard_get_device_addr()`), the USB
 device functions (`usb_msc_get_mode()` / `kermit_server_is_running()`,

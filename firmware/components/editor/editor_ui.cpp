@@ -7844,6 +7844,11 @@ static void build_hwinfo_text(std::string &out, int cols)
     snprintf(buf, sizeof(buf), "%d x %d%s", (int)SCR_W, (int)SCR_H,
              display_scale_factor() > 1 ? " (2x scale)" : "");
     help_row(out, cols, kc, "Text area", buf);
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    help_row(out, cols, kc, "Fonts", "high definition (Hack)");
+#else
+    help_row(out, cols, kc, "Fonts", "low definition (Greybeard)");
+#endif
 
     help_heading(out, "SD card");
     sdmmc_card_t *card = sd_card_get_handle();

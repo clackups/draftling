@@ -27,6 +27,9 @@ in the git log.
   "connect to a different server..." instead of a site name field
   pre-filled with `draftbox.art`. Only a different server asks for the
   server name.
+- **Font set on the Hardware information page**: F1 -> System &
+  Storage -> Hardware information now says whether the board uses the
+  high-definition (Hack) or low-definition (Greybeard) fonts.
 - **WiFi first in Connectivity**: F1 -> Connectivity now lists
   "WiFi..." above "Bluetooth...".
 - **Ctrl+G connects WiFi**: like F1 -> Sync -> Synchronize, Ctrl+G now
