@@ -30,6 +30,7 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
   * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
+  * [OnePage Reader](https://github.com/MoveCall/onepage-reader) (ESP32-C61, 4.26" e-paper, open hardware)
   * [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) (discontinued)
 
 * DIY boards

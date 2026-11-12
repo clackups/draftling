@@ -1,7 +1,8 @@
 # Draftling: supported hardware
 
 Draftling runs on a number of ESP32-S3 devices and development boards,
-one ESP32-P4 device (M5Stack Tab5) and one ESP32-C5 board. See the
+one ESP32-P4 device (M5Stack Tab5), one ESP32-C5 board and one
+ESP32-C61 device (OnePage Reader). See the
 [photo gallery](images/README.md) of some of them.
 
 Every board runs the same firmware source; the board is picked at build
@@ -52,6 +53,7 @@ Features used in the table:
 | [Viewe UEDX24320028E-WB-A + UEED035HV](#viewe-uedx24320028e-wb-a-with-ueed035hv-rx40-l001-display) | `viewe_uedx24320028_ueed035hv` | 3.5" 480x320 transflective | yes | yes | - | yes |
 | [MicroJournal Rev 5.0 / 5.1](#microjournal-rev-50--51) | `microjournal_rev5` | 2.8" 320x240 LCD | - | - | - | - |
 | [NiceMCU-C5E-DEV_2.8IPS](#nicemcu-c5e-dev_28ips) | `nicemcu_c5_28ips` | 2.8" 320x240 IPS | yes | yes | - | - |
+| [OnePage Reader](#onepage-reader) | `onepage_c61` | 4.26" 800x480 e-paper | - | - | yes | - |
 
 
 ## Waveshare ESP32-S3-RLCD-4.2
@@ -471,6 +473,29 @@ device support.
   does not work while Draftling runs. No SD card via USB or Sync via
   browser.
 - Source: the vendor's example sketch and schematic.
+
+
+## OnePage Reader
+
+[OnePage Reader](https://github.com/MoveCall/onepage-reader): an
+open-hardware e-reader with an ESP32-C61 (Wi-Fi 6, BLE) in a sealed
+body. Tested on physical hardware.
+
+- 4.26" 800x480 e-paper (SSD1677, the Xteink X4 panel).
+- No touch, no front-light.
+- Battery level, and the charging indicator while on USB power.
+- Buttons: Power wakes the device and puts it to sleep on a 2 s hold
+  (asking first about unsaved changes); holding the Up (PREV) side key
+  for 2 s forgets the paired keyboards. While a keyboard is connected,
+  short presses also work: Power = F1 menu, side keys = Up / Down,
+  front keys = Esc / Left / Right / Enter.
+- No SD card via USB or Sync via browser: the ESP32-C61 has no USB
+  device support (the USB-C port is its serial / debug port).
+- The microphone is not used.
+- Sources: the vendor's
+  [Arduino board support](https://github.com/MoveCall/onepage-reader-sdk-arduino)
+  and [CrossPoint port](https://github.com/MoveCall/crosspoint-onepage)
+  (MIT).
 
 
 ## Other hardware

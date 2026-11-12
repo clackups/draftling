@@ -62,11 +62,21 @@ they differ. Never commit under any other identity.
   `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and start a new empty
   `## [Unreleased]` section above it.
 
+## User Documentation
+
+- Adding a board, or changing what a board does that a user can see
+  (buttons, features, test status), must also update the user
+  documentation in the same commit: the board's row in the summary
+  table and its section in `HARDWARE.md`, the board list in
+  `README.md`, and the board's entries in this file (the "Supported
+  Hardware" table, the hardware-model list under
+  `main/Kconfig.projbuild`, the preset list under "Building").
+
 ## Project Overview
 
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
-development boards with reflective LCD displays (plus one ESP32-P4 and
-one ESP32-C5 board). It is built with the
+development boards with reflective LCD displays (plus one ESP32-P4, one
+ESP32-C5 and one ESP32-C61 board). It is built with the
 ESP-IDF framework (v6.1+) and uses LVGL v9 for the graphical
 interface.
 
@@ -101,6 +111,7 @@ card).
 | Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677/SSD2677, auto-detected), 800x480, GT911 touch |
 | M5Stack PaperMono / PaperMono-Lite | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 | NiceMCU-C5E-DEV_2.8IPS (ESP32-C5) | 2.8-inch ST7789 IPS color LCD over PARLIO, 320x240, CST816D / FT6336G touch |
+| OnePage Reader (ESP32-C61) | 4.26-inch e-paper (SSD1677), 800x480, no touch, MicroSD on the panel's SPI bus |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
 monochrome e-paper panel driven by an UltraChip UC8179 controller over
@@ -2761,6 +2772,32 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   vendor's upright portrait: swap + mirror Y (mirror X, as on the
   FNK0104B, put lower-right taps in the upper-left corner). Tested on
   physical hardware. *Requires ESP32-C5.*
+- **DRAFTLING_MODEL_ONEPAGE_C61** -- OnePage Reader
+  (github.com/MoveCall/onepage-reader, `main/boards/onepage_c61.h`):
+  ESP32-C61HR2, 16 MB flash, 4.26" 800x480 SSD1677 e-paper (the
+  Xteink X4 panel) driven by the generic
+  `components/display/display_ssd1677_spi.cpp`
+  (`DRAFTLING_DISPLAY_SSD1677_SPI`, pins from the board header via
+  `display_ssd1677_spi_config()`), Hack fonts (HIDPI), MicroSD on the
+  panel's SPI bus. The panel's RST line (GPIO27) also switches the
+  supply of the MicroSD card and the microphone; the pre-sleep hook
+  parks the bus lines LOW before cutting it. Battery through a 1:2
+  divider on GPIO5, USB detect on GPIO11 (charging indicator). Power
+  (GPIO2) wakes through EXT1 (`DRAFTLING_WAKEUP_EXT1`; the C61 has no
+  EXT0). Buttons (`onepage_btn_init()` in main.cpp): Power 2 s hold =
+  sleep, Up (PREV, GPIO6) 2 s hold = forget keyboards; short presses
+  (Power = F1, side keys Up / Down, four front keys Esc / Left / Right
+  / Enter on an ADC ladder on GPIO4) act only while a keyboard is
+  connected. No USB MSC / Kermit. C61 specifics
+  (`sdkconfig.defaults.esp32c61`,
+  `sdkconfig.defaults.bluetooth.esp32c61`): BLE 5.0 features are off,
+  because Bluedroid otherwise reconnects with LE Extended Create
+  Connection after any BLE 5.0 event and the controller refuses it
+  after legacy scanning (Cmd Disallowed, reconnect fails with reason
+  0x100); internal RAM is the tightest of any target, so WiFi uses 8
+  static TX buffers, allocations above 4 KB go to PSRAM and the SPI
+  master ISR runs from flash (esp_wifi_init() ran out of memory with
+  BLE up). Tested on physical hardware. *Requires ESP32-C61.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
@@ -3138,7 +3175,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono`, `nicemcu_c5_28ips`). Each
+`m5stack_papermono`, `nicemcu_c5_28ips`, `onepage_c61`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
 `sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,
 so no Bluetooth option is set for a disabled stack -- ESP-IDF 6.1
