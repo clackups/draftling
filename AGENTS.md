@@ -1120,11 +1120,11 @@ state does not offer left out), so code must map a row through
 selection on `s_menu_sel_stack[]`. Esc goes up one level (closing the
 menu on the top level), F1 closes it from any level; "Close menu" is the top
 level's counterpart of the sub-levels' "Back (Esc)" row.
-Sync -> Synchronize (`start_project_sync_ex(true)`) connects WiFi
+Ctrl+G and Sync -> Synchronize (`start_project_sync()`) connect WiFi
 first when it is down (`wifi_connect_async()`, as Ctrl+W does) and
 leaves the project in `s_sync_after_wifi`; `sync_wifi_done()`, called
 from `wifi_state_cb()` / `wifi_connect_task()`, starts the sync on
-CONNECTED and drops it on failure. Ctrl+G still only asks for WiFi. The header
+CONNECTED and drops it on failure. The header
 (`s_lbl_menu_hdr`) names the level's path (`menu_level_header()`).
 Pickers rendered into `s_menu_list` (WiFi scan, SD card via USB, Sync
 via browser, Format SD card) return to the level they were opened from.

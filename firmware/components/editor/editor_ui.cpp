@@ -7199,7 +7199,7 @@ static void save_modified_doc_cb(editor_doc_t *doc, void *ctx);
 /* Ctrl+G and F1 -> Git Sync: sync the project the user works in (see
  * context_project()), after saving every open document so the sync
  * task (which reads the files) picks up the latest edits. */
-/* Project that F1 -> Sync -> Synchronize will sync once the WiFi
+/* Project that Ctrl+G / F1 -> Sync -> Synchronize will sync once the WiFi
  * connection it started is up ("" = none pending). Resolved by
  * sync_wifi_done() from wifi_state_cb() / wifi_connect_task(). */
 static project_name_t s_sync_after_wifi = "";
@@ -7260,7 +7260,9 @@ static void sync_wifi_done(bool connected)
     sync_project(p, false);
 }
 
-static void start_project_sync_ex(bool connect_wifi)
+/* Ctrl+G and F1 -> Sync -> Synchronize: sync context_project(),
+ * connecting WiFi first when it is down. */
+static void start_project_sync(void)
 {
     if (const char *busy = sd_handed_off_msg()) {
         editor_ui_set_status(busy);
@@ -7271,12 +7273,7 @@ static void start_project_sync_ex(bool connect_wifi)
         editor_ui_set_status("Git: select a project first");
         return;
     }
-    sync_project(p, connect_wifi);
-}
-
-static void start_project_sync(void)
-{
-    start_project_sync_ex(false);
+    sync_project(p, true);
 }
 
 static void menu_activate_item(int row)
@@ -7362,7 +7359,7 @@ static void menu_activate_item(int row)
                 if (git_sync_is_configured(dir)) close_menu();
             }
         }
-        start_project_sync_ex(true);
+        start_project_sync();
         break;
     case MENU_ITEM_DRAFTBOX:
         /* Writes git.cfg on the SD card -- same guard as Git Sync. */
