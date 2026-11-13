@@ -5759,9 +5759,9 @@ static void refresh_layouts_picker_items(void)
     char buf[80];
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
         kb_layout_id_t id = (kb_layout_id_t)i;
-        snprintf(buf, sizeof(buf), "[%s] %s",
+        snprintf(buf, sizeof(buf), "[%s] %-6s %s",
                  kb_layout_is_active(id) ? "x" : " ",
-                 kb_layout_name(id));
+                 kb_layout_name(id), kb_layout_long_name(id));
         lv_list_add_btn(s_settings_list, NULL, buf);
     }
     lv_list_add_btn(s_settings_list, NULL, "  Done (Esc)");

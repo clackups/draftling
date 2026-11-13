@@ -2606,7 +2606,8 @@ typedef struct {
     const char *const *normal;    /* keycodes 0x04..0x38 */
     const char *const *shift;     /* keycodes 0x04..0x38 */
     const key_entry_t *extra;  /* AltGr layers, keys past 0x38; or NULL */
-    const char *name;
+    const char *name;          /* short tag (title bar) */
+    const char *long_name;     /* human-readable name (settings) */
     kb_ime_t ime;
     bool is_latin;
 } layout_table_t;
@@ -2691,94 +2692,94 @@ static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
 /* In kb_layout_id_t order (C++ needs designators in order). */
 static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
-    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", KB_IME_NONE, true },
+    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", "English (US)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
-    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", KB_IME_NONE, false },
+    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", "Ukrainian", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE
-    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", KB_IME_NONE, true },
+    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", "German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR
-    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", KB_IME_NONE, true },
+    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", "French (AZERTY)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
-    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", KB_IME_NONE, false },
+    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", "Hebrew", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", "Swiss German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", "Swiss French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_IT
-    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", KB_IME_NONE, true },
+    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", "Italian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PT
-    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", KB_IME_NONE, true },
+    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", "Portuguese", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ES
-    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", KB_IME_NONE, true },
+    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", "Spanish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_GB
-    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", KB_IME_NONE, true },
+    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", "English (UK)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SE_FI
-    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", KB_IME_NONE, true },
+    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", "Swedish / Finnish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NO
-    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", KB_IME_NONE, true },
+    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", "Norwegian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DK
-    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", KB_IME_NONE, true },
+    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", "Danish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PL
-    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", KB_IME_NONE, true },
+    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", "Polish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_CZ
-    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", KB_IME_NONE, true },
+    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", "Czech", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SK
-    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", KB_IME_NONE, true },
+    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", "Slovak", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HU
-    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", KB_IME_NONE, true },
+    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", "Hungarian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_RO
-    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", KB_IME_NONE, true },
+    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", "Romanian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HR
-    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", KB_IME_NONE, true },
+    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", "Croatian / Slovenian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
-    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", KB_IME_NONE, true },
+    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", "Turkish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
-    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "Canadian French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
-    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", KB_IME_TELEX, true },
+    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", "Vietnamese (Telex)", KB_IME_TELEX, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
-    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", KB_IME_HANGUL, false },
+    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", "Korean (2-set)", KB_IME_HANGUL, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_JA
-    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", KB_IME_KANA, true },
+    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", "Japanese (romaji)", KB_IME_KANA, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
-    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", KB_IME_PINYIN, true },
+    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", "Chinese (pinyin)", KB_IME_PINYIN, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
-    [KB_LAYOUT_TA99] = { US_NORMAL, US_SHIFT, NULL, "TA99", KB_IME_TAMIL99, true },
+    [KB_LAYOUT_TA99] = { US_NORMAL, US_SHIFT, NULL, "TA99", "Tamil 99", KB_IME_TAMIL99, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TW
-    [KB_LAYOUT_TA_TW] = { US_NORMAL, US_SHIFT, NULL, "TA-TW", KB_IME_TAMIL_TW, true },
+    [KB_LAYOUT_TA_TW] = { US_NORMAL, US_SHIFT, NULL, "TA-TW", "Tamil Typewriter", KB_IME_TAMIL_TW, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
-    [KB_LAYOUT_TA_IN] = { TA_IN_NORMAL, TA_IN_SHIFT, TA_IN_EXTRA, "TA-IN", KB_IME_NONE, false },
+    [KB_LAYOUT_TA_IN] = { TA_IN_NORMAL, TA_IN_SHIFT, TA_IN_EXTRA, "TA-IN", "Tamil InScript", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
-    [KB_LAYOUT_TA_TV] = { US_NORMAL, US_SHIFT, NULL, "TA-TV", KB_IME_TARAVINYAS, true },
+    [KB_LAYOUT_TA_TV] = { US_NORMAL, US_SHIFT, NULL, "TA-TV", "Tamil Taravinyas", KB_IME_TARAVINYAS, true },
 #endif
 };
 
@@ -2854,6 +2855,12 @@ static const char *s_dead = NULL;
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
+}
+
+extern "C" const char *kb_layout_long_name(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return "";
+    return s_layouts[layout].long_name;
 }
 
 extern "C" kb_ime_t kb_layout_ime(void)

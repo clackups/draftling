@@ -168,6 +168,10 @@ kb_layout_id_t kb_layout_get(void);
 /* Get the display name for a layout (e.g. "US", "UA", "DE", "DE-CH") */
 const char *kb_layout_name(kb_layout_id_t layout);
 
+/* Human-readable name of a layout (e.g. "German", "Tamil Typewriter"),
+ * for the Active layouts picker. */
+const char *kb_layout_long_name(kb_layout_id_t layout);
+
 /* Cycle to the next active layout (see kb_layout_set_active()) and
  * return its id. Layouts excluded from the active set are skipped. */
 kb_layout_id_t kb_layout_next(void);

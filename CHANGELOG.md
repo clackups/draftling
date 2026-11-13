@@ -19,6 +19,12 @@ in the git log.
   apart in this firmware so the Tamil letters can be drawn large
   enough to read. See docs/language-packs.md.
 
+### Changed
+
+- **Layout names in Active layouts**: F1 -> Settings -> Keyboard ->
+  Active layouts now shows each layout's full name next to its short
+  tag (e.g. "SE/FI  Swedish / Finnish", "TA-TW  Tamil Typewriter").
+
 ### Fixed
 
 - **Seeed reTerminal Sticky with the SSD2677 screen**: the picture was

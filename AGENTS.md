@@ -1739,7 +1739,9 @@ remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
 
 Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
-`kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_get()`, `kb_layout_name()` (the short tag of the title
+bar), `kb_layout_long_name()` (the name the Active layouts picker
+shows next to the tag),
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
 `kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
