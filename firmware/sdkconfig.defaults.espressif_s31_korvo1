@@ -1,0 +1,12 @@
+# CMakePresets.json board defaults: Espressif ESP32-S31-Korvo-1 with the
+# ESP32-S3-LCD-EV-Board-SUB3 4.3" LCD subboard.
+# Sets the hardware model and IDF target used by the "espressif_s31_korvo1" preset.
+
+CONFIG_IDF_TARGET="esp32s31"
+CONFIG_DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1=y
+
+# The console is UART0 (GPIO58 / GPIO59), routed to the board's
+# USB-to-UART bridge (the "UART" USB-C port). The chip's USB-OTG drives
+# the USB-A host port for a keyboard, so no USB console.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

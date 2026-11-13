@@ -261,6 +261,15 @@
                 "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.onepage_c61",
                 "SDKCONFIG": "build/onepage_c61/sdkconfig"
             }
+        },
+        {
+            "name": "espressif_s31_korvo1",
+            "displayName": "Espressif ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3",
+            "binaryDir": "build/espressif_s31_korvo1",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.espressif_s31_korvo1",
+                "SDKCONFIG": "build/espressif_s31_korvo1/sdkconfig"
+            }
         }
     ]
 }

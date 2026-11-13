@@ -47,6 +47,7 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-LCD-3.16](https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16)
   * [MicroJournal Rev 5.0](https://github.com/unkyulee/micro-journal/blob/main/rev.5/5.0/readme.md) (ILI9341) and Rev 5.1 (ST7789) writerdecks (ESP32-S3, one firmware, display detected at boot) -- tested on the Rev 5.0 (ILI9341) only; Rev 5.1 (ST7789) untested
   * [NiceMCU-C5E-DEV_2.8IPS](https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS) (ESP32-C5, 2.8" color LCD)
+  * [Espressif ESP32-S31-Korvo-1](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp32-s31-korvo-1/index.html) with the ESP32-S3-LCD-EV-Board-SUB3 4.3" LCD subboard (ESP32-S31, 800x480 color LCD, capacitive touch, USB keyboard port) -- untested on physical hardware
 
 
 ## Features

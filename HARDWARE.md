@@ -1,8 +1,8 @@
 # Draftling: supported hardware
 
 Draftling runs on a number of ESP32-S3 devices and development boards,
-one ESP32-P4 device (M5Stack Tab5), one ESP32-C5 board and one
-ESP32-C61 device (OnePage Reader). See the
+one ESP32-P4 device (M5Stack Tab5), one ESP32-C5 board, one
+ESP32-C61 device (OnePage Reader) and one ESP32-S31 board. See the
 [photo gallery](images/README.md) of some of them.
 
 Every board runs the same firmware source; the board is picked at build
@@ -54,6 +54,7 @@ Features used in the table:
 | [MicroJournal Rev 5.0 / 5.1](#microjournal-rev-50--51) | `microjournal_rev5` | 2.8" 320x240 LCD | - | - | - | - |
 | [NiceMCU-C5E-DEV_2.8IPS](#nicemcu-c5e-dev_28ips) | `nicemcu_c5_28ips` | 2.8" 320x240 IPS | yes | yes | - | - |
 | [OnePage Reader](#onepage-reader) | `onepage_c61` | 4.26" 800x480 e-paper | - | - | yes | - |
+| [ESP32-S31-Korvo-1 + LCD-EV-Board-SUB3](#espressif-esp32-s31-korvo-1-with-esp32-s3-lcd-ev-board-sub3) | `espressif_s31_korvo1` | 4.3" 800x480 LCD | yes | - | - | - |
 
 
 ## Waveshare ESP32-S3-RLCD-4.2
@@ -473,6 +474,29 @@ device support.
   does not work while Draftling runs. No SD card via USB or Sync via
   browser.
 - Source: the vendor's example sketch and schematic.
+
+## Espressif ESP32-S31-Korvo-1 with ESP32-S3-LCD-EV-Board-SUB3
+
+The [ESP32-S31-Korvo-1](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32s31/esp32-s31-korvo-1/index.html)
+multimedia development board (ESP32-S31: 16 MB flash, 16 MB PSRAM,
+Wi-Fi 6, Bluetooth 5.4) with the ESP32-S3-LCD-EV-Board-SUB3 4.3" LCD
+subboard on its LCD connector. **Not tested on physical hardware.**
+Needs ESP-IDF v6.1 or later.
+
+- 4.3" 800x480 color LCD.
+- GT1151 touch.
+- No backlight control: the panel stays lit while the device sleeps.
+- No battery.
+- Keyboards: USB (USB-A port) or BLE. With a USB keyboard plugged in
+  at start-up, Bluetooth stays idle until it is unplugged.
+- Buttons: VOL+ / VOL- = Up / Down, SET = Enter, MODE = Esc. Hold BOOT
+  2 s to forget the paired keyboards. Only RESET wakes the device from
+  sleep.
+- Use the USB-C port marked UART for flashing and the console. No SD
+  card via USB or Sync via browser.
+- The microphones, speakers, camera and RGB LED are not used.
+- Source: Espressif's `esp_boards` component (board
+  `esp32_s31_korvo_1`) and the board's user guide.
 
 
 ## OnePage Reader

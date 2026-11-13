@@ -14,7 +14,7 @@ CONFIG_BT_BLE_42_FEATURES_SUPPORTED=y
 CONFIG_BT_BLE_SMP_ENABLE=y
 # Move the Bluedroid host environment from .bss (always-resident
 # internal DRAM) into the heap, where CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST
-# (set in sdkconfig.defaults.bluetooth.esp32s3 / .esp32c5) can land it in PSRAM. This is
+# (set in sdkconfig.defaults.bluetooth.esp32s3 / .esp32c5 / .esp32s31) can land it in PSRAM. This is
 # the largest single Bluedroid win for the internal-DRAM budget on
 # PSRAM-heavy boards (M5Stack PaperS3).
 CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY=y

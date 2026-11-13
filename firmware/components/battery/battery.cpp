@@ -444,7 +444,10 @@ extern "C" int battery_init(int gpio_num, int enable_gpio, int divider)
         return -1;
     }
 
-    /* Try to create calibration scheme (curve fitting on ESP32-S3) */
+    /* Try to create a calibration scheme (curve fitting on the
+     * ESP32-S3; chips without it, e.g. the ESP32-S31, use the raw
+     * conversion below). */
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
     adc_cali_curve_fitting_config_t cali_cfg = {};
     cali_cfg.unit_id  = ADC_UNIT_1;
     cali_cfg.chan     = s_channel;
@@ -452,6 +455,9 @@ extern "C" int battery_init(int gpio_num, int enable_gpio, int divider)
     cali_cfg.bitwidth = ADC_BITWIDTH_12;
 
     err = adc_cali_create_scheme_curve_fitting(&cali_cfg, &s_cali_handle);
+#else
+    err = ESP_ERR_NOT_SUPPORTED;
+#endif
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "ADC calibration not available, using raw conversion");
         s_cali_handle = NULL;
@@ -1527,6 +1533,9 @@ extern "C" int battery_read_aux_mv(int gpio)
         esp_err_t err = adc_oneshot_config_channel(s_adc_handle, chan, &chan_cfg);
         xSemaphoreGive(s_adc_lock);
         if (err != ESP_OK) return -1;
+        /* Curve fitting where the chip has it (not the ESP32-S31: the
+         * raw conversion below is used there, as in battery_init()). */
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
         if (s_aux_cali) {
             adc_cali_delete_scheme_curve_fitting(s_aux_cali);
             s_aux_cali = NULL;
@@ -1539,6 +1548,7 @@ extern "C" int battery_read_aux_mv(int gpio)
         if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &s_aux_cali) != ESP_OK) {
             s_aux_cali = NULL;
         }
+#endif
         s_aux_chan = chan;
         s_aux_gpio = gpio;
     }

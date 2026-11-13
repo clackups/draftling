@@ -37,7 +37,8 @@ Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `microjournal_rev5`,
 `xteink_x4_pro`, `xteink_x4_classic`, `elecrow_crowpanel_579`,
 `waveshare_epaper_397`, `seeed_reterminal_e1001`,
-`seeed_reterminal_sticky`, `m5stack_papermono`, `nicemcu_c5_28ips`.
+`seeed_reterminal_sticky`, `m5stack_papermono`, `nicemcu_c5_28ips`,
+`espressif_s31_korvo1`.
 
 To avoid repeating `--preset` on every command, set the `IDF_PRESET`
 environment variable instead:

@@ -8,6 +8,11 @@ in the git log.
 
 ### Added
 
+- **Espressif ESP32-S31-Korvo-1 support**: Draftling runs on
+  Espressif's ESP32-S31-Korvo-1 board with the
+  ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
+  in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
+  board Draftling supports. Not yet tested on the device.
 - **Tamil language pack**: a new firmware image with US-English and
   Tamil. It has the official Tamil keyboard layouts -- Tamil 99 (the
   Government of Tamil Nadu standard, with its automatic pulli), the

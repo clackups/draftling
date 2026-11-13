@@ -41,6 +41,14 @@ static bool s_spi_bus_owned = false;
 static spi_device_handle_t s_keepalive_dev = NULL;
 #endif
 
+/* SDMMC host slot for sd_card_init(); -1 = the driver's default. */
+static int s_sdmmc_slot = -1;
+
+extern "C" void sd_card_set_sdmmc_slot(int slot)
+{
+    s_sdmmc_slot = slot;
+}
+
 /* Atomic writes (sd_card_write_file_parts(), sd_card_replace_with())
  * go through "<dir>/.<name>.dtmp" (being written) and
  * "<dir>/.<name>.dnew" (complete, about to replace <name>). After a
@@ -110,6 +118,7 @@ extern "C" esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const ch
     mount_cfg.allocation_unit_size   = 16 * 1024;
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    if (s_sdmmc_slot >= 0) host.slot = s_sdmmc_slot;
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = 1;
     slot.clk   = (gpio_num_t)clk_pin;
