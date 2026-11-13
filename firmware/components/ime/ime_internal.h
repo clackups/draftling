@@ -116,6 +116,9 @@ extern const ime_engine_t ime_telex_engine;
 extern const ime_engine_t ime_hangul_engine;
 extern const ime_engine_t ime_kana_engine;
 extern const ime_engine_t ime_pinyin_engine;
+extern const ime_engine_t ime_tamil99_engine;
+extern const ime_engine_t ime_tamil_tw_engine;
+extern const ime_engine_t ime_taravinyas_engine;
 
 extern ime_dict_t g_ja_dict;
 extern ime_dict_t g_zh_dict;

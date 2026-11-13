@@ -467,10 +467,11 @@ US-English is active at first. Turn the others on in F1 -> Settings -> Keyboard 
 Active layouts; Ctrl+L cycles through the active ones. The current layout is
 shown in the title bar when more than one is active.
 
-Vietnamese, Korean, Japanese and Simplified Chinese come in separate
-firmware images, the language packs, each with US-English and the
-input method of its language (Telex, 2-set Hangul, romaji to kana and
-kanji, pinyin). See [docs/language-packs.md](docs/language-packs.md)
+Vietnamese, Korean, Japanese, Simplified Chinese and Tamil come in
+separate firmware images, the language packs, each with US-English and
+the input methods of its language (Telex, 2-set Hangul, romaji to kana
+and kanji, pinyin; for Tamil the official Tamil 99, Typewriter and
+InScript layouts and the Taravinyas input engine). See [docs/language-packs.md](docs/language-packs.md)
 for typing in them and [BUILDING.md](BUILDING.md#language-packs) for
 building them.
 

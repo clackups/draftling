@@ -6,6 +6,19 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Tamil language pack**: a new firmware image with US-English and
+  Tamil. It has the official Tamil keyboard layouts -- Tamil 99 (the
+  Government of Tamil Nadu standard, with its automatic pulli), the
+  Tamil Typewriter layout and InScript -- and the Taravinyas input
+  engine, which picks letters by place and manner of articulation.
+  Tamil text is drawn with Noto Sans Tamil, each consonant joined
+  with its vowel sign, the letters of a word joined up and the k-ssa
+  and sri ligatures in place. Lines are spaced about 30 % further
+  apart in this firmware so the Tamil letters can be drawn large
+  enough to read. See docs/language-packs.md.
+
 ### Fixed
 
 - **Seeed reTerminal Sticky with the SSD2677 screen**: the picture was

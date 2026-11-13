@@ -80,6 +80,18 @@ extern const lv_font_t greybeard_26;
 extern const lv_font_t greybeard_30;
 extern const lv_font_t greybeard_34;
 
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+/* Tamil pack: the same fonts with taller lines (see greybeard.c). */
+extern lv_font_t greybeard_11_tall;
+extern lv_font_t greybeard_14_tall;
+extern lv_font_t greybeard_16_tall;
+extern lv_font_t greybeard_18_tall;
+extern lv_font_t greybeard_22_tall;
+extern lv_font_t greybeard_26_tall;
+extern lv_font_t greybeard_30_tall;
+extern lv_font_t greybeard_34_tall;
+#endif
+
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t greybeard_cyrillic_11;
 extern const lv_font_t greybeard_cyrillic_14;

@@ -39,9 +39,14 @@
 #endif
 #include "kb_layout.h"
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_KB_LAYOUT_ENABLE_KO) || \
-    defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH)
+    defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_TA99) || defined(CONFIG_KB_LAYOUT_ENABLE_TA_TW) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_TA_TV)
 #define DRAFTLING_HAS_IME 1
 #include "ime.h"
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#include "tamil_font.h"
 #endif
 #include "wifi_manager.h"
 #include "git_sync.h"
@@ -81,25 +86,33 @@
  * defined on non-HIDPI boards, for the 22 px body size's H1).
  * Status bars always use FONT_11 regardless of the body font setting.
  */
+/* The Tamil pack renders with copies of the fonts whose lines are
+ * about 30 % taller (greybeard.c / hack.c, TAMIL_LINE_EXTRA), so the
+ * Tamil letters can be drawn larger. */
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
+#else
+#define SLOT_FONT(f) (&f)
+#endif
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 #include "hack.h"
-#define FONT_9  (&hack_9)
-#define FONT_11 (&hack_11)
-#define FONT_14 (&hack_14)
-#define FONT_16 (&hack_16)
-#define FONT_18 (&hack_18)
-#define FONT_22 (&hack_22)
-#define FONT_26 (&hack_26)
-#define FONT_30 (&hack_30)
+#define FONT_9  SLOT_FONT(hack_9)
+#define FONT_11 SLOT_FONT(hack_11)
+#define FONT_14 SLOT_FONT(hack_14)
+#define FONT_16 SLOT_FONT(hack_16)
+#define FONT_18 SLOT_FONT(hack_18)
+#define FONT_22 SLOT_FONT(hack_22)
+#define FONT_26 SLOT_FONT(hack_26)
+#define FONT_30 SLOT_FONT(hack_30)
 #else
-#define FONT_11 (&greybeard_11)
-#define FONT_14 (&greybeard_14)
-#define FONT_16 (&greybeard_16)
-#define FONT_18 (&greybeard_18)
-#define FONT_22 (&greybeard_22)
-#define FONT_26 (&greybeard_26)
-#define FONT_30 (&greybeard_30)
-#define FONT_34 (&greybeard_34)
+#define FONT_11 SLOT_FONT(greybeard_11)
+#define FONT_14 SLOT_FONT(greybeard_14)
+#define FONT_16 SLOT_FONT(greybeard_16)
+#define FONT_18 SLOT_FONT(greybeard_18)
+#define FONT_22 SLOT_FONT(greybeard_22)
+#define FONT_26 SLOT_FONT(greybeard_26)
+#define FONT_30 SLOT_FONT(greybeard_30)
+#define FONT_34 SLOT_FONT(greybeard_34)
 #endif
 
 static const char *TAG = "EditorUI";
@@ -699,6 +712,8 @@ static void save_name_suggest_to_nvs(void)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_ja"
 #elif defined(CONFIG_DRAFTLING_LANG_PACK_CHINESE)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_TAMIL)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_ta"
 #else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
 #endif
@@ -2343,15 +2358,38 @@ static bool cp_is_wide(uint32_t cp)
 
 static uint32_t utf8_decode(const char *s, size_t len, size_t *i);
 
+/* Cells of cp between prev and next: two for the wide ones (CJK); a
+ * Tamil consonant takes at most the cells of its glyph joined with the
+ * vowel sign after it, which takes none (an upper bound: Tamil is
+ * proportional, see components/fonts/tamil_font.h). */
+static int cp_cells(uint32_t prev, uint32_t cp, uint32_t next)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    int t = tamil_cp_cells(prev, cp, next);
+    if (t >= 0) return t;
+#else
+    (void)prev;
+    (void)next;
+#endif
+    return cp_is_wide(cp) ? 2 : 1;
+}
+
 /* Monospace cells taken by the first byte_len bytes of text: one per
- * character, two for the wide ones (CJK). */
+ * character, two for the wide ones (CJK), Tamil by cp_cells(). */
 static int utf8_cells_in_bytes(const char *text, size_t byte_len)
 {
+    if (byte_len == 0) return 0;
     int cells = 0;
     size_t i = 0;
-    while (i < byte_len) {
-        uint32_t cp = utf8_decode(text, byte_len, &i);
-        cells += cp_is_wide(cp) ? 2 : 1;
+    uint32_t prev = 0;
+    uint32_t cp = utf8_decode(text, byte_len, &i);
+    for (;;) {
+        bool more = i < byte_len;
+        uint32_t next = more ? utf8_decode(text, byte_len, &i) : 0;
+        cells += cp_cells(prev, cp, next);
+        if (!more) break;
+        prev = cp;
+        cp = next;
     }
     return cells;
 }
@@ -2361,13 +2399,17 @@ static size_t utf8_bytes_for_cells(const char *text, size_t byte_len, int cells)
 {
     size_t i = 0;
     int used = 0;
+    uint32_t prev = 0;
     while (i < byte_len) {
-        size_t next = i;
-        uint32_t cp = utf8_decode(text, byte_len, &next);
-        int w = cp_is_wide(cp) ? 2 : 1;
+        size_t next_i = i;
+        uint32_t cp = utf8_decode(text, byte_len, &next_i);
+        size_t after = next_i;
+        uint32_t next = after < byte_len ? utf8_decode(text, byte_len, &after) : 0;
+        int w = cp_cells(prev, cp, next);
         if (used + w > cells) break;
         used += w;
-        i = next;
+        prev = cp;
+        i = next_i;
     }
     return i;
 }
@@ -2498,10 +2540,47 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
     v->d2r.clear();
     v->flags.clear();
     size_t b = 0;
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    uint32_t prev_cp = 0;   /* last code point displayed */
+#endif
     while (b < ll) {
         size_t start = b;
-        (void)utf8_decode(lt, ll, &b);
+        uint32_t cp = utf8_decode(lt, ll, &b);
         if (hide[start]) continue;
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+        /* The k-ssa and sri ligatures span more code points than the
+         * font sees: show each as its private-use code point, mapped
+         * to the first byte of the sequence. */
+        {
+            uint32_t lig = 0;
+            size_t L = tamil_ligature(lt + start, ll - start, &lig);
+            bool shown = L > 0;
+            for (size_t k = start; shown && k < start + L; k++) shown = !hide[k];
+            if (shown) {
+                char u[4];
+                u[0] = (char)(0xE0 | (lig >> 12));
+                u[1] = (char)(0x80 | ((lig >> 6) & 0x3F));
+                u[2] = (char)(0x80 | (lig & 0x3F));
+                text.append(u, 3);
+                v->d2r.push_back((uint32_t)start);
+                v->flags.push_back(rflags[start]);
+                prev_cp = lig;
+                b = start + L;
+                continue;
+            }
+        }
+        /* A Tamil vowel sign is drawn by the consonant before it; one
+         * without a consonant gets a dotted circle to sit on (as
+         * HarfBuzz does), which maps to the sign itself. */
+        if (tamil_is_mark(cp) && !tamil_is_base(prev_cp)) {
+            text.append("\xE2\x97\x8C");   /* U+25CC dotted circle */
+            v->d2r.push_back((uint32_t)start);
+            v->flags.push_back(rflags[start]);
+        }
+        prev_cp = cp;
+#else
+        (void)cp;
+#endif
         if (lt[start] == '\t') {
             for (int t = 0; t < 4; t++) {
                 text.push_back(' ');
@@ -2551,6 +2630,65 @@ static void push_deco_seg(line_view_t *v, const deco_seg_t &s)
     v->segs.push_back(s);
 }
 
+/* The code point at byte b of txt (0 at the end), for glyph widths
+ * that depend on the next character (Tamil vowel signs). */
+static uint32_t cp_at(const char *txt, size_t txt_len, size_t b)
+{
+    return b < txt_len ? utf8_decode(txt, txt_len, &b) : 0;
+}
+
+/* The code point lv_draw_character() must draw for cp followed by
+ * next: it has no look-ahead, so a Tamil consonant with a vowel sign
+ * is drawn through the private-use code point of the joined glyph. */
+static uint32_t deco_draw_cp(uint32_t cp, uint32_t next)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    return tamil_draw_cp(cp, next);
+#else
+    (void)next;
+    return cp;
+#endif
+}
+
+/* True when the cursor sits inside a Tamil syllable -- between a
+ * consonant and the vowel sign drawn with it -- or inside a k-ssa /
+ * sri ligature, where it would be shown at the same spot as after
+ * it. Left / Right step over such positions. */
+static bool cursor_mid_cluster(void)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    char buf[24];
+    size_t n = editor_peek_before(buf, 12);
+    size_t c = editor_get_cursor();
+    size_t total = n;
+    for (size_t i = 0; i < 12; i++) {
+        char ch = editor_char_at(c + i);
+        if (ch == '\0' || ch == '\n') break;
+        buf[total++] = ch;
+    }
+    /* A mark right after the cursor, a base right before it. */
+    if (n > 0 && total > n) {
+        size_t i = n;
+        uint32_t next = utf8_decode(buf, total, &i);
+        size_t st = n;
+        while (st > 0 && ((unsigned char)buf[st - 1] & 0xC0) == 0x80) st--;
+        if (st > 0) st--;
+        size_t j = st;
+        if (tamil_is_mark(next) && tamil_is_base(utf8_decode(buf, n, &j))) return true;
+    }
+    /* A ligature that starts before the cursor and ends after it. */
+    for (size_t p = 0; p < n; p++) {
+        if (((unsigned char)buf[p] & 0xC0) == 0x80) continue;
+        uint32_t lig;
+        size_t L = tamil_ligature(buf + p, total - p, &lig);
+        if (L && p + L > n) return true;
+    }
+    return false;
+#else
+    return false;
+#endif
+}
+
 /* Lay out the display characters [i0, i1) (first byte b0), which all
  * share flags f, as row segments. For left-to-right text the run is
  * checked against the label's own layout from its end points alone and
@@ -2572,7 +2710,7 @@ static void layout_deco_range(lv_obj_t *label, const lv_font_t *font,
             uint32_t cp = utf8_decode(txt, txt_len, &b);
             int dir = cp_strong_dir(cp);
             bool rtl = dir < 0 || (dir == 0 && line_rtl);
-            int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+            int32_t gw = lv_font_get_glyph_width(font, cp, cp_at(txt, txt_len, b));
             lv_point_t p;
             lv_label_get_letter_pos(label, i, &p);
             deco_seg_t s = { rtl ? p.x - gw : p.x, p.y, gw, i, (uint32_t)cb, 1, f };
@@ -2588,7 +2726,8 @@ static void layout_deco_range(lv_obj_t *label, const lv_font_t *font,
     uint32_t mid = i0 + (i1 - i0) / 2;
     for (uint32_t i = i0; i < i1; i++) {
         if (i == mid) mid_b = b;
-        last_w = lv_font_get_glyph_width(font, utf8_decode(txt, txt_len, &b), 0);
+        uint32_t cp = utf8_decode(txt, txt_len, &b);
+        last_w = lv_font_get_glyph_width(font, cp, cp_at(txt, txt_len, b));
         w += last_w;
     }
     bool one_row = (i1 - i0 == 1);
@@ -2753,8 +2892,15 @@ static void line_deco_draw_cb(lv_event_t *e)
     ld.font = font;
     ld.opa  = LV_OPA_COVER;
 
-    /* x-height centre (roughly), used by strikethrough and bullets. */
-    int32_t mid_y = asc - (asc * 3) / 10;
+    /* x-height centre (roughly), used by strikethrough and bullets. The
+     * Tamil pack's tall fonts point at their base font (user_data),
+     * whose ascent is that of the letters, not of the taller line. */
+    int32_t asc_txt = asc;
+    if (font->user_data) {
+        const lv_font_t *bf = (const lv_font_t *)font->user_data;
+        asc_txt = lv_font_get_line_height(bf) - bf->base_line;
+    }
+    int32_t mid_y = asc - (asc_txt * 3) / 10;
 
     for (const deco_seg_t &s : v->segs) {
         int32_t top = ca.y1 + s.y;
@@ -2768,7 +2914,9 @@ static void line_deco_draw_cb(lv_event_t *e)
             int32_t cx = ca.x1 + s.x;
             for (uint32_t k = 0; k < s.count && b < txt_len; k++) {
                 uint32_t cp = utf8_decode(txt, txt_len, &b);
-                int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+                uint32_t nx = cp_at(txt, txt_len, b);
+                int32_t gw = lv_font_get_glyph_width(font, cp, nx);
+                uint32_t dcp = deco_draw_cp(cp, nx);
                 int32_t gx = cx;
                 cx += gw;
                 uint32_t ci = s.char_idx + k;
@@ -2825,13 +2973,13 @@ static void line_deco_draw_cb(lv_event_t *e)
 
                 ld.color = cfg;
                 if (f & DECO_ITALIC) {
-                    deco_draw_slanted(layer, &ld, cp, gx, top, lh, asc);
+                    deco_draw_slanted(layer, &ld, dcp, gx, top, lh, asc);
                     if (f & DECO_BOLD) {
-                        deco_draw_slanted(layer, &ld, cp, gx + bdx, top, lh, asc);
+                        deco_draw_slanted(layer, &ld, dcp, gx + bdx, top, lh, asc);
                     }
                 } else if (f & DECO_BOLD) {
                     lv_point_t pt = { gx + bdx, top };
-                    lv_draw_character(layer, &ld, &pt, cp);
+                    lv_draw_character(layer, &ld, &pt, dcp);
                 }
                 if (f & DECO_STRIKE) {
                     int32_t y = top + mid_y - th / 2;
@@ -9667,6 +9815,25 @@ struct typing_pre_state_t {
     int         char_w;       /* monospace cell width at body font */
 };
 
+/* True for a line whose width the cell count does not give exactly:
+ * Tamil, whose glyphs are proportional. The typing fast path is not
+ * used on such lines (the whole line is refreshed). */
+static bool line_has_proportional_text(const char *lt, size_t ll)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    /* U+0B80..U+0BFF is E0 AE xx / E0 AF xx in UTF-8. */
+    for (size_t i = 0; i + 1 < ll; i++) {
+        if ((unsigned char)lt[i] == 0xE0 &&
+            ((unsigned char)lt[i + 1] == 0xAE || (unsigned char)lt[i + 1] == 0xAF))
+            return true;
+    }
+#else
+    (void)lt;
+    (void)ll;
+#endif
+    return false;
+}
+
 /* Capture pre-edit state for the fast partial-clip path. Fills *out
  * with valid=false when conditions disqualify the edit (selection
  * active, line is not a plain paragraph, etc.); subsequent
@@ -9699,6 +9866,7 @@ static void capture_typing_pre_state(typing_pre_state_t *out)
      * The document's format decides (Fountain never qualifies: a
      * line's element depends on its neighbours). */
     if (!editor_format_active()->line_is_plain(lt, ll)) return;
+    if (line_has_proportional_text(lt, ll)) return;
 
     int chars = utf8_cells_in_bytes(lt, ll);
 
@@ -9754,6 +9922,7 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
     if (!lt) return false;
 
     if (!editor_format_active()->line_is_plain(lt, ll)) return false;
+    if (line_has_proportional_text(lt, ll)) return false;
 
     int post_chars = utf8_cells_in_bytes(lt, ll);
     int char_w     = pre->char_w;
@@ -10614,6 +10783,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
             size_t s, e; editor_get_selection_range(&s, &e);
             editor_clear_selection(); editor_set_cursor(s);
         } else { editor_move_left(); }
+        for (int k = 0; k < 4 && cursor_mid_cluster(); k++) editor_move_left();
         break;
     case KB_KEY_RIGHT:
         if (shift) { editor_set_selection_anchor(); editor_move_right(); }
@@ -10621,6 +10791,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
             size_t s, e; editor_get_selection_range(&s, &e);
             editor_clear_selection(); editor_set_cursor(e);
         } else { editor_move_right(); }
+        for (int k = 0; k < 4 && cursor_mid_cluster(); k++) editor_move_right();
         break;
     case KB_KEY_UP:
         if (shift) editor_set_selection_anchor();

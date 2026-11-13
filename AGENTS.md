@@ -242,7 +242,7 @@ sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
 sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
-                            korean, japanese, chinese), appended by
+                            korean, japanese, chinese, tamil), appended by
                             idf.py --lang-pack
 idf_ext.py                  idf.py extension: --lang-pack option /
                             DRAFTLING_LANG_PACK variable (see
@@ -262,14 +262,16 @@ components/                 Reusable IDF components
                             parsers, Markdown / Fountain / plain-text
                             format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
-                            Vietnamese subsets, CJK pixel-font driver)
+                            Vietnamese subsets, CJK pixel-font driver,
+                            Tamil cluster-glyph driver)
   git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
                             (M5Stack PaperMono) I2C IO-expander drivers
   ime/                      Input methods: Vietnamese Telex, Korean
-                            Hangul, Japanese kana-kanji, Chinese pinyin
+                            Hangul, Japanese kana-kanji, Chinese pinyin,
+                            Tamil 99 / Typewriter / Taravinyas
   kb_layout/                Keyboard layout translation (US/UA/DE/FR/HE/
-                            VI/KO/JA/ZH) and language-pack Kconfig
+                            VI/KO/JA/ZH/TA) and language-pack Kconfig
   kermit/                   Kermit file server on the serial console
                             ("Sync via browser")
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -1649,8 +1651,10 @@ Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
 Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
 Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q,
 Canadian French (traditional), Korean
-(Dubeolsik; the letter keys give Hangul Compatibility Jamo) and the
-US-based Vietnamese, Japanese and Chinese layouts.
+(Dubeolsik; the letter keys give Hangul Compatibility Jamo), Tamil
+InScript (`TA-IN`, as XKB `in(tam)`, AltGr + digit = Tamil digits) and
+the US-based Vietnamese, Japanese, Chinese and Tamil 99 / Tamil
+Typewriter / Taravinyas (`TA99`, `TA-TW`, `TA-TV`) layouts.
 
 Each layout (`layout_table_t` in `kb_layout.cpp`) has full normal /
 shift tables for keycodes 0x04..0x38 (`static_assert`ed to 53
@@ -1692,8 +1696,10 @@ Each layout can be independently enabled or disabled
 at build time via Kconfig (see `components/kb_layout/Kconfig.projbuild`);
 the language pack sets the defaults. `kb_layout_ime()` tells the
 editor which input method (`components/ime/`) the active layout uses
-(`KB_IME_TELEX`, `_HANGUL`, `_KANA`, `_PINYIN`, or `KB_IME_NONE`).
-The US tables are always compiled, since VI / JA / ZH type on them.
+(`KB_IME_TELEX`, `_HANGUL`, `_KANA`, `_PINYIN`, `_TAMIL99`,
+`_TAMIL_TW`, `_TARAVINYAS`, or `KB_IME_NONE`). The US tables are always
+compiled, since VI / JA / ZH and the Tamil input-method layouts type
+on them.
 
 Which of the compiled-in layouts `kb_layout_next()` (bound to `Ctrl+L`
 and `Win+Space` in the editor) actually cycles through is a separate,
@@ -1741,11 +1747,13 @@ Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
 
 ### components/ime/
 
-Input methods of the Vietnamese, Korean, Japanese and Chinese language
-packs (user docs: `docs/language-packs.md`). Plain C with no ESP-IDF
-dependency outside `ime_builtin.c` (the embedded dictionaries), so the
-engines can be compiled and tested on a host with a fake document.
-Built only when KB_LAYOUT_ENABLE_VI / _KO / _JA / _ZH is set (an empty
+Input methods of the Vietnamese, Korean, Japanese, Chinese and Tamil
+language packs (user docs: `docs/language-packs.md`). Plain C with no
+ESP-IDF dependency outside `ime_builtin.c` (the embedded dictionaries),
+so the engines can be compiled and tested on a host with a fake
+document (`test/host/run.sh` does that for the Tamil engines; run it
+after changing them). Built only when KB_LAYOUT_ENABLE_VI / _KO / _JA /
+_ZH / _TA99 / _TA_TW / _TA_TV is set (an empty
 component otherwise; the editor requires it through
 `idf_component_optional_requires()`).
 
@@ -1784,6 +1792,26 @@ composition is dropped and the text kept. Candidates are shown via
   one possibly incomplete; candidates are the words for the longest
   run of complete syllables, then shorter runs; each candidate's
   `span` is the letters it consumes.
+
+- `ime_tamil99.c` -- Tamil 99 (G.O. Ms. 17 of 1999): vowel after a
+  consonant becomes its sign, `f` pulli, automatic pulli between equal
+  consonants and nasal + stop pairs (not right after an automatic
+  one), `a` confirms the inherent a. The last consonant typed is kept
+  as the composition (`g_comp`), so a cursor move resets the rules.
+- `ime_tamil_tw.c` -- Tamil Typewriter, after Keyman's MIT-licensed
+  `thamizha_new_typewriter` rules. Stateless: the e / ee / ai sign is
+  typed before the consonant (it shows on a dotted circle) and moved
+  after it when the consonant comes; e/ee sign + `h` -> o/oo sign,
+  e sign + `s` -> au sign (split again before a pulli / vowel sign),
+  `}` / `:` turn a u sign into uu.
+- `ime_taravinyas.c` -- Taravinyas (Bandhan Pramanik's engine,
+  AGPL-3.0; reimplemented from its tables, no code copied): `v`
+  toggles consonant / vowel mode (kept until toggled), place keys
+  `fdsrew`, manner `jklui`; vowel `fdsre`, length `jkl`, `x` sign /
+  `c` letter; `a` the extra letters. It reports `composing()` from a
+  method key until a letter is typed, so its status line (the choices
+  of the next key) stays in the status bar meanwhile.
+- `ime_tamil.c` / `ime_tamil.h` -- helpers shared by the three.
 
 Dictionaries (`dict/ja.bin`, `dict/zh.bin`, DIME format: sorted keys
 with offsets, a cost and up to 12 candidates per key) are generated by
@@ -2403,8 +2431,8 @@ of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
 IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR,
 FR-CA),
 `vietnamese`
-(US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
-ZH). Each is a separate image; the board preset picks the hardware and
+(US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
+ZH) and `tamil` (US, TA99, TA-TW, TA-IN, TA-TV). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
 **Build mechanism.** `firmware/idf_ext.py` is a project idf.py
@@ -2430,15 +2458,16 @@ layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
 
 Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
 2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
-Xteink X4 Pro). All fit
+Xteink X4 Pro), tamil 2.6 MB (2.9 MB on the X4 Pro). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
 **Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
 base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
 Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
-(`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Cyrillic
-(generated without a fallback, so always last). Missing subsets are
+(`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Tamil
+runtime font -> Cyrillic (generated without a fallback, so always
+last). Missing subsets are
 skipped (`slot_chain_t` table).
 
 **Latin Extended-A** (`greybeard_latina_NN.c`, `hack_latina_NN.c`,
@@ -2483,6 +2512,55 @@ then smaller sizes for glyphs missing there, then oversize ones as a
 last resort. LVGL's word wrap breaks between CJK characters
 (`lv_text_is_a_word()`).
 
+**Tamil fonts** (`components/fonts/tamil_font.c`,
+`tamil/tamil_{greybeard,hack}_NN.bin`, `tamil/tamil_cells.h`, license
+in `tamil/LICENSE.txt`): LVGL does no shaping, but it passes the next
+code point to `get_glyph_dsc()` (in the label draw, width and letter-
+position paths; only with `kerning` NORMAL, the default). So a base
+(consonant or U+25CC) followed by a mark (vowel sign, pulli, U+0BD7,
+anusvara) is drawn as one pre-shaped glyph and the mark is an empty,
+zero-width glyph. `tools/gen_tamil_font.py` shapes every base + mark
+pair, the vowels, digits and symbols with HarfBuzz and renders them
+1 bpp with FreeType (hinted Noto Sans Tamil v2.004; the regular cut, not the UI one: fitted to the same line height its letters come out about a pixel taller) into one "DTAM"
+blob per slot, at the largest pixel size whose clusters fit the slot's
+line height (raised a pixel or two off the Latin baseline where the
+descenders need it). That line is about 30 % taller than the base
+font's: Tamil syllables need roughly twice their body height for loops
+and hooks, and in a Greybeard-height line the body of the 14 / 16 px
+sizes was 5-7 px tall. `greybeard_init()` / `hack_init()` make mutable
+copies of the base fonts (`<font>_NN_tall`, `TAMIL_LINE_EXTRA()` more
+line height, `TAMIL_BASE_EXTRA()` of it below the baseline,
+`user_data` pointing at the base font) and the editor's `FONT_NN`
+macros (`SLOT_FONT()`) use them in the Tamil pack; the generator's
+`line_extra()` uses the same formulas. Below a 17 px (tall) line the font's TrueType hints
+are used, from there up the FreeType auto-hinter (the TrueType
+hints mix one- and two-pixel strokes there), and the Greybeard slots
+from 22 px up, whose Latin letters have two-pixel stems, widen the
+outlines by 0.4 px horizontally (`EMBOLDEN_PX`; 0.6 px fills the small
+loops). Glyphs keep the font's proportional advance (HarfBuzz's,
+widened to leave a blank column right of the hinted ink), so the
+syllables of a word join up; a whole-cell grid spaced them apart.
+`tamil_cells.h` holds the most cells each glyph takes in any slot, an
+upper bound for `tamil_cp_cells()`; the e-paper typing fast path is
+off on lines with Tamil (`line_has_proportional_text()`), whose pixel
+width the cell count does not give. The k-ssa (U+0B95 U+0BCD U+0BB7)
+and sri (U+0BB8 / U+0BB6, U+0BCD U+0BB0 U+0BC0) ligatures span more
+code points than the one-letter look-ahead: `tamil_ligature()` finds
+them, `build_line_view()` shows each as a private-use code point
+(`TAMIL_LIG_KSSA` U+E001, which also takes vowel signs,
+`TAMIL_LIG_SRI` U+E002) mapped to the sequence's first byte, and
+`cursor_mid_cluster()` steps over them. The
+font has no look-behind, so the editor shows a mark without a base on
+a dotted circle (`build_line_view()`, which maps it to the mark's
+byte); elsewhere (titles, status) such a mark stays invisible.
+`lv_draw_character()` (the bold / italic redraw in
+`line_deco_draw_cb()`) has no look-ahead either: it draws
+`tamil_draw_cp()`, a plane-15 private-use code point standing for the
+joined glyph. Left / Right step over a cursor position between a base
+and its mark. Blobs are matched to a slot by
+line height and cell width, and only the family the board renders with
+is embedded.
+
 **Editor integration** (`editor_ui.cpp`, `DRAFTLING_HAS_IME`):
 `handle_editor_key()` hands typed keys -- and Space / Enter /
 Backspace / arrows / Esc while composing -- to `ime_handle_key()`
@@ -2490,7 +2568,8 @@ after the Ctrl block and before the special-key switch; Ctrl / Alt /
 Win combinations and F-keys call `ime_finish()` first. Width estimates
 (`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
 e-paper typing fast path) count CJK characters as two cells
-(`cp_is_wide()`, same ranges as `cjk_is_wide()`). The small text
+(`cp_is_wide()`, same ranges as `cjk_is_wide()`) and Tamil by
+`tamil_cp_cells()` (`cp_cells()`, which needs the code points around). The small text
 fields (search, file names, WiFi) are not wired to the input methods.
 
 **Dictionaries** (`components/ime/tools/gen_ime_dicts.py`, licenses in
@@ -3129,12 +3208,17 @@ follows the pack:
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
 | KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
+| KB_LAYOUT_ENABLE_TA99 | Tamil 99 | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_TW | Tamil Typewriter | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_IN | Tamil InScript | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_TV | Tamil Taravinyas | y in the tamil pack |
 
 Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR or TR
 enabled) compiles the Latin Extended-A font subset;
 `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
 fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
-of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
+of JA, ZH, KO) picks the font set under `components/fonts/cjk/`;
+`DRAFTLING_HAS_TAMIL` (any Tamil layout) compiles the Tamil fonts.
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
@@ -3148,7 +3232,7 @@ Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
 Settings -> Keyboard), independent of this Kconfig menu -- see the `kb_layout`
 component writeup above. Its NVS key differs per pack (`actlayouts`,
-`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`), because the bit
+`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_ta`), because the bit
 order follows the compiled-in layouts.
 
 ## Building

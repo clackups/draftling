@@ -317,6 +317,15 @@ static const ime_engine_t *engine_for(kb_ime_t kind)
     case KB_IME_HANGUL: return &ime_hangul_engine;
     case KB_IME_KANA:   return &ime_kana_engine;
     case KB_IME_PINYIN: return &ime_pinyin_engine;
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    case KB_IME_TAMIL99: return &ime_tamil99_engine;
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TW
+    case KB_IME_TAMIL_TW: return &ime_tamil_tw_engine;
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
+    case KB_IME_TARAVINYAS: return &ime_taravinyas_engine;
+#endif
     default:            return NULL;
     }
 }

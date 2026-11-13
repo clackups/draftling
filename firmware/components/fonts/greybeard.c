@@ -19,6 +19,7 @@
  *        --> greybeard_latina_NN   --> greybeard_NN_la_next (router)   [Latin Extended-A]
  *        --> greybeard_latinx_NN   --> greybeard_NN_lx_next (router)   [Vietnamese / CJK]
  *        --> CJK runtime font (cjk_font.c)                  [Korean / Japanese / Chinese]
+ *        --> Tamil runtime font (tamil_font.c)              [Tamil]
  *        --> greybeard_cyrillic_NN                                [Ukrainian]
  *
  * Subsets that are not compiled in are skipped; the Cyrillic subset is
@@ -42,6 +43,9 @@
 #include "greybeard.h"
 #ifdef CONFIG_DRAFTLING_HAS_CJK
 #include "cjk_font.h"
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#include "tamil_font.h"
 #endif
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_DRAFTLING_HAS_CJK)
@@ -172,6 +176,24 @@ extern const lv_font_t greybeard_latinx_30;
 extern const lv_font_t greybeard_latinx_34;
 #endif
 
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+/* Copies of the base fonts with taller lines (TAMIL_LINE_EXTRA), made
+ * by greybeard_init(): the Tamil pack renders with them so that the
+ * Tamil letters, whose loops and hooks need much more room above and
+ * below their body than Latin letters, can be drawn larger. */
+lv_font_t greybeard_11_tall;
+lv_font_t greybeard_14_tall;
+lv_font_t greybeard_16_tall;
+lv_font_t greybeard_18_tall;
+lv_font_t greybeard_22_tall;
+lv_font_t greybeard_26_tall;
+lv_font_t greybeard_30_tall;
+lv_font_t greybeard_34_tall;
+#define TALL(n) &greybeard_##n##_tall
+#else
+#define TALL(n) NULL
+#endif
+
 typedef struct {
     const lv_font_t *base;
     lv_font_t *ext;
@@ -182,6 +204,7 @@ typedef struct {
     const lv_font_t *latina;
     const lv_font_t *latinx;
     const lv_font_t *cyrillic;
+    lv_font_t *tall;            /* Tamil pack: the base with taller lines */
 } slot_chain_t;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -206,7 +229,7 @@ typedef struct {
 #endif
 
 #define SLOT(n) { &greybeard_##n, &greybeard_##n##_ext, &greybeard_##n##_he_next, &greybeard_##n##_la_next, \
-                  &greybeard_##n##_lx_next, HE(n), LA(n), LX(n), CY(n) }
+                  &greybeard_##n##_lx_next, HE(n), LA(n), LX(n), CY(n), TALL(n) }
 
 static const slot_chain_t s_slots[] = {
     SLOT(11),
@@ -234,6 +257,18 @@ void greybeard_init(void)
                                          c->base->base_line,
                                          lv_font_get_glyph_width(c->base, 'M', 0));
         if (cjk) { tail->fallback = cjk; tail = cjk; }
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+        /* The tall copy: the extra height goes partly below the
+         * baseline, partly above the Latin letters. */
+        int32_t lh = c->base->line_height;
+        *c->tall = *c->base;
+        c->tall->line_height = lh + TAMIL_LINE_EXTRA(lh);
+        c->tall->base_line = c->base->base_line + TAMIL_BASE_EXTRA(lh);
+        c->tall->user_data = (void *)c->base;   /* for the editor's decorations */
+        lv_font_t *ta = tamil_font_create(c->tall->line_height,
+                                          lv_font_get_glyph_width(c->base, 'M', 0));
+        if (ta) { tail->fallback = ta; tail = ta; }
 #endif
         /* The Cyrillic subsets are generated without a fallback, so
          * they end the chain. */
