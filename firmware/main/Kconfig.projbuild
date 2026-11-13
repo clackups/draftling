@@ -1987,7 +1987,7 @@ config DRAFTLING_DISPLAY_PORTRAIT_EXTRA_ROTATE
 #
 # On these boards the panel is dense enough that 1:1 Greybeard text
 # would be uncomfortably small, so the editor selects the Hack fonts
-# (components/fonts/hack_*.c), sized so each text row is roughly the
+# (components/fonts/hires_*.c), sized so each text row is roughly the
 # height the user saw with Greybeard rendered at the old 2x scale.
 # The display backend paints one LVGL pixel per panel pixel; there is
 # no framebuffer upscaling. Boards that leave this unset keep

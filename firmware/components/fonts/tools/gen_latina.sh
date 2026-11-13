@@ -1,6 +1,6 @@
 #!/bin/sh
 # Regenerates the Latin Extended-A subset fonts of the default language
-# pack: greybeard_latina_NN.c and hack_latina_NN.c.
+# pack: lowres_latina_NN.c and hires_latina_NN.c.
 #
 # Coverage: Latin Extended-A (U+0100..U+017F: Polish, Czech, Slovak,
 # Hungarian, Croatian, Slovenian, Turkish, Baltic, ...), the Romanian
@@ -46,9 +46,9 @@ PY
 }
 
 gb() { # slot ttf_px size extra_opts
-    n=greybeard_latina_$1
+    n=lowres_latina_$1
     $CONV --font "${GB}Greybeard-$2px.ttf" $4 -r $RANGE --size $3 --bpp 1 \
-        --format lvgl --no-compress --lv-fallback greybeard_$1_la_next \
+        --format lvgl --no-compress --lv-fallback lowres_$1_la_next \
         --lv-font-name $n -o "$OUT/$n.c"
     fixup "$OUT/$n.c"
 }
@@ -62,9 +62,9 @@ gb 30 15 30
 gb 34 17 34
 
 hk() { # slot size cell
-    n=hack_latina_$1
+    n=hires_latina_$1
     $CONV --font "$HACK" -r $RANGE --size $2 --bpp 1 \
-        --format lvgl --no-compress --lv-fallback hack_$1_la_next \
+        --format lvgl --no-compress --lv-fallback hires_$1_la_next \
         --lv-font-name $n -o "$OUT/$n.c"
     fixup "$OUT/$n.c"
     snap "$OUT/$n.c" $3

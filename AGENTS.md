@@ -28,7 +28,7 @@ they differ. Never commit under any other identity.
   `->` for an arrow, `--` for an em-dash, `>=` / `<=` for the inequality
   glyphs, `ohm` for the ohm symbol, `deg` for the degree sign, `sec.` for
   the section sign, etc. The only exception is the auto-generated LVGL
-  font sources under `components/fonts/` (e.g. `greybeard_*.c`), whose
+  font sources under `components/fonts/` (e.g. `lowres_*.c`), whose
   comments reference the Unicode glyphs they encode.
 - All board-specific configuration -- pin numbers, panel dimensions,
   wakeup GPIOs, brand strings, etc. -- belongs in `main/Kconfig.projbuild`
@@ -1379,11 +1379,24 @@ is true, i.e. the WiFi network is IPv4/IPv6 dual-stack. See
 
 ### components/fonts/
 
-Custom LVGL bitmap fonts. Standard-density boards use the Greybeard
-typeface; high-density boards (`CONFIG_DRAFTLING_DISPLAY_HIDPI`) use
-the Hack typeface at larger native sizes instead of upscaling the
-framebuffer. See the dedicated section below for the full creation
-process.
+Custom LVGL bitmap fonts in two sets, named by the screens they are
+for rather than by typeface, since each set also carries glyphs from
+other fonts (Noto Sans Mono, the CJK pixel fonts, Noto Sans Tamil):
+
+- the **low-res** set, `lowres_NN.c` / `lowres_<script>_NN.c`,
+  `lowres.c`, `include/lowres.h`, `lowres_init()`: standard-density
+  boards, Latin and the European scripts from the **Greybeard**
+  typeface;
+- the **hi-res** set, `hires_NN.c` / `hires_<script>_NN.c`,
+  `hires.c`, `include/hires.h`, `hires_init()`: high-density boards
+  (`CONFIG_DRAFTLING_DISPLAY_HIDPI`), Latin and the European scripts
+  from the **Hack** typeface at larger native sizes instead of
+  upscaling the framebuffer.
+
+The Tamil blobs follow the same names (`tamil/tamil_lowres_NN.bin`,
+`tamil/tamil_hires_NN.bin`). These files were called `greybeard_*` and
+`hack_*` until the font sets gained other typefaces. See the dedicated
+section below for the full creation process.
 
 ### components/git_sync/
 
@@ -2156,10 +2169,13 @@ once the driver is up, otherwise the `nvs.net80211` namespace).
 
 ## Font Creation Process
 
-The `components/fonts/` directory contains custom LVGL bitmap fonts
-generated from the **Greybeard** typeface, a monospaced bitmap font that
-is a vector port of UW ttyp0 (MIT-licensed, source:
-https://github.com/flowchartsman/greybeard).
+The `components/fonts/` directory contains custom LVGL bitmap fonts.
+The low-res set (`lowres_*`) is generated from the **Greybeard**
+typeface, a monospaced bitmap font that is a vector port of UW ttyp0
+(MIT-licensed, source: https://github.com/flowchartsman/greybeard); the
+hi-res set (`hires_*`) from **Hack** (see "Hack fonts" below). The
+file names name the set, not the typeface: the sets also carry
+glyphs of other fonts (see "Language packs").
 
 ### Source Files
 
@@ -2183,13 +2199,13 @@ lv_font_conv \
   --bpp 1 \
   --format lvgl \
   --no-compress \
-  --lv-font-name greybeard_14 \
-  -o greybeard_14.c
+  --lv-font-name lowres_14 \
+  -o lowres_14.c
 ```
 
 ### Reproducing the committed fonts
 
-The committed base fonts (`greybeard_NN.c`, `hack_NN.c`) regenerate
+The committed base fonts (`lowres_NN.c`, `hires_NN.c`) regenerate
 byte-for-byte -- apart from the fix-ups below -- from the command line
 recorded in each file's header comment, using:
 
@@ -2230,19 +2246,19 @@ any font, replace that whole `#ifdef ... #endif` block with a single line:
 ```
 
 This matches the include style used elsewhere in the component
-(`components/fonts/greybeard.c`, `components/fonts/include/greybeard.h`).
+(`components/fonts/lowres.c`, `components/fonts/include/lowres.h`).
 
 Newer `lv_font_conv` commits wrap that block in an `#ifdef
 __has_include` guard; replace the whole construct the same way. Some
 committed files also declare the fallback router as `extern lv_font_t
 ..._ext;` rather than `extern const lv_font_t ..._ext;` (the router is
-mutable, see `greybeard.c`); keep whichever form the file already has.
+mutable, see `lowres.c`); keep whichever form the file already has.
 The Hack files additionally get the advance-width snapping described
 under "Hack fonts" below.
 
 ### Unicode Ranges
 
-The base `greybeard_NN.c` files cover the always-on core ranges:
+The base `lowres_NN.c` files cover the always-on core ranges:
 
 | Range | Description |
 |-------|-------------|
@@ -2259,21 +2275,21 @@ for builds that do not need a given script.
 
 | File pattern | Range | Gated on |
 |--------------|-------|----------|
-| `greybeard_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
-| `greybeard_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
-| `greybeard_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
-| `greybeard_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
+| `lowres_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
+| `lowres_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
+| `lowres_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
+| `lowres_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
 
-The base font is generated with `--lv-fallback greybeard_NN_ext` and
-the Hebrew subset with `--lv-fallback greybeard_NN_he_next`. Both
+The base font is generated with `--lv-fallback lowres_NN_ext` and
+the Hebrew subset with `--lv-fallback lowres_NN_he_next`. Both
 fallback symbols are tiny runtime-mutable "router" `lv_font_t` structs
-defined in `components/fonts/greybeard.c`; `greybeard_init()` chains
+defined in `components/fonts/lowres.c`; `lowres_init()` chains
 their `.fallback` pointers at boot so that a missed glyph lookup in
 the base font walks into Hebrew and/or Cyrillic as appropriate.
 Hebrew layouts also require `CONFIG_LV_USE_BIDI=y` so LVGL renders
 RTL strings in the correct visual order.
 
-Every `greybeard_NN.c`/`greybeard_cyrillic_NN.c`/`greybeard_hebrew_NN.c`
+Every `lowres_NN.c`/`lowres_cyrillic_NN.c`/`lowres_hebrew_NN.c`
 file for NN in {18, 22, 26} is generated with `--autohint-off`; 11/14/16
 are not (see below for why). Without it, freetype's autohinter drops
 entire scanlines out of many glyphs -- diagonal strokes in "V"/"X" get
@@ -2292,13 +2308,13 @@ keep the documented command lines minimal.
 
 ### Sizes and Metrics
 
-Eight sizes are provided. `greybeard_11` through `greybeard_22` are
+Eight sizes are provided. `lowres_11` through `lowres_22` are
 rendered at their native TTF pixel size. The remaining three have no
 matching native TTF and are derived from a smaller native size
-instead -- `greybeard_26` by scaling the 22 px TTF up by a
+instead -- `lowres_26` by scaling the 22 px TTF up by a
 non-integer 1.18x ratio (acceptable since it is only ever used as a
-heading, one step above the largest body size), and `greybeard_30` /
-`greybeard_34` as a clean 2x pixel-double of the native 15 px / 17 px
+heading, one step above the largest body size), and `lowres_30` /
+`lowres_34` as a clean 2x pixel-double of the native 15 px / 17 px
 TTFs respectively. The 2x-double approach was chosen over scaling
 from 22 px (as was tried initially) because a non-integer scale
 ratio (22 px -> 30 px is 1.36x, -> 34 px is 1.55x) produces visibly
@@ -2310,14 +2326,14 @@ Hack family's Hebrew subset (see "Hack fonts" below).
 
 | File | Pixel Size | Char Width | Line Height | Notes |
 |------|-----------|------------|-------------|-------|
-| greybeard_11.c | 11 | 6 | 11 | Smallest, used for compact UI elements |
-| greybeard_14.c | 14 | 7 | 13 | Default body text |
-| greybeard_16.c | 16 | 8 | 15 | |
-| greybeard_18.c | 18 | 9 | 17 | Also a base font size choice |
-| greybeard_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
-| greybeard_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
-| greybeard_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
-| greybeard_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
+| lowres_11.c | 11 | 6 | 11 | Smallest, used for compact UI elements |
+| lowres_14.c | 14 | 7 | 13 | Default body text |
+| lowres_16.c | 16 | 8 | 15 | |
+| lowres_18.c | 18 | 9 | 17 | Also a base font size choice |
+| lowres_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
+| lowres_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
+| lowres_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
+| lowres_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
 
 Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
 and 22 px base font size choices (`FONT_SIZE_OPTIONS` in
@@ -2325,8 +2341,8 @@ and 22 px base font size choices (`FONT_SIZE_OPTIONS` in
 (body) font sizes themselves, since the monospace cell that large
 would show very little content even on a large panel.
 
-All fonts are declared in `components/fonts/include/greybeard.h` as
-`extern const lv_font_t greybeard_NN` and compiled as an IDF component
+All fonts are declared in `components/fonts/include/lowres.h` as
+`extern const lv_font_t lowres_NN` and compiled as an IDF component
 that depends on `lvgl__lvgl`.
 
 ### Rendering Settings
@@ -2337,7 +2353,7 @@ that depends on `lvgl__lvgl`.
   the microcontroller.
 - **Format:** `lvgl` (native LVGL font structure).
 
-### Hack fonts (high-density boards)
+### Hack fonts (high-density boards, the `hires_*` set)
 
 Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
@@ -2353,20 +2369,20 @@ more text on a large, dense panel (e.g. the Waveshare Touch-LCD-7's
 for the HIDPI-only 20 px base font size; Greybeard also has its own
 slot 30 (and 34), added later to back headings for the non-HIDPI 18 px
 and 22 px base font sizes -- see "Sizes and Metrics" above. The file
-names mirror the Greybeard slots (`hack_11` ..
-`hack_26`) plus the two extras (`hack_9`, `hack_30`); the number is
+names mirror the Greybeard slots (`hires_11` ..
+`hires_26`) plus the two extras (`hires_9`, `hires_30`); the number is
 the slot, not the Hack pixel size:
 
 | File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
 |------|-----------------|------------|-------------|-------------------------|
-| hack_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
-| hack_11.c | 19 | 11 | 23 | greybeard_11 (x2) |
-| hack_14.c | 21 | 13 | 26 | greybeard_14 (x2) |
-| hack_16.c | 25 | 15 | 30 | greybeard_16 (x2) |
-| hack_18.c | 28 | 17 | 34 | greybeard_18 (x2) |
-| hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
-| hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
-| hack_30.c | 47 | 28 | 58 | (Greybeard's slot 30 exists too, but is unrelated -- it is not pixel-doubled into this file, since HIDPI boards never fall back to Greybeard) |
+| hires_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
+| hires_11.c | 19 | 11 | 23 | lowres_11 (x2) |
+| hires_14.c | 21 | 13 | 26 | lowres_14 (x2) |
+| hires_16.c | 25 | 15 | 30 | lowres_16 (x2) |
+| hires_18.c | 28 | 17 | 34 | lowres_18 (x2) |
+| hires_22.c | 34 | 21 | 41 | lowres_22 (x2) |
+| hires_26.c | 41 | 25 | 50 | lowres_26 (x2) |
+| hires_30.c | 47 | 28 | 58 | (Greybeard's slot 30 exists too, but is unrelated -- it is not pixel-doubled into this file, since HIDPI boards never fall back to Greybeard) |
 
 Slot 9's heading fonts (h1/h2/h3) reuse the existing slot 11/14/16
 fonts rather than needing new dedicated assets -- the heading scale
@@ -2385,26 +2401,26 @@ layout options:
 
 | File pattern | Range | Source | Gated on |
 |--------------|-------|--------|----------|
-| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
-| `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
-| `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
-| `hack_latina_NN.c` | same as `greybeard_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
+| `hires_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
+| `hires_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
+| `hires_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
+| `hires_latina_NN.c` | same as `lowres_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
 Greybeard TTFs. For slots 11-30, that's at twice the corresponding
 Greybeard slot's native pixel size (a clean 2x pixel-double that
 matches what the old scaled path produced). Slot 9 has no Greybeard
 source of its own to double (Greybeard's smallest is 11px), so
-`hack_hebrew_9.c` is instead rendered directly from
+`hires_hebrew_9.c` is instead rendered directly from
 `Greybeard-11px.ttf` (the smallest available source) at 18px --
 close to, but not an exact 2x multiple of, the source's native size;
 freetype rasterizes any target size cleanly from the vector outline
 regardless, so this is a minor deviation from the other slots'
 "clean double" convention, not a technical limitation. The base fonts
-are generated with `--lv-fallback hack_NN_ext` and the Hebrew subset
-with `--lv-fallback hack_NN_he_next`; the router structs live in
-`components/fonts/hack.c` and are chained at boot by `hack_init()`,
-exactly like `greybeard_init()`. The same post-generation include
+are generated with `--lv-fallback hires_NN_ext` and the Hebrew subset
+with `--lv-fallback hires_NN_he_next`; the router structs live in
+`components/fonts/hires.c` and are chained at boot by `hires_init()`,
+exactly like `lowres_init()`. The same post-generation include
 fix-up applies (replace the `#ifdef LV_LVGL_H_INCLUDE_SIMPLE ... #endif`
 block with `#include "lvgl.h"`). All Hack sources are compiled only
 when `CONFIG_DRAFTLING_DISPLAY_HIDPI` is set, so standard-density
@@ -2419,10 +2435,10 @@ Greybeard and Hack. Everything else in the editor is family-agnostic
 because it works through those slots. `FONT_9` is HIDPI-only, backing
 the HIDPI-only 9 px base font size, and has no Greybeard equivalent.
 `FONT_30` is defined on both sides but for unrelated fonts: on HIDPI
-boards it is `&hack_30`, backing the H1 heading of the HIDPI-only
-20 px base font size; on non-HIDPI boards it is `&greybeard_30`,
+boards it is `&hires_30`, backing the H1 heading of the HIDPI-only
+20 px base font size; on non-HIDPI boards it is `&lowres_30`,
 backing the H1 heading of the non-HIDPI 18 px base font size.
-`FONT_34` is non-HIDPI-only (`&greybeard_34`), backing the H1 heading
+`FONT_34` is non-HIDPI-only (`&lowres_34`), backing the H1 heading
 of the non-HIDPI 22 px base font size -- Hack has no matching slot
 since HIDPI's base font sizes top out at 20 px.
 
@@ -2464,7 +2480,7 @@ Xteink X4 Pro), tamil 2.6 MB (2.9 MB on the X4 Pro). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
-**Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
+**Font chain.** `lowres_init()` / `hires_init()` chain, per slot:
 base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
 Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
 (`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Tamil
@@ -2472,7 +2488,7 @@ runtime font -> Cyrillic (generated without a fallback, so always
 last). Missing subsets are
 skipped (`slot_chain_t` table).
 
-**Latin Extended-A** (`greybeard_latina_NN.c`, `hack_latina_NN.c`,
+**Latin Extended-A** (`lowres_latina_NN.c`, `hires_latina_NN.c`,
 compiled with `DRAFTLING_HAS_LATIN_EXT_A`, i.e. any of the PL, CZ, SK,
 HU, RO, HR/SI, TR layouts): the whole Latin Extended-A block, the
 Romanian s / t with comma below, the spacing accents the dead keys
@@ -2482,7 +2498,7 @@ Greybeard v1.0.0 and Hack v3.003 (both cover all of it; same sizes,
 `--autohint-off` slots and Hack advance snapping as the Latin
 extension below).
 
-**Latin extension** (`greybeard_latinx_NN.c`, `hack_latinx_NN.c`,
+**Latin extension** (`lowres_latinx_NN.c`, `hires_latinx_NN.c`,
 compiled with KB_LAYOUT_ENABLE_VI or DRAFTLING_HAS_CJK): the
 Vietnamese letters (U+0102/0103, U+0110/0111, U+0128/0129,
 U+0168/0169, U+01A0/01A1, U+01AF/01B0, U+1EA0..U+1EF9), the dong sign
@@ -2529,7 +2545,7 @@ line height (raised a pixel or two off the Latin baseline where the
 descenders need it). That line is about 30 % taller than the base
 font's: Tamil syllables need roughly twice their body height for loops
 and hooks, and in a Greybeard-height line the body of the 14 / 16 px
-sizes was 5-7 px tall. `greybeard_init()` / `hack_init()` make mutable
+sizes was 5-7 px tall. `lowres_init()` / `hires_init()` make mutable
 copies of the base fonts (`<font>_NN_tall`, `TAMIL_LINE_EXTRA()` more
 line height, `TAMIL_BASE_EXTRA()` of it below the baseline,
 `user_data` pointing at the base font) and the editor's `FONT_NN`
@@ -3109,7 +3125,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |

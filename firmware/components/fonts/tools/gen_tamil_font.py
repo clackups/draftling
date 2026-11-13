@@ -22,7 +22,7 @@ Usage (needs uharfbuzz and freetype-py; see tamil/LICENSE.txt for the
 font release used):
     gen_tamil_font.py NotoSansTamil-Regular.ttf fonts_dir out_dir
 
-fonts_dir holds greybeard_NN.c / hack_NN.c, whose line height
+fonts_dir holds lowres_NN.c / hires_NN.c, whose line height
 (plus the Tamil pack's extra, line_extra()), baseline and cell width
 each slot copies. Writes
 out_dir/tamil_<family>_<NN>.bin and out_dir/tamil_cells.h.
@@ -78,11 +78,11 @@ STANDALONE = ([0x0B83, 0x0B85, 0x0B86, 0x0B87, 0x0B88, 0x0B89, 0x0B8A,
 # strokes even there.
 AUTOHINT_LINE = 17
 
-# Greybeard slots whose Latin letters have two-pixel stems (22 px and
+# Low-res (Greybeard) slots whose Latin letters have two-pixel stems (22 px and
 # the heading sizes above it): the Tamil outlines are widened
 # horizontally by EMBOLDEN_PX before rendering, so their strokes come
 # out about as heavy. (0.6 px and more fill the small loops.)
-EMBOLDEN_FAMILY = "greybeard"
+EMBOLDEN_FAMILY = "lowres"
 EMBOLDEN_LINE = 21
 EMBOLDEN_PX = 0.4
 
@@ -276,7 +276,9 @@ def main():
 
     plans = []   # (family, slot, lh, bl, cw, px, shift, glyphs)
     cells = {}   # most monospace cells of each glyph in any slot
-    for family in ("greybeard", "hack"):
+    # The two font sets: lowres_NN (Greybeard typeface) and hires_NN
+    # (Hack typeface).
+    for family in ("lowres", "hires"):
         for slot, lh, bl, cw in slot_metrics(fonts_dir, family):
             # Emboldening follows the Latin letters of the slot.
             bold = family == EMBOLDEN_FAMILY and lh >= EMBOLDEN_LINE

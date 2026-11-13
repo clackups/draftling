@@ -1,7 +1,7 @@
 #!/bin/sh
 # Regenerates the Latin-extension subset fonts of the Vietnamese,
-# Korean, Japanese and Chinese language packs: greybeard_latinx_NN.c
-# and hack_latinx_NN.c.
+# Korean, Japanese and Chinese language packs: lowres_latinx_NN.c
+# and hires_latinx_NN.c.
 #
 # Coverage: the Vietnamese letters (U+0102/0103, U+0110/0111,
 # U+0128/0129, U+0168/0169, U+01A0/01A1, U+01AF/01B0 and Latin
@@ -52,9 +52,9 @@ PY
 }
 
 gb() { # slot ttf_px size extra_opts
-    n=greybeard_latinx_$1
+    n=lowres_latinx_$1
     $CONV --font "${GB}Greybeard-$2px.ttf" $4 -r $VI,$PUNCT --size $3 --bpp 1 \
-        --format lvgl --no-compress --lv-fallback greybeard_$1_lx_next \
+        --format lvgl --no-compress --lv-fallback lowres_$1_lx_next \
         --lv-font-name $n -o "$OUT/$n.c"
     fixup "$OUT/$n.c"
 }
@@ -68,9 +68,9 @@ gb 30 15 30
 gb 34 17 34
 
 hk() { # slot size cell
-    n=hack_latinx_$1
+    n=hires_latinx_$1
     $CONV --font "$HACK" -r $PUNCT --font "$NOTO" -r $VI --size $2 --bpp 1 \
-        --format lvgl --no-compress --lv-fallback hack_$1_lx_next \
+        --format lvgl --no-compress --lv-fallback hires_$1_lx_next \
         --lv-font-name $n -o "$OUT/$n.c"
     fixup "$OUT/$n.c"
     snap "$OUT/$n.c" $3
