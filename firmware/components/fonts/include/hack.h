@@ -83,6 +83,18 @@ extern const lv_font_t hack_22;
 extern const lv_font_t hack_26;
 extern const lv_font_t hack_30;
 
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+/* Tamil pack: the same fonts with taller lines (see hack.c). */
+extern lv_font_t hack_9_tall;
+extern lv_font_t hack_11_tall;
+extern lv_font_t hack_14_tall;
+extern lv_font_t hack_16_tall;
+extern lv_font_t hack_18_tall;
+extern lv_font_t hack_22_tall;
+extern lv_font_t hack_26_tall;
+extern lv_font_t hack_30_tall;
+#endif
+
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
 extern const lv_font_t hack_cyrillic_9;
 extern const lv_font_t hack_cyrillic_11;

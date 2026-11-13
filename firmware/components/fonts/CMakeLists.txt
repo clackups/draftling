@@ -70,6 +70,21 @@ if(CONFIG_DRAFTLING_HAS_CJK)
                             "cjk/${cjk_set}/cjk16.bin")
 endif()
 
+# Tamil cluster glyphs (see tamil/LICENSE.txt): the runtime driver plus
+# the blobs of the font family the board renders with.
+if(CONFIG_DRAFTLING_HAS_TAMIL)
+    list(APPEND srcs "tamil_font.c")
+    if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+        foreach(n ${font_slots_hack})
+            list(APPEND embed_files "tamil/tamil_hack_${n}.bin")
+        endforeach()
+    else()
+        foreach(n ${font_slots_gb})
+            list(APPEND embed_files "tamil/tamil_greybeard_${n}.bin")
+        endforeach()
+    endif()
+endif()
+
 if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     # High-density boards render 1:1 with the larger Hack font family
     # instead of upscaling Greybeard. The base Hack fonts cover Latin;

@@ -4,8 +4,9 @@
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
  * Swiss French, Italian, Portuguese, Spanish, United Kingdom and
- * Korean layouts. Vietnamese, Japanese and Chinese type on the US layout
- * and are composed by an input method (components/ime/).
+ * Korean and Tamil InScript layouts. Vietnamese, Japanese, Chinese and
+ * the other Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on
+ * the US layout and are composed by an input method (components/ime/).
  *
  * Non-ASCII characters are encoded as UTF-8 byte sequences using
  * hex escapes to keep the source file ASCII-only.
@@ -24,7 +25,7 @@
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
 /* Default "Active language layouts" set: US when compiled in, plus the
- * input-method layout (VI, KO, JA, ZH) of a pack, else the first
+ * input-method layout (VI, KO, JA, ZH, TA99) of a pack, else the first
  * compiled-in layout so the set is never empty. */
 static uint32_t default_active_mask(void)
 {
@@ -40,6 +41,9 @@ static uint32_t default_active_mask(void)
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
     mask |= (1u << KB_LAYOUT_ZH);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    mask |= (1u << KB_LAYOUT_TA99);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
     mask |= (1u << KB_LAYOUT_US);
@@ -660,6 +664,148 @@ static const char *const KO_SHIFT[] = {
     NULL,":","\x22","~","<",">","?",
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_KO */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+/* ------------------------------------------------------------------ */
+/* Tamil InScript                                                     */
+/* ------------------------------------------------------------------ */
+
+/* The Government of India InScript layout for Tamil, as in Windows
+ * "Tamil" and XKB "in(tam)": vowel signs on the left hand (Shift: the
+ * independent vowels), consonants on the right, pulli on D. Text is
+ * typed in logical order (consonant, then vowel sign); the Tamil font
+ * reorders the signs drawn left of the consonant. Keys XKB leaves
+ * empty (Y, I, O, [) type nothing. AltGr + digit types the Tamil
+ * digits. */
+static const char *const TA_IN_NORMAL[] = {
+    /* 04 */ "\xE0\xAF\x8B",  /* U+0BCB tamil vowel sign oo */
+    /* 05 */ "\xE0\xAE\xB5",  /* U+0BB5 tamil letter va */
+    /* 06 */ "\xE0\xAE\xAE",  /* U+0BAE tamil letter ma */
+    /* 07 */ "\xE0\xAF\x8D",  /* U+0BCD tamil sign virama */
+    /* 08 */ "\xE0\xAE\xBE",  /* U+0BBE tamil vowel sign aa */
+    /* 09 */ "\xE0\xAE\xBF",  /* U+0BBF tamil vowel sign i */
+    /* 0A */ "\xE0\xAF\x81",  /* U+0BC1 tamil vowel sign u */
+    /* 0B */ "\xE0\xAE\xAA",  /* U+0BAA tamil letter pa */
+    /* 0C */ NULL,
+    /* 0D */ "\xE0\xAE\xB0",  /* U+0BB0 tamil letter ra */
+    /* 0E */ "\xE0\xAE\x95",  /* U+0B95 tamil letter ka */
+    /* 0F */ "\xE0\xAE\xA4",  /* U+0BA4 tamil letter ta */
+    /* 10 */ "\xE0\xAE\xB8",  /* U+0BB8 tamil letter sa */
+    /* 11 */ "\xE0\xAE\xB2",  /* U+0BB2 tamil letter la */
+    /* 12 */ NULL,
+    /* 13 */ "\xE0\xAE\x9C",  /* U+0B9C tamil letter ja */
+    /* 14 */ "\xE0\xAF\x8C",  /* U+0BCC tamil vowel sign au */
+    /* 15 */ "\xE0\xAF\x80",  /* U+0BC0 tamil vowel sign ii */
+    /* 16 */ "\xE0\xAF\x87",  /* U+0BC7 tamil vowel sign ee */
+    /* 17 */ "\xE0\xAF\x82",  /* U+0BC2 tamil vowel sign uu */
+    /* 18 */ "\xE0\xAE\xB9",  /* U+0BB9 tamil letter ha */
+    /* 19 */ "\xE0\xAE\xA8",  /* U+0BA8 tamil letter na */
+    /* 1A */ "\xE0\xAF\x88",  /* U+0BC8 tamil vowel sign ai */
+    /* 1B */ "\xE0\xAE\x82",  /* U+0B82 tamil sign anusvara */
+    /* 1C */ NULL,
+    /* 1D */ "\xE0\xAF\x86",  /* U+0BC6 tamil vowel sign e */
+    /* 1E */ "1",
+    /* 1F */ "2",
+    /* 20 */ "3",
+    /* 21 */ "4",
+    /* 22 */ "5",
+    /* 23 */ "6",
+    /* 24 */ "7",
+    /* 25 */ "8",
+    /* 26 */ "9",
+    /* 27 */ "0",
+    /* 28 */ NULL,
+    /* 29 */ NULL,
+    /* 2A */ NULL,
+    /* 2B */ NULL,
+    /* 2C */ " ",
+    /* 2D */ "-",
+    /* 2E */ "=",
+    /* 2F */ NULL,
+    /* 30 */ "\xE0\xAE\x9E",  /* U+0B9E tamil letter nya */
+    /* 31 */ "\\",
+    /* 32 */ NULL,
+    /* 33 */ "\xE0\xAE\x9A",  /* U+0B9A tamil letter ca */
+    /* 34 */ "\xE0\xAE\x9F",  /* U+0B9F tamil letter tta */
+    /* 35 */ "\xE0\xAF\x8A",  /* U+0BCA tamil vowel sign o */
+    /* 36 */ ",",
+    /* 37 */ ".",
+    /* 38 */ "\xE0\xAE\xAF",  /* U+0BAF tamil letter ya */
+};
+
+static const char *const TA_IN_SHIFT[] = {
+    /* 04 */ "\xE0\xAE\x93",  /* U+0B93 tamil letter oo */
+    /* 05 */ "\xE0\xAE\xB4",  /* U+0BB4 tamil letter llla */
+    /* 06 */ "\xE0\xAE\xA3",  /* U+0BA3 tamil letter nna */
+    /* 07 */ "\xE0\xAE\x85",  /* U+0B85 tamil letter a */
+    /* 08 */ "\xE0\xAE\x86",  /* U+0B86 tamil letter aa */
+    /* 09 */ "\xE0\xAE\x87",  /* U+0B87 tamil letter i */
+    /* 0A */ "\xE0\xAE\x89",  /* U+0B89 tamil letter u */
+    /* 0B */ NULL,
+    /* 0C */ NULL,
+    /* 0D */ "\xE0\xAE\xB1",  /* U+0BB1 tamil letter rra */
+    /* 0E */ NULL,
+    /* 0F */ NULL,
+    /* 10 */ "\xE0\xAE\xB6",  /* U+0BB6 tamil letter sha */
+    /* 11 */ "\xE0\xAE\xB3",  /* U+0BB3 tamil letter lla */
+    /* 12 */ NULL,
+    /* 13 */ NULL,
+    /* 14 */ "\xE0\xAE\x94",  /* U+0B94 tamil letter au */
+    /* 15 */ "\xE0\xAE\x88",  /* U+0B88 tamil letter ii */
+    /* 16 */ "\xE0\xAE\x8F",  /* U+0B8F tamil letter ee */
+    /* 17 */ "\xE0\xAE\x8A",  /* U+0B8A tamil letter uu */
+    /* 18 */ "\xE0\xAE\x99",  /* U+0B99 tamil letter nga */
+    /* 19 */ "\xE0\xAE\xA9",  /* U+0BA9 tamil letter nnna */
+    /* 1A */ "\xE0\xAE\x90",  /* U+0B90 tamil letter ai */
+    /* 1B */ NULL,
+    /* 1C */ NULL,
+    /* 1D */ "\xE0\xAE\x8E",  /* U+0B8E tamil letter e */
+    /* 1E */ "!",
+    /* 1F */ "@",
+    /* 20 */ "#",
+    /* 21 */ "$",
+    /* 22 */ "%",
+    /* 23 */ "^",
+    /* 24 */ "&",
+    /* 25 */ "*",
+    /* 26 */ "(",
+    /* 27 */ ")",
+    /* 28 */ NULL,
+    /* 29 */ NULL,
+    /* 2A */ NULL,
+    /* 2B */ NULL,
+    /* 2C */ " ",
+    /* 2D */ "\xE0\xAE\x83",  /* U+0B83 tamil sign visarga */
+    /* 2E */ "+",
+    /* 2F */ NULL,
+    /* 30 */ NULL,
+    /* 31 */ "|",
+    /* 32 */ NULL,
+    /* 33 */ NULL,
+    /* 34 */ NULL,
+    /* 35 */ "\xE0\xAE\x92",  /* U+0B92 tamil letter o */
+    /* 36 */ "\xE0\xAE\xB7",  /* U+0BB7 tamil letter ssa */
+    /* 37 */ ">",
+    /* 38 */ "?",
+};
+
+static const key_entry_t TA_IN_EXTRA[] = {
+    { 0x1E, L_ALTGR, "\xE0\xAF\xA7" },  /* U+0BE7 tamil digit one */
+    { 0x1F, L_ALTGR, "\xE0\xAF\xA8" },  /* U+0BE8 tamil digit two */
+    { 0x20, L_ALTGR, "\xE0\xAF\xA9" },  /* U+0BE9 tamil digit three */
+    { 0x21, L_ALTGR, "\xE0\xAF\xAA" },  /* U+0BEA tamil digit four */
+    { 0x22, L_ALTGR, "\xE0\xAF\xAB" },  /* U+0BEB tamil digit five */
+    { 0x23, L_ALTGR, "\xE0\xAF\xAC" },  /* U+0BEC tamil digit six */
+    { 0x24, L_ALTGR, "\xE0\xAF\xAD" },  /* U+0BED tamil digit seven */
+    { 0x25, L_ALTGR, "\xE0\xAF\xAE" },  /* U+0BEE tamil digit eight */
+    { 0x26, L_ALTGR, "\xE0\xAF\xAF" },  /* U+0BEF tamil digit nine */
+    { 0x27, L_ALTGR, "\xE0\xAF\xA6" },  /* U+0BE6 tamil digit zero */
+    { 0x2D, L_ALTGR, "\xE0\xAF\xB1" },  /* U+0BF1 tamil number one hundred */
+    { 0x2E, L_ALTGR, "\xE0\xAF\xB2" },  /* U+0BF2 tamil number one thousand */
+    { 0x1B, L_ALTGR, "\xE0\xAF\x90" },  /* U+0BD0 tamil om */
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_TA_IN */
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -2460,7 +2606,8 @@ typedef struct {
     const char *const *normal;    /* keycodes 0x04..0x38 */
     const char *const *shift;     /* keycodes 0x04..0x38 */
     const key_entry_t *extra;  /* AltGr layers, keys past 0x38; or NULL */
-    const char *name;
+    const char *name;          /* short tag (title bar) */
+    const char *long_name;     /* human-readable name (settings) */
     kb_ime_t ime;
     bool is_latin;
 } layout_table_t;
@@ -2535,6 +2682,9 @@ CHECK_TABLE(FR_CA_NORMAL); CHECK_TABLE(FR_CA_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+CHECK_TABLE(TA_IN_NORMAL); CHECK_TABLE(TA_IN_SHIFT);
+#endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
 static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
@@ -2542,82 +2692,94 @@ static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
 /* In kb_layout_id_t order (C++ needs designators in order). */
 static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
-    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", KB_IME_NONE, true },
+    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", "English (US)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
-    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", KB_IME_NONE, false },
+    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", "Ukrainian", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE
-    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", KB_IME_NONE, true },
+    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", "German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR
-    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", KB_IME_NONE, true },
+    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", "French (AZERTY)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
-    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", KB_IME_NONE, false },
+    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", "Hebrew", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", "Swiss German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", "Swiss French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_IT
-    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", KB_IME_NONE, true },
+    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", "Italian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PT
-    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", KB_IME_NONE, true },
+    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", "Portuguese", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ES
-    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", KB_IME_NONE, true },
+    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", "Spanish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_GB
-    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", KB_IME_NONE, true },
+    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", "English (UK)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SE_FI
-    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", KB_IME_NONE, true },
+    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", "Swedish / Finnish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NO
-    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", KB_IME_NONE, true },
+    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", "Norwegian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DK
-    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", KB_IME_NONE, true },
+    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", "Danish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PL
-    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", KB_IME_NONE, true },
+    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", "Polish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_CZ
-    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", KB_IME_NONE, true },
+    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", "Czech", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SK
-    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", KB_IME_NONE, true },
+    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", "Slovak", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HU
-    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", KB_IME_NONE, true },
+    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", "Hungarian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_RO
-    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", KB_IME_NONE, true },
+    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", "Romanian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HR
-    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", KB_IME_NONE, true },
+    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", "Croatian / Slovenian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
-    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", KB_IME_NONE, true },
+    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", "Turkish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
-    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "Canadian French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
-    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", KB_IME_TELEX, true },
+    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", "Vietnamese (Telex)", KB_IME_TELEX, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
-    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", KB_IME_HANGUL, false },
+    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", "Korean (2-set)", KB_IME_HANGUL, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_JA
-    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", KB_IME_KANA, true },
+    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", "Japanese (romaji)", KB_IME_KANA, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
-    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", KB_IME_PINYIN, true },
+    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", "Chinese (pinyin)", KB_IME_PINYIN, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    [KB_LAYOUT_TA99] = { US_NORMAL, US_SHIFT, NULL, "TA99", "Tamil 99", KB_IME_TAMIL99, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TW
+    [KB_LAYOUT_TA_TW] = { US_NORMAL, US_SHIFT, NULL, "TA-TW", "Tamil Typewriter", KB_IME_TAMIL_TW, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+    [KB_LAYOUT_TA_IN] = { TA_IN_NORMAL, TA_IN_SHIFT, TA_IN_EXTRA, "TA-IN", "Tamil InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
+    [KB_LAYOUT_TA_TV] = { US_NORMAL, US_SHIFT, NULL, "TA-TV", "Tamil Taravinyas", KB_IME_TARAVINYAS, true },
 #endif
 };
 
@@ -2693,6 +2855,12 @@ static const char *s_dead = NULL;
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
+}
+
+extern "C" const char *kb_layout_long_name(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return "";
+    return s_layouts[layout].long_name;
 }
 
 extern "C" kb_ime_t kb_layout_ime(void)
