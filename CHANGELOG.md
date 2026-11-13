@@ -6,6 +6,12 @@ in the git log.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Seeed reTerminal Sticky with the SSD2677 screen**: the picture was
+  shown upside down on Sticky units whose screen uses the SSD2677
+  controller. It is now the right way up.
+
 ## [1.0.26] - 2026-11-12
 
 ### Added

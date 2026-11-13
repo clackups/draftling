@@ -717,7 +717,10 @@ Per-board display backends behind a single C API:
   sequence seemed not to change the glass, but the panel was blank
   then anyway because of the unpowered SD card (see below). The
   SSD2677 path (2bpp DTM1 data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
-  `Driver_SSD2677.cpp` and is untested. The SPI bus is shared with the
+  `Driver_SSD2677.cpp`, with the frame turned 180 degrees (rows sent
+  bottom to top, unmirrored: Seeed's mirrored-row order showed the
+  picture upside down on hardware), and is tested on physical
+  hardware. The SPI bus is shared with the
   on-board MicroSD card (separate `CS`, same `SCLK`/`MOSI`/`MISO`):
   main.cpp powers the card (`SD_EN_PIN`) and drives its CS high before
   `display_init()`, because an unpowered card on the bus kept the panel
@@ -736,8 +739,7 @@ Per-board display backends behind a single C API:
   the whole screen within a few keystrokes -- the same in every
   release since the board was added, found by comparing v1.0.20 /
   v1.0.21 with and without a Ctrl+R before typing -- while fast
-  refreshes alone keep it clean. The SSD2677 path follows suit
-  untested.
+  refreshes alone keep it clean. The SSD2677 path follows suit.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677

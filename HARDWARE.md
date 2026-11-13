@@ -211,8 +211,8 @@ Tested on physical hardware.
 a battery-powered, magnetically mounted e-paper badge, 32 MB flash.
 
 - 3.97" 800x480 e-paper. Units carry an SSD1677 or an SSD2677
-  controller, detected at boot; the SSD1677 is tested on physical
-  hardware, the SSD2677 is not.
+  controller, detected at boot; both are tested on physical
+  hardware.
 - GT911 touch.
 - No front-light.
 - Battery level and charging state (BQ27220 fuel gauge).

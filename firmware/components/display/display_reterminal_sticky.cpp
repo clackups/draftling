@@ -32,8 +32,9 @@
  *     showed nothing, but the panel was blank then anyway because of
  *     the unpowered SD card. Only the first refresh after power-on is
  *     a full one; every later refresh is a fast one (display_flush()).
- *   - SSD2677 (untested, no such unit available): ported from
- *     Seeed_GFX2's Driver_SSD2677.cpp; see the section below.
+ *   - SSD2677 (tested on physical hardware): ported from
+ *     Seeed_GFX2's Driver_SSD2677.cpp, with the frame turned 180
+ *     degrees; see the section below.
  *
  * SPI clock: a conservative 10 MHz (the vendor peripheral demo's
  * value) because the bus is shared with the SD card.
@@ -324,7 +325,8 @@ static void sticky_display(const uint8_t *fb, bool full)
  * new frame; a fast refresh sends (old << 1 | new) transition pairs
  * under the partial waveform, so unchanged pixels are not driven. The
  * controller has no window registers: every refresh sends the whole
- * frame. Each row is sent mirrored, as Seeed's SSD2677 config does.
+ * frame. Rows go bottom to top (the picture is turned 180 degrees from
+ * Seeed's SSD2677 config, which showed it upside down on hardware).
  * ============================================================ */
 
 /* Seeed falls back to 25 C whenever the panel's temperature cannot be
@@ -332,14 +334,6 @@ static void sticky_display(const uint8_t *fb, bool full)
  * panel SDO on every unit); this driver never reads it. */
 #define SSD2677_WAVEFORM_FULL     0xEE  /* 21-30 C full-refresh bucket */
 #define SSD2677_WAVEFORM_PARTIAL  0x19  /* 21-30 C partial bucket */
-
-static inline uint8_t reverse_bits8(uint8_t b)
-{
-    b = (uint8_t)(((b & 0xF0) >> 4) | ((b & 0x0F) << 4));
-    b = (uint8_t)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
-    b = (uint8_t)(((b & 0xAA) >> 1) | ((b & 0x55) << 1));
-    return b;
-}
 
 /* Expand 8 mono pixels (bit 1 = white, MSB leftmost) into two bytes of
  * 2-bit pairs; with `prev` set, each pair is (old << 1 | new). */
@@ -360,12 +354,15 @@ static inline void ssd2677_pack(uint8_t prev, uint8_t cur, bool diff,
 static void ssd2677_send_frame(const uint8_t *fb, const uint8_t *prev)
 {
     uint8_t *o = s_tx;
-    for (int row = 0; row < PANEL_HEIGHT; ++row) {
+    /* Rows bottom to top, columns left to right: Seeed's orientation
+     * (rows top to bottom, each mirrored) showed the picture upside
+     * down on a Sticky with an SSD2677. */
+    for (int row = PANEL_HEIGHT - 1; row >= 0; --row) {
         const uint8_t *cur_row  = fb + (size_t)row * PANEL_WIDTH_BYTES;
         const uint8_t *prev_row = prev ? prev + (size_t)row * PANEL_WIDTH_BYTES : NULL;
-        for (int i = PANEL_WIDTH_BYTES - 1; i >= 0; --i) {
-            uint8_t c = reverse_bits8(cur_row[i]);
-            uint8_t p = prev_row ? reverse_bits8(prev_row[i]) : 0;
+        for (int i = 0; i < PANEL_WIDTH_BYTES; ++i) {
+            uint8_t c = cur_row[i];
+            uint8_t p = prev_row ? prev_row[i] : 0;
             ssd2677_pack(p, c, prev_row != NULL, &o[0], &o[1]);
             o += 2;
         }
@@ -754,7 +751,7 @@ extern "C" void display_flush(void)
      * (SSD1677) a full refresh made the following fast refreshes
      * darken the whole screen much sooner -- the same in every release
      * since the board was added -- while fast refreshes alone keep it
-     * clean. The SSD2677 path does the same (untested). */
+     * clean. The SSD2677 path does the same. */
     if (s_needs_initial_full) {
         if (s_ctrl == STICKY_CTRL_SSD2677) ssd2677_display_full(s_fb);
         else                               sticky_display(s_fb, true);
