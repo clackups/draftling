@@ -2,7 +2,7 @@ Fonts of the Vietnamese, Korean, Japanese and Chinese language packs
 ====================================================================
 
 The files in this directory (ja/, zh/, ko/: cjk10.bin, cjk12.bin,
-cjk16.bin) and the Latin-extension subset fonts (../greybeard_latinx_*.c, ../hack_latinx_*.c) are Modified
+cjk16.bin) and the Latin-extension subset fonts (../lowres_latinx_*.c, ../hires_latinx_*.c) are Modified
 Versions, in the sense of the SIL Open Font License 1.1, of the fonts
 listed below. They were converted to bitmaps by tools/gen_cjk_fonts.py
 and tools/gen_latinx.sh. They are not distributed under any Reserved
@@ -41,14 +41,14 @@ also in Chinese and Japanese) are in each project's release archive.
   the GNU GPL version 2 or later with the GNU Font Embedding
   Exception; Draftling uses it under the SIL Open Font License 1.1.
 
-hack_latinx_*.c (Vietnamese letters)
+hires_latinx_*.c (Vietnamese letters)
   Noto Sans Mono v2.014
   https://github.com/notofonts/latin-greek-cyrillic
   Copyright 2022 The Noto Project Authors
 
-greybeard_latinx_*.c and the punctuation in hack_latinx_*.c come from
+lowres_latinx_*.c and the punctuation in hires_latinx_*.c come from
 Greybeard and Hack, which are MIT-licensed like the other Draftling
-fonts (see include/greybeard.h and include/hack.h).
+fonts (see include/lowres.h and include/hires.h).
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

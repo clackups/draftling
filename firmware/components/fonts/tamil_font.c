@@ -21,34 +21,34 @@
 /* ---- Embedded blobs (EMBED_FILES in CMakeLists.txt) ---- */
 
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-extern const uint8_t _binary_tamil_hack_9_bin_start[];
-extern const uint8_t _binary_tamil_hack_11_bin_start[];
-extern const uint8_t _binary_tamil_hack_14_bin_start[];
-extern const uint8_t _binary_tamil_hack_16_bin_start[];
-extern const uint8_t _binary_tamil_hack_18_bin_start[];
-extern const uint8_t _binary_tamil_hack_22_bin_start[];
-extern const uint8_t _binary_tamil_hack_26_bin_start[];
-extern const uint8_t _binary_tamil_hack_30_bin_start[];
+extern const uint8_t _binary_tamil_hires_9_bin_start[];
+extern const uint8_t _binary_tamil_hires_11_bin_start[];
+extern const uint8_t _binary_tamil_hires_14_bin_start[];
+extern const uint8_t _binary_tamil_hires_16_bin_start[];
+extern const uint8_t _binary_tamil_hires_18_bin_start[];
+extern const uint8_t _binary_tamil_hires_22_bin_start[];
+extern const uint8_t _binary_tamil_hires_26_bin_start[];
+extern const uint8_t _binary_tamil_hires_30_bin_start[];
 static const uint8_t *const s_blobs[] = {
-    _binary_tamil_hack_9_bin_start,  _binary_tamil_hack_11_bin_start,
-    _binary_tamil_hack_14_bin_start, _binary_tamil_hack_16_bin_start,
-    _binary_tamil_hack_18_bin_start, _binary_tamil_hack_22_bin_start,
-    _binary_tamil_hack_26_bin_start, _binary_tamil_hack_30_bin_start,
+    _binary_tamil_hires_9_bin_start,  _binary_tamil_hires_11_bin_start,
+    _binary_tamil_hires_14_bin_start, _binary_tamil_hires_16_bin_start,
+    _binary_tamil_hires_18_bin_start, _binary_tamil_hires_22_bin_start,
+    _binary_tamil_hires_26_bin_start, _binary_tamil_hires_30_bin_start,
 };
 #else
-extern const uint8_t _binary_tamil_greybeard_11_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_14_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_16_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_18_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_22_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_26_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_30_bin_start[];
-extern const uint8_t _binary_tamil_greybeard_34_bin_start[];
+extern const uint8_t _binary_tamil_lowres_11_bin_start[];
+extern const uint8_t _binary_tamil_lowres_14_bin_start[];
+extern const uint8_t _binary_tamil_lowres_16_bin_start[];
+extern const uint8_t _binary_tamil_lowres_18_bin_start[];
+extern const uint8_t _binary_tamil_lowres_22_bin_start[];
+extern const uint8_t _binary_tamil_lowres_26_bin_start[];
+extern const uint8_t _binary_tamil_lowres_30_bin_start[];
+extern const uint8_t _binary_tamil_lowres_34_bin_start[];
 static const uint8_t *const s_blobs[] = {
-    _binary_tamil_greybeard_11_bin_start, _binary_tamil_greybeard_14_bin_start,
-    _binary_tamil_greybeard_16_bin_start, _binary_tamil_greybeard_18_bin_start,
-    _binary_tamil_greybeard_22_bin_start, _binary_tamil_greybeard_26_bin_start,
-    _binary_tamil_greybeard_30_bin_start, _binary_tamil_greybeard_34_bin_start,
+    _binary_tamil_lowres_11_bin_start, _binary_tamil_lowres_14_bin_start,
+    _binary_tamil_lowres_16_bin_start, _binary_tamil_lowres_18_bin_start,
+    _binary_tamil_lowres_22_bin_start, _binary_tamil_lowres_26_bin_start,
+    _binary_tamil_lowres_30_bin_start, _binary_tamil_lowres_34_bin_start,
 };
 #endif
 #define BLOB_COUNT (sizeof(s_blobs) / sizeof(s_blobs[0]))

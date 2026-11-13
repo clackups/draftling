@@ -1,7 +1,7 @@
 Tamil glyphs of the Tamil language pack
 =======================================
 
-The files in this directory (tamil_greybeard_NN.bin, tamil_hack_NN.bin
+The files in this directory (tamil_lowres_NN.bin, tamil_hires_NN.bin
 and tamil_cells.h) are Modified Versions, in the sense of the SIL Open
 Font License 1.1, of the font below. They were shaped with HarfBuzz
 and converted to 1-bit bitmaps by ../tools/gen_tamil_font.py:

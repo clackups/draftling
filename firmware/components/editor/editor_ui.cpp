@@ -61,7 +61,7 @@
 #include "display_flip.h"
 #include "display_scale.h"
 #include "standby.h"
-#include "greybeard.h"
+#include "lowres.h"
 #include "battery.h"
 #include "wifi_icon.h"
 #include "freertos/task.h"
@@ -87,7 +87,7 @@
  * Status bars always use FONT_11 regardless of the body font setting.
  */
 /* The Tamil pack renders with copies of the fonts whose lines are
- * about 30 % taller (greybeard.c / hack.c, TAMIL_LINE_EXTRA), so the
+ * about 30 % taller (lowres.c / hires.c, TAMIL_LINE_EXTRA), so the
  * Tamil letters can be drawn larger. */
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
 #define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
@@ -95,24 +95,24 @@
 #define SLOT_FONT(f) (&f)
 #endif
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-#include "hack.h"
-#define FONT_9  SLOT_FONT(hack_9)
-#define FONT_11 SLOT_FONT(hack_11)
-#define FONT_14 SLOT_FONT(hack_14)
-#define FONT_16 SLOT_FONT(hack_16)
-#define FONT_18 SLOT_FONT(hack_18)
-#define FONT_22 SLOT_FONT(hack_22)
-#define FONT_26 SLOT_FONT(hack_26)
-#define FONT_30 SLOT_FONT(hack_30)
+#include "hires.h"
+#define FONT_9  SLOT_FONT(hires_9)
+#define FONT_11 SLOT_FONT(hires_11)
+#define FONT_14 SLOT_FONT(hires_14)
+#define FONT_16 SLOT_FONT(hires_16)
+#define FONT_18 SLOT_FONT(hires_18)
+#define FONT_22 SLOT_FONT(hires_22)
+#define FONT_26 SLOT_FONT(hires_26)
+#define FONT_30 SLOT_FONT(hires_30)
 #else
-#define FONT_11 SLOT_FONT(greybeard_11)
-#define FONT_14 SLOT_FONT(greybeard_14)
-#define FONT_16 SLOT_FONT(greybeard_16)
-#define FONT_18 SLOT_FONT(greybeard_18)
-#define FONT_22 SLOT_FONT(greybeard_22)
-#define FONT_26 SLOT_FONT(greybeard_26)
-#define FONT_30 SLOT_FONT(greybeard_30)
-#define FONT_34 SLOT_FONT(greybeard_34)
+#define FONT_11 SLOT_FONT(lowres_11)
+#define FONT_14 SLOT_FONT(lowres_14)
+#define FONT_16 SLOT_FONT(lowres_16)
+#define FONT_18 SLOT_FONT(lowres_18)
+#define FONT_22 SLOT_FONT(lowres_22)
+#define FONT_26 SLOT_FONT(lowres_26)
+#define FONT_30 SLOT_FONT(lowres_30)
+#define FONT_34 SLOT_FONT(lowres_34)
 #endif
 
 static const char *TAG = "EditorUI";
@@ -2321,14 +2321,14 @@ static lv_style_t *style_for_type(md_line_type_t type)
 static int char_width_for_font(const lv_font_t *font)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-    if (font == FONT_30) return 28;   /* hack_30 (47 px): adv_w 448 / 16 */
-    if (font == FONT_26) return 25;   /* hack_26 (41 px): adv_w 400 / 16 */
-    if (font == FONT_22) return 21;   /* hack_22 (34 px): adv_w 336 / 16 */
-    if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */
-    if (font == FONT_16) return 15;   /* hack_16 (25 px): adv_w 240 / 16 */
-    if (font == FONT_14) return 13;   /* hack_14 (21 px): adv_w 208 / 16 */
-    if (font == FONT_9)  return 10;   /* hack_9  (16 px): adv_w 160 / 16 */
-    return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
+    if (font == FONT_30) return 28;   /* hires_30 (47 px): adv_w 448 / 16 */
+    if (font == FONT_26) return 25;   /* hires_26 (41 px): adv_w 400 / 16 */
+    if (font == FONT_22) return 21;   /* hires_22 (34 px): adv_w 336 / 16 */
+    if (font == FONT_18) return 17;   /* hires_18 (28 px): adv_w 272 / 16 */
+    if (font == FONT_16) return 15;   /* hires_16 (25 px): adv_w 240 / 16 */
+    if (font == FONT_14) return 13;   /* hires_14 (21 px): adv_w 208 / 16 */
+    if (font == FONT_9)  return 10;   /* hires_9  (16 px): adv_w 160 / 16 */
+    return 11;                        /* hires_11 (19 px): adv_w 176 / 16 */
 #else
     if (font == FONT_34) return 18;   /* adv_w 288 / 16 = 18 */
     if (font == FONT_30) return 16;   /* adv_w 256 / 16 = 16 */
@@ -13464,9 +13464,9 @@ extern "C" void editor_ui_init(void)
      * rendered. High-density boards use the Hack family; all others
      * use Greybeard. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-    hack_init();
+    hires_init();
 #else
-    greybeard_init();
+    lowres_init();
 #endif
 #ifdef DRAFTLING_HAS_IME
     ime_init(&s_ime_host, ime_builtin_ja_dict(), ime_builtin_zh_dict());
