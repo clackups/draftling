@@ -13,6 +13,78 @@ in the git log.
   ESP32-S3-LCD-EV-Board-SUB3 4.3" touch display, with a USB keyboard
   in its USB-A port or a Bluetooth keyboard. It is the first ESP32-S31
   board Draftling supports. Not yet tested on the device.
+- **Tamil language pack**: a new firmware image with US-English and
+  Tamil. It has the official Tamil keyboard layouts -- Tamil 99 (the
+  Government of Tamil Nadu standard, with its automatic pulli), the
+  Tamil Typewriter layout and InScript -- and the Taravinyas input
+  engine, which picks letters by place and manner of articulation.
+  Tamil text is drawn with Noto Sans Tamil, each consonant joined
+  with its vowel sign, the letters of a word joined up and the k-ssa
+  and sri ligatures in place. Lines are spaced about 30 % further
+  apart in this firmware so the Tamil letters can be drawn large
+  enough to read. See docs/language-packs.md.
+
+### Changed
+
+- **Layout names in Active layouts**: F1 -> Settings -> Keyboard ->
+  Active layouts now shows each layout's full name next to its short
+  tag (e.g. "SE/FI  Swedish / Finnish", "TA-TW  Tamil Typewriter").
+
+### Fixed
+
+- **Seeed reTerminal Sticky with the SSD2677 screen**: the picture was
+  shown upside down on Sticky units whose screen uses the SSD2677
+  controller. It is now the right way up.
+
+## [1.0.26] - 2026-11-12
+
+### Added
+
+- **Canadian French keyboard layout**: the default firmware now
+  includes the traditional Canadian French layout (FR-CA, the Windows
+  "Canadian French" layout), with e-acute on its own key and the
+  circumflex, cedilla, diaeresis, grave and acute (AltGr) dead keys.
+  Turn it on in F1 -> Settings -> Keyboard -> Active layouts.
+- **OnePage Reader support**: the OnePage Reader (ESP32-C61, 800x480
+  e-paper) is a new supported board. Without a keyboard, holding Power
+  for 2 seconds puts it to sleep and holding the Up (PREV) side key
+  for 2 seconds forgets the paired keyboards. With a keyboard
+  connected, Power opens the F1 menu, the side keys are Up / Down and
+  the four front keys are Esc / Left / Right / Enter.
+
+### Changed
+
+- **Choosing the Draftbox server**: F1 -> Sync -> "Connect a Draftbox
+  repository..." now first offers a choice between `draftbox.art` and
+  "connect to a different server..." instead of a site name field
+  pre-filled with `draftbox.art`. Only a different server asks for the
+  server name.
+- **Font set on the Hardware information page**: F1 -> System &
+  Storage -> Hardware information now says whether the board uses the
+  high-definition (Hack) or low-definition (Greybeard) fonts.
+- **WiFi first in Connectivity**: F1 -> Connectivity now lists
+  "WiFi..." above "Bluetooth...".
+- **Ctrl+G connects WiFi**: like F1 -> Sync -> Synchronize, Ctrl+G now
+  connects to WiFi first when it is not connected and then starts the
+  sync, instead of asking you to connect WiFi.
+
+### Fixed
+
+- **Keyboard reconnect on the NiceMCU-C5E-DEV_2.8IPS**: after a
+  keyboard had connected once, every later connection attempt failed
+  ("Connection failed: no link, reason 0x100") until the board was
+  restarted. It now reconnects normally.
+
+## [1.0.25] - 2026-11-10
+
+### Added
+
+- **Character name suggestions in screenplays**: in a Fountain
+  document, typing the first letters of a character cue drops down the
+  character names already used in the script that start with them,
+  most recent first. Up/Down pick a name, Enter or Tab inserts it and
+  Esc closes the list. On by default; switch it off with F1 ->
+  Settings -> Editor -> "Suggest character names".
 
 ### Changed
 

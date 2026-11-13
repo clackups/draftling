@@ -216,10 +216,16 @@ static size_t compute_doc_buf_size(void)
      * Before the flat text copy was dropped, the gap buffer and the copy
      * took all of it, leaving only the reserve.
      *
+     * On a chip with only 2 MB of PSRAM (OnePage Reader, ESP32-C61)
+     * the reserve is half of the PSRAM instead; a fixed 2 MB reserve
+     * there left only the 64 KB minimum.
+     *
      * Min 64 KB keeps editor_open_file() useful on a tight PSRAM. */
     const size_t MIN_BUF = 64  * 1024;
-    const size_t RUNTIME_RESERVE = 2 * 1024 * 1024;
     const size_t ALIGN   = 4 * 1024;
+    size_t RUNTIME_RESERVE = 2 * 1024 * 1024;
+    size_t total_psram = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
+    if (total_psram / 2 < RUNTIME_RESERVE) RUNTIME_RESERVE = total_psram / 2;
 
     size_t free_psram = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     size_t usable;

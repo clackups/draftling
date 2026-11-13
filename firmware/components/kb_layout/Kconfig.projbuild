@@ -13,7 +13,7 @@ choice DRAFTLING_LANG_PACK
         individually.
 
     config DRAFTLING_LANG_PACK_DEFAULT
-        bool "Default (US, Ukrainian, German, French, Hebrew and 16 more European layouts)"
+        bool "Default (US, Ukrainian, German, French, Hebrew and 17 more European and Canadian layouts)"
 
     config DRAFTLING_LANG_PACK_VIETNAMESE
         bool "Vietnamese (US, Vietnamese Telex)"
@@ -41,6 +41,13 @@ choice DRAFTLING_LANG_PACK
             PinyinIME dictionary, about 1 MB), with the GB 2312 hanzi
             pixel fonts in Simplified Chinese glyph style.
 
+    config DRAFTLING_LANG_PACK_TAMIL
+        bool "Tamil (US, Tamil 99, Typewriter, InScript, Taravinyas)"
+        help
+            US-English plus Tamil with the official input methods
+            (Tamil 99, Tamil Typewriter, InScript) and the Taravinyas
+            input engine, with Tamil glyphs from Noto Sans Tamil.
+
 endchoice
 
 config DRAFTLING_LANG_PACK_NAME
@@ -50,6 +57,7 @@ config DRAFTLING_LANG_PACK_NAME
     default "korean" if DRAFTLING_LANG_PACK_KOREAN
     default "japanese" if DRAFTLING_LANG_PACK_JAPANESE
     default "chinese" if DRAFTLING_LANG_PACK_CHINESE
+    default "tamil" if DRAFTLING_LANG_PACK_TAMIL
 
 config KB_LAYOUT_ENABLE_US
     bool "US-English (QWERTY)"
@@ -208,6 +216,15 @@ config KB_LAYOUT_ENABLE_TR
         Enable the Turkish Q keyboard layout (dotless i, g-breve, s-cedilla). Pulls in the Latin Extended-A font
         subset.
 
+config KB_LAYOUT_ENABLE_FR_CA
+    bool "Canadian French, traditional (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the traditional Canadian French QWERTY keyboard layout
+        (Windows "Canadian French", XKB "ca"): e-acute on its own key,
+        circumflex / cedilla / diaeresis / grave dead keys, guillemets
+        on the key left of Z.
+
 config KB_LAYOUT_ENABLE_VI
     bool "Vietnamese (Telex input)"
     default y if DRAFTLING_LANG_PACK_VIETNAMESE
@@ -243,6 +260,49 @@ config KB_LAYOUT_ENABLE_ZH
         US-English keyboard, with a word dictionary derived from the
         Android Open Source Project PinyinIME (about 0.7 MB). Pulls
         in the CJK fonts.
+
+config KB_LAYOUT_ENABLE_TA99
+    bool "Tamil 99"
+    default y if DRAFTLING_LANG_PACK_TAMIL
+    help
+        Enable the Tamil 99 layout, the Government of Tamil Nadu
+        standard (G.O. Ms. 17 of 1999): vowels on the left hand,
+        consonants on the right; a vowel after a consonant joins it,
+        the pulli is on F and is added automatically between doubled
+        and nasal + stop consonants. Pulls in the Tamil fonts.
+
+config KB_LAYOUT_ENABLE_TA_TW
+    bool "Tamil Typewriter"
+    default y if DRAFTLING_LANG_PACK_TAMIL
+    help
+        Enable the Tamil Typewriter layout of the Tamil Nadu
+        government typewriting examinations (the layout of eKalappai
+        and Keyman's "Thamizha" typewriter keyboards): glyph-piece
+        keys typed in visual order, e.g. the e / ee / ai sign before
+        the consonant. Pulls in the Tamil fonts.
+
+config KB_LAYOUT_ENABLE_TA_IN
+    bool "Tamil InScript"
+    default y if DRAFTLING_LANG_PACK_TAMIL
+    help
+        Enable the Tamil InScript layout, the Government of India
+        standard for Indian scripts (as in Windows "Tamil" and XKB
+        "in(tam)"): vowel signs on the left hand, consonants on the
+        right, independent vowels with Shift. Pulls in the Tamil
+        fonts.
+
+config KB_LAYOUT_ENABLE_TA_TV
+    bool "Tamil Taravinyas"
+    default y if DRAFTLING_LANG_PACK_TAMIL
+    help
+        Enable the Taravinyas Tamil input engine
+        (github.com/BandhanPramanik/tamil-input-engine-checkbox): a
+        letter is picked by its place of articulation and its
+        manner, with the home-row keys. Pulls in the Tamil fonts.
+
+config DRAFTLING_HAS_TAMIL
+    bool
+    default y if KB_LAYOUT_ENABLE_TA99 || KB_LAYOUT_ENABLE_TA_TW || KB_LAYOUT_ENABLE_TA_IN || KB_LAYOUT_ENABLE_TA_TV
 
 # Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
 # letters of the Central / Eastern European, Baltic and Turkish

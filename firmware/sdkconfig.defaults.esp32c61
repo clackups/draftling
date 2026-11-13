@@ -1,0 +1,48 @@
+# ESP32-C61-specific defaults
+# Applied automatically when: idf.py set-target esp32c61
+#
+# Currently the only ESP32-C61 board supported is the OnePage Reader
+# (ESP32-C61HR2: 2 MB in-package quad PSRAM, 16 MB external flash).
+# Mirrors sdkconfig.defaults.esp32c5 where the chip allows it.
+
+# The vendor firmware uses DIO at 80 MHz for the PY25Q128 flash.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# PSRAM. The vendor found the ESP32-C61HR2's PSRAM initializes
+# reliably only at 40 MHz or below (crosspoint-onepage platformio.ini).
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_40M=y
+# Push WiFi/LWIP dynamic allocations to PSRAM to free internal DRAM.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+
+# WiFi: same internal-RAM budget as the ESP32-S3 / ESP32-C5 boards
+# (see sdkconfig.defaults.esp32s3 for the reasoning behind each value).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF=1
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=6
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+
+# The default ESP-IDF main task stack (3.5 KB) is too tight for the
+# editor's call chains; match the ESP32-S3 build.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Internal RAM: 320 KB of HP SRAM hold both the code placed in RAM and
+# the heap; keep the WiFi / LWIP hot paths in flash (see
+# sdkconfig.defaults.esp32c5).
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_EXTRA_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_LWIP_IRAM_OPTIMIZATION=n
+
+# The C61 has the least internal RAM of any supported chip; with the
+# BLE controller up, esp_wifi_init() failed with ESP_ERR_NO_MEM (38 KB
+# internal heap left). Fewer static WiFi TX buffers (each ~1.6 KB,
+# allocated at esp_wifi_init()), allocations above 4 KB go to PSRAM
+# instead of above 16 KB, and the SPI master ISR runs from flash.
+CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPI_MASTER_ISR_IN_IRAM=n

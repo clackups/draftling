@@ -1,3 +1,10 @@
 # ESP32-C5 additions to sdkconfig.defaults.bluetooth (loaded by
 # ESP-IDF right after it). Put Bluedroid's allocations in PSRAM first.
 CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+
+# Legacy (BLE 4.2) connection commands only, as on the ESP32-C61 (see
+# sdkconfig.defaults.bluetooth.esp32c61): with BLE 5.0 features on,
+# Bluedroid reconnects with LE Extended Create Connection after any
+# BLE 5.0 event, the controller refuses it after legacy scanning (Cmd
+# Disallowed) and every reconnect fails with reason 0x100.
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n

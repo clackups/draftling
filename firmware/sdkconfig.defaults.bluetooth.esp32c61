@@ -1,0 +1,13 @@
+# ESP32-C61 additions to sdkconfig.defaults.bluetooth (loaded by
+# ESP-IDF right after it). Put Bluedroid's allocations in PSRAM first.
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y
+
+# Legacy (BLE 4.2) connection commands only. With BLE 5.0 features
+# compiled in, Bluedroid switches to LE Extended Create Connection
+# (HCI 0x2043) as soon as any BLE 5.0 event has been seen -- e.g. the
+# keyboard's PHY update on the first connection. The scan, however,
+# runs with the legacy commands, and the C61 controller then refuses
+# the extended one ("Cmd Disallowed", mixing legacy and extended
+# commands), so every reconnect failed with reason 0x100 (connection
+# cancelled) until a reboot. Nothing in Draftling uses BLE 5.0.
+CONFIG_BT_BLE_50_FEATURES_SUPPORTED=n

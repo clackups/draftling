@@ -166,4 +166,5 @@ extern const editor_format_t md_editor_format = {
     md_tab,
     "Markdown formatting",
     md_help,
+    NULL,
 };

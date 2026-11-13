@@ -70,4 +70,5 @@ extern const editor_format_t text_editor_format = {
     txt_tab,
     "Plain text",
     txt_help,
+    NULL,
 };

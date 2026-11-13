@@ -40,6 +40,7 @@
 #include <cstdint>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <esp_log.h>
 #include <driver/gpio.h>
 #include <driver/i2c_master.h>
@@ -263,7 +264,12 @@ static bool ina226_battery_absent(int cell_mv)
  * USB cable is unplugged and the e-paper / radio load pulls the cell
  * below its post-charge resting voltage. */
 #define SMOOTH_SAMPLES 8
-static uint32_t s_smooth_acc = 0;   /* accumulated mV * SMOOTH_SAMPLES */
+static uint32_t s_smooth_acc = 0;   /* accumulated mV * SMOOTH_SAMPLES; 0 = no valid sample yet */
+
+/* No single Li-ion cell reads above this; an ADC sample that converts
+ * higher is a bad conversion (the ESP32-C61 reads the pin near full
+ * scale until its radio is up) and is not fed to the average. */
+#define ADC_BATT_MAX_PLAUSIBLE_MV 4600
 static uint32_t s_bq27220_smooth_acc = 0;
 static bool     s_bq27220_smooth_primed = false;
 
@@ -323,27 +329,50 @@ static int mv_to_percent(int mv)
 /* Voltage divider ratio default (overridden in battery_init) */
 #define DIVIDER_RATIO_DEFAULT  3
 
-/* Map GPIO number to ADC1 channel.  Only a handful of pins
- * are wired to ADC1 on the ESP32-S3; we support the ones
- * commonly used by the supported boards. */
+/* Map a GPIO number to its ADC1 channel on the current target. */
 static adc_channel_t gpio_to_channel(int gpio)
 {
-    switch (gpio) {
-    case 1:  return ADC_CHANNEL_0;
-    case 2:  return ADC_CHANNEL_1;
-    case 3:  return ADC_CHANNEL_2;
-    case 4:  return ADC_CHANNEL_3;
-    case 5:  return ADC_CHANNEL_4;
-    case 6:  return ADC_CHANNEL_5;
-    case 7:  return ADC_CHANNEL_6;
-    case 8:  return ADC_CHANNEL_7;
-    case 9:  return ADC_CHANNEL_8;
-    case 10: return ADC_CHANNEL_9;
-    default:
-        ESP_LOGW(TAG, "Unsupported battery GPIO%d, falling back to CH3 (GPIO4)", gpio);
-        return ADC_CHANNEL_3;
+    adc_unit_t unit;
+    adc_channel_t chan;
+    if (adc_oneshot_io_to_channel(gpio, &unit, &chan) == ESP_OK &&
+        unit == ADC_UNIT_1) {
+        return chan;
     }
+    ESP_LOGW(TAG, "GPIO%d is not an ADC1 pin, falling back to channel 3", gpio);
+    return ADC_CHANNEL_3;
 }
+
+/* ADC1 is shared between the battery reading and battery_read_aux_mv()
+ * (a board's resistor-ladder buttons), which run on different tasks;
+ * adc_oneshot_read() fails instead of waiting while the unit is busy,
+ * so every read takes this lock. */
+static SemaphoreHandle_t s_adc_lock = NULL;
+
+static esp_err_t adc_unit_ensure(void)
+{
+    if (!s_adc_lock) {
+        s_adc_lock = xSemaphoreCreateMutex();
+        if (!s_adc_lock) return ESP_ERR_NO_MEM;
+    }
+    if (s_adc_handle) return ESP_OK;
+    adc_oneshot_unit_init_cfg_t unit_cfg = {};
+    unit_cfg.unit_id  = ADC_UNIT_1;
+    unit_cfg.ulp_mode = ADC_ULP_MODE_DISABLE;
+    return adc_oneshot_new_unit(&unit_cfg, &s_adc_handle);
+}
+
+static esp_err_t adc_read_locked(adc_channel_t chan, int *raw)
+{
+    xSemaphoreTake(s_adc_lock, portMAX_DELAY);
+    esp_err_t err = adc_oneshot_read(s_adc_handle, chan, raw);
+    xSemaphoreGive(s_adc_lock);
+    return err;
+}
+
+/* Optional USB-present input (battery_set_usb_detect_gpio()) for the
+ * ADC backend's charging indicator. */
+static int s_usb_det_gpio  = -1;
+static int s_usb_det_level = 0;
 
 /* Pulse the enable GPIO on (if any), let the divider settle, return whether
  * we actually toggled it (so the caller can turn it off afterwards). */
@@ -398,11 +427,7 @@ extern "C" int battery_init(int gpio_num, int enable_gpio, int divider)
     }
 
     /* Create oneshot ADC unit */
-    adc_oneshot_unit_init_cfg_t unit_cfg = {};
-    unit_cfg.unit_id  = ADC_UNIT_1;
-    unit_cfg.ulp_mode = ADC_ULP_MODE_DISABLE;
-
-    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &s_adc_handle);
+    esp_err_t err = adc_unit_ensure();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "ADC unit init failed: %s", esp_err_to_name(err));
         return -1;
@@ -438,10 +463,11 @@ extern "C" int battery_init(int gpio_num, int enable_gpio, int divider)
         s_cali_handle = NULL;
     }
 
-    /* Seed the smoother with the first real reading */
+    /* Seed the smoother with the first reading (unless it is
+     * implausible, see ADC_BATT_MAX_PLAUSIBLE_MV). */
     bool en = enable_divider();
     int raw = 0;
-    adc_oneshot_read(s_adc_handle, s_channel, &raw);
+    adc_read_locked(s_channel, &raw);
     disable_divider(en);
 
     int pin_mv = 0;
@@ -451,7 +477,8 @@ extern "C" int battery_init(int gpio_num, int enable_gpio, int divider)
         pin_mv = (raw * ADC_VREF_MV) / 4095;
     }
     int bat_mv = pin_mv * s_divider;
-    s_smooth_acc = (uint32_t)bat_mv * SMOOTH_SAMPLES;
+    s_smooth_acc = (bat_mv <= ADC_BATT_MAX_PLAUSIBLE_MV)
+                       ? (uint32_t)bat_mv * SMOOTH_SAMPLES : 0;
 
     s_backend = BATT_BACKEND_ADC;
     ESP_LOGI(TAG, "Battery monitor initialized on GPIO%d (ch%d, div=%d, en=%d), "
@@ -1328,7 +1355,7 @@ extern "C" int battery_read_mv(void)
 
     bool en = enable_divider();
     int raw = 0;
-    esp_err_t err = adc_oneshot_read(s_adc_handle, s_channel, &raw);
+    esp_err_t err = adc_read_locked(s_channel, &raw);
     disable_divider(en);
     if (err != ESP_OK) return 0;
 
@@ -1341,8 +1368,16 @@ extern "C" int battery_read_mv(void)
 
     int bat_mv = pin_mv * s_divider;
 
-    /* Update exponential moving average */
-    s_smooth_acc = s_smooth_acc - (s_smooth_acc / SMOOTH_SAMPLES) + (uint32_t)bat_mv;
+    /* Update exponential moving average, skipping bad conversions and
+     * seeding it with the first good one. */
+    if (bat_mv <= ADC_BATT_MAX_PLAUSIBLE_MV) {
+        if (s_smooth_acc == 0) {
+            s_smooth_acc = (uint32_t)bat_mv * SMOOTH_SAMPLES;
+        } else {
+            s_smooth_acc = s_smooth_acc - (s_smooth_acc / SMOOTH_SAMPLES) +
+                           (uint32_t)bat_mv;
+        }
+    }
     return (int)(s_smooth_acc / SMOOTH_SAMPLES);
 }
 
@@ -1473,7 +1508,74 @@ extern "C" int battery_read_percent(void)
     if (s_backend != BATT_BACKEND_ADC) return -1;
 
     int mv = battery_read_mv();
-    return mv_to_percent(mv);
+    /* 0 = no plausible sample yet: hide the indicator for now. */
+    return (mv > 0) ? mv_to_percent(mv) : -1;
+}
+
+extern "C" int battery_read_aux_mv(int gpio)
+{
+    static adc_channel_t s_aux_chan = (adc_channel_t)-1;
+    static int s_aux_gpio = -1;
+    static adc_cali_handle_t s_aux_cali = NULL;
+
+    if (adc_unit_ensure() != ESP_OK) return -1;
+    if (gpio != s_aux_gpio) {
+        adc_unit_t unit;
+        adc_channel_t chan;
+        if (adc_oneshot_io_to_channel(gpio, &unit, &chan) != ESP_OK ||
+            unit != ADC_UNIT_1) {
+            return -1;
+        }
+        adc_oneshot_chan_cfg_t chan_cfg = {};
+        chan_cfg.atten    = ADC_ATTEN_DB_12;
+        chan_cfg.bitwidth = ADC_BITWIDTH_12;
+        xSemaphoreTake(s_adc_lock, portMAX_DELAY);
+        esp_err_t err = adc_oneshot_config_channel(s_adc_handle, chan, &chan_cfg);
+        xSemaphoreGive(s_adc_lock);
+        if (err != ESP_OK) return -1;
+        /* Curve fitting where the chip has it (not the ESP32-S31: the
+         * raw conversion below is used there, as in battery_init()). */
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        if (s_aux_cali) {
+            adc_cali_delete_scheme_curve_fitting(s_aux_cali);
+            s_aux_cali = NULL;
+        }
+        adc_cali_curve_fitting_config_t cali_cfg = {};
+        cali_cfg.unit_id  = ADC_UNIT_1;
+        cali_cfg.chan     = chan;
+        cali_cfg.atten    = ADC_ATTEN_DB_12;
+        cali_cfg.bitwidth = ADC_BITWIDTH_12;
+        if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &s_aux_cali) != ESP_OK) {
+            s_aux_cali = NULL;
+        }
+#endif
+        s_aux_chan = chan;
+        s_aux_gpio = gpio;
+    }
+
+    int raw = 0;
+    if (adc_read_locked(s_aux_chan, &raw) != ESP_OK) return -1;
+    int mv = 0;
+    if (s_aux_cali) {
+        adc_cali_raw_to_voltage(s_aux_cali, raw, &mv);
+    } else {
+        mv = (raw * ADC_VREF_MV) / 4095;
+    }
+    return mv;
+}
+
+extern "C" void battery_set_usb_detect_gpio(int gpio, int active_level)
+{
+    s_usb_det_gpio  = gpio;
+    s_usb_det_level = active_level ? 1 : 0;
+    if (gpio < 0) return;
+    gpio_config_t g = {};
+    g.intr_type    = GPIO_INTR_DISABLE;
+    g.mode         = GPIO_MODE_INPUT;
+    g.pin_bit_mask = 1ULL << gpio;
+    g.pull_up_en   = active_level ? GPIO_PULLUP_DISABLE : GPIO_PULLUP_ENABLE;
+    g.pull_down_en = active_level ? GPIO_PULLDOWN_ENABLE : GPIO_PULLDOWN_DISABLE;
+    gpio_config(&g);
 }
 
 extern "C" int battery_read_charging(void)
@@ -1544,8 +1646,12 @@ extern "C" int battery_read_charging(void)
         if (battery_read_mv() <= 0) return -1;
         return ((src & 0x07) == M5PM1_PWR_SRC_5VIN) ? 1 : 0;
     }
-    /* ADC backend, CW2017 (no charger IC on its bus, no current
-     * register) and "no backend" cannot tell. */
+    if (s_backend == BATT_BACKEND_ADC && s_usb_det_gpio >= 0) {
+        /* Like the M5PM1 above: "charging" while USB powers the board. */
+        return (gpio_get_level((gpio_num_t)s_usb_det_gpio) == s_usb_det_level) ? 1 : 0;
+    }
+    /* ADC backend without a USB-present pin, CW2017 (no charger IC on
+     * its bus, no current register) and "no backend" cannot tell. */
     return -1;
 }
 

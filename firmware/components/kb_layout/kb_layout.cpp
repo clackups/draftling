@@ -4,8 +4,9 @@
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
  * Swiss French, Italian, Portuguese, Spanish, United Kingdom and
- * Korean layouts. Vietnamese, Japanese and Chinese type on the US layout
- * and are composed by an input method (components/ime/).
+ * Korean and Tamil InScript layouts. Vietnamese, Japanese, Chinese and
+ * the other Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on
+ * the US layout and are composed by an input method (components/ime/).
  *
  * Non-ASCII characters are encoded as UTF-8 byte sequences using
  * hex escapes to keep the source file ASCII-only.
@@ -24,7 +25,7 @@
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
 /* Default "Active language layouts" set: US when compiled in, plus the
- * input-method layout (VI, KO, JA, ZH) of a pack, else the first
+ * input-method layout (VI, KO, JA, ZH, TA99) of a pack, else the first
  * compiled-in layout so the set is never empty. */
 static uint32_t default_active_mask(void)
 {
@@ -40,6 +41,9 @@ static uint32_t default_active_mask(void)
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
     mask |= (1u << KB_LAYOUT_ZH);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    mask |= (1u << KB_LAYOUT_TA99);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
     mask |= (1u << KB_LAYOUT_US);
@@ -168,7 +172,7 @@ typedef struct {
 /* ------------------------------------------------------------------ */
 
 /* unshifted: keycodes 0x04..0x38 */
-static const char *US_NORMAL[] = {
+static const char *const US_NORMAL[] = {
     "a","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F */
     "m","n","o","p","q","r","s","t","u","v","w","x",  /* 10-1B */
     "y","z",                                          /* 1C-1D */
@@ -179,7 +183,7 @@ static const char *US_NORMAL[] = {
 };
 
 /* shifted */
-static const char *US_SHIFT[] = {
+static const char *const US_SHIFT[] = {
     "A","B","C","D","E","F","G","H","I","J","K","L",
     "M","N","O","P","Q","R","S","T","U","V","W","X",
     "Y","Z",
@@ -202,7 +206,7 @@ static const char *US_SHIFT[] = {
  *   ss = \xC3\x9F
  */
 
-static const char *DE_NORMAL[] = {
+static const char *const DE_NORMAL[] = {
     "a","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F */
     "m","n","o","p","q","r","s","t","u","v","w","x",  /* 10-1B */
     "z","y",                                          /* 1C-1D: Y and Z swapped */
@@ -220,7 +224,7 @@ static const char *DE_NORMAL[] = {
     ",",".","-",                                       /* 36-38 */
 };
 
-static const char *DE_SHIFT[] = {
+static const char *const DE_SHIFT[] = {
     "A","B","C","D","E","F","G","H","I","J","K","L",
     "M","N","O","P","Q","R","S","T","U","V","W","X",
     "Z","Y",
@@ -271,7 +275,7 @@ static const key_entry_t DE_EXTRA[] = {
  *   c-cedilla = \xC3\xA7, C-cedilla = \xC3\x87
  */
 
-static const char *FR_NORMAL[] = {
+static const char *const FR_NORMAL[] = {
     "q","b","c","d","e","f","g","h","i","j","k","l",  /* 04-0F: a->q */
     ",","n","o","p","a","r","s","t","u","v","z","x",  /* 10-1B: m->,q->a,w->z */
     "y","w",                                          /* 1C-1D: z->w (AZERTY) */
@@ -299,7 +303,7 @@ static const char *FR_NORMAL[] = {
     "!",                                              /* 38 */
 };
 
-static const char *FR_SHIFT[] = {
+static const char *const FR_SHIFT[] = {
     "Q","B","C","D","E","F","G","H","I","J","K","L",
     "?","N","O","P","A","R","S","T","U","V","Z","X",
     "Y","W",
@@ -359,7 +363,7 @@ static const key_entry_t FR_EXTRA[] = {
  * Cyrillic block: U+0400..U+04FF -> UTF-8: 0xD0 0x80..0xBF, 0xD1 0x80..0xBF
  */
 
-static const char *UA_NORMAL[] = {
+static const char *const UA_NORMAL[] = {
     /* 04 a */ "\xD1\x84",   /* f (Cyrillic) */
     /* 05 b */ "\xD0\xB8",   /* i (short) */
     /* 06 c */ "\xD1\x81",   /* s */
@@ -412,7 +416,7 @@ static const char *UA_NORMAL[] = {
 };
 
 /* Uppercase Ukrainian */
-static const char *UA_SHIFT[] = {
+static const char *const UA_SHIFT[] = {
     /* 04 A */ "\xD0\xA4",   /* F */
     /* 05 B */ "\xD0\x98",   /* I (short) */
     /* 06 C */ "\xD0\xA1",   /* S */
@@ -479,7 +483,7 @@ static const char *UA_SHIFT[] = {
  * Hebrew letter UTF-8 encoding: U+05D0..U+05EA -> 0xD7 0x90..0xAA
  */
 
-static const char *HE_NORMAL[] = {
+static const char *const HE_NORMAL[] = {
     /* 04 a */ "\xD7\xA9",   /* shin     U+05E9 */
     /* 05 b */ "\xD7\xA0",   /* nun      U+05E0 */
     /* 06 c */ "\xD7\x91",   /* bet      U+05D1 */
@@ -531,7 +535,7 @@ static const char *HE_NORMAL[] = {
     /* 38 / */ ".",
 };
 
-static const char *HE_SHIFT[] = {
+static const char *const HE_SHIFT[] = {
     /* Shifted letter keys produce Latin uppercase per SI 1452-2 */
     /* 04 A */ "A",
     /* 05 B */ "B",
@@ -594,7 +598,7 @@ static const char *HE_SHIFT[] = {
  * Hangul input method composes them into syllables. Shift only
  * changes the five keys with a tense / extra form (Q W E R T -> the
  * double consonants, O P -> yae / ye); digits and symbols are US. */
-static const char *KO_NORMAL[] = {
+static const char *const KO_NORMAL[] = {
     "\xE3\x85\x81", /* 04 a: mieum */
     "\xE3\x85\xA0", /* 05 b: yu */
     "\xE3\x85\x8A", /* 06 c: chieuch */
@@ -627,7 +631,7 @@ static const char *KO_NORMAL[] = {
     NULL,";","'","`",",",".","/",                      /* 32-38 */
 };
 
-static const char *KO_SHIFT[] = {
+static const char *const KO_SHIFT[] = {
     "\xE3\x85\x81", /* 04 A: mieum */
     "\xE3\x85\xA0", /* 05 B: yu */
     "\xE3\x85\x8A", /* 06 C: chieuch */
@@ -660,6 +664,148 @@ static const char *KO_SHIFT[] = {
     NULL,":","\x22","~","<",">","?",
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_KO */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+/* ------------------------------------------------------------------ */
+/* Tamil InScript                                                     */
+/* ------------------------------------------------------------------ */
+
+/* The Government of India InScript layout for Tamil, as in Windows
+ * "Tamil" and XKB "in(tam)": vowel signs on the left hand (Shift: the
+ * independent vowels), consonants on the right, pulli on D. Text is
+ * typed in logical order (consonant, then vowel sign); the Tamil font
+ * reorders the signs drawn left of the consonant. Keys XKB leaves
+ * empty (Y, I, O, [) type nothing. AltGr + digit types the Tamil
+ * digits. */
+static const char *const TA_IN_NORMAL[] = {
+    /* 04 */ "\xE0\xAF\x8B",  /* U+0BCB tamil vowel sign oo */
+    /* 05 */ "\xE0\xAE\xB5",  /* U+0BB5 tamil letter va */
+    /* 06 */ "\xE0\xAE\xAE",  /* U+0BAE tamil letter ma */
+    /* 07 */ "\xE0\xAF\x8D",  /* U+0BCD tamil sign virama */
+    /* 08 */ "\xE0\xAE\xBE",  /* U+0BBE tamil vowel sign aa */
+    /* 09 */ "\xE0\xAE\xBF",  /* U+0BBF tamil vowel sign i */
+    /* 0A */ "\xE0\xAF\x81",  /* U+0BC1 tamil vowel sign u */
+    /* 0B */ "\xE0\xAE\xAA",  /* U+0BAA tamil letter pa */
+    /* 0C */ NULL,
+    /* 0D */ "\xE0\xAE\xB0",  /* U+0BB0 tamil letter ra */
+    /* 0E */ "\xE0\xAE\x95",  /* U+0B95 tamil letter ka */
+    /* 0F */ "\xE0\xAE\xA4",  /* U+0BA4 tamil letter ta */
+    /* 10 */ "\xE0\xAE\xB8",  /* U+0BB8 tamil letter sa */
+    /* 11 */ "\xE0\xAE\xB2",  /* U+0BB2 tamil letter la */
+    /* 12 */ NULL,
+    /* 13 */ "\xE0\xAE\x9C",  /* U+0B9C tamil letter ja */
+    /* 14 */ "\xE0\xAF\x8C",  /* U+0BCC tamil vowel sign au */
+    /* 15 */ "\xE0\xAF\x80",  /* U+0BC0 tamil vowel sign ii */
+    /* 16 */ "\xE0\xAF\x87",  /* U+0BC7 tamil vowel sign ee */
+    /* 17 */ "\xE0\xAF\x82",  /* U+0BC2 tamil vowel sign uu */
+    /* 18 */ "\xE0\xAE\xB9",  /* U+0BB9 tamil letter ha */
+    /* 19 */ "\xE0\xAE\xA8",  /* U+0BA8 tamil letter na */
+    /* 1A */ "\xE0\xAF\x88",  /* U+0BC8 tamil vowel sign ai */
+    /* 1B */ "\xE0\xAE\x82",  /* U+0B82 tamil sign anusvara */
+    /* 1C */ NULL,
+    /* 1D */ "\xE0\xAF\x86",  /* U+0BC6 tamil vowel sign e */
+    /* 1E */ "1",
+    /* 1F */ "2",
+    /* 20 */ "3",
+    /* 21 */ "4",
+    /* 22 */ "5",
+    /* 23 */ "6",
+    /* 24 */ "7",
+    /* 25 */ "8",
+    /* 26 */ "9",
+    /* 27 */ "0",
+    /* 28 */ NULL,
+    /* 29 */ NULL,
+    /* 2A */ NULL,
+    /* 2B */ NULL,
+    /* 2C */ " ",
+    /* 2D */ "-",
+    /* 2E */ "=",
+    /* 2F */ NULL,
+    /* 30 */ "\xE0\xAE\x9E",  /* U+0B9E tamil letter nya */
+    /* 31 */ "\\",
+    /* 32 */ NULL,
+    /* 33 */ "\xE0\xAE\x9A",  /* U+0B9A tamil letter ca */
+    /* 34 */ "\xE0\xAE\x9F",  /* U+0B9F tamil letter tta */
+    /* 35 */ "\xE0\xAF\x8A",  /* U+0BCA tamil vowel sign o */
+    /* 36 */ ",",
+    /* 37 */ ".",
+    /* 38 */ "\xE0\xAE\xAF",  /* U+0BAF tamil letter ya */
+};
+
+static const char *const TA_IN_SHIFT[] = {
+    /* 04 */ "\xE0\xAE\x93",  /* U+0B93 tamil letter oo */
+    /* 05 */ "\xE0\xAE\xB4",  /* U+0BB4 tamil letter llla */
+    /* 06 */ "\xE0\xAE\xA3",  /* U+0BA3 tamil letter nna */
+    /* 07 */ "\xE0\xAE\x85",  /* U+0B85 tamil letter a */
+    /* 08 */ "\xE0\xAE\x86",  /* U+0B86 tamil letter aa */
+    /* 09 */ "\xE0\xAE\x87",  /* U+0B87 tamil letter i */
+    /* 0A */ "\xE0\xAE\x89",  /* U+0B89 tamil letter u */
+    /* 0B */ NULL,
+    /* 0C */ NULL,
+    /* 0D */ "\xE0\xAE\xB1",  /* U+0BB1 tamil letter rra */
+    /* 0E */ NULL,
+    /* 0F */ NULL,
+    /* 10 */ "\xE0\xAE\xB6",  /* U+0BB6 tamil letter sha */
+    /* 11 */ "\xE0\xAE\xB3",  /* U+0BB3 tamil letter lla */
+    /* 12 */ NULL,
+    /* 13 */ NULL,
+    /* 14 */ "\xE0\xAE\x94",  /* U+0B94 tamil letter au */
+    /* 15 */ "\xE0\xAE\x88",  /* U+0B88 tamil letter ii */
+    /* 16 */ "\xE0\xAE\x8F",  /* U+0B8F tamil letter ee */
+    /* 17 */ "\xE0\xAE\x8A",  /* U+0B8A tamil letter uu */
+    /* 18 */ "\xE0\xAE\x99",  /* U+0B99 tamil letter nga */
+    /* 19 */ "\xE0\xAE\xA9",  /* U+0BA9 tamil letter nnna */
+    /* 1A */ "\xE0\xAE\x90",  /* U+0B90 tamil letter ai */
+    /* 1B */ NULL,
+    /* 1C */ NULL,
+    /* 1D */ "\xE0\xAE\x8E",  /* U+0B8E tamil letter e */
+    /* 1E */ "!",
+    /* 1F */ "@",
+    /* 20 */ "#",
+    /* 21 */ "$",
+    /* 22 */ "%",
+    /* 23 */ "^",
+    /* 24 */ "&",
+    /* 25 */ "*",
+    /* 26 */ "(",
+    /* 27 */ ")",
+    /* 28 */ NULL,
+    /* 29 */ NULL,
+    /* 2A */ NULL,
+    /* 2B */ NULL,
+    /* 2C */ " ",
+    /* 2D */ "\xE0\xAE\x83",  /* U+0B83 tamil sign visarga */
+    /* 2E */ "+",
+    /* 2F */ NULL,
+    /* 30 */ NULL,
+    /* 31 */ "|",
+    /* 32 */ NULL,
+    /* 33 */ NULL,
+    /* 34 */ NULL,
+    /* 35 */ "\xE0\xAE\x92",  /* U+0B92 tamil letter o */
+    /* 36 */ "\xE0\xAE\xB7",  /* U+0BB7 tamil letter ssa */
+    /* 37 */ ">",
+    /* 38 */ "?",
+};
+
+static const key_entry_t TA_IN_EXTRA[] = {
+    { 0x1E, L_ALTGR, "\xE0\xAF\xA7" },  /* U+0BE7 tamil digit one */
+    { 0x1F, L_ALTGR, "\xE0\xAF\xA8" },  /* U+0BE8 tamil digit two */
+    { 0x20, L_ALTGR, "\xE0\xAF\xA9" },  /* U+0BE9 tamil digit three */
+    { 0x21, L_ALTGR, "\xE0\xAF\xAA" },  /* U+0BEA tamil digit four */
+    { 0x22, L_ALTGR, "\xE0\xAF\xAB" },  /* U+0BEB tamil digit five */
+    { 0x23, L_ALTGR, "\xE0\xAF\xAC" },  /* U+0BEC tamil digit six */
+    { 0x24, L_ALTGR, "\xE0\xAF\xAD" },  /* U+0BED tamil digit seven */
+    { 0x25, L_ALTGR, "\xE0\xAF\xAE" },  /* U+0BEE tamil digit eight */
+    { 0x26, L_ALTGR, "\xE0\xAF\xAF" },  /* U+0BEF tamil digit nine */
+    { 0x27, L_ALTGR, "\xE0\xAF\xA6" },  /* U+0BE6 tamil digit zero */
+    { 0x2D, L_ALTGR, "\xE0\xAF\xB1" },  /* U+0BF1 tamil number one hundred */
+    { 0x2E, L_ALTGR, "\xE0\xAF\xB2" },  /* U+0BF2 tamil number one thousand */
+    { 0x1B, L_ALTGR, "\xE0\xAF\x90" },  /* U+0BD0 tamil om */
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_TA_IN */
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -697,7 +843,7 @@ static const char *KO_SHIFT[] = {
 #endif
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-static const char *DE_CH_NORMAL[] = {
+static const char *const DE_CH_NORMAL[] = {
     LETTERS_QWERTZ, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ DK_CIRC,
@@ -711,7 +857,7 @@ static const char *DE_CH_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *DE_CH_SHIFT[] = {
+static const char *const DE_CH_SHIFT[] = {
     LETTERS_QWERTZ_UP, CH_SHIFT_DIGITS, CTRL_KEYS,
     /* 2D */ "?",
     /* 2E */ DK_GRAVE,
@@ -736,7 +882,7 @@ static const key_entry_t DE_CH_EXTRA[] = {
 #endif /* CONFIG_KB_LAYOUT_ENABLE_DE_CH */
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-static const char *FR_CH_NORMAL[] = {
+static const char *const FR_CH_NORMAL[] = {
     LETTERS_QWERTZ, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ DK_CIRC,
@@ -750,7 +896,7 @@ static const char *FR_CH_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *FR_CH_SHIFT[] = {
+static const char *const FR_CH_SHIFT[] = {
     LETTERS_QWERTZ_UP, CH_SHIFT_DIGITS, CTRL_KEYS,
     /* 2D */ "?",
     /* 2E */ DK_GRAVE,
@@ -780,7 +926,7 @@ static const key_entry_t FR_CH_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Accented vowels have their own keys, so there are no dead keys.
  * Braces are Shift+AltGr on the bracket keys, as on Windows. */
-static const char *IT_NORMAL[] = {
+static const char *const IT_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_i_GRV,
@@ -794,7 +940,7 @@ static const char *IT_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *IT_SHIFT[] = {
+static const char *const IT_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_POUND,"$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -837,7 +983,7 @@ static const key_entry_t IT_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Acute / grave and tilde / circumflex are dead keys (a + tilde ->
  * a-tilde); the diaeresis is AltGr on the + key. */
-static const char *PT_NORMAL[] = {
+static const char *const PT_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_LAQUO,
@@ -851,7 +997,7 @@ static const char *PT_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *PT_SHIFT[] = {
+static const char *const PT_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22","#","$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -891,7 +1037,7 @@ static const key_entry_t PT_EXTRA[] = {
 /* Accented vowels are typed with the acute / grave / circumflex /
  * diaeresis dead keys (acute + a -> a-acute); n-tilde has its own
  * key. */
-static const char *ES_NORMAL[] = {
+static const char *const ES_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "'",
     /* 2E */ CH_IEXCL,
@@ -905,7 +1051,7 @@ static const char *ES_NORMAL[] = {
     /* 36 */ ",", ".", "-",
 };
 
-static const char *ES_SHIFT[] = {
+static const char *const ES_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_MIDDOT,"$","%","&","/","(",")","=",
     CTRL_KEYS,
@@ -948,7 +1094,7 @@ static const key_entry_t ES_EXTRA[] = {
 /* Differs from US in the symbols: Shift+2 is ", Shift+3 the pound
  * sign, @ is Shift+', and the key left of Enter is # / ~. AltGr +
  * vowel types the acute vowels, as on Windows. */
-static const char *GB_NORMAL[] = {
+static const char *const GB_NORMAL[] = {
     LETTERS_QWERTY, DIGITS, CTRL_KEYS,
     /* 2D */ "-",
     /* 2E */ "=",
@@ -962,7 +1108,7 @@ static const char *GB_NORMAL[] = {
     /* 36 */ ",", ".", "/",
 };
 
-static const char *GB_SHIFT[] = {
+static const char *const GB_SHIFT[] = {
     LETTERS_QWERTY_UP,
     "!","\x22",CH_POUND,"$","%","^","&","*","(",")",
     CTRL_KEYS,
@@ -1003,7 +1149,7 @@ static const key_entry_t GB_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Swedish and Finnish share one layout. Acute / grave and diaeresis /
  * circumflex are dead keys; AltGr + the diaeresis key is a dead tilde. */
-static const char *SE_FI_NORMAL[] = {
+static const char *const SE_FI_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1059,7 +1205,7 @@ static const char *SE_FI_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *SE_FI_SHIFT[] = {
+static const char *const SE_FI_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1140,7 +1286,7 @@ static const key_entry_t SE_FI_EXTRA[] = {
 /* Norwegian (QWERTY)                                                 */
 /* ------------------------------------------------------------------ */
 /* Grave / circumflex / diaeresis and (AltGr) acute / tilde are dead keys. */
-static const char *NO_NORMAL[] = {
+static const char *const NO_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1196,7 +1342,7 @@ static const char *NO_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *NO_SHIFT[] = {
+static const char *const NO_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1276,7 +1422,7 @@ static const key_entry_t NO_EXTRA[] = {
 /* Danish (QWERTY)                                                    */
 /* ------------------------------------------------------------------ */
 /* Acute / grave, diaeresis / circumflex and (AltGr) tilde are dead keys. */
-static const char *DK_NORMAL[] = {
+static const char *const DK_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1332,7 +1478,7 @@ static const char *DK_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *DK_SHIFT[] = {
+static const char *const DK_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1448,7 +1594,7 @@ static const key_entry_t PL_EXTRA[] = {
  * caron and ring dead keys; AltGr + the digits are the other
  * accents (caron, circumflex, breve, ring, ogonek, dot, acute,
  * double acute) as dead keys. */
-static const char *CZ_NORMAL[] = {
+static const char *const CZ_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1504,7 +1650,7 @@ static const char *CZ_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *CZ_SHIFT[] = {
+static const char *const CZ_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1611,7 +1757,7 @@ static const key_entry_t CZ_EXTRA[] = {
 /* Accented letters on the number row (digits with Shift), acute /
  * caron and ring dead keys; AltGr + the digits are the other
  * accents as dead keys, as on the Czech layout. */
-static const char *SK_NORMAL[] = {
+static const char *const SK_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1667,7 +1813,7 @@ static const char *SK_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *SK_SHIFT[] = {
+static const char *const SK_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1776,7 +1922,7 @@ static const key_entry_t SK_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Every Hungarian letter has its own key (i-acute is the ISO key
  * left of Y); 0 is left of 1. AltGr + the digits are dead accents. */
-static const char *HU_NORMAL[] = {
+static const char *const HU_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1832,7 +1978,7 @@ static const char *HU_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *HU_SHIFT[] = {
+static const char *const HU_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -1930,7 +2076,7 @@ static const key_entry_t HU_EXTRA[] = {
 /* Romanian standard layout (SR 13392): s and t with comma below,
  * a-breve, a / i-circumflex on their own keys, low / high quotes left
  * of 1, and AltGr + the digits as dead accents. */
-static const char *RO_NORMAL[] = {
+static const char *const RO_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -1986,7 +2132,7 @@ static const char *RO_NORMAL[] = {
     /* 38 */ "/",
 };
 
-static const char *RO_SHIFT[] = {
+static const char *const RO_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2089,7 +2235,7 @@ static const key_entry_t RO_EXTRA[] = {
 /* ------------------------------------------------------------------ */
 /* Croatian and Slovenian share one layout. Cedilla / diaeresis left
  * of 1 are dead keys; AltGr + the digits are the other accents. */
-static const char *HR_NORMAL[] = {
+static const char *const HR_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -2145,7 +2291,7 @@ static const char *HR_NORMAL[] = {
     /* 38 */ "-",
 };
 
-static const char *HR_SHIFT[] = {
+static const char *const HR_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2236,7 +2382,7 @@ static const key_entry_t HR_EXTRA[] = {
 /* The i key types dotless i (Shift: I) and the key right of L types
  * i (Shift: I-dot), as on Turkish keyboards. Shift+3 is a dead
  * circumflex; AltGr gives the other dead accents. */
-static const char *TR_NORMAL[] = {
+static const char *const TR_NORMAL[] = {
     /* 04 */ "a",
     /* 05 */ "b",
     /* 06 */ "c",
@@ -2292,7 +2438,7 @@ static const char *TR_NORMAL[] = {
     /* 38 */ ".",
 };
 
-static const char *TR_SHIFT[] = {
+static const char *const TR_SHIFT[] = {
     /* 04 */ "A",
     /* 05 */ "B",
     /* 06 */ "C",
@@ -2375,6 +2521,78 @@ static const key_entry_t TR_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_TR */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+/* ------------------------------------------------------------------ */
+/* Canadian French, traditional (QWERTY)                              */
+/* ------------------------------------------------------------------ */
+/* Windows "Canadian French" (KBDCA), XKB "ca": e-acute right of the
+ * period key, dead circumflex / cedilla / diaeresis / grave on the
+ * bracket and quote keys, # | on the key left of 1, guillemets on the
+ * ISO key, the Latin-1 symbols on AltGr. */
+static const char *const FR_CA_NORMAL[] = {
+    LETTERS_QWERTY, DIGITS, CTRL_KEYS,
+    /* 2D */ "-",
+    /* 2E */ "=",
+    /* 2F */ DK_CIRC,
+    /* 30 */ DK_CEDIL,
+    /* 31 */ "<",
+    /* 32 */ "<",
+    /* 33 */ ";",
+    /* 34 */ DK_GRAVE,
+    /* 35 */ "#",
+    /* 36 */ ",", ".", CH_e_ACU,
+};
+
+static const char *const FR_CA_SHIFT[] = {
+    LETTERS_QWERTY_UP,
+    "!","\x22","/","$","%","?","&","*","(",")",
+    CTRL_KEYS,
+    /* 2D */ "_",
+    /* 2E */ "+",
+    /* 2F */ DK_CIRC,
+    /* 30 */ DK_DIAER,
+    /* 31 */ ">",
+    /* 32 */ ">",
+    /* 33 */ ":",
+    /* 34 */ DK_GRAVE,
+    /* 35 */ "|",
+    /* 36 */ "'", ".", CH_E_ACU,
+};
+
+static const key_entry_t FR_CA_EXTRA[] = {
+    { 0x1E,   L_ALTGR,  "\xC2\xB1" },   /* 1: U+00B1 plus-minus */
+    { 0x1F,   L_ALTGR,  "@" },          /* 2 */
+    { 0x20,   L_ALTGR,  CH_POUND },     /* 3 */
+    { 0x21,   L_ALTGR,  CH_CENT },      /* 4 */
+    { 0x22,   L_ALTGR,  "\xC2\xA4" },   /* 5: U+00A4 currency sign */
+    { 0x23,   L_ALTGR,  CH_NOT },       /* 6 */
+    { 0x24,   L_ALTGR,  CH_BROKEN },    /* 7 */
+    { 0x25,   L_ALTGR,  "\xC2\xB2" },   /* 8: U+00B2 superscript 2 */
+    { 0x26,   L_ALTGR,  "\xC2\xB3" },   /* 9: U+00B3 superscript 3 */
+    { 0x27,   L_ALTGR,  "\xC2\xBC" },   /* 0: U+00BC one quarter */
+    { 0x2D,   L_ALTGR,  "\xC2\xBD" },   /* - key: U+00BD one half */
+    { 0x2E,   L_ALTGR,  "\xC2\xBE" },   /* = key: U+00BE three quarters */
+    { 0x12,   L_ALTGR,  CH_SECT },      /* o */
+    { 0x13,   L_ALTGR,  "\xC2\xB6" },   /* p: U+00B6 pilcrow */
+    { 0x10,   L_ALTGR,  CH_MICRO },     /* m */
+    { 0x2F,   L_ALTGR,  "[" },          /* circumflex key */
+    { 0x30,   L_ALTGR,  "]" },          /* cedilla key */
+    { 0x31,   L_ALTGR,  "}" },          /* < > key */
+    { 0x32,   L_ALTGR,  "}" },
+    { 0x33,   L_ALTGR,  "~" },          /* ; key */
+    { 0x34,   L_ALTGR,  "{" },          /* grave key */
+    { 0x35,   L_ALTGR,  "\\" },         /* # key */
+    { 0x36,   L_ALTGR,  "\xC2\xAF" },   /* , key: U+00AF macron */
+    { 0x37,   L_ALTGR,  "\xC2\xAD" },   /* . key: U+00AD soft hyphen */
+    { 0x38,   L_ALTGR,  DK_ACUTE },     /* e-acute key */
+    { 0x2C,   L_ALTGR,  "\xC2\xA0" },   /* Space: U+00A0 no-break space */
+    { KC_ISO, L_NORMAL, CH_LAQUO },
+    { KC_ISO, L_SHIFT,  CH_RAQUO },
+    { KC_ISO, L_ALTGR,  CH_DEG },
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_FR_CA */
+
 /* ------------------------------------------------------------------ */
 /* Layout table structure                                             */
 /* ------------------------------------------------------------------ */
@@ -2385,10 +2603,11 @@ static const key_entry_t TR_EXTRA[] = {
  * fall back to the US physical key position (non-Latin scripts, which
  * have no national Latin letter to remap a shortcut to). */
 typedef struct {
-    const char **normal;       /* keycodes 0x04..0x38 */
-    const char **shift;        /* keycodes 0x04..0x38 */
+    const char *const *normal;    /* keycodes 0x04..0x38 */
+    const char *const *shift;     /* keycodes 0x04..0x38 */
     const key_entry_t *extra;  /* AltGr layers, keys past 0x38; or NULL */
-    const char *name;
+    const char *name;          /* short tag (title bar) */
+    const char *long_name;     /* human-readable name (settings) */
     kb_ime_t ime;
     bool is_latin;
 } layout_table_t;
@@ -2457,8 +2676,14 @@ CHECK_TABLE(HR_NORMAL); CHECK_TABLE(HR_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
 CHECK_TABLE(TR_NORMAL); CHECK_TABLE(TR_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+CHECK_TABLE(FR_CA_NORMAL); CHECK_TABLE(FR_CA_SHIFT);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+CHECK_TABLE(TA_IN_NORMAL); CHECK_TABLE(TA_IN_SHIFT);
 #endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
@@ -2467,79 +2692,94 @@ static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
 /* In kb_layout_id_t order (C++ needs designators in order). */
 static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
-    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", KB_IME_NONE, true },
+    [KB_LAYOUT_US] = { US_NORMAL, US_SHIFT, NULL, "US", "English (US)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_UA
-    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", KB_IME_NONE, false },
+    [KB_LAYOUT_UA] = { UA_NORMAL, UA_SHIFT, NULL, "UA", "Ukrainian", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE
-    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", KB_IME_NONE, true },
+    [KB_LAYOUT_DE] = { DE_NORMAL, DE_SHIFT, DE_EXTRA, "DE", "German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR
-    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", KB_IME_NONE, true },
+    [KB_LAYOUT_FR] = { FR_NORMAL, FR_SHIFT, FR_EXTRA, "FR", "French (AZERTY)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
-    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", KB_IME_NONE, false },
+    [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", "Hebrew", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", "Swiss German", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", "Swiss French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_IT
-    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", KB_IME_NONE, true },
+    [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", "Italian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PT
-    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", KB_IME_NONE, true },
+    [KB_LAYOUT_PT] = { PT_NORMAL, PT_SHIFT, PT_EXTRA, "PT", "Portuguese", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ES
-    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", KB_IME_NONE, true },
+    [KB_LAYOUT_ES] = { ES_NORMAL, ES_SHIFT, ES_EXTRA, "ES", "Spanish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_GB
-    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", KB_IME_NONE, true },
+    [KB_LAYOUT_GB] = { GB_NORMAL, GB_SHIFT, GB_EXTRA, "GB", "English (UK)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SE_FI
-    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", KB_IME_NONE, true },
+    [KB_LAYOUT_SE_FI] = { SE_FI_NORMAL, SE_FI_SHIFT, SE_FI_EXTRA, "SE/FI", "Swedish / Finnish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NO
-    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", KB_IME_NONE, true },
+    [KB_LAYOUT_NO] = { NO_NORMAL, NO_SHIFT, NO_EXTRA, "NO", "Norwegian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DK
-    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", KB_IME_NONE, true },
+    [KB_LAYOUT_DK] = { DK_NORMAL, DK_SHIFT, DK_EXTRA, "DK", "Danish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_PL
-    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", KB_IME_NONE, true },
+    [KB_LAYOUT_PL] = { US_NORMAL, US_SHIFT, PL_EXTRA, "PL", "Polish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_CZ
-    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", KB_IME_NONE, true },
+    [KB_LAYOUT_CZ] = { CZ_NORMAL, CZ_SHIFT, CZ_EXTRA, "CZ", "Czech", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_SK
-    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", KB_IME_NONE, true },
+    [KB_LAYOUT_SK] = { SK_NORMAL, SK_SHIFT, SK_EXTRA, "SK", "Slovak", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HU
-    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", KB_IME_NONE, true },
+    [KB_LAYOUT_HU] = { HU_NORMAL, HU_SHIFT, HU_EXTRA, "HU", "Hungarian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_RO
-    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", KB_IME_NONE, true },
+    [KB_LAYOUT_RO] = { RO_NORMAL, RO_SHIFT, RO_EXTRA, "RO", "Romanian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HR
-    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", KB_IME_NONE, true },
+    [KB_LAYOUT_HR] = { HR_NORMAL, HR_SHIFT, HR_EXTRA, "HR/SI", "Croatian / Slovenian", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
-    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", KB_IME_NONE, true },
+    [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", "Turkish", KB_IME_NONE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "Canadian French", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
-    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", KB_IME_TELEX, true },
+    [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", "Vietnamese (Telex)", KB_IME_TELEX, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
-    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", KB_IME_HANGUL, false },
+    [KB_LAYOUT_KO] = { KO_NORMAL, KO_SHIFT, NULL, "KO", "Korean (2-set)", KB_IME_HANGUL, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_JA
-    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", KB_IME_KANA, true },
+    [KB_LAYOUT_JA] = { US_NORMAL, US_SHIFT, NULL, "JA", "Japanese (romaji)", KB_IME_KANA, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
-    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", KB_IME_PINYIN, true },
+    [KB_LAYOUT_ZH] = { US_NORMAL, US_SHIFT, NULL, "ZH", "Chinese (pinyin)", KB_IME_PINYIN, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    [KB_LAYOUT_TA99] = { US_NORMAL, US_SHIFT, NULL, "TA99", "Tamil 99", KB_IME_TAMIL99, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TW
+    [KB_LAYOUT_TA_TW] = { US_NORMAL, US_SHIFT, NULL, "TA-TW", "Tamil Typewriter", KB_IME_TAMIL_TW, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+    [KB_LAYOUT_TA_IN] = { TA_IN_NORMAL, TA_IN_SHIFT, TA_IN_EXTRA, "TA-IN", "Tamil InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
+    [KB_LAYOUT_TA_TV] = { US_NORMAL, US_SHIFT, NULL, "TA-TV", "Tamil Taravinyas", KB_IME_TARAVINYAS, true },
 #endif
 };
 
@@ -2615,6 +2855,12 @@ static const char *s_dead = NULL;
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
+}
+
+extern "C" const char *kb_layout_long_name(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return "";
+    return s_layouts[layout].long_name;
 }
 
 extern "C" kb_ime_t kb_layout_ime(void)

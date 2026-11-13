@@ -39,9 +39,14 @@
 #endif
 #include "kb_layout.h"
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_KB_LAYOUT_ENABLE_KO) || \
-    defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH)
+    defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_TA99) || defined(CONFIG_KB_LAYOUT_ENABLE_TA_TW) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_TA_TV)
 #define DRAFTLING_HAS_IME 1
 #include "ime.h"
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#include "tamil_font.h"
 #endif
 #include "wifi_manager.h"
 #include "git_sync.h"
@@ -56,7 +61,7 @@
 #include "display_flip.h"
 #include "display_scale.h"
 #include "standby.h"
-#include "greybeard.h"
+#include "lowres.h"
 #include "battery.h"
 #include "wifi_icon.h"
 #include "freertos/task.h"
@@ -81,25 +86,33 @@
  * defined on non-HIDPI boards, for the 22 px body size's H1).
  * Status bars always use FONT_11 regardless of the body font setting.
  */
-#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-#include "hack.h"
-#define FONT_9  (&hack_9)
-#define FONT_11 (&hack_11)
-#define FONT_14 (&hack_14)
-#define FONT_16 (&hack_16)
-#define FONT_18 (&hack_18)
-#define FONT_22 (&hack_22)
-#define FONT_26 (&hack_26)
-#define FONT_30 (&hack_30)
+/* The Tamil pack renders with copies of the fonts whose lines are
+ * about 30 % taller (lowres.c / hires.c, TAMIL_LINE_EXTRA), so the
+ * Tamil letters can be drawn larger. */
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
 #else
-#define FONT_11 (&greybeard_11)
-#define FONT_14 (&greybeard_14)
-#define FONT_16 (&greybeard_16)
-#define FONT_18 (&greybeard_18)
-#define FONT_22 (&greybeard_22)
-#define FONT_26 (&greybeard_26)
-#define FONT_30 (&greybeard_30)
-#define FONT_34 (&greybeard_34)
+#define SLOT_FONT(f) (&f)
+#endif
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+#include "hires.h"
+#define FONT_9  SLOT_FONT(hires_9)
+#define FONT_11 SLOT_FONT(hires_11)
+#define FONT_14 SLOT_FONT(hires_14)
+#define FONT_16 SLOT_FONT(hires_16)
+#define FONT_18 SLOT_FONT(hires_18)
+#define FONT_22 SLOT_FONT(hires_22)
+#define FONT_26 SLOT_FONT(hires_26)
+#define FONT_30 SLOT_FONT(hires_30)
+#else
+#define FONT_11 SLOT_FONT(lowres_11)
+#define FONT_14 SLOT_FONT(lowres_14)
+#define FONT_16 SLOT_FONT(lowres_16)
+#define FONT_18 SLOT_FONT(lowres_18)
+#define FONT_22 SLOT_FONT(lowres_22)
+#define FONT_26 SLOT_FONT(lowres_26)
+#define FONT_30 SLOT_FONT(lowres_30)
+#define FONT_34 SLOT_FONT(lowres_34)
 #endif
 
 static const char *TAG = "EditorUI";
@@ -650,6 +663,36 @@ static void save_append_only_to_nvs(void)
     }
 }
 
+/* ---- Name suggestions ----
+ * Toggled from F1 -> Settings -> Editor and persisted in NVS; on by
+ * default. While the user types the start of a known name (in
+ * Fountain: a Character cue), the matching names drop down under the
+ * cursor -- see the format's suggest hook and suggest_update(). */
+#define NVS_KEY_NAME_SUGGEST "namesugg"
+static bool s_name_suggest = true;
+
+static void load_name_suggest_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 1;
+        if (nvs_get_u8(h, NVS_KEY_NAME_SUGGEST, &v) == ESP_OK) {
+            s_name_suggest = (v != 0);
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_name_suggest_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_NAME_SUGGEST, s_name_suggest ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 /* ---- Active language layouts ----
  * Toggled from the F1 -> Settings menu and persisted in NVS. Selects
  * which of the compiled-in keyboard layouts (see kb_layout.h) Ctrl+L /
@@ -669,6 +712,8 @@ static void save_append_only_to_nvs(void)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_ja"
 #elif defined(CONFIG_DRAFTLING_LANG_PACK_CHINESE)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_TAMIL)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_ta"
 #else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
 #endif
@@ -1162,21 +1207,25 @@ static int       s_wifi_pw_pos      = 0;      /* byte cursor into s_wifi_pw_buf 
  * menu screen, laid out like the WiFi password overlay. If WiFi is not
  * connected yet, the panel first connects it (DBX_STEP_WIFI, like
  * Ctrl+W) and moves on once wifi_state_cb() reports the result. Then
- * the Draftbox site name (pre-filled with draftbox.art, or whatever was
- * typed last time), then the 8-digit one-time password. Enter on the
+ * the server choice (DBX_STEP_SERVER: draftbox.art or a custom
+ * server), for a custom server its site name (DBX_STEP_SITE, whatever
+ * was typed last time), then the 8-digit one-time password. Enter on the
  * password runs git_sync_draftbox_connect() on a background task,
  * which exchanges the password for an access token and writes the
  * clone URL and token into git.cfg; the result goes to the status bar. */
 #define DBX_STEP_SITE 0
 #define DBX_STEP_OTP  1
 #define DBX_STEP_WIFI 2   /* waiting for the WiFi connection */
+#define DBX_STEP_SERVER 3 /* draftbox.art or a custom server */
+#define DBX_DEFAULT_SITE "draftbox.art"
 static lv_obj_t *s_dbx_panel    = NULL;
 static lv_obj_t *s_dbx_hdr_lbl  = NULL;
 static lv_obj_t *s_dbx_val_lbl  = NULL;
 static lv_obj_t *s_dbx_cur      = NULL;
 static bool      s_dbx_open     = false;
 static int       s_dbx_step     = DBX_STEP_SITE;
-static char      s_dbx_site[128] = "draftbox.art";
+static char      s_dbx_site[128] = "";       /* custom server name */
+static bool      s_dbx_custom   = false;     /* custom server chosen */
 static int       s_dbx_site_pos = 0;
 static char      s_dbx_otp[10]  = "";        /* 8 digits; see text_field_key() */
 static int       s_dbx_otp_pos  = 0;
@@ -1272,6 +1321,10 @@ typedef enum {
 
 #define NEWFMT_COUNT 3
 static lv_obj_t *s_newfmt_panel = NULL;
+/* Name-suggestion drop-down (editor screen, see suggest_update()) */
+static lv_obj_t *s_sugg_panel = NULL;
+static lv_obj_t *s_sugg_lbl[FMT_SUGGEST_MAX];
+static void suggest_hide(void);
 static lv_obj_t *s_newfmt_opt_lbl[NEWFMT_COUNT] = { NULL, NULL, NULL };
 static bool      s_newfmt_open  = false;
 static int       s_newfmt_sel   = 0;
@@ -2268,14 +2321,14 @@ static lv_style_t *style_for_type(md_line_type_t type)
 static int char_width_for_font(const lv_font_t *font)
 {
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-    if (font == FONT_30) return 28;   /* hack_30 (47 px): adv_w 448 / 16 */
-    if (font == FONT_26) return 25;   /* hack_26 (41 px): adv_w 400 / 16 */
-    if (font == FONT_22) return 21;   /* hack_22 (34 px): adv_w 336 / 16 */
-    if (font == FONT_18) return 17;   /* hack_18 (28 px): adv_w 272 / 16 */
-    if (font == FONT_16) return 15;   /* hack_16 (25 px): adv_w 240 / 16 */
-    if (font == FONT_14) return 13;   /* hack_14 (21 px): adv_w 208 / 16 */
-    if (font == FONT_9)  return 10;   /* hack_9  (16 px): adv_w 160 / 16 */
-    return 11;                        /* hack_11 (19 px): adv_w 176 / 16 */
+    if (font == FONT_30) return 28;   /* hires_30 (47 px): adv_w 448 / 16 */
+    if (font == FONT_26) return 25;   /* hires_26 (41 px): adv_w 400 / 16 */
+    if (font == FONT_22) return 21;   /* hires_22 (34 px): adv_w 336 / 16 */
+    if (font == FONT_18) return 17;   /* hires_18 (28 px): adv_w 272 / 16 */
+    if (font == FONT_16) return 15;   /* hires_16 (25 px): adv_w 240 / 16 */
+    if (font == FONT_14) return 13;   /* hires_14 (21 px): adv_w 208 / 16 */
+    if (font == FONT_9)  return 10;   /* hires_9  (16 px): adv_w 160 / 16 */
+    return 11;                        /* hires_11 (19 px): adv_w 176 / 16 */
 #else
     if (font == FONT_34) return 18;   /* adv_w 288 / 16 = 18 */
     if (font == FONT_30) return 16;   /* adv_w 256 / 16 = 16 */
@@ -2305,15 +2358,38 @@ static bool cp_is_wide(uint32_t cp)
 
 static uint32_t utf8_decode(const char *s, size_t len, size_t *i);
 
+/* Cells of cp between prev and next: two for the wide ones (CJK); a
+ * Tamil consonant takes at most the cells of its glyph joined with the
+ * vowel sign after it, which takes none (an upper bound: Tamil is
+ * proportional, see components/fonts/tamil_font.h). */
+static int cp_cells(uint32_t prev, uint32_t cp, uint32_t next)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    int t = tamil_cp_cells(prev, cp, next);
+    if (t >= 0) return t;
+#else
+    (void)prev;
+    (void)next;
+#endif
+    return cp_is_wide(cp) ? 2 : 1;
+}
+
 /* Monospace cells taken by the first byte_len bytes of text: one per
- * character, two for the wide ones (CJK). */
+ * character, two for the wide ones (CJK), Tamil by cp_cells(). */
 static int utf8_cells_in_bytes(const char *text, size_t byte_len)
 {
+    if (byte_len == 0) return 0;
     int cells = 0;
     size_t i = 0;
-    while (i < byte_len) {
-        uint32_t cp = utf8_decode(text, byte_len, &i);
-        cells += cp_is_wide(cp) ? 2 : 1;
+    uint32_t prev = 0;
+    uint32_t cp = utf8_decode(text, byte_len, &i);
+    for (;;) {
+        bool more = i < byte_len;
+        uint32_t next = more ? utf8_decode(text, byte_len, &i) : 0;
+        cells += cp_cells(prev, cp, next);
+        if (!more) break;
+        prev = cp;
+        cp = next;
     }
     return cells;
 }
@@ -2323,13 +2399,17 @@ static size_t utf8_bytes_for_cells(const char *text, size_t byte_len, int cells)
 {
     size_t i = 0;
     int used = 0;
+    uint32_t prev = 0;
     while (i < byte_len) {
-        size_t next = i;
-        uint32_t cp = utf8_decode(text, byte_len, &next);
-        int w = cp_is_wide(cp) ? 2 : 1;
+        size_t next_i = i;
+        uint32_t cp = utf8_decode(text, byte_len, &next_i);
+        size_t after = next_i;
+        uint32_t next = after < byte_len ? utf8_decode(text, byte_len, &after) : 0;
+        int w = cp_cells(prev, cp, next);
         if (used + w > cells) break;
         used += w;
-        i = next;
+        prev = cp;
+        i = next_i;
     }
     return i;
 }
@@ -2460,10 +2540,47 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
     v->d2r.clear();
     v->flags.clear();
     size_t b = 0;
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    uint32_t prev_cp = 0;   /* last code point displayed */
+#endif
     while (b < ll) {
         size_t start = b;
-        (void)utf8_decode(lt, ll, &b);
+        uint32_t cp = utf8_decode(lt, ll, &b);
         if (hide[start]) continue;
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+        /* The k-ssa and sri ligatures span more code points than the
+         * font sees: show each as its private-use code point, mapped
+         * to the first byte of the sequence. */
+        {
+            uint32_t lig = 0;
+            size_t L = tamil_ligature(lt + start, ll - start, &lig);
+            bool shown = L > 0;
+            for (size_t k = start; shown && k < start + L; k++) shown = !hide[k];
+            if (shown) {
+                char u[4];
+                u[0] = (char)(0xE0 | (lig >> 12));
+                u[1] = (char)(0x80 | ((lig >> 6) & 0x3F));
+                u[2] = (char)(0x80 | (lig & 0x3F));
+                text.append(u, 3);
+                v->d2r.push_back((uint32_t)start);
+                v->flags.push_back(rflags[start]);
+                prev_cp = lig;
+                b = start + L;
+                continue;
+            }
+        }
+        /* A Tamil vowel sign is drawn by the consonant before it; one
+         * without a consonant gets a dotted circle to sit on (as
+         * HarfBuzz does), which maps to the sign itself. */
+        if (tamil_is_mark(cp) && !tamil_is_base(prev_cp)) {
+            text.append("\xE2\x97\x8C");   /* U+25CC dotted circle */
+            v->d2r.push_back((uint32_t)start);
+            v->flags.push_back(rflags[start]);
+        }
+        prev_cp = cp;
+#else
+        (void)cp;
+#endif
         if (lt[start] == '\t') {
             for (int t = 0; t < 4; t++) {
                 text.push_back(' ');
@@ -2513,6 +2630,65 @@ static void push_deco_seg(line_view_t *v, const deco_seg_t &s)
     v->segs.push_back(s);
 }
 
+/* The code point at byte b of txt (0 at the end), for glyph widths
+ * that depend on the next character (Tamil vowel signs). */
+static uint32_t cp_at(const char *txt, size_t txt_len, size_t b)
+{
+    return b < txt_len ? utf8_decode(txt, txt_len, &b) : 0;
+}
+
+/* The code point lv_draw_character() must draw for cp followed by
+ * next: it has no look-ahead, so a Tamil consonant with a vowel sign
+ * is drawn through the private-use code point of the joined glyph. */
+static uint32_t deco_draw_cp(uint32_t cp, uint32_t next)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    return tamil_draw_cp(cp, next);
+#else
+    (void)next;
+    return cp;
+#endif
+}
+
+/* True when the cursor sits inside a Tamil syllable -- between a
+ * consonant and the vowel sign drawn with it -- or inside a k-ssa /
+ * sri ligature, where it would be shown at the same spot as after
+ * it. Left / Right step over such positions. */
+static bool cursor_mid_cluster(void)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    char buf[24];
+    size_t n = editor_peek_before(buf, 12);
+    size_t c = editor_get_cursor();
+    size_t total = n;
+    for (size_t i = 0; i < 12; i++) {
+        char ch = editor_char_at(c + i);
+        if (ch == '\0' || ch == '\n') break;
+        buf[total++] = ch;
+    }
+    /* A mark right after the cursor, a base right before it. */
+    if (n > 0 && total > n) {
+        size_t i = n;
+        uint32_t next = utf8_decode(buf, total, &i);
+        size_t st = n;
+        while (st > 0 && ((unsigned char)buf[st - 1] & 0xC0) == 0x80) st--;
+        if (st > 0) st--;
+        size_t j = st;
+        if (tamil_is_mark(next) && tamil_is_base(utf8_decode(buf, n, &j))) return true;
+    }
+    /* A ligature that starts before the cursor and ends after it. */
+    for (size_t p = 0; p < n; p++) {
+        if (((unsigned char)buf[p] & 0xC0) == 0x80) continue;
+        uint32_t lig;
+        size_t L = tamil_ligature(buf + p, total - p, &lig);
+        if (L && p + L > n) return true;
+    }
+    return false;
+#else
+    return false;
+#endif
+}
+
 /* Lay out the display characters [i0, i1) (first byte b0), which all
  * share flags f, as row segments. For left-to-right text the run is
  * checked against the label's own layout from its end points alone and
@@ -2534,7 +2710,7 @@ static void layout_deco_range(lv_obj_t *label, const lv_font_t *font,
             uint32_t cp = utf8_decode(txt, txt_len, &b);
             int dir = cp_strong_dir(cp);
             bool rtl = dir < 0 || (dir == 0 && line_rtl);
-            int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+            int32_t gw = lv_font_get_glyph_width(font, cp, cp_at(txt, txt_len, b));
             lv_point_t p;
             lv_label_get_letter_pos(label, i, &p);
             deco_seg_t s = { rtl ? p.x - gw : p.x, p.y, gw, i, (uint32_t)cb, 1, f };
@@ -2550,7 +2726,8 @@ static void layout_deco_range(lv_obj_t *label, const lv_font_t *font,
     uint32_t mid = i0 + (i1 - i0) / 2;
     for (uint32_t i = i0; i < i1; i++) {
         if (i == mid) mid_b = b;
-        last_w = lv_font_get_glyph_width(font, utf8_decode(txt, txt_len, &b), 0);
+        uint32_t cp = utf8_decode(txt, txt_len, &b);
+        last_w = lv_font_get_glyph_width(font, cp, cp_at(txt, txt_len, b));
         w += last_w;
     }
     bool one_row = (i1 - i0 == 1);
@@ -2715,8 +2892,15 @@ static void line_deco_draw_cb(lv_event_t *e)
     ld.font = font;
     ld.opa  = LV_OPA_COVER;
 
-    /* x-height centre (roughly), used by strikethrough and bullets. */
-    int32_t mid_y = asc - (asc * 3) / 10;
+    /* x-height centre (roughly), used by strikethrough and bullets. The
+     * Tamil pack's tall fonts point at their base font (user_data),
+     * whose ascent is that of the letters, not of the taller line. */
+    int32_t asc_txt = asc;
+    if (font->user_data) {
+        const lv_font_t *bf = (const lv_font_t *)font->user_data;
+        asc_txt = lv_font_get_line_height(bf) - bf->base_line;
+    }
+    int32_t mid_y = asc - (asc_txt * 3) / 10;
 
     for (const deco_seg_t &s : v->segs) {
         int32_t top = ca.y1 + s.y;
@@ -2730,7 +2914,9 @@ static void line_deco_draw_cb(lv_event_t *e)
             int32_t cx = ca.x1 + s.x;
             for (uint32_t k = 0; k < s.count && b < txt_len; k++) {
                 uint32_t cp = utf8_decode(txt, txt_len, &b);
-                int32_t gw = lv_font_get_glyph_width(font, cp, 0);
+                uint32_t nx = cp_at(txt, txt_len, b);
+                int32_t gw = lv_font_get_glyph_width(font, cp, nx);
+                uint32_t dcp = deco_draw_cp(cp, nx);
                 int32_t gx = cx;
                 cx += gw;
                 uint32_t ci = s.char_idx + k;
@@ -2787,13 +2973,13 @@ static void line_deco_draw_cb(lv_event_t *e)
 
                 ld.color = cfg;
                 if (f & DECO_ITALIC) {
-                    deco_draw_slanted(layer, &ld, cp, gx, top, lh, asc);
+                    deco_draw_slanted(layer, &ld, dcp, gx, top, lh, asc);
                     if (f & DECO_BOLD) {
-                        deco_draw_slanted(layer, &ld, cp, gx + bdx, top, lh, asc);
+                        deco_draw_slanted(layer, &ld, dcp, gx + bdx, top, lh, asc);
                     }
                 } else if (f & DECO_BOLD) {
                     lv_point_t pt = { gx + bdx, top };
-                    lv_draw_character(layer, &ld, &pt, cp);
+                    lv_draw_character(layer, &ld, &pt, dcp);
                 }
                 if (f & DECO_STRIKE) {
                     int32_t y = top + mid_y - th / 2;
@@ -3834,6 +4020,7 @@ static void editor_touch_event_cb(lv_event_t *e)
         return;
     }
     if (!s_editor_screen_active) return;
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) suggest_hide();
 
     /* The tapped pane index was stored in the container's user_data at
      * creation. Focus is NOT moved here: a drag / swipe only pans the
@@ -5028,8 +5215,8 @@ static void refresh_menu_items(void)
         break;
 
     case MENU_LVL_CONN:
-        menu_add(MENU_ITEM_BLE_MENU, "Bluetooth...");
         menu_add(MENU_ITEM_WIFI_MENU, "WiFi...");
+        menu_add(MENU_ITEM_BLE_MENU, "Bluetooth...");
         menu_add(MENU_ITEM_BACK, "Back (Esc)");
         break;
 
@@ -5294,6 +5481,7 @@ enum settings_item_t {
     /* Editor */
     SET_ITEM_FONTSZ,
     SET_ITEM_APPEND_ONLY,
+    SET_ITEM_NAME_SUGGEST,
     /* Display */
     SET_ITEM_BACKLIGHT,      /* HAS_BACKLIGHT && !BACKLIGHT_BINARY */
     SET_ITEM_THEME,          /* DISPLAY_COLOR */
@@ -5388,6 +5576,10 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "Append-only editing: %s",
                  s_append_only ? "on" : "off");
         settings_add(SET_ITEM_APPEND_ONLY, buf);
+        /* Drop-down of known names while typing (Fountain characters) */
+        snprintf(buf, sizeof(buf), "Suggest character names: %s",
+                 s_name_suggest ? "on" : "off");
+        settings_add(SET_ITEM_NAME_SUGGEST, buf);
         break;
 
     case SET_LVL_DISPLAY:
@@ -5567,9 +5759,9 @@ static void refresh_layouts_picker_items(void)
     char buf[80];
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
         kb_layout_id_t id = (kb_layout_id_t)i;
-        snprintf(buf, sizeof(buf), "[%s] %s",
+        snprintf(buf, sizeof(buf), "[%s] %-6s %s",
                  kb_layout_is_active(id) ? "x" : " ",
-                 kb_layout_name(id));
+                 kb_layout_name(id), kb_layout_long_name(id));
         lv_list_add_btn(s_settings_list, NULL, buf);
     }
     lv_list_add_btn(s_settings_list, NULL, "  Done (Esc)");
@@ -5796,6 +5988,12 @@ static bool settings_cycle_item(int row, int dir)
          * and refresh the label. */
         s_append_only = !s_append_only;
         save_append_only_to_nvs();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_NAME_SUGGEST) {
+        /* Only two states, so either direction toggles it. */
+        s_name_suggest = !s_name_suggest;
+        save_name_suggest_to_nvs();
         refresh_settings_items();
         return true;
     } else if (idx == SET_ITEM_ORIENTATION) {
@@ -6365,6 +6563,23 @@ static void msg_popup_touch_cb(lv_event_t *e)
 #endif
 
 /* ---- Draftbox prompt (see s_dbx_panel) ---- */
+
+/* Size the panel for `rows` value rows (the server choice needs two)
+ * and keep it centred on the screen. */
+static void dbx_panel_fit(int rows)
+{
+    int line_h = lv_font_get_line_height(FONT_11);
+    int h = overlay_row_y() + rows * line_h + 2 * OVERLAY_PAD;
+    lv_obj_set_height(s_dbx_panel, h);
+    lv_obj_set_y(s_dbx_panel, (SCR_H - h) / 2);
+}
+
+/* The site the password is exchanged with. */
+static const char *dbx_site(void)
+{
+    return s_dbx_custom ? s_dbx_site : DBX_DEFAULT_SITE;
+}
+
 static void refresh_dbx_prompt(void)
 {
     if (!s_dbx_panel) return;
@@ -6379,15 +6594,28 @@ static void refresh_dbx_prompt(void)
         lv_label_set_text(s_dbx_hdr_lbl, hdr);
         lv_label_set_text(s_dbx_val_lbl, "");
         lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+        dbx_panel_fit(1);
         return;
     }
+
+    if (s_dbx_step == DBX_STEP_SERVER) {
+        lv_label_set_text(s_dbx_hdr_lbl,
+            "Draftbox server (Up/Down, Enter: next, Esc: cancel):");
+        lv_label_set_text(s_dbx_val_lbl, s_dbx_custom
+            ? "  " DBX_DEFAULT_SITE "\n> connect to a different server..."
+            : "> " DBX_DEFAULT_SITE "\n  connect to a different server...");
+        lv_obj_add_flag(s_dbx_cur, LV_OBJ_FLAG_HIDDEN);
+        dbx_panel_fit(2);
+        return;
+    }
+    dbx_panel_fit(1);
 
     bool site = (s_dbx_step == DBX_STEP_SITE);
     const char *buf = site ? s_dbx_site : s_dbx_otp;
     int pos = site ? s_dbx_site_pos : s_dbx_otp_pos;
 
     lv_label_set_text(s_dbx_hdr_lbl, site
-        ? "Draftbox site name (Enter: next, Esc: cancel):"
+        ? "Draftbox server name (Enter: next, Esc: back):"
         : "8-digit one-time password (Enter/Esc):");
     lv_label_set_text(s_dbx_val_lbl, buf);
 
@@ -6402,7 +6630,7 @@ static void refresh_dbx_prompt(void)
 
 static void show_dbx_prompt(bool wait_wifi)
 {
-    s_dbx_step = wait_wifi ? DBX_STEP_WIFI : DBX_STEP_SITE;
+    s_dbx_step = wait_wifi ? DBX_STEP_WIFI : DBX_STEP_SERVER;
     s_dbx_site_pos = (int)strlen(s_dbx_site);
     memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
     s_dbx_otp_pos = 0;
@@ -6427,7 +6655,7 @@ static void dbx_wifi_done(bool connected, const char *reason)
 {
     if (!s_dbx_open || s_dbx_step != DBX_STEP_WIFI) return;
     if (connected) {
-        s_dbx_step = DBX_STEP_SITE;
+        s_dbx_step = DBX_STEP_SERVER;
         refresh_dbx_prompt();
     } else {
         close_dbx_prompt();
@@ -6446,6 +6674,26 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         if (ev->keycode == KB_KEY_ESCAPE) close_dbx_prompt();
         return;
     }
+    if (s_dbx_step == DBX_STEP_SERVER) {
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+        case KB_KEY_DOWN:
+        case KB_KEY_TAB:
+            s_dbx_custom = !s_dbx_custom;
+            break;
+        case KB_KEY_ENTER:
+            s_dbx_step = s_dbx_custom ? DBX_STEP_SITE : DBX_STEP_OTP;
+            s_dbx_site_pos = (int)strlen(s_dbx_site);
+            break;
+        case KB_KEY_ESCAPE:
+            close_dbx_prompt();
+            return;
+        default:
+            return;
+        }
+        refresh_dbx_prompt();
+        return;
+    }
     switch (ev->keycode) {
     case KB_KEY_ENTER:
         if (s_dbx_step == DBX_STEP_SITE) {
@@ -6455,7 +6703,7 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
             if (strlen(s_dbx_otp) != 8) return; /* keep editing */
             char site[sizeof(s_dbx_site)];
             char otp[sizeof(s_dbx_otp)];
-            strlcpy(site, s_dbx_site, sizeof(site));
+            strlcpy(site, dbx_site(), sizeof(site));
             strlcpy(otp, s_dbx_otp, sizeof(otp));
             close_dbx_prompt();
             /* The menu stays open underneath; the pop-up shows the
@@ -6470,14 +6718,16 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
         break;
     case KB_KEY_ESCAPE:
         if (s_dbx_step == DBX_STEP_OTP) {
-            /* Back to the site name, e.g. to fix a typo. */
+            /* Back to the site name (custom server, e.g. to fix a
+             * typo) or to the server choice. */
             memset(s_dbx_otp, 0, sizeof(s_dbx_otp));
             s_dbx_otp_pos = 0;
-            s_dbx_step = DBX_STEP_SITE;
+            s_dbx_step = s_dbx_custom ? DBX_STEP_SITE : DBX_STEP_SERVER;
             break;
         }
-        close_dbx_prompt();
-        return;
+        /* Site name: back to the server choice. */
+        s_dbx_step = DBX_STEP_SERVER;
+        break;
     default:
         if (s_dbx_step == DBX_STEP_SITE) {
             text_field_key(s_dbx_site, sizeof(s_dbx_site), &s_dbx_site_pos, ev);
@@ -7097,7 +7347,7 @@ static void save_modified_doc_cb(editor_doc_t *doc, void *ctx);
 /* Ctrl+G and F1 -> Git Sync: sync the project the user works in (see
  * context_project()), after saving every open document so the sync
  * task (which reads the files) picks up the latest edits. */
-/* Project that F1 -> Sync -> Synchronize will sync once the WiFi
+/* Project that Ctrl+G / F1 -> Sync -> Synchronize will sync once the WiFi
  * connection it started is up ("" = none pending). Resolved by
  * sync_wifi_done() from wifi_state_cb() / wifi_connect_task(). */
 static project_name_t s_sync_after_wifi = "";
@@ -7158,7 +7408,9 @@ static void sync_wifi_done(bool connected)
     sync_project(p, false);
 }
 
-static void start_project_sync_ex(bool connect_wifi)
+/* Ctrl+G and F1 -> Sync -> Synchronize: sync context_project(),
+ * connecting WiFi first when it is down. */
+static void start_project_sync(void)
 {
     if (const char *busy = sd_handed_off_msg()) {
         editor_ui_set_status(busy);
@@ -7169,12 +7421,7 @@ static void start_project_sync_ex(bool connect_wifi)
         editor_ui_set_status("Git: select a project first");
         return;
     }
-    sync_project(p, connect_wifi);
-}
-
-static void start_project_sync(void)
-{
-    start_project_sync_ex(false);
+    sync_project(p, true);
 }
 
 static void menu_activate_item(int row)
@@ -7260,7 +7507,7 @@ static void menu_activate_item(int row)
                 if (git_sync_is_configured(dir)) close_menu();
             }
         }
-        start_project_sync_ex(true);
+        start_project_sync();
         break;
     case MENU_ITEM_DRAFTBOX:
         /* Writes git.cfg on the SD card -- same guard as Git Sync. */
@@ -7745,6 +7992,11 @@ static void build_hwinfo_text(std::string &out, int cols)
     snprintf(buf, sizeof(buf), "%d x %d%s", (int)SCR_W, (int)SCR_H,
              display_scale_factor() > 1 ? " (2x scale)" : "");
     help_row(out, cols, kc, "Text area", buf);
+#ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
+    help_row(out, cols, kc, "Fonts", "high definition (Hack)");
+#else
+    help_row(out, cols, kc, "Fonts", "low definition (Greybeard)");
+#endif
 
     help_heading(out, "SD card");
     sdmmc_card_t *card = sd_card_get_handle();
@@ -9563,6 +9815,25 @@ struct typing_pre_state_t {
     int         char_w;       /* monospace cell width at body font */
 };
 
+/* True for a line whose width the cell count does not give exactly:
+ * Tamil, whose glyphs are proportional. The typing fast path is not
+ * used on such lines (the whole line is refreshed). */
+static bool line_has_proportional_text(const char *lt, size_t ll)
+{
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    /* U+0B80..U+0BFF is E0 AE xx / E0 AF xx in UTF-8. */
+    for (size_t i = 0; i + 1 < ll; i++) {
+        if ((unsigned char)lt[i] == 0xE0 &&
+            ((unsigned char)lt[i + 1] == 0xAE || (unsigned char)lt[i + 1] == 0xAF))
+            return true;
+    }
+#else
+    (void)lt;
+    (void)ll;
+#endif
+    return false;
+}
+
 /* Capture pre-edit state for the fast partial-clip path. Fills *out
  * with valid=false when conditions disqualify the edit (selection
  * active, line is not a plain paragraph, etc.); subsequent
@@ -9595,6 +9866,7 @@ static void capture_typing_pre_state(typing_pre_state_t *out)
      * The document's format decides (Fountain never qualifies: a
      * line's element depends on its neighbours). */
     if (!editor_format_active()->line_is_plain(lt, ll)) return;
+    if (line_has_proportional_text(lt, ll)) return;
 
     int chars = utf8_cells_in_bytes(lt, ll);
 
@@ -9650,6 +9922,7 @@ static bool try_partial_clip_for_typing(const typing_pre_state_t *pre)
     if (!lt) return false;
 
     if (!editor_format_active()->line_is_plain(lt, ll)) return false;
+    if (line_has_proportional_text(lt, ll)) return false;
 
     int post_chars = utf8_cells_in_bytes(lt, ll);
     int char_w     = pre->char_w;
@@ -9958,7 +10231,195 @@ static void ime_finish(void)
 }
 #endif
 
+/* ---- Name-suggestion drop-down ----
+ *
+ * After a key that changed the focused document, the format's suggest
+ * hook (Fountain: known Character names starting with the cue being
+ * typed) is asked for completions, which drop down under the cursor.
+ * While the list is shown Up / Down pick a name, Enter or Tab replaces
+ * the typed text with it, and Esc closes the list until the cursor
+ * goes to another line; any other key goes to the editor as usual and
+ * the list follows the new text (or closes). */
+static fmt_suggest_t s_sugg;
+static bool   s_sugg_open = false;
+static int    s_sugg_sel = 0;
+static size_t s_sugg_dismissed = SIZE_MAX;   /* s_sugg.start of an Esc'd list */
+static bool   s_sugg_kept = false;   /* the last editor key left the list open */
+
+static void suggest_hide(void)
+{
+    if (!s_sugg_open) return;
+    s_sugg_open = false;
+    if (s_sugg_panel) lv_obj_add_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void suggest_paint_selection(void)
+{
+    for (int i = 0; i < s_sugg.count; i++) {
+        bool sel = (i == s_sugg_sel);
+        lv_obj_set_style_bg_color(s_sugg_lbl[i], sel ? theme_fg() : theme_bg(), 0);
+        lv_obj_set_style_text_color(s_sugg_lbl[i], sel ? theme_bg() : theme_fg(), 0);
+    }
+}
+
+/* Lay the list out under (or, without room, above) the typed text in
+ * the focused pane. Returns false when the cursor is not on screen. */
+static bool suggest_place(void)
+{
+    pane_bind_focus();
+    if (!s_sugg_panel || !s_cursor || !s_cursor_on_screen) return false;
+    const lv_font_t *font = body_font();
+    int cw = char_width_for_font(font);
+    int lh = lv_font_get_line_height(font);
+    const int pad = 2, border = 1;
+
+    int cells = 0;
+    for (int i = 0; i < FMT_SUGGEST_MAX; i++) {
+        if (i < s_sugg.count) {
+            int c = utf8_cells_in_bytes(s_sugg.names[i], strlen(s_sugg.names[i]));
+            if (c > cells) cells = c;
+            lv_label_set_text(s_sugg_lbl[i], s_sugg.names[i]);
+            lv_obj_set_style_text_font(s_sugg_lbl[i], font, 0);
+            lv_obj_set_pos(s_sugg_lbl[i], 0, i * lh);
+            lv_obj_set_height(s_sugg_lbl[i], lh);
+            lv_obj_remove_flag(s_sugg_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(s_sugg_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    int inner_w = (cells + 1) * cw;
+    for (int i = 0; i < s_sugg.count; i++) lv_obj_set_width(s_sugg_lbl[i], inner_w);
+    int w = inner_w + 2 * (pad + border);
+    int h = s_sugg.count * lh + 2 * (pad + border);
+    if (w > SCR_W) w = SCR_W;
+
+    /* The typed text ends at the cursor; the list starts under its
+     * first character. */
+    size_t cur = editor_get_cursor();
+    size_t tl;
+    const char *typed = NULL;
+    {
+        int line, col;
+        editor_get_cursor_pos(&line, &col);
+        size_t ls;
+        typed = editor_get_line_off(line, &tl, &ls);
+        if (s_sugg.start >= ls && cur >= s_sugg.start && cur - ls <= tl) {
+            typed += s_sugg.start - ls;
+            tl = cur - s_sugg.start;
+        } else {
+            tl = 0;
+        }
+    }
+    int cx = s_rp->x + lv_obj_get_x(s_cursor);
+    int cy = s_rp->y + lv_obj_get_y(s_cursor);
+    int ch = lv_obj_get_height(s_cursor);
+    int x = cx - (tl ? utf8_cells_in_bytes(typed, tl) * cw : 0) - pad - border;
+    if (x + w > SCR_W) x = SCR_W - w;
+    if (x < 0) x = 0;
+    int y = cy + ch + 1;
+    if (y + h > s_rp->y + s_rp->h && cy - h - 1 >= 0) y = cy - h - 1;
+
+    lv_obj_set_size(s_sugg_panel, w, h);
+    lv_obj_set_pos(s_sugg_panel, x, y);
+    return true;
+}
+
+/* Re-evaluate the list after an editor key; typed says whether the key
+ * changed the text. Returns true when the list was shown, hidden or
+ * changed (the screen needs more than the typing fast path). */
+static bool suggest_update(bool typed)
+{
+    bool was_open = s_sugg_open;
+    const editor_format_t *f = editor_format_active();
+    fmt_suggest_t sg;
+    sg.count = 0;
+    bool found = typed && s_name_suggest && f->suggest && f->suggest(&sg);
+    if (!found || sg.start == s_sugg_dismissed) {
+        /* An Esc'd list stays closed while its text is being typed. */
+        if (!found && typed) s_sugg_dismissed = SIZE_MAX;
+        suggest_hide();
+        s_sugg_kept = false;
+        return was_open;
+    }
+    s_sugg_dismissed = SIZE_MAX;
+    /* Keep the highlighted name when it is still offered. */
+    int sel = 0;
+    if (was_open && s_sugg_sel < s_sugg.count) {
+        for (int i = 0; i < sg.count; i++) {
+            if (strcmp(sg.names[i], s_sugg.names[s_sugg_sel]) == 0) { sel = i; break; }
+        }
+    }
+    s_sugg = sg;
+    s_sugg_sel = sel;
+    if (!suggest_place()) {
+        suggest_hide();
+        s_sugg_kept = false;
+        return was_open;
+    }
+    suggest_paint_selection();
+    lv_obj_remove_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_sugg_panel);
+    s_sugg_open = true;
+    s_sugg_kept = true;
+    return true;
+}
+
+/* Replace the typed text with the highlighted name. */
+static void suggest_accept(void)
+{
+    const char *name = s_sugg.names[s_sugg_sel];
+    size_t nl = strlen(name);
+    suggest_hide();
+    bool ok;
+    if (s_append_only) {
+        /* Nothing may be replaced: add the rest of the name. */
+        ok = nl > s_sugg.len && editor_insert_text(name + s_sugg.len, nl - s_sugg.len);
+    } else {
+        ok = editor_replace_range(s_sugg.start, s_sugg.start + s_sugg.len, name) == ESP_OK;
+    }
+    if (!ok) editor_ui_set_status("Buffer full -- increase editor size in menuconfig");
+    ensure_cursor_visible();
+    editor_ui_refresh();
+}
+
+/* Keys the open list takes; returns false for every other key. */
+static bool suggest_handle_key(const kb_event_t *ev)
+{
+    if (!s_sugg_open || ev->modifier != 0) return false;
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        s_sugg_sel = (s_sugg_sel + s_sugg.count - 1) % s_sugg.count;
+        suggest_paint_selection();
+        s_sugg_kept = true;
+        return true;
+    case KB_KEY_DOWN:
+        s_sugg_sel = (s_sugg_sel + 1) % s_sugg.count;
+        suggest_paint_selection();
+        s_sugg_kept = true;
+        return true;
+    case KB_KEY_ENTER:
+    case KB_KEY_TAB:
+        suggest_accept();
+        return true;
+    case KB_KEY_ESCAPE:
+        s_sugg_dismissed = s_sugg.start;
+        suggest_hide();
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void handle_editor_key_main(const kb_event_t *ev);
+
 static void handle_editor_key(const kb_event_t *ev)
+{
+    s_sugg_kept = false;
+    handle_editor_key_main(ev);
+    if (!s_sugg_kept) suggest_hide();
+}
+
+static void handle_editor_key_main(const kb_event_t *ev)
 {
     bool ctrl  = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
     bool shift = (ev->modifier & (KB_MOD_LSHIFT | KB_MOD_RSHIFT)) != 0;
@@ -9989,6 +10450,10 @@ static void handle_editor_key(const kb_event_t *ev)
     if (ev->keycode != KB_KEY_UP && ev->keycode != KB_KEY_DOWN) {
         s_visual_goal_x = -1;
     }
+
+    /* The name-suggestion list, when shown, takes Up / Down / Enter /
+     * Tab / Esc. */
+    if (suggest_handle_key(ev)) return;
 
 #ifdef DRAFTLING_HAS_IME
     /* Shortcuts, function keys and Alt / Win combinations are not for
@@ -10318,6 +10783,7 @@ static void handle_editor_key(const kb_event_t *ev)
             size_t s, e; editor_get_selection_range(&s, &e);
             editor_clear_selection(); editor_set_cursor(s);
         } else { editor_move_left(); }
+        for (int k = 0; k < 4 && cursor_mid_cluster(); k++) editor_move_left();
         break;
     case KB_KEY_RIGHT:
         if (shift) { editor_set_selection_anchor(); editor_move_right(); }
@@ -10325,6 +10791,7 @@ static void handle_editor_key(const kb_event_t *ev)
             size_t s, e; editor_get_selection_range(&s, &e);
             editor_clear_selection(); editor_set_cursor(e);
         } else { editor_move_right(); }
+        for (int k = 0; k < 4 && cursor_mid_cluster(); k++) editor_move_right();
         break;
     case KB_KEY_UP:
         if (shift) editor_set_selection_anchor();
@@ -10457,6 +10924,13 @@ static void handle_editor_key(const kb_event_t *ev)
          * pane so the caret can never end up drawn in the other pane
          * when the cursor reaches the beginning / end of the text. */
         refresh_focused_pane_and_title();
+    }
+    /* Show, follow or close the name-suggestion list. The typing fast
+     * path would clip the list's area out of the refresh. */
+    if (suggest_update(content_changed)) {
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+        fast_path_eligible = false;
+#endif
     }
     /* Partial-refresh clip is set/cleared by ClipGuard's destructor
      * on the M5Stack PaperS3 backend. */
@@ -12621,6 +13095,29 @@ static void build_screens(void)
         }
     }
 
+    /* ---- Name-suggestion drop-down (editor screen; laid out by
+     * suggest_place()) ---- */
+    {
+        s_sugg_open = false;
+        s_sugg_panel = lv_obj_create(s_scr);
+        lv_obj_set_style_bg_color(s_sugg_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_sugg_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_sugg_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_sugg_panel, 1, 0);
+        lv_obj_set_style_radius(s_sugg_panel, 0, 0);
+        lv_obj_set_style_pad_all(s_sugg_panel, 2, 0);
+        lv_obj_remove_flag(s_sugg_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_sugg_panel, LV_OBJ_FLAG_HIDDEN);
+        for (int i = 0; i < FMT_SUGGEST_MAX; i++) {
+            s_sugg_lbl[i] = lv_label_create(s_sugg_panel);
+            lv_label_set_long_mode(s_sugg_lbl[i], LV_LABEL_LONG_CLIP);
+            lv_obj_set_style_bg_opa(s_sugg_lbl[i], LV_OPA_COVER, 0);
+            lv_obj_set_style_bg_color(s_sugg_lbl[i], theme_bg(), 0);
+            lv_obj_set_style_text_color(s_sugg_lbl[i], theme_fg(), 0);
+            lv_label_set_text(s_sugg_lbl[i], "");
+        }
+    }
+
     /* ---- Message pop-up (moved onto the active screen when shown) ---- */
     {
         s_msg_panel = lv_obj_create(s_scr);
@@ -12967,9 +13464,9 @@ extern "C" void editor_ui_init(void)
      * rendered. High-density boards use the Hack family; all others
      * use Greybeard. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-    hack_init();
+    hires_init();
 #else
-    greybeard_init();
+    lowres_init();
 #endif
 #ifdef DRAFTLING_HAS_IME
     ime_init(&s_ime_host, ime_builtin_ja_dict(), ime_builtin_zh_dict());
@@ -12985,6 +13482,7 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+    load_name_suggest_from_nvs();
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();

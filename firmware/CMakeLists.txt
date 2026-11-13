@@ -14,7 +14,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # app image's esp_app_desc_t (readable at runtime via
 # esp_app_get_description()->version). Bump this alongside every
 # tagged release.
-set(PROJECT_VER "1.0.24")
+set(PROJECT_VER "1.0.26")
 
 project(draftling)
 

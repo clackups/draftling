@@ -344,7 +344,9 @@ static void enter_display_off(void)
  * EXT0 cannot be armed (see standby_enter_sleep()). */
 #define STUCK_WAKE_PIN_TIMER_SEC 60
 
-#if SOC_PM_SUPPORT_EXT0_WAKEUP && CONFIG_DRAFTLING_WAKEUP_GPIO >= 0 && \
+#if (SOC_PM_SUPPORT_EXT0_WAKEUP || \
+     (SOC_PM_SUPPORT_EXT1_WAKEUP && defined(CONFIG_DRAFTLING_WAKEUP_EXT1))) && \
+    CONFIG_DRAFTLING_WAKEUP_GPIO >= 0 && \
     !defined(CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF)
 /* Enable the RTC pull-up (and disable the pull-down) on a wake pin.
  * See standby_enter_sleep() for why. */
@@ -613,6 +615,31 @@ extern "C" void standby_enter_sleep(void)
         }
     }
 #endif
+#elif SOC_PM_SUPPORT_EXT1_WAKEUP && defined(CONFIG_DRAFTLING_WAKEUP_EXT1) && \
+      CONFIG_DRAFTLING_WAKEUP_GPIO >= 0
+    /* Targets with EXT1 but no EXT0 (ESP32-C61): the wake button is
+     * armed through EXT1, any-low, with the same pull-up and
+     * wait-for-release treatment as the EXT0 path above. The pin must
+     * be an LP IO (rtc_gpio_is_valid_gpio()). */
+    wake_pin_pullup(wake_gpio);
+    if (wait_wake_pin_high(wake_gpio)) {
+        esp_err_t err = esp_sleep_enable_ext1_wakeup_io(
+            1ULL << wake_gpio, ESP_EXT1_WAKEUP_ANY_LOW);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "esp_sleep_enable_ext1_wakeup_io(GPIO%d) failed: "
+                          "%s -- device will only wake via RESET",
+                     (int)wake_gpio, esp_err_to_name(err));
+        } else {
+            ESP_LOGI(TAG, "Entering deep sleep, wake on GPIO%d (EXT1)...",
+                     (int)wake_gpio);
+        }
+    } else {
+        ESP_LOGW(TAG, "Wake pin GPIO%d stuck LOW -- waking on a %d s "
+                      "timer instead", (int)wake_gpio,
+                 STUCK_WAKE_PIN_TIMER_SEC);
+        esp_sleep_enable_timer_wakeup((uint64_t)STUCK_WAKE_PIN_TIMER_SEC *
+                                      1000000ULL);
+    }
 #else
     /* Target or board has no configured GPIO wake source (including
      * ESP32-P4 and boards without a user wake button).

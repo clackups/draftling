@@ -1,0 +1,8 @@
+# CMakePresets.json board defaults: OnePage Reader (ESP32-C61)
+# Sets the hardware model and IDF target used by the "onepage_c61" preset.
+
+CONFIG_IDF_TARGET="esp32c61"
+CONFIG_DRAFTLING_MODEL_ONEPAGE_C61=y
+
+# The USB-C port is the chip's USB-Serial/JTAG; use it as the console.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

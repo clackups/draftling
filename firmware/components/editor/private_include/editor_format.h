@@ -63,6 +63,18 @@ typedef struct {
     const char *meaning;
 } fmt_help_row_t;
 
+/* Completions offered in a drop-down list while the user types: the
+ * typed text is doc[start, start + len) and ends at the cursor. */
+#define FMT_SUGGEST_MAX 5
+#define FMT_SUGGEST_LEN 64
+
+typedef struct {
+    size_t start;
+    size_t len;
+    int    count;
+    char   names[FMT_SUGGEST_MAX][FMT_SUGGEST_LEN];
+} fmt_suggest_t;
+
 typedef struct {
     void (*scan_init)(fmt_scan_t *sc);
     /* Classify lt[0, ll) -- line sc->line of the active document --
@@ -89,6 +101,10 @@ typedef struct {
      * terminated by { NULL, NULL }. */
     const char           *help_title;
     const fmt_help_row_t *help;
+    /* Fill s with completions for the text just typed before the
+     * cursor; returns false (s->count 0) when there are none. NULL
+     * when the format offers none. */
+    bool (*suggest)(fmt_suggest_t *s);
 } editor_format_t;
 
 extern const editor_format_t md_editor_format;

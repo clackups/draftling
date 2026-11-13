@@ -1,13 +1,16 @@
 #pragma once
 
 /*
- * Input methods of the Vietnamese, Korean, Japanese and Chinese
+ * Input methods of the Vietnamese, Korean, Japanese, Chinese and Tamil
  * language packs.
  *
  *   KB_IME_TELEX   Vietnamese Telex (aa -> a-circumflex, s/f/r/x/j tones)
  *   KB_IME_HANGUL  Korean 2-set: jamo composed into Hangul syllables
  *   KB_IME_KANA    Japanese: romaji -> hiragana, Space converts to kanji
  *   KB_IME_PINYIN  Chinese: pinyin letters -> hanzi candidates
+ *   KB_IME_TAMIL99 Tamil 99: vowel after consonant joins, auto pulli
+ *   KB_IME_TAMIL_TW  Tamil Typewriter: visual-order pieces reordered
+ *   KB_IME_TARAVINYAS  Tamil Taravinyas: place + manner of articulation
  *
  * The text being composed lives in the document itself, right before
  * the cursor; the input method edits it through the host callbacks

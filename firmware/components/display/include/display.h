@@ -71,6 +71,26 @@ typedef struct {
  * display_init(); the structure is copied. */
 void display_nv3041a_config(const display_nv3041a_config_t *cfg);
 
+/*
+ * Board wiring for the generic SSD1677 SPI e-paper backend
+ * (display_ssd1677_spi.cpp, 800x480). miso is wired when another
+ * device (a MicroSD card) shares the bus; -1 otherwise.
+ */
+typedef struct {
+    int spi_host;      /* spi_host_device_t */
+    int sclk, mosi, miso;
+    int cs, dc, rst, busy;
+    int spi_clock_hz;
+    /* RST LOW time and the wait after it goes HIGH again, in ms (0 =
+     * 10 ms). Longer where RST also switches the panel's supply. */
+    int rst_low_ms;
+    int rst_settle_ms;
+} display_ssd1677_spi_config_t;
+
+/* Only implemented by display_ssd1677_spi.cpp. Must be called before
+ * display_init(); the structure is copied. */
+void display_ssd1677_spi_config(const display_ssd1677_spi_config_t *cfg);
+
 void display_clear(uint8_t color);
 void display_set_pixel(uint16_t x, uint16_t y, uint8_t color);
 

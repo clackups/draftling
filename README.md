@@ -30,6 +30,7 @@ load the firmware quickly without having to compile it.
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
   * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
+  * [OnePage Reader](https://github.com/MoveCall/onepage-reader) (ESP32-C61, 4.26" e-paper, open hardware)
   * [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) (discontinued)
 
 * DIY boards
@@ -299,7 +300,7 @@ following the Fountain rules:
   file) shows its keys in bold.
 
 Markers such as the forcing characters are hidden except on the line
-holding the cursor. Two editing helpers are available:
+holding the cursor. Three editing helpers are available:
 
 - **Enter** at the end of a scene heading or transition also inserts
   the blank line that must follow it (Shift+Enter inserts a single
@@ -309,6 +310,12 @@ holding the cursor. Two editing helpers are available:
   last speaker; on a partly typed line (e.g. `br` or `int`) it offers
   matching character names, scene headings and transitions. Press Tab
   again for the next suggestion.
+- **Name suggestions**: while you type a character cue (capitals after
+  a blank line, or a name forced with `@`), the known character names
+  that start with the typed letters drop down under the cursor. Up/Down
+  pick a name, Enter or Tab inserts it, Esc closes the list; any other
+  key just keeps typing. Turn it off with F1 -> Settings -> Editor ->
+  "Suggest character names".
 
 
 
@@ -448,24 +455,30 @@ The editor supports 21 keyboard layouts that can be switched with
 | RO | Romanian, standard (QWERTY) |
 | HR/SI | Croatian / Slovenian (QWERTZ) |
 | TR | Turkish Q (QWERTY) |
+| FR-CA | Canadian French, traditional (QWERTY) |
 
 The accent keys of the European layouts are dead keys, as on a
 computer: press the accent, then the
 letter (acute + e gives e-acute). The accent followed by Space types
 the accent alone. The key left of Z on European keyboards (`<` `>`)
 works on all of these layouts.
+See the [typing guide](docs/typing/default.md).
 
 All of them are compiled into the default firmware, but only
 US-English is active at first. Turn the others on in F1 -> Settings -> Keyboard ->
 Active layouts; Ctrl+L cycles through the active ones. The current layout is
 shown in the title bar when more than one is active.
 
-Vietnamese, Korean, Japanese and Simplified Chinese come in separate
-firmware images, the language packs, each with US-English and the
-input method of its language (Telex, 2-set Hangul, romaji to kana and
-kanji, pinyin). See [docs/language-packs.md](docs/language-packs.md)
-for typing in them and [BUILDING.md](BUILDING.md#language-packs) for
-building them.
+Vietnamese, Korean, Japanese, Simplified Chinese and Tamil come in
+separate firmware images, the language packs, each with US-English and
+the input methods of its language (Telex, 2-set Hangul, romaji to kana
+and kanji, pinyin; for Tamil the official Tamil 99, Typewriter and
+InScript layouts and the Taravinyas input engine). Brief typing
+guides: [Vietnamese](docs/typing/vietnamese.md),
+[Korean](docs/typing/korean.md), [Japanese](docs/typing/japanese.md),
+[Chinese](docs/typing/chinese.md), [Tamil](docs/typing/tamil.md); the
+full details are in [docs/language-packs.md](docs/language-packs.md),
+and [BUILDING.md](BUILDING.md#language-packs) describes building them.
 
 
 ## Formatting the SD card
@@ -540,8 +553,10 @@ With a [Draftbox](https://github.com/clackups/draftbox) server (such as
 Draftbox website, create an access token for your repository with a
 one-time password. Then, in the project to connect, choose F1 -> Sync ->
 "Connect a Draftbox repository..." (if WiFi is not connected yet, the device first
-connects to the network from `wifi.cfg`, as `Ctrl+W` does): confirm or change the site name,
-press Enter, type the 8-digit password and press Enter again. The
+connects to the network from `wifi.cfg`, as `Ctrl+W` does): choose
+`draftbox.art` or "connect to a different server..." with Up/Down and
+press Enter (for a different server, type its name and press Enter), then type the 8-digit
+password and press Enter again. The
 device exchanges the password for the token over HTTPS and writes the
 repository URL, token, user name and branch it receives into the
 project's `git.cfg` (`repo_url`, `token`, `username`, `branch`). Any previous `path` line

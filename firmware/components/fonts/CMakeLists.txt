@@ -1,38 +1,38 @@
 set(srcs
-    "greybeard.c"
-    "greybeard_11.c"
-    "greybeard_14.c"
-    "greybeard_16.c"
-    "greybeard_18.c"
-    "greybeard_22.c"
-    "greybeard_26.c"
-    "greybeard_30.c"
-    "greybeard_34.c"
+    "lowres.c"
+    "lowres_11.c"
+    "lowres_14.c"
+    "lowres_16.c"
+    "lowres_18.c"
+    "lowres_22.c"
+    "lowres_26.c"
+    "lowres_30.c"
+    "lowres_34.c"
 )
 
 if(CONFIG_KB_LAYOUT_ENABLE_UA)
     list(APPEND srcs
-        "greybeard_cyrillic_11.c"
-        "greybeard_cyrillic_14.c"
-        "greybeard_cyrillic_16.c"
-        "greybeard_cyrillic_18.c"
-        "greybeard_cyrillic_22.c"
-        "greybeard_cyrillic_26.c"
-        "greybeard_cyrillic_30.c"
-        "greybeard_cyrillic_34.c"
+        "lowres_cyrillic_11.c"
+        "lowres_cyrillic_14.c"
+        "lowres_cyrillic_16.c"
+        "lowres_cyrillic_18.c"
+        "lowres_cyrillic_22.c"
+        "lowres_cyrillic_26.c"
+        "lowres_cyrillic_30.c"
+        "lowres_cyrillic_34.c"
     )
 endif()
 
 if(CONFIG_KB_LAYOUT_ENABLE_HE)
     list(APPEND srcs
-        "greybeard_hebrew_11.c"
-        "greybeard_hebrew_14.c"
-        "greybeard_hebrew_16.c"
-        "greybeard_hebrew_18.c"
-        "greybeard_hebrew_22.c"
-        "greybeard_hebrew_26.c"
-        "greybeard_hebrew_30.c"
-        "greybeard_hebrew_34.c"
+        "lowres_hebrew_11.c"
+        "lowres_hebrew_14.c"
+        "lowres_hebrew_16.c"
+        "lowres_hebrew_18.c"
+        "lowres_hebrew_22.c"
+        "lowres_hebrew_26.c"
+        "lowres_hebrew_30.c"
+        "lowres_hebrew_34.c"
     )
 endif()
 
@@ -47,7 +47,7 @@ set(font_slots_hack 9 11 14 16 18 22 26 30)
 
 if(latinx_enabled)
     foreach(n ${font_slots_gb})
-        list(APPEND srcs "greybeard_latinx_${n}.c")
+        list(APPEND srcs "lowres_latinx_${n}.c")
     endforeach()
 endif()
 
@@ -55,7 +55,7 @@ endif()
 # Central / Eastern European and Turkish layouts of the default pack.
 if(CONFIG_DRAFTLING_HAS_LATIN_EXT_A)
     foreach(n ${font_slots_gb})
-        list(APPEND srcs "greybeard_latina_${n}.c")
+        list(APPEND srcs "lowres_latina_${n}.c")
     endforeach()
 endif()
 
@@ -70,6 +70,21 @@ if(CONFIG_DRAFTLING_HAS_CJK)
                             "cjk/${cjk_set}/cjk16.bin")
 endif()
 
+# Tamil cluster glyphs (see tamil/LICENSE.txt): the runtime driver plus
+# the blobs of the font family the board renders with.
+if(CONFIG_DRAFTLING_HAS_TAMIL)
+    list(APPEND srcs "tamil_font.c")
+    if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+        foreach(n ${font_slots_hack})
+            list(APPEND embed_files "tamil/tamil_hires_${n}.bin")
+        endforeach()
+    else()
+        foreach(n ${font_slots_gb})
+            list(APPEND embed_files "tamil/tamil_lowres_${n}.bin")
+        endforeach()
+    endif()
+endif()
+
 if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     # High-density boards render 1:1 with the larger Hack font family
     # instead of upscaling Greybeard. The base Hack fonts cover Latin;
@@ -77,48 +92,48 @@ if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
     # as the Greybeard subsets. The Hebrew subset is rendered from the
     # Greybeard TTFs because Hack has no Hebrew coverage.
     list(APPEND srcs
-        "hack.c"
-        "hack_9.c"
-        "hack_11.c"
-        "hack_14.c"
-        "hack_16.c"
-        "hack_18.c"
-        "hack_22.c"
-        "hack_26.c"
-        "hack_30.c"
+        "hires.c"
+        "hires_9.c"
+        "hires_11.c"
+        "hires_14.c"
+        "hires_16.c"
+        "hires_18.c"
+        "hires_22.c"
+        "hires_26.c"
+        "hires_30.c"
     )
     if(CONFIG_KB_LAYOUT_ENABLE_UA)
         list(APPEND srcs
-            "hack_cyrillic_9.c"
-            "hack_cyrillic_11.c"
-            "hack_cyrillic_14.c"
-            "hack_cyrillic_16.c"
-            "hack_cyrillic_18.c"
-            "hack_cyrillic_22.c"
-            "hack_cyrillic_26.c"
-            "hack_cyrillic_30.c"
+            "hires_cyrillic_9.c"
+            "hires_cyrillic_11.c"
+            "hires_cyrillic_14.c"
+            "hires_cyrillic_16.c"
+            "hires_cyrillic_18.c"
+            "hires_cyrillic_22.c"
+            "hires_cyrillic_26.c"
+            "hires_cyrillic_30.c"
         )
     endif()
     if(CONFIG_KB_LAYOUT_ENABLE_HE)
         list(APPEND srcs
-            "hack_hebrew_9.c"
-            "hack_hebrew_11.c"
-            "hack_hebrew_14.c"
-            "hack_hebrew_16.c"
-            "hack_hebrew_18.c"
-            "hack_hebrew_22.c"
-            "hack_hebrew_26.c"
-            "hack_hebrew_30.c"
+            "hires_hebrew_9.c"
+            "hires_hebrew_11.c"
+            "hires_hebrew_14.c"
+            "hires_hebrew_16.c"
+            "hires_hebrew_18.c"
+            "hires_hebrew_22.c"
+            "hires_hebrew_26.c"
+            "hires_hebrew_30.c"
         )
     endif()
     if(latinx_enabled)
         foreach(n ${font_slots_hack})
-            list(APPEND srcs "hack_latinx_${n}.c")
+            list(APPEND srcs "hires_latinx_${n}.c")
         endforeach()
     endif()
     if(CONFIG_DRAFTLING_HAS_LATIN_EXT_A)
         foreach(n ${font_slots_hack})
-            list(APPEND srcs "hack_latina_${n}.c")
+            list(APPEND srcs "hires_latina_${n}.c")
         endforeach()
     endif()
 endif()

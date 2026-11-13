@@ -73,11 +73,12 @@ variable:
 
 | Pack | Layouts | Image size (RLCD-4.2) |
 |------|---------|-----------------------|
-| `default` | US-English, Ukrainian, German, French, Hebrew, Swiss German, Swiss French, Italian, Portuguese, Spanish, United Kingdom, Swedish / Finnish, Norwegian, Danish, Polish, Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian, Turkish | 2.3 MB |
+| `default` | US-English, Ukrainian, German, French, Hebrew, Swiss German, Swiss French, Italian, Portuguese, Spanish, United Kingdom, Swedish / Finnish, Norwegian, Danish, Polish, Czech, Slovak, Hungarian, Romanian, Croatian / Slovenian, Turkish, Canadian French | 2.3 MB |
 | `vietnamese` | US-English, Vietnamese (Telex) | 2.3 MB |
 | `korean` | US-English, Korean (2-set Hangul) | 3.1 MB |
 | `japanese` | US-English, Japanese (romaji -> kana -> kanji) | 4.2 MB |
 | `chinese` | US-English, Simplified Chinese (pinyin) | 3.9 MB |
+| `tamil` | US-English, Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | 2.6 MB |
 
 Every pack fits every board, including the 8 MB-flash ones.
 

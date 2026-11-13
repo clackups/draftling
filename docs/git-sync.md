@@ -40,8 +40,8 @@ history and repository:
     ...
 ```
 
-Ctrl+G (or F1 -> Sync -> Synchronize, which also connects WiFi first
-when it is down) syncs the current project: the project of
+Ctrl+G (or F1 -> Sync -> Synchronize) syncs the current project,
+connecting WiFi first when it is down: the project of
 the document being edited, or the one shown or selected in the file
 browser. A project without `git.cfg` is not synced. Only one sync runs
 at a time.

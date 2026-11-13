@@ -28,7 +28,7 @@ they differ. Never commit under any other identity.
   `->` for an arrow, `--` for an em-dash, `>=` / `<=` for the inequality
   glyphs, `ohm` for the ohm symbol, `deg` for the degree sign, `sec.` for
   the section sign, etc. The only exception is the auto-generated LVGL
-  font sources under `components/fonts/` (e.g. `greybeard_*.c`), whose
+  font sources under `components/fonts/` (e.g. `lowres_*.c`), whose
   comments reference the Unicode glyphs they encode.
 - All board-specific configuration -- pin numbers, panel dimensions,
   wakeup GPIOs, brand strings, etc. -- belongs in `main/Kconfig.projbuild`
@@ -62,11 +62,21 @@ they differ. Never commit under any other identity.
   `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD` and start a new empty
   `## [Unreleased]` section above it.
 
+## User Documentation
+
+- Adding a board, or changing what a board does that a user can see
+  (buttons, features, test status), must also update the user
+  documentation in the same commit: the board's row in the summary
+  table and its section in `HARDWARE.md`, the board list in
+  `README.md`, and the board's entries in this file (the "Supported
+  Hardware" table, the hardware-model list under
+  `main/Kconfig.projbuild`, the preset list under "Building").
+
 ## Project Overview
 
 Draftling is a distraction-free Markdown text editor for ESP32-S3-based
 development boards with reflective LCD displays (plus one ESP32-P4, one
-ESP32-C5 and one ESP32-S31 board). It is built with the
+ESP32-C5, one ESP32-C61 and one ESP32-S31 board). It is built with the
 ESP-IDF framework (v6.1+) and uses LVGL v9 for the graphical
 interface.
 
@@ -101,6 +111,7 @@ card).
 | Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677/SSD2677, auto-detected), 800x480, GT911 touch |
 | M5Stack PaperMono / PaperMono-Lite | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 | NiceMCU-C5E-DEV_2.8IPS (ESP32-C5) | 2.8-inch ST7789 IPS color LCD over PARLIO, 320x240, CST816D / FT6336G touch |
+| OnePage Reader (ESP32-C61) | 4.26-inch e-paper (SSD1677), 800x480, no touch, MicroSD on the panel's SPI bus |
 | Espressif ESP32-S31-Korvo-1 + ESP32-S3-LCD-EV-Board-SUB3 (ESP32-S31) | 4.3-inch RGB parallel color LCD, 800x480, GT1151 touch, USB-A keyboard host (untested) |
 
 The Seeed Studio reTerminal E1001 uses a Good Display GDEY075T7 7.5-inch
@@ -135,6 +146,9 @@ is a stub there), `gpio_hold_en()` holds a pad through deep sleep on
 its own (`gpio_deep_sleep_hold_en()` does not exist), no EXT0 wake
 and deep-sleep wake only on GPIO0-6 (the board wakes by RESET), the
 `vroland/epdiy` component is pulled in only for `target == esp32s3`,
+BLE 5.0 features off in `sdkconfig.defaults.bluetooth.esp32c5` (as on the
+C61: Bluedroid otherwise reconnects with LE Extended Create Connection,
+which the controller refuses after legacy scanning, reason 0x100),
 and IDF's C5 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` needs
 `-Wno-missing-field-initializers` in `components/ble_keyboard`. On
 the board, everything is tested on physical hardware.
@@ -232,7 +246,7 @@ sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
 sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
-                            korean, japanese, chinese), appended by
+                            korean, japanese, chinese, tamil), appended by
                             idf.py --lang-pack
 idf_ext.py                  idf.py extension: --lang-pack option /
                             DRAFTLING_LANG_PACK variable (see
@@ -252,14 +266,16 @@ components/                 Reusable IDF components
                             parsers, Markdown / Fountain / plain-text
                             format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
-                            Vietnamese subsets, CJK pixel-font driver)
+                            Vietnamese subsets, CJK pixel-font driver,
+                            Tamil cluster-glyph driver)
   git_sync/                 Native Git client (smart HTTP) + local history
   io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
                             (M5Stack PaperMono) I2C IO-expander drivers
   ime/                      Input methods: Vietnamese Telex, Korean
-                            Hangul, Japanese kana-kanji, Chinese pinyin
+                            Hangul, Japanese kana-kanji, Chinese pinyin,
+                            Tamil 99 / Typewriter / Taravinyas
   kb_layout/                Keyboard layout translation (US/UA/DE/FR/HE/
-                            VI/KO/JA/ZH) and language-pack Kconfig
+                            VI/KO/JA/ZH/TA) and language-pack Kconfig
   kermit/                   Kermit file server on the serial console
                             ("Sync via browser")
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -711,7 +727,10 @@ Per-board display backends behind a single C API:
   sequence seemed not to change the glass, but the panel was blank
   then anyway because of the unpowered SD card (see below). The
   SSD2677 path (2bpp DTM1 data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
-  `Driver_SSD2677.cpp` and is untested. The SPI bus is shared with the
+  `Driver_SSD2677.cpp`, with the frame turned 180 degrees (rows sent
+  bottom to top, unmirrored: Seeed's mirrored-row order showed the
+  picture upside down on hardware), and is tested on physical
+  hardware. The SPI bus is shared with the
   on-board MicroSD card (separate `CS`, same `SCLK`/`MOSI`/`MISO`):
   main.cpp powers the card (`SD_EN_PIN`) and drives its CS high before
   `display_init()`, because an unpowered card on the bus kept the panel
@@ -730,8 +749,7 @@ Per-board display backends behind a single C API:
   the whole screen within a few keystrokes -- the same in every
   release since the board was added, found by comparing v1.0.20 /
   v1.0.21 with and without a Ctrl+R before typing -- while fast
-  refreshes alone keep it clean. The SSD2677 path follows suit
-  untested.
+  refreshes alone keep it clean. The SSD2677 path follows suit.
 - **display_m5_papermono.cpp** -- from-scratch SPI e-paper backend
   for the M5Stack PaperMono / PaperMono-Lite, gated on
   `CONFIG_DRAFTLING_DISPLAY_M5_PAPERMONO`. Same single-SSD1677
@@ -880,7 +898,16 @@ The largest component. Contains:
   (`line_is_plain`; always false for Fountain) and Enter / Tab hooks
   (Fountain: a blank line after a scene heading / transition, and
   Slugline-style Tab completion of character names and scene
-  headings). The plain-text format classifies every line as a
+  headings) and the optional `suggest` hook (Fountain: the known
+  Character names starting with the cue being typed, `ftn_suggest()`,
+  the name list cached while only the cue line changes). After every
+  editor key that changes the text, `suggest_update()` in
+  `editor_ui.cpp` asks the hook and shows the result in a drop-down
+  under the cursor (`s_sugg_panel`); while it is open Up / Down / Enter
+  / Tab / Esc go to `suggest_handle_key()`, and any other key closes or
+  refreshes it. Gated on F1 -> Settings -> Editor -> "Suggest character
+  names" (`s_name_suggest`, NVS key `namesugg`, on by default). The
+  plain-text format classifies every line as a
   paragraph (or empty) with no spans, markers or decorations, so the
   text displays exactly as typed (tabs still expand to four cells).
   Keep format-specific code in these files rather than in
@@ -1073,7 +1100,8 @@ PSRAM size (`esp_psram_get_size()`), the flash size
 (every display backend implements it; the Xteink and reTerminal Sticky
 backends return the controller detected at boot), the touch controller
 from the `DRAFTLING_TOUCH_*` flags, the panel resolution and text
-area, the SD card from `sd_card_get_handle()` and
+area, the font set (Hack with `CONFIG_DRAFTLING_DISPLAY_HIDPI`, else
+Greybeard), the SD card from `sd_card_get_handle()` and
 `sd_card_get_fs_space()`, the connected keyboards (with the BLE
 keyboard's address from `ble_keyboard_get_device_addr()`), the USB
 device functions (`usb_msc_get_mode()` / `kermit_server_is_running()`,
@@ -1101,9 +1129,9 @@ Settings...
 Keyboard: <layout>        (only when more than one layout is active)
 Sync...                   Synchronize: <project> / Connect a Draftbox
                           repository... / Sync via browser: <project>...
-Connectivity...           Bluetooth... (Status, Scan for keyboard)
-                          WiFi... (Status, Connect to <SSID> | Disconnect,
+Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
                           Choose network...)
+                          Bluetooth... (Status, Scan for keyboard)
 System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
 Sleep now
@@ -1119,11 +1147,11 @@ state does not offer left out), so code must map a row through
 selection on `s_menu_sel_stack[]`. Esc goes up one level (closing the
 menu on the top level), F1 closes it from any level; "Close menu" is the top
 level's counterpart of the sub-levels' "Back (Esc)" row.
-Sync -> Synchronize (`start_project_sync_ex(true)`) connects WiFi
+Ctrl+G and Sync -> Synchronize (`start_project_sync()`) connect WiFi
 first when it is down (`wifi_connect_async()`, as Ctrl+W does) and
 leaves the project in `s_sync_after_wifi`; `sync_wifi_done()`, called
 from `wifi_state_cb()` / `wifi_connect_task()`, starts the sync on
-CONNECTED and drops it on failure. Ctrl+G still only asks for WiFi. The header
+CONNECTED and drops it on failure. The header
 (`s_lbl_menu_hdr`) names the level's path (`menu_level_header()`).
 Pickers rendered into `s_menu_list` (WiFi scan, SD card via USB, Sync
 via browser, Format SD card) return to the level they were opened from.
@@ -1147,7 +1175,8 @@ F1 menu (`settings_level_t`, rows `settings_item_t` in
 header `s_lbl_settings_hdr`):
 
 ```
-Editor...     Base font size, Append-only editing
+Editor...     Base font size, Append-only editing, Suggest character
+              names
 Display...    Backlight, Color theme, Orientation, Rotate 180,
               Invert display, 2x scale, Screen margins... (Left,
               Right, Top, Bottom)
@@ -1358,11 +1387,24 @@ is true, i.e. the WiFi network is IPv4/IPv6 dual-stack. See
 
 ### components/fonts/
 
-Custom LVGL bitmap fonts. Standard-density boards use the Greybeard
-typeface; high-density boards (`CONFIG_DRAFTLING_DISPLAY_HIDPI`) use
-the Hack typeface at larger native sizes instead of upscaling the
-framebuffer. See the dedicated section below for the full creation
-process.
+Custom LVGL bitmap fonts in two sets, named by the screens they are
+for rather than by typeface, since each set also carries glyphs from
+other fonts (Noto Sans Mono, the CJK pixel fonts, Noto Sans Tamil):
+
+- the **low-res** set, `lowres_NN.c` / `lowres_<script>_NN.c`,
+  `lowres.c`, `include/lowres.h`, `lowres_init()`: standard-density
+  boards, Latin and the European scripts from the **Greybeard**
+  typeface;
+- the **hi-res** set, `hires_NN.c` / `hires_<script>_NN.c`,
+  `hires.c`, `include/hires.h`, `hires_init()`: high-density boards
+  (`CONFIG_DRAFTLING_DISPLAY_HIDPI`), Latin and the European scripts
+  from the **Hack** typeface at larger native sizes instead of
+  upscaling the framebuffer.
+
+The Tamil blobs follow the same names (`tamil/tamil_lowres_NN.bin`,
+`tamil/tamil_hires_NN.bin`). These files were called `greybeard_*` and
+`hack_*` until the font sets gained other typefaces. See the dedicated
+section below for the full creation process.
 
 ### components/git_sync/
 
@@ -1537,11 +1579,14 @@ report files as safely pushed to the new one. `git_sync_start()`
 refuses to run while a connect is in progress. The UI is the F1 menu
 row F1 -> Sync -> "Connect a Draftbox repository..."
 (`MENU_ITEM_DRAFTBOX`, letter
-`C`): a two-step prompt on the menu screen (`s_dbx_panel`, site name
-then digits-only password). When WiFi is down it first shows
+`C`): a prompt on the menu screen (`s_dbx_panel`): the server choice
+(`DBX_STEP_SERVER`, `draftbox.art` or "connect to a different server...",
+`s_dbx_custom`; the panel grows to two rows via `dbx_panel_fit()`),
+for a custom server its name (`DBX_STEP_SITE`), then the digits-only
+password; Esc goes back one step. When WiFi is down it first shows
 `DBX_STEP_WIFI` and starts `wifi_connect_async()` (unless an attempt is
 already running); `wifi_state_cb()` calls `dbx_wifi_done()`, which
-advances to the site on CONNECTED and on ERROR (or when
+advances to the server choice on CONNECTED and on ERROR (or when
 `wifi_connect_task()` finds no credentials / is busy) closes the prompt
 and explains the failure in the message pop-up. The Draftbox progress
 ("Connecting to <site>...") and result are shown in the generic
@@ -1625,9 +1670,12 @@ for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
 via LVGL's bidi engine), Swiss German / Swiss French (QWERTZ), Italian,
 Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
 Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
-Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q, Korean
-(Dubeolsik; the letter keys give Hangul Compatibility Jamo) and the
-US-based Vietnamese, Japanese and Chinese layouts.
+Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q,
+Canadian French (traditional), Korean
+(Dubeolsik; the letter keys give Hangul Compatibility Jamo), Tamil
+InScript (`TA-IN`, as XKB `in(tam)`, AltGr + digit = Tamil digits) and
+the US-based Vietnamese, Japanese, Chinese and Tamil 99 / Tamil
+Typewriter / Taravinyas (`TA99`, `TA-TW`, `TA-TV`) layouts.
 
 Each layout (`layout_table_t` in `kb_layout.cpp`) has full normal /
 shift tables for keycodes 0x04..0x38 (`static_assert`ed to 53
@@ -1669,8 +1717,10 @@ Each layout can be independently enabled or disabled
 at build time via Kconfig (see `components/kb_layout/Kconfig.projbuild`);
 the language pack sets the defaults. `kb_layout_ime()` tells the
 editor which input method (`components/ime/`) the active layout uses
-(`KB_IME_TELEX`, `_HANGUL`, `_KANA`, `_PINYIN`, or `KB_IME_NONE`).
-The US tables are always compiled, since VI / JA / ZH type on them.
+(`KB_IME_TELEX`, `_HANGUL`, `_KANA`, `_PINYIN`, `_TAMIL99`,
+`_TAMIL_TW`, `_TARAVINYAS`, or `KB_IME_NONE`). The US tables are always
+compiled, since VI / JA / ZH and the Tamil input-method layouts type
+on them.
 
 Which of the compiled-in layouts `kb_layout_next()` (bound to `Ctrl+L`
 and `Win+Space` in the editor) actually cycles through is a separate,
@@ -1710,7 +1760,9 @@ remap to. Plain document text entry still goes through
 `kb_layout_translate()` directly.
 
 Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
-`kb_layout_get()`, `kb_layout_name()`,
+`kb_layout_get()`, `kb_layout_name()` (the short tag of the title
+bar), `kb_layout_long_name()` (the name the Active layouts picker
+shows next to the tag),
 `kb_layout_next()`, `kb_layout_is_rtl()`, `kb_layout_is_active()`,
 `kb_layout_set_active()`, `kb_layout_active_count()`,
 `kb_layout_get_active_mask()`, `kb_layout_set_active_mask()`,
@@ -1718,11 +1770,13 @@ Public API: `kb_layout_translate()`, `kb_layout_shortcut_char()`,
 
 ### components/ime/
 
-Input methods of the Vietnamese, Korean, Japanese and Chinese language
-packs (user docs: `docs/language-packs.md`). Plain C with no ESP-IDF
-dependency outside `ime_builtin.c` (the embedded dictionaries), so the
-engines can be compiled and tested on a host with a fake document.
-Built only when KB_LAYOUT_ENABLE_VI / _KO / _JA / _ZH is set (an empty
+Input methods of the Vietnamese, Korean, Japanese, Chinese and Tamil
+language packs (user docs: `docs/language-packs.md`). Plain C with no
+ESP-IDF dependency outside `ime_builtin.c` (the embedded dictionaries),
+so the engines can be compiled and tested on a host with a fake
+document (`test/host/run.sh` does that for the Tamil engines; run it
+after changing them). Built only when KB_LAYOUT_ENABLE_VI / _KO / _JA /
+_ZH / _TA99 / _TA_TW / _TA_TV is set (an empty
 component otherwise; the editor requires it through
 `idf_component_optional_requires()`).
 
@@ -1761,6 +1815,26 @@ composition is dropped and the text kept. Candidates are shown via
   one possibly incomplete; candidates are the words for the longest
   run of complete syllables, then shorter runs; each candidate's
   `span` is the letters it consumes.
+
+- `ime_tamil99.c` -- Tamil 99 (G.O. Ms. 17 of 1999): vowel after a
+  consonant becomes its sign, `f` pulli, automatic pulli between equal
+  consonants and nasal + stop pairs (not right after an automatic
+  one), `a` confirms the inherent a. The last consonant typed is kept
+  as the composition (`g_comp`), so a cursor move resets the rules.
+- `ime_tamil_tw.c` -- Tamil Typewriter, after Keyman's MIT-licensed
+  `thamizha_new_typewriter` rules. Stateless: the e / ee / ai sign is
+  typed before the consonant (it shows on a dotted circle) and moved
+  after it when the consonant comes; e/ee sign + `h` -> o/oo sign,
+  e sign + `s` -> au sign (split again before a pulli / vowel sign),
+  `}` / `:` turn a u sign into uu.
+- `ime_taravinyas.c` -- Taravinyas (Bandhan Pramanik's engine,
+  AGPL-3.0; reimplemented from its tables, no code copied): `v`
+  toggles consonant / vowel mode (kept until toggled), place keys
+  `fdsrew`, manner `jklui`; vowel `fdsre`, length `jkl`, `x` sign /
+  `c` letter; `a` the extra letters. It reports `composing()` from a
+  method key until a letter is typed, so its status line (the choices
+  of the next key) stays in the status bar meanwhile.
+- `ime_tamil.c` / `ime_tamil.h` -- helpers shared by the three.
 
 Dictionaries (`dict/ja.bin`, `dict/zh.bin`, DIME format: sorted keys
 with offsets, a cost and up to 12 candidates per key) are generated by
@@ -2109,10 +2183,13 @@ once the driver is up, otherwise the `nvs.net80211` namespace).
 
 ## Font Creation Process
 
-The `components/fonts/` directory contains custom LVGL bitmap fonts
-generated from the **Greybeard** typeface, a monospaced bitmap font that
-is a vector port of UW ttyp0 (MIT-licensed, source:
-https://github.com/flowchartsman/greybeard).
+The `components/fonts/` directory contains custom LVGL bitmap fonts.
+The low-res set (`lowres_*`) is generated from the **Greybeard**
+typeface, a monospaced bitmap font that is a vector port of UW ttyp0
+(MIT-licensed, source: https://github.com/flowchartsman/greybeard); the
+hi-res set (`hires_*`) from **Hack** (see "Hack fonts" below). The
+file names name the set, not the typeface: the sets also carry
+glyphs of other fonts (see "Language packs").
 
 ### Source Files
 
@@ -2136,13 +2213,13 @@ lv_font_conv \
   --bpp 1 \
   --format lvgl \
   --no-compress \
-  --lv-font-name greybeard_14 \
-  -o greybeard_14.c
+  --lv-font-name lowres_14 \
+  -o lowres_14.c
 ```
 
 ### Reproducing the committed fonts
 
-The committed base fonts (`greybeard_NN.c`, `hack_NN.c`) regenerate
+The committed base fonts (`lowres_NN.c`, `hires_NN.c`) regenerate
 byte-for-byte -- apart from the fix-ups below -- from the command line
 recorded in each file's header comment, using:
 
@@ -2183,19 +2260,19 @@ any font, replace that whole `#ifdef ... #endif` block with a single line:
 ```
 
 This matches the include style used elsewhere in the component
-(`components/fonts/greybeard.c`, `components/fonts/include/greybeard.h`).
+(`components/fonts/lowres.c`, `components/fonts/include/lowres.h`).
 
 Newer `lv_font_conv` commits wrap that block in an `#ifdef
 __has_include` guard; replace the whole construct the same way. Some
 committed files also declare the fallback router as `extern lv_font_t
 ..._ext;` rather than `extern const lv_font_t ..._ext;` (the router is
-mutable, see `greybeard.c`); keep whichever form the file already has.
+mutable, see `lowres.c`); keep whichever form the file already has.
 The Hack files additionally get the advance-width snapping described
 under "Hack fonts" below.
 
 ### Unicode Ranges
 
-The base `greybeard_NN.c` files cover the always-on core ranges:
+The base `lowres_NN.c` files cover the always-on core ranges:
 
 | Range | Description |
 |-------|-------------|
@@ -2212,21 +2289,21 @@ for builds that do not need a given script.
 
 | File pattern | Range | Gated on |
 |--------------|-------|----------|
-| `greybeard_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
-| `greybeard_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
-| `greybeard_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
-| `greybeard_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
+| `lowres_cyrillic_NN.c` | U+0400 - U+04FF (Cyrillic) + U+20B4 (Hryvnia) | `CONFIG_KB_LAYOUT_ENABLE_UA` |
+| `lowres_hebrew_NN.c`   | U+0590 - U+05FF (Hebrew block) | `CONFIG_KB_LAYOUT_ENABLE_HE` |
+| `lowres_latinx_NN.c`   | Vietnamese letters, dong sign, curly quotes, dashes (see "Language packs") | `CONFIG_KB_LAYOUT_ENABLE_VI` or `CONFIG_DRAFTLING_HAS_CJK` |
+| `lowres_latina_NN.c`   | Latin Extended-A U+0100-U+017F, Romanian U+0218-U+021B, spacing accents U+02C7 / U+02D8-U+02DB / U+02DD, quotes U+201D-U+201E | `CONFIG_DRAFTLING_HAS_LATIN_EXT_A` |
 
-The base font is generated with `--lv-fallback greybeard_NN_ext` and
-the Hebrew subset with `--lv-fallback greybeard_NN_he_next`. Both
+The base font is generated with `--lv-fallback lowres_NN_ext` and
+the Hebrew subset with `--lv-fallback lowres_NN_he_next`. Both
 fallback symbols are tiny runtime-mutable "router" `lv_font_t` structs
-defined in `components/fonts/greybeard.c`; `greybeard_init()` chains
+defined in `components/fonts/lowres.c`; `lowres_init()` chains
 their `.fallback` pointers at boot so that a missed glyph lookup in
 the base font walks into Hebrew and/or Cyrillic as appropriate.
 Hebrew layouts also require `CONFIG_LV_USE_BIDI=y` so LVGL renders
 RTL strings in the correct visual order.
 
-Every `greybeard_NN.c`/`greybeard_cyrillic_NN.c`/`greybeard_hebrew_NN.c`
+Every `lowres_NN.c`/`lowres_cyrillic_NN.c`/`lowres_hebrew_NN.c`
 file for NN in {18, 22, 26} is generated with `--autohint-off`; 11/14/16
 are not (see below for why). Without it, freetype's autohinter drops
 entire scanlines out of many glyphs -- diagonal strokes in "V"/"X" get
@@ -2245,13 +2322,13 @@ keep the documented command lines minimal.
 
 ### Sizes and Metrics
 
-Eight sizes are provided. `greybeard_11` through `greybeard_22` are
+Eight sizes are provided. `lowres_11` through `lowres_22` are
 rendered at their native TTF pixel size. The remaining three have no
 matching native TTF and are derived from a smaller native size
-instead -- `greybeard_26` by scaling the 22 px TTF up by a
+instead -- `lowres_26` by scaling the 22 px TTF up by a
 non-integer 1.18x ratio (acceptable since it is only ever used as a
-heading, one step above the largest body size), and `greybeard_30` /
-`greybeard_34` as a clean 2x pixel-double of the native 15 px / 17 px
+heading, one step above the largest body size), and `lowres_30` /
+`lowres_34` as a clean 2x pixel-double of the native 15 px / 17 px
 TTFs respectively. The 2x-double approach was chosen over scaling
 from 22 px (as was tried initially) because a non-integer scale
 ratio (22 px -> 30 px is 1.36x, -> 34 px is 1.55x) produces visibly
@@ -2263,14 +2340,14 @@ Hack family's Hebrew subset (see "Hack fonts" below).
 
 | File | Pixel Size | Char Width | Line Height | Notes |
 |------|-----------|------------|-------------|-------|
-| greybeard_11.c | 11 | 6 | 11 | Smallest, used for compact UI elements |
-| greybeard_14.c | 14 | 7 | 13 | Default body text |
-| greybeard_16.c | 16 | 8 | 15 | |
-| greybeard_18.c | 18 | 9 | 17 | Also a base font size choice |
-| greybeard_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
-| greybeard_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
-| greybeard_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
-| greybeard_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
+| lowres_11.c | 11 | 6 | 11 | Smallest, used for compact UI elements |
+| lowres_14.c | 14 | 7 | 13 | Default body text |
+| lowres_16.c | 16 | 8 | 15 | |
+| lowres_18.c | 18 | 9 | 17 | Also a base font size choice |
+| lowres_22.c | 22 | 11 | 21 | Headings; also a base font size choice |
+| lowres_26.c | 26 | 13 | 25 | Heading (scaled from 22 px TTF) |
+| lowres_30.c | 30 | 16 | 30 | H1 for the 18 px base size (2x double of 15 px TTF) |
+| lowres_34.c | 34 | 18 | 34 | H1 for the 22 px base size (2x double of 17 px TTF) |
 
 Slots 30 and 34 exist only to back the H1/H2 headings of the 18 px
 and 22 px base font size choices (`FONT_SIZE_OPTIONS` in
@@ -2278,8 +2355,8 @@ and 22 px base font size choices (`FONT_SIZE_OPTIONS` in
 (body) font sizes themselves, since the monospace cell that large
 would show very little content even on a large panel.
 
-All fonts are declared in `components/fonts/include/greybeard.h` as
-`extern const lv_font_t greybeard_NN` and compiled as an IDF component
+All fonts are declared in `components/fonts/include/lowres.h` as
+`extern const lv_font_t lowres_NN` and compiled as an IDF component
 that depends on `lvgl__lvgl`.
 
 ### Rendering Settings
@@ -2290,7 +2367,7 @@ that depends on `lvgl__lvgl`.
   the microcontroller.
 - **Format:** `lvgl` (native LVGL font structure).
 
-### Hack fonts (high-density boards)
+### Hack fonts (high-density boards, the `hires_*` set)
 
 Boards with `CONFIG_DRAFTLING_DISPLAY_HIDPI` set (the ones that used to
 upscale the framebuffer 2x) render the UI 1:1 with the **Hack**
@@ -2306,20 +2383,20 @@ more text on a large, dense panel (e.g. the Waveshare Touch-LCD-7's
 for the HIDPI-only 20 px base font size; Greybeard also has its own
 slot 30 (and 34), added later to back headings for the non-HIDPI 18 px
 and 22 px base font sizes -- see "Sizes and Metrics" above. The file
-names mirror the Greybeard slots (`hack_11` ..
-`hack_26`) plus the two extras (`hack_9`, `hack_30`); the number is
+names mirror the Greybeard slots (`hires_11` ..
+`hires_26`) plus the two extras (`hires_9`, `hires_30`); the number is
 the slot, not the Hack pixel size:
 
 | File | Hack Pixel Size | Cell Width | Line Height | Replaces Greybeard slot |
 |------|-----------------|------------|-------------|-------------------------|
-| hack_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
-| hack_11.c | 19 | 11 | 23 | greybeard_11 (x2) |
-| hack_14.c | 21 | 13 | 26 | greybeard_14 (x2) |
-| hack_16.c | 25 | 15 | 30 | greybeard_16 (x2) |
-| hack_18.c | 28 | 17 | 34 | greybeard_18 (x2) |
-| hack_22.c | 34 | 21 | 41 | greybeard_22 (x2) |
-| hack_26.c | 41 | 25 | 50 | greybeard_26 (x2) |
-| hack_30.c | 47 | 28 | 58 | (Greybeard's slot 30 exists too, but is unrelated -- it is not pixel-doubled into this file, since HIDPI boards never fall back to Greybeard) |
+| hires_9.c  | 16 | 10 | 19 | (none; Hack-only extra-compact body size) |
+| hires_11.c | 19 | 11 | 23 | lowres_11 (x2) |
+| hires_14.c | 21 | 13 | 26 | lowres_14 (x2) |
+| hires_16.c | 25 | 15 | 30 | lowres_16 (x2) |
+| hires_18.c | 28 | 17 | 34 | lowres_18 (x2) |
+| hires_22.c | 34 | 21 | 41 | lowres_22 (x2) |
+| hires_26.c | 41 | 25 | 50 | lowres_26 (x2) |
+| hires_30.c | 47 | 28 | 58 | (Greybeard's slot 30 exists too, but is unrelated -- it is not pixel-doubled into this file, since HIDPI boards never fall back to Greybeard) |
 
 Slot 9's heading fonts (h1/h2/h3) reuse the existing slot 11/14/16
 fonts rather than needing new dedicated assets -- the heading scale
@@ -2338,26 +2415,26 @@ layout options:
 
 | File pattern | Range | Source | Gated on |
 |--------------|-------|--------|----------|
-| `hack_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
-| `hack_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
-| `hack_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
-| `hack_latina_NN.c` | same as `greybeard_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
+| `hires_NN.c` | Latin, Latin-1, U+20AC, U+2116, U+2026 | Hack-Regular.ttf | `DRAFTLING_DISPLAY_HIDPI` |
+| `hires_cyrillic_NN.c` | U+0400-U+04FF + U+20B4 | Hack-Regular.ttf | `KB_LAYOUT_ENABLE_UA` |
+| `hires_hebrew_NN.c` | U+0590-U+05FF | Greybeard TTFs, pixel-doubled | `KB_LAYOUT_ENABLE_HE` |
+| `hires_latina_NN.c` | same as `lowres_latina_NN.c` | Hack-Regular.ttf | `DRAFTLING_HAS_LATIN_EXT_A` |
 
 Hack has no Hebrew glyphs, so the Hebrew subset is rendered from the
 Greybeard TTFs. For slots 11-30, that's at twice the corresponding
 Greybeard slot's native pixel size (a clean 2x pixel-double that
 matches what the old scaled path produced). Slot 9 has no Greybeard
 source of its own to double (Greybeard's smallest is 11px), so
-`hack_hebrew_9.c` is instead rendered directly from
+`hires_hebrew_9.c` is instead rendered directly from
 `Greybeard-11px.ttf` (the smallest available source) at 18px --
 close to, but not an exact 2x multiple of, the source's native size;
 freetype rasterizes any target size cleanly from the vector outline
 regardless, so this is a minor deviation from the other slots'
 "clean double" convention, not a technical limitation. The base fonts
-are generated with `--lv-fallback hack_NN_ext` and the Hebrew subset
-with `--lv-fallback hack_NN_he_next`; the router structs live in
-`components/fonts/hack.c` and are chained at boot by `hack_init()`,
-exactly like `greybeard_init()`. The same post-generation include
+are generated with `--lv-fallback hires_NN_ext` and the Hebrew subset
+with `--lv-fallback hires_NN_he_next`; the router structs live in
+`components/fonts/hires.c` and are chained at boot by `hires_init()`,
+exactly like `lowres_init()`. The same post-generation include
 fix-up applies (replace the `#ifdef LV_LVGL_H_INCLUDE_SIMPLE ... #endif`
 block with `#include "lvgl.h"`). All Hack sources are compiled only
 when `CONFIG_DRAFTLING_DISPLAY_HIDPI` is set, so standard-density
@@ -2372,10 +2449,10 @@ Greybeard and Hack. Everything else in the editor is family-agnostic
 because it works through those slots. `FONT_9` is HIDPI-only, backing
 the HIDPI-only 9 px base font size, and has no Greybeard equivalent.
 `FONT_30` is defined on both sides but for unrelated fonts: on HIDPI
-boards it is `&hack_30`, backing the H1 heading of the HIDPI-only
-20 px base font size; on non-HIDPI boards it is `&greybeard_30`,
+boards it is `&hires_30`, backing the H1 heading of the HIDPI-only
+20 px base font size; on non-HIDPI boards it is `&lowres_30`,
 backing the H1 heading of the non-HIDPI 18 px base font size.
-`FONT_34` is non-HIDPI-only (`&greybeard_34`), backing the H1 heading
+`FONT_34` is non-HIDPI-only (`&lowres_34`), backing the H1 heading
 of the non-HIDPI 22 px base font size -- Hack has no matching slot
 since HIDPI's base font sizes top out at 20 px.
 
@@ -2383,10 +2460,11 @@ since HIDPI's base font sizes top out at 20 px.
 
 A language pack is the set of layouts, input methods and font subsets
 of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
-IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR),
+IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR,
+FR-CA),
 `vietnamese`
-(US, VI), `korean` (US, KO), `japanese` (US, JA) and `chinese` (US,
-ZH). Each is a separate image; the board preset picks the hardware and
+(US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
+ZH) and `tamil` (US, TA99, TA-TW, TA-IN, TA-TV). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
 **Build mechanism.** `firmware/idf_ext.py` is a project idf.py
@@ -2412,18 +2490,19 @@ layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
 
 Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
 2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
-Xteink X4 Pro). All fit
+Xteink X4 Pro), tamil 2.6 MB (2.9 MB on the X4 Pro). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
-**Font chain.** `greybeard_init()` / `hack_init()` chain, per slot:
+**Font chain.** `lowres_init()` / `hires_init()` chain, per slot:
 base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
 Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
-(`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Cyrillic
-(generated without a fallback, so always last). Missing subsets are
+(`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Tamil
+runtime font -> Cyrillic (generated without a fallback, so always
+last). Missing subsets are
 skipped (`slot_chain_t` table).
 
-**Latin Extended-A** (`greybeard_latina_NN.c`, `hack_latina_NN.c`,
+**Latin Extended-A** (`lowres_latina_NN.c`, `hires_latina_NN.c`,
 compiled with `DRAFTLING_HAS_LATIN_EXT_A`, i.e. any of the PL, CZ, SK,
 HU, RO, HR/SI, TR layouts): the whole Latin Extended-A block, the
 Romanian s / t with comma below, the spacing accents the dead keys
@@ -2433,7 +2512,7 @@ Greybeard v1.0.0 and Hack v3.003 (both cover all of it; same sizes,
 `--autohint-off` slots and Hack advance snapping as the Latin
 extension below).
 
-**Latin extension** (`greybeard_latinx_NN.c`, `hack_latinx_NN.c`,
+**Latin extension** (`lowres_latinx_NN.c`, `hires_latinx_NN.c`,
 compiled with KB_LAYOUT_ENABLE_VI or DRAFTLING_HAS_CJK): the
 Vietnamese letters (U+0102/0103, U+0110/0111, U+0128/0129,
 U+0168/0169, U+01A0/01A1, U+01AF/01B0, U+1EA0..U+1EF9), the dong sign
@@ -2465,6 +2544,55 @@ then smaller sizes for glyphs missing there, then oversize ones as a
 last resort. LVGL's word wrap breaks between CJK characters
 (`lv_text_is_a_word()`).
 
+**Tamil fonts** (`components/fonts/tamil_font.c`,
+`tamil/tamil_{greybeard,hack}_NN.bin`, `tamil/tamil_cells.h`, license
+in `tamil/LICENSE.txt`): LVGL does no shaping, but it passes the next
+code point to `get_glyph_dsc()` (in the label draw, width and letter-
+position paths; only with `kerning` NORMAL, the default). So a base
+(consonant or U+25CC) followed by a mark (vowel sign, pulli, U+0BD7,
+anusvara) is drawn as one pre-shaped glyph and the mark is an empty,
+zero-width glyph. `tools/gen_tamil_font.py` shapes every base + mark
+pair, the vowels, digits and symbols with HarfBuzz and renders them
+1 bpp with FreeType (hinted Noto Sans Tamil v2.004; the regular cut, not the UI one: fitted to the same line height its letters come out about a pixel taller) into one "DTAM"
+blob per slot, at the largest pixel size whose clusters fit the slot's
+line height (raised a pixel or two off the Latin baseline where the
+descenders need it). That line is about 30 % taller than the base
+font's: Tamil syllables need roughly twice their body height for loops
+and hooks, and in a Greybeard-height line the body of the 14 / 16 px
+sizes was 5-7 px tall. `lowres_init()` / `hires_init()` make mutable
+copies of the base fonts (`<font>_NN_tall`, `TAMIL_LINE_EXTRA()` more
+line height, `TAMIL_BASE_EXTRA()` of it below the baseline,
+`user_data` pointing at the base font) and the editor's `FONT_NN`
+macros (`SLOT_FONT()`) use them in the Tamil pack; the generator's
+`line_extra()` uses the same formulas. Below a 17 px (tall) line the font's TrueType hints
+are used, from there up the FreeType auto-hinter (the TrueType
+hints mix one- and two-pixel strokes there), and the Greybeard slots
+from 22 px up, whose Latin letters have two-pixel stems, widen the
+outlines by 0.4 px horizontally (`EMBOLDEN_PX`; 0.6 px fills the small
+loops). Glyphs keep the font's proportional advance (HarfBuzz's,
+widened to leave a blank column right of the hinted ink), so the
+syllables of a word join up; a whole-cell grid spaced them apart.
+`tamil_cells.h` holds the most cells each glyph takes in any slot, an
+upper bound for `tamil_cp_cells()`; the e-paper typing fast path is
+off on lines with Tamil (`line_has_proportional_text()`), whose pixel
+width the cell count does not give. The k-ssa (U+0B95 U+0BCD U+0BB7)
+and sri (U+0BB8 / U+0BB6, U+0BCD U+0BB0 U+0BC0) ligatures span more
+code points than the one-letter look-ahead: `tamil_ligature()` finds
+them, `build_line_view()` shows each as a private-use code point
+(`TAMIL_LIG_KSSA` U+E001, which also takes vowel signs,
+`TAMIL_LIG_SRI` U+E002) mapped to the sequence's first byte, and
+`cursor_mid_cluster()` steps over them. The
+font has no look-behind, so the editor shows a mark without a base on
+a dotted circle (`build_line_view()`, which maps it to the mark's
+byte); elsewhere (titles, status) such a mark stays invisible.
+`lv_draw_character()` (the bold / italic redraw in
+`line_deco_draw_cb()`) has no look-ahead either: it draws
+`tamil_draw_cp()`, a plane-15 private-use code point standing for the
+joined glyph. Left / Right step over a cursor position between a base
+and its mark. Blobs are matched to a slot by
+line height and cell width, and only the family the board renders with
+is embedded.
+
 **Editor integration** (`editor_ui.cpp`, `DRAFTLING_HAS_IME`):
 `handle_editor_key()` hands typed keys -- and Space / Enter /
 Backspace / arrows / Esc while composing -- to `ime_handle_key()`
@@ -2472,7 +2600,8 @@ after the Ctrl block and before the special-key switch; Ctrl / Alt /
 Win combinations and F-keys call `ime_finish()` first. Width estimates
 (`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
 e-paper typing fast path) count CJK characters as two cells
-(`cp_is_wide()`, same ranges as `cjk_is_wide()`). The small text
+(`cp_is_wide()`, same ranges as `cjk_is_wide()`) and Tamil by
+`tamil_cp_cells()` (`cp_cells()`, which needs the code points around). The small text
 fields (search, file names, WiFi) are not wired to the input methods.
 
 **Dictionaries** (`components/ime/tools/gen_ime_dicts.py`, licenses in
@@ -2759,6 +2888,32 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   vendor's upright portrait: swap + mirror Y (mirror X, as on the
   FNK0104B, put lower-right taps in the upper-left corner). Tested on
   physical hardware. *Requires ESP32-C5.*
+- **DRAFTLING_MODEL_ONEPAGE_C61** -- OnePage Reader
+  (github.com/MoveCall/onepage-reader, `main/boards/onepage_c61.h`):
+  ESP32-C61HR2, 16 MB flash, 4.26" 800x480 SSD1677 e-paper (the
+  Xteink X4 panel) driven by the generic
+  `components/display/display_ssd1677_spi.cpp`
+  (`DRAFTLING_DISPLAY_SSD1677_SPI`, pins from the board header via
+  `display_ssd1677_spi_config()`), Hack fonts (HIDPI), MicroSD on the
+  panel's SPI bus. The panel's RST line (GPIO27) also switches the
+  supply of the MicroSD card and the microphone; the pre-sleep hook
+  parks the bus lines LOW before cutting it. Battery through a 1:2
+  divider on GPIO5, USB detect on GPIO11 (charging indicator). Power
+  (GPIO2) wakes through EXT1 (`DRAFTLING_WAKEUP_EXT1`; the C61 has no
+  EXT0). Buttons (`onepage_btn_init()` in main.cpp): Power 2 s hold =
+  sleep, Up (PREV, GPIO6) 2 s hold = forget keyboards; short presses
+  (Power = F1, side keys Up / Down, four front keys Esc / Left / Right
+  / Enter on an ADC ladder on GPIO4) act only while a keyboard is
+  connected. No USB MSC / Kermit. C61 specifics
+  (`sdkconfig.defaults.esp32c61`,
+  `sdkconfig.defaults.bluetooth.esp32c61`): BLE 5.0 features are off,
+  because Bluedroid otherwise reconnects with LE Extended Create
+  Connection after any BLE 5.0 event and the controller refuses it
+  after legacy scanning (Cmd Disallowed, reconnect fails with reason
+  0x100); internal RAM is the tightest of any target, so WiFi uses 8
+  static TX buffers, allocations above 4 KB go to PSRAM and the SPI
+  master ISR runs from flash (esp_wifi_init() ran out of memory with
+  BLE up). Tested on physical hardware. *Requires ESP32-C61.*
 - **DRAFTLING_MODEL_ESPRESSIF_S31_KORVO1** -- Espressif
   ESP32-S31-Korvo-1 (`main/boards/espressif_s31_korvo1.h`) with the
   ESP32-S3-LCD-EV-Board-SUB3 4.3" subboard: ESP32-S31-WROOM-3 (16 MB
@@ -3014,7 +3169,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hack_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, ESP32-S31-Korvo-1 |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, ESP32-S31-Korvo-1 |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
@@ -3110,16 +3265,22 @@ follows the pack:
 | KB_LAYOUT_ENABLE_RO | Romanian, standard (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_HR | Croatian / Slovenian (QWERTZ) | y in the default pack |
 | KB_LAYOUT_ENABLE_TR | Turkish Q (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_FR_CA | Canadian French, traditional (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_VI | Vietnamese (Telex) | y in the vietnamese pack |
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
 | KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
+| KB_LAYOUT_ENABLE_TA99 | Tamil 99 | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_TW | Tamil Typewriter | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_IN | Tamil InScript | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA_TV | Tamil Taravinyas | y in the tamil pack |
 
 Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR or TR
 enabled) compiles the Latin Extended-A font subset;
 `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
 fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
-of JA, ZH, KO) picks the font set under `components/fonts/cjk/`.
+of JA, ZH, KO) picks the font set under `components/fonts/cjk/`;
+`DRAFTLING_HAS_TAMIL` (any Tamil layout) compiles the Tamil fonts.
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
@@ -3133,7 +3294,7 @@ Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
 Settings -> Keyboard), independent of this Kconfig menu -- see the `kb_layout`
 component writeup above. Its NVS key differs per pack (`actlayouts`,
-`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`), because the bit
+`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_ta`), because the bit
 order follows the compiled-in layouts.
 
 ## Building
@@ -3165,7 +3326,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono`, `nicemcu_c5_28ips`, `espressif_s31_korvo1`). Each
+`m5stack_papermono`, `nicemcu_c5_28ips`, `onepage_c61`, `espressif_s31_korvo1`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
 `sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,
 so no Bluetooth option is set for a disabled stack -- ESP-IDF 6.1
@@ -3249,16 +3410,31 @@ tree referenced in steps 1-4.
    `CHANGELOG.md` `[Unreleased]` entries under a new `[X.Y.Z]` heading
    (see "Changelog" above), commit, and push `main` (along with
    whatever else is going into the release).
-2. For each board with prebuilt binaries, build at the commit that
-   will be tagged and sanity-check the output:
+2. Build every board with prebuilt binaries, in every language pack,
+   at the commit that will be tagged -- always in parallel, with
+   `firmware/build_release.sh` (never one `idf.py` build after
+   another):
    ```bash
    cd firmware
-   idf.py --preset m5stack_papers3 build
-   idf.py --preset xteink_x4_pro build
-   idf.py --preset xteink_x4_classic build
-   idf.py --preset waveshare_epaper_397 build
-   # ...and so on for every board in the release
+   ./build_release.sh                  # every flasher board x pack
+   ./build_release.sh xteink_x4_pro    # or just the boards named
    ```
+   The script runs `PARALLEL` builds at once (default: half the CPUs),
+   each with `IDF_PY_BUILD_JOBS` compile jobs (default 4), which keeps
+   every CPU busy through the single-threaded link steps;
+   logs go to `build/release-logs/<board>-<pack>.log` and the failures
+   are listed at the end. Builds of one tree share
+   `managed_components/`, `dependencies.lock` and the component
+   manager's cache (two CMake runs at once fail on the lock of its
+   epdiy git checkout), and the component manager deletes the
+   components the board it configures does not use. So the script runs
+   the CMake step (`idf.py reconfigure`) for one build at a time and
+   only the compile / link step (`idf.py build`) in parallel, and only
+   for boards with the same dependency set: `DEP_GROUPS` lists one
+   group per set (plain ESP32-S3; USB-host ESP32-S3; ESP32-P4) and the
+   groups run one after the other. When a board joins the web flasher,
+   add it to the group matching its dependencies (a new group if none
+   matches), then sanity-check the output.
 3. Tag and push:
    ```bash
    git tag -a vX.Y.Z -m "Release X.Y.Z"

@@ -286,12 +286,32 @@ int battery_read_percent(void);
  *               only if its BQ25896 charger cannot be read): 1 while
  *               AverageCurrent (0x14) shows current flowing into the
  *               cell, so a full cell on USB reads 0.
- *   - ADC backend / no backend: always returns -1.
+ *   - ADC backend: 1 while the USB-present pin set with
+ *               battery_set_usb_detect_gpio() is at its active level,
+ *               else 0; -1 without such a pin.
+ *   - No backend: always returns -1.
  *
  * Callers (e.g. the editor status bar) should hide the charging
  * indicator when this function returns -1.
  */
 int battery_read_charging(void);
+
+/*
+ * ADC backend: name a GPIO that reads active_level (0 or 1) while USB
+ * powers the board, so battery_read_charging() can report it. -1
+ * (the default) turns it off. The pin is configured as an input with
+ * a pull towards the inactive level.
+ */
+void battery_set_usb_detect_gpio(int gpio, int active_level);
+
+/*
+ * Read the voltage (mV, calibrated where the chip allows) on another
+ * ADC1 pin -- e.g. a board's resistor-ladder buttons -- sharing the
+ * ADC unit with the battery reading; reads are serialized. 12 dB
+ * attenuation. Returns -1 if the pin is not an ADC1 pin or the read
+ * fails. Works whether or not battery_init() was called.
+ */
+int battery_read_aux_mv(int gpio);
 
 /*
  * Read the instantaneous cell current in milliamps, signed.

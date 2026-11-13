@@ -79,6 +79,9 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TR
     KB_LAYOUT_TR,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
+    KB_LAYOUT_FR_CA,
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
     KB_LAYOUT_VI,
 #endif
@@ -91,19 +94,34 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
     KB_LAYOUT_ZH,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
+    KB_LAYOUT_TA99,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TW
+    KB_LAYOUT_TA_TW,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
+    KB_LAYOUT_TA_IN,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
+    KB_LAYOUT_TA_TV,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 
 /* Input method attached to a layout. Layouts with an input method
  * produce keystrokes that the editor hands to the `ime` component,
  * which composes them into the final text (Vietnamese tone marks,
- * Hangul syllables, kana / kanji, hanzi). */
+ * Hangul syllables, kana / kanji, hanzi, Tamil syllables). */
 typedef enum {
     KB_IME_NONE = 0,
     KB_IME_TELEX,      /* Vietnamese Telex */
     KB_IME_HANGUL,     /* Korean 2-set (Dubeolsik) composition */
     KB_IME_KANA,       /* Japanese romaji -> kana -> kanji */
     KB_IME_PINYIN,     /* Chinese pinyin -> hanzi */
+    KB_IME_TAMIL99,    /* Tamil 99 (auto pulli, vowel joins consonant) */
+    KB_IME_TAMIL_TW,   /* Tamil Typewriter (visual-order glyph keys) */
+    KB_IME_TARAVINYAS, /* Tamil Taravinyas (place + manner of articulation) */
 } kb_ime_t;
 
 /* Input method of the active layout (KB_IME_NONE for plain layouts). */
@@ -149,6 +167,10 @@ kb_layout_id_t kb_layout_get(void);
 
 /* Get the display name for a layout (e.g. "US", "UA", "DE", "DE-CH") */
 const char *kb_layout_name(kb_layout_id_t layout);
+
+/* Human-readable name of a layout (e.g. "German", "Tamil Typewriter"),
+ * for the Active layouts picker. */
+const char *kb_layout_long_name(kb_layout_id_t layout);
 
 /* Cycle to the next active layout (see kb_layout_set_active()) and
  * return its id. Layouts excluded from the active set are skipped. */
