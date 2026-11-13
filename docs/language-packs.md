@@ -16,6 +16,12 @@ methods and fonts of its languages:
 How to build an image for a pack is described in
 [BUILDING.md](../BUILDING.md#language-packs).
 
+Brief typing guides, one per pack:
+[default](typing/default.md) (European and Canadian layouts),
+[Vietnamese](typing/vietnamese.md), [Korean](typing/korean.md),
+[Japanese](typing/japanese.md), [Chinese](typing/chinese.md),
+[Tamil](typing/tamil.md). The sections below have the full details.
+
 With an input method (VI, KO, JA, ZH, and the Tamil layouts other
 than InScript), the text being typed is
 composed right in the document, before the cursor. Candidates to pick
