@@ -6,6 +6,26 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Bengali in the Indic language pack**: the Indic firmware now also
+  writes Bengali (Bangla) and Assamese, shaped on the device like on a
+  desktop: conjuncts, the reph, ra- and ya-phala and the vowel signs
+  drawn before or around their consonant. Three keyboard layouts: the
+  Bengali InScript layout (the Government of India standard), Probhat
+  (letters on the keys of their Latin sound) and the National (Jatiya)
+  layout of Bangladesh, whose vowel keys type the independent vowel
+  where no consonant comes before. Turn them on in F1 -> Settings ->
+  Keyboard -> Active layouts. The letters come from Noto Sans Bengali.
+  See docs/typing/indic.md.
+
+### Changed
+
+- **Indic language pack no longer for 4 MB-flash boards**: with
+  Bengali added, the Indic firmware no longer fits the Elecrow
+  CrowPanel ESP32 HMI 5.0" and the Guition JC4827W543C, and the build
+  refuses it there. Their other language packs are unchanged.
+
 ## [1.0.27] - 2026-11-14
 
 ### Added

@@ -42,14 +42,16 @@ choice DRAFTLING_LANG_PACK
             pixel fonts in Simplified Chinese glyph style.
 
     config DRAFTLING_LANG_PACK_INDIC
-        bool "Indic (US, Devanagari, Tamil)"
+        bool "Indic (US, Devanagari, Bengali, Tamil)"
         help
             US-English plus the Devanagari script (Hindi and Marathi
-            InScript, Nepali Traditional and Romanized layouts) and
-            Tamil (Tamil 99, Tamil Typewriter, InScript and the
+            InScript, Nepali Traditional and Romanized layouts),
+            Bengali (InScript, Probhat and National (Jatiya) layouts)
+            and Tamil (Tamil 99, Tamil Typewriter, InScript and the
             Taravinyas input engine), with glyphs from Noto Sans
-            Devanagari and Noto Sans Tamil. Devanagari text is shaped
-            on the device with HarfBuzz.
+            Devanagari, Noto Sans Bengali and Noto Sans Tamil.
+            Devanagari and Bengali text is shaped on the device with
+            HarfBuzz. Too large for boards with 4 MB of flash.
 
 endchoice
 
@@ -348,12 +350,54 @@ config DRAFTLING_HAS_DEVANAGARI
     bool
     default y if KB_LAYOUT_ENABLE_HI_IN || KB_LAYOUT_ENABLE_MR_IN || KB_LAYOUT_ENABLE_NE_TR || KB_LAYOUT_ENABLE_NE_RO
 
+config KB_LAYOUT_ENABLE_BN_IN
+    bool "Bengali InScript"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Bengali InScript layout, the Government of India
+        standard (Enhanced InScript, as m17n "bn-inscript2"): vowel
+        signs on the left hand (Shift: the vowels), consonants on the
+        right, Bengali digits on the number row and the conjuncts
+        ksha, tra, jnya, shra on Shift + digits. Pulls in the Bengali
+        fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_BN_PR
+    bool "Bengali Probhat"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Probhat layout (m17n "bn-probhat", XKB "bd(probhat)"):
+        a phonetic layout, Bengali letters on the keys of their Latin
+        sound (k = ka, m = ma), common in Bangladesh and on Linux.
+        Pulls in the Bengali fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_BN_NJ
+    bool "Bengali National (Jatiya)"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the National (Jatiya) layout, the standard keyboard of
+        Bangladesh (m17n "bn-national-jatiya"; the Bijoy key positions
+        in Unicode order), with its automatic vowel forming: a vowel
+        sign key types the independent vowel where no consonant comes
+        before it, and g (hasanta) followed by a vowel key also types
+        the independent vowel. The Assamese ra and wa are on AltGr + f
+        / AltGr + Shift + f. Pulls in the Bengali fonts and HarfBuzz.
+
+config DRAFTLING_HAS_BENGALI
+    bool
+    default y if KB_LAYOUT_ENABLE_BN_IN || KB_LAYOUT_ENABLE_BN_PR || KB_LAYOUT_ENABLE_BN_NJ
+
+# Devanagari and Bengali are shaped on the device by HarfBuzz
+# (components/harfbuzz, components/fonts/indic_font.c).
+config DRAFTLING_HAS_INDIC_SHAPING
+    bool
+    default y if DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI
+
 # Indic scripts need much more room above and below the letter body
-# than Latin: with either, the fonts get taller lines (components/
-# fonts, TALL_LINE_EXTRA).
+# than Latin: with any of them, the fonts get taller lines
+# (components/fonts, TALL_LINE_EXTRA).
 config DRAFTLING_TALL_LINES
     bool
-    default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI
+    default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI
 
 # Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
 # letters of the Central / Eastern European, Baltic and Turkish

@@ -1,8 +1,9 @@
 # HarfBuzz text shaper, vendored (see README.md). Shapes the Devanagari
-# text of the Indic language pack on the device. Built only with
-# CONFIG_DRAFTLING_HAS_DEVANAGARI; otherwise an empty component, and
-# the fonts component requires it through idf_component_optional_requires().
-if(NOT CONFIG_DRAFTLING_HAS_DEVANAGARI)
+# and Bengali text of the Indic language pack on the device. Built only
+# with CONFIG_DRAFTLING_HAS_INDIC_SHAPING; otherwise an empty component,
+# and the fonts component requires it through
+# idf_component_optional_requires().
+if(NOT CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
     idf_component_register()
     return()
 endif()

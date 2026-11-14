@@ -352,7 +352,7 @@ Guition JC3248W535.
 - No battery level: the board has a battery connector and a charger,
   but the battery is not measured.
 - No SD card via USB or Sync via browser.
-- 4 MB flash: the Japanese and Chinese language packs do not fit.
+- 4 MB flash: the Japanese, Chinese and Indic language packs do not fit.
 - Source: the vendor IO table in
   [profi-max/JC4827W543_4.3inch_ESP32S3_board](https://github.com/profi-max/JC4827W543_4.3inch_ESP32S3_board).
 
@@ -387,7 +387,7 @@ the pins and panel timings.
   device; forget the paired keyboards with the "Forget KB" button on
   the keyboard prompt.
 - No SD card via USB or Sync via browser.
-- 4 MB flash: the Japanese and Chinese language packs do not fit.
+- 4 MB flash: the Japanese, Chinese and Indic language packs do not fit.
 - Standby current about 48 mA: not suited to portable designs.
 
 

@@ -7,9 +7,9 @@ sense of the SIL Open Font License 1.1, of the font below:
 deva_layout.ttf is the font subset to the Devanagari repertoire with
 its outlines and hinting removed (the layout tables HarfBuzz shapes
 with), the .bin files are its glyphs converted to 1-bit bitmaps. They
-were made by ../tools/gen_deva_font.py:
+were made by ../tools/gen_indic_font.py:
 
-    tools/gen_deva_font.py NotoSansDevanagari-Regular.ttf . deva
+    tools/gen_indic_font.py deva NotoSansDevanagari-Regular.ttf . deva
 
 (run from components/fonts/, with uharfbuzz 0.57, freetype-py 2.5 and
 fontTools in a Python virtual environment). They are not distributed

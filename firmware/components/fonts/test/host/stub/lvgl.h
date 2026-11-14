@@ -1,4 +1,4 @@
-/* Minimal LVGL stand-in for the host test of deva_font.c: only the
+/* Minimal LVGL stand-in for the host test of indic_font.c: only the
  * font types and functions it uses. */
 #pragma once
 #include <stdint.h>

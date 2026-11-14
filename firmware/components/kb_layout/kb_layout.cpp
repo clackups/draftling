@@ -3,10 +3,13 @@
  *
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
- * Swiss French, Italian, Portuguese, Spanish, United Kingdom and
- * Korean and Tamil InScript layouts. Vietnamese, Japanese, Chinese and
- * the other Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on
- * the US layout and are composed by an input method (components/ime/).
+ * Swiss French, Italian, Portuguese, Spanish, United Kingdom and the
+ * other European layouts, and the Korean, Tamil InScript, Devanagari
+ * and Bengali layouts. Vietnamese, Japanese, Chinese and the other
+ * Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on the US
+ * layout and are composed by an input method (components/ime/), and
+ * so is the Bengali National (Jatiya) layout's automatic vowel
+ * forming.
  *
  * Non-ASCII characters are encoded as UTF-8 byte sequences using
  * hex escapes to keep the source file ASCII-only.
@@ -1323,6 +1326,458 @@ static const char *const NE_RO_SHIFT[] = {
 };
 #endif
 #endif /* Devanagari */
+
+#if defined(CONFIG_KB_LAYOUT_ENABLE_BN_IN) || defined(CONFIG_KB_LAYOUT_ENABLE_BN_PR) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_BN_NJ)
+/* ------------------------------------------------------------------ */
+/* Bengali: InScript, Probhat and National (Jatiya)                   */
+/* ------------------------------------------------------------------ */
+
+/* Generated from the m17n-db input methods "bn-inscript2" (Enhanced
+ * InScript), "bn-probhat" and "bn-national-jatiya" (keys typed on a US
+ * keyboard -> output), with the InScript keys m17n leaves empty taken
+ * from XKB "in(ben_inscript)" (marked; m17n's z, U+02BC modifier
+ * apostrophe, which the fonts lack, too). Text is typed in Unicode
+ * order (consonant, then vowel sign); HarfBuzz shapes it for display.
+ * Keys without an m17n entry keep their US character, except letters,
+ * which type nothing. The National (Jatiya) table gives the vowel
+ * signs; its input method (components/ime/ime_bengali.c) types the
+ * independent vowel instead where no consonant comes before, as m17n's
+ * "automatic vowel forming" does. */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_IN
+static const char *const BN_IN_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA7\x8B",  /* U+09CB bengali vowel sign o */
+    /* 05 'b' */ "\xE0\xA6\xAC",  /* U+09AC bengali letter ba (XKB in(ben_inscript)) */
+    /* 06 'c' */ "\xE0\xA6\xAE",  /* U+09AE bengali letter ma */
+    /* 07 'd' */ "\xE0\xA7\x8D",  /* U+09CD bengali sign virama */
+    /* 08 'e' */ "\xE0\xA6\xBE",  /* U+09BE bengali vowel sign aa */
+    /* 09 'f' */ "\xE0\xA6\xBF",  /* U+09BF bengali vowel sign i */
+    /* 0A 'g' */ "\xE0\xA7\x81",  /* U+09C1 bengali vowel sign u */
+    /* 0B 'h' */ "\xE0\xA6\xAA",  /* U+09AA bengali letter pa */
+    /* 0C 'i' */ "\xE0\xA6\x97",  /* U+0997 bengali letter ga */
+    /* 0D 'j' */ "\xE0\xA6\xB0",  /* U+09B0 bengali letter ra */
+    /* 0E 'k' */ "\xE0\xA6\x95",  /* U+0995 bengali letter ka */
+    /* 0F 'l' */ "\xE0\xA6\xA4",  /* U+09A4 bengali letter ta */
+    /* 10 'm' */ "\xE0\xA6\xB8",  /* U+09B8 bengali letter sa */
+    /* 11 'n' */ "\xE0\xA6\xB2",  /* U+09B2 bengali letter la */
+    /* 12 'o' */ "\xE0\xA6\xA6",  /* U+09A6 bengali letter da */
+    /* 13 'p' */ "\xE0\xA6\x9C",  /* U+099C bengali letter ja */
+    /* 14 'q' */ "\xE0\xA7\x8C",  /* U+09CC bengali vowel sign au */
+    /* 15 'r' */ "\xE0\xA7\x80",  /* U+09C0 bengali vowel sign ii */
+    /* 16 's' */ "\xE0\xA7\x87",  /* U+09C7 bengali vowel sign e */
+    /* 17 't' */ "\xE0\xA7\x82",  /* U+09C2 bengali vowel sign uu */
+    /* 18 'u' */ "\xE0\xA6\xB9",  /* U+09B9 bengali letter ha */
+    /* 19 'v' */ "\xE0\xA6\xA8",  /* U+09A8 bengali letter na */
+    /* 1A 'w' */ "\xE0\xA7\x88",  /* U+09C8 bengali vowel sign ai */
+    /* 1B 'x' */ "\xE0\xA6\x82",  /* U+0982 bengali sign anusvara */
+    /* 1C 'y' */ "\xE0\xA6\xAC",  /* U+09AC bengali letter ba */
+    /* 1D 'z' */ "\xE0\xA7\x8E",  /* U+09CE bengali letter khanda ta (XKB in(ben_inscript)) */
+    /* 1E '1' */ "\xE0\xA7\xA7",  /* U+09E7 bengali digit one */
+    /* 1F '2' */ "\xE0\xA7\xA8",  /* U+09E8 bengali digit two */
+    /* 20 '3' */ "\xE0\xA7\xA9",  /* U+09E9 bengali digit three */
+    /* 21 '4' */ "\xE0\xA7\xAA",  /* U+09EA bengali digit four */
+    /* 22 '5' */ "\xE0\xA7\xAB",  /* U+09EB bengali digit five */
+    /* 23 '6' */ "\xE0\xA7\xAC",  /* U+09EC bengali digit six */
+    /* 24 '7' */ "\xE0\xA7\xAD",  /* U+09ED bengali digit seven */
+    /* 25 '8' */ "\xE0\xA7\xAE",  /* U+09EE bengali digit eight */
+    /* 26 '9' */ "\xE0\xA7\xAF",  /* U+09EF bengali digit nine */
+    /* 27 '0' */ "\xE0\xA7\xA6",  /* U+09E6 bengali digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "\xE0\xA7\x83",  /* U+09C3 bengali vowel sign vocalic r */
+    /* 2F '[' */ "\xE0\xA6\xA1",  /* U+09A1 bengali letter dda */
+    /* 30 ']' */ "\xE0\xA6\xBC",  /* U+09BC bengali sign nukta */
+    /* 31 '\\' */ "\\",
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xA6\x9A",  /* U+099A bengali letter ca */
+    /* 34 "'" */ "\xE0\xA6\x9F",  /* U+099F bengali letter tta */
+    /* 35 '`' */ "\xE2\x80\x8D",  /* U+200D zero width joiner (XKB in(ben_inscript)) */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "\xE0\xA7\x9F",  /* U+09DF bengali letter yya */
+};
+
+static const char *const BN_IN_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA6\x93",  /* U+0993 bengali letter o */
+    /* 05 'B' */ "\xE0\xA6\xAC",  /* U+09AC bengali letter ba (XKB in(ben_inscript)) */
+    /* 06 'C' */ "\xE0\xA6\xA3",  /* U+09A3 bengali letter nna */
+    /* 07 'D' */ "\xE0\xA6\x85",  /* U+0985 bengali letter a */
+    /* 08 'E' */ "\xE0\xA6\x86",  /* U+0986 bengali letter aa */
+    /* 09 'F' */ "\xE0\xA6\x87",  /* U+0987 bengali letter i */
+    /* 0A 'G' */ "\xE0\xA6\x89",  /* U+0989 bengali letter u */
+    /* 0B 'H' */ "\xE0\xA6\xAB",  /* U+09AB bengali letter pha */
+    /* 0C 'I' */ "\xE0\xA6\x98",  /* U+0998 bengali letter gha */
+    /* 0D 'J' */ "\xE0\xA7\x9D",  /* U+09DD bengali letter rha (XKB in(ben_inscript)) */
+    /* 0E 'K' */ "\xE0\xA6\x96",  /* U+0996 bengali letter kha */
+    /* 0F 'L' */ "\xE0\xA6\xA5",  /* U+09A5 bengali letter tha */
+    /* 10 'M' */ "\xE0\xA6\xB6",  /* U+09B6 bengali letter sha */
+    /* 11 'N' */ "\xE0\xA6\xB2",  /* U+09B2 bengali letter la (XKB in(ben_inscript)) */
+    /* 12 'O' */ "\xE0\xA6\xA7",  /* U+09A7 bengali letter dha */
+    /* 13 'P' */ "\xE0\xA6\x9D",  /* U+099D bengali letter jha */
+    /* 14 'Q' */ "\xE0\xA6\x94",  /* U+0994 bengali letter au */
+    /* 15 'R' */ "\xE0\xA6\x88",  /* U+0988 bengali letter ii */
+    /* 16 'S' */ "\xE0\xA6\x8F",  /* U+098F bengali letter e */
+    /* 17 'T' */ "\xE0\xA6\x8A",  /* U+098A bengali letter uu */
+    /* 18 'U' */ "\xE0\xA6\x99",  /* U+0999 bengali letter nga */
+    /* 19 'V' */ "\xE0\xA6\xA8",  /* U+09A8 bengali letter na (XKB in(ben_inscript)) */
+    /* 1A 'W' */ "\xE0\xA6\x90",  /* U+0990 bengali letter ai */
+    /* 1B 'X' */ "\xE0\xA6\x81",  /* U+0981 bengali sign candrabindu */
+    /* 1C 'Y' */ "\xE0\xA6\xAD",  /* U+09AD bengali letter bha */
+    /* 1D 'Z' */ NULL,
+    /* 1E '!' */ "\xE0\xA6\x85\xE0\xA7\x8D\xE0\xA6\xAF\xE0\xA6\xBE",  /* U+0985 bengali letter a U+09CD bengali sign virama U+09AF bengali letter ya U+09BE bengali vowel sign aa */
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "\xE0\xA7\x8D\xE0\xA6\xB0",  /* U+09CD bengali sign virama U+09B0 bengali letter ra */
+    /* 21 '$' */ "\xE0\xA6\xB0\xE0\xA7\x8D",  /* U+09B0 bengali letter ra U+09CD bengali sign virama */
+    /* 22 '%' */ "\xE0\xA6\x9C\xE0\xA7\x8D\xE0\xA6\x9E",  /* U+099C bengali letter ja U+09CD bengali sign virama U+099E bengali letter nya */
+    /* 23 '^' */ "\xE0\xA6\xA4\xE0\xA7\x8D\xE0\xA6\xB0",  /* U+09A4 bengali letter ta U+09CD bengali sign virama U+09B0 bengali letter ra */
+    /* 24 '&' */ "\xE0\xA6\x95\xE0\xA7\x8D\xE0\xA6\xB7",  /* U+0995 bengali letter ka U+09CD bengali sign virama U+09B7 bengali letter ssa */
+    /* 25 '*' */ "\xE0\xA6\xB6\xE0\xA7\x8D\xE0\xA6\xB0",  /* U+09B6 bengali letter sha U+09CD bengali sign virama U+09B0 bengali letter ra */
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "\xE0\xA6\x83",  /* U+0983 bengali sign visarga */
+    /* 2E '+' */ "\xE0\xA6\x8B",  /* U+098B bengali letter vocalic r */
+    /* 2F '{' */ "\xE0\xA6\xA2",  /* U+09A2 bengali letter ddha */
+    /* 30 '}' */ "\xE0\xA6\x9E",  /* U+099E bengali letter nya */
+    /* 31 '|' */ "|",
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xA6\x9B",  /* U+099B bengali letter cha */
+    /* 34 '"' */ "\xE0\xA6\xA0",  /* U+09A0 bengali letter ttha */
+    /* 35 '~' */ "\xE2\x80\x8C",  /* U+200C zero width non-joiner (XKB in(ben_inscript)) */
+    /* 36 '<' */ "\xE0\xA6\xB7",  /* U+09B7 bengali letter ssa */
+    /* 37 '>' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '?' */ "\xE0\xA6\xAF",  /* U+09AF bengali letter ya */
+};
+
+static const key_entry_t BN_IN_EXTRA[] = {
+    { 0x1E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0x1E, L_ALTGR_SHIFT, "\xE0\xA7\xB4" },  /* U+09F4 bengali currency numerator one */
+    { 0x1F, L_ALTGR_SHIFT, "\xE0\xA7\xB5" },  /* U+09F5 bengali currency numerator two */
+    { 0x1F, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x20, L_ALTGR_SHIFT, "\xE0\xA7\xB6" },  /* U+09F6 bengali currency numerator three */
+    { 0x21, L_ALTGR_SHIFT, "\xE0\xA7\xB7" },  /* U+09F7 bengali currency numerator four */
+    { 0x21, L_ALTGR, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x22, L_ALTGR_SHIFT, "\xE0\xA7\xB8" },  /* U+09F8 bengali currency numerator one less than the denominator */
+    { 0x23, L_ALTGR_SHIFT, "\xE0\xA7\xB9" },  /* U+09F9 bengali currency denominator sixteen */
+    { 0x2E, L_ALTGR, "\xE0\xA7\x84" },  /* U+09C4 bengali vowel sign vocalic rr */
+    { 0x2E, L_ALTGR_SHIFT, "\xE0\xA7\xA0" },  /* U+09E0 bengali letter vocalic rr */
+    { 0x15, L_ALTGR_SHIFT, "\xE0\xA7\xA1" },  /* U+09E1 bengali letter vocalic ll */
+    { 0x15, L_ALTGR, "\xE0\xA7\xA3" },  /* U+09E3 bengali vowel sign vocalic ll */
+    { 0x2F, L_ALTGR_SHIFT, "\xE0\xA7\x9D" },  /* U+09DD bengali letter rha */
+    { 0x2F, L_ALTGR, "\xE0\xA7\x9C" },  /* U+09DC bengali letter rra */
+    { 0x09, L_ALTGR_SHIFT, "\xE0\xA6\x8C" },  /* U+098C bengali letter vocalic l */
+    { 0x09, L_ALTGR, "\xE0\xA7\xA2" },  /* U+09E2 bengali vowel sign vocalic l */
+    { 0x0F, L_ALTGR, "\xE0\xA7\x8E" },  /* U+09CE bengali letter khanda ta */
+    { 0x1B, L_ALTGR, "\xE0\xA7\xBA" },  /* U+09FA bengali isshar */
+    { 0x36, L_ALTGR_SHIFT, "\xE0\xA7\xB2" },  /* U+09F2 bengali rupee mark */
+    { 0x36, L_ALTGR, "\xE0\xA7\xB3" },  /* U+09F3 bengali rupee sign */
+    { 0x37, L_ALTGR_SHIFT, "\xE0\xA6\xBD" },  /* U+09BD bengali sign avagraha */
+    { 0x37, L_ALTGR, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0x38, L_ALTGR_SHIFT, "\xE0\xA7\xBB" },  /* U+09FB bengali ganda mark */
+    { 0x38, L_ALTGR, "\xE0\xA7\x8D\xE0\xA6\xAF" },  /* U+09CD bengali sign virama U+09AF bengali letter ya */
+    { 0, 0, NULL },
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_PR
+static const char *const BN_PR_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA6\xBE",  /* U+09BE bengali vowel sign aa */
+    /* 05 'b' */ "\xE0\xA6\xAC",  /* U+09AC bengali letter ba */
+    /* 06 'c' */ "\xE0\xA6\x9A",  /* U+099A bengali letter ca */
+    /* 07 'd' */ "\xE0\xA6\xA1",  /* U+09A1 bengali letter dda */
+    /* 08 'e' */ "\xE0\xA7\x80",  /* U+09C0 bengali vowel sign ii */
+    /* 09 'f' */ "\xE0\xA6\xA4",  /* U+09A4 bengali letter ta */
+    /* 0A 'g' */ "\xE0\xA6\x97",  /* U+0997 bengali letter ga */
+    /* 0B 'h' */ "\xE0\xA6\xB9",  /* U+09B9 bengali letter ha */
+    /* 0C 'i' */ "\xE0\xA6\xBF",  /* U+09BF bengali vowel sign i */
+    /* 0D 'j' */ "\xE0\xA6\x9C",  /* U+099C bengali letter ja */
+    /* 0E 'k' */ "\xE0\xA6\x95",  /* U+0995 bengali letter ka */
+    /* 0F 'l' */ "\xE0\xA6\xB2",  /* U+09B2 bengali letter la */
+    /* 10 'm' */ "\xE0\xA6\xAE",  /* U+09AE bengali letter ma */
+    /* 11 'n' */ "\xE0\xA6\xA8",  /* U+09A8 bengali letter na */
+    /* 12 'o' */ "\xE0\xA6\x93",  /* U+0993 bengali letter o */
+    /* 13 'p' */ "\xE0\xA6\xAA",  /* U+09AA bengali letter pa */
+    /* 14 'q' */ "\xE0\xA6\xA6",  /* U+09A6 bengali letter da */
+    /* 15 'r' */ "\xE0\xA6\xB0",  /* U+09B0 bengali letter ra */
+    /* 16 's' */ "\xE0\xA6\xB8",  /* U+09B8 bengali letter sa */
+    /* 17 't' */ "\xE0\xA6\x9F",  /* U+099F bengali letter tta */
+    /* 18 'u' */ "\xE0\xA7\x81",  /* U+09C1 bengali vowel sign u */
+    /* 19 'v' */ "\xE0\xA6\x86",  /* U+0986 bengali letter aa */
+    /* 1A 'w' */ "\xE0\xA7\x82",  /* U+09C2 bengali vowel sign uu */
+    /* 1B 'x' */ "\xE0\xA6\xB6",  /* U+09B6 bengali letter sha */
+    /* 1C 'y' */ "\xE0\xA6\x8F",  /* U+098F bengali letter e */
+    /* 1D 'z' */ "\xE0\xA7\x9F",  /* U+09DF bengali letter yya */
+    /* 1E '1' */ "\xE0\xA7\xA7",  /* U+09E7 bengali digit one */
+    /* 1F '2' */ "\xE0\xA7\xA8",  /* U+09E8 bengali digit two */
+    /* 20 '3' */ "\xE0\xA7\xA9",  /* U+09E9 bengali digit three */
+    /* 21 '4' */ "\xE0\xA7\xAA",  /* U+09EA bengali digit four */
+    /* 22 '5' */ "\xE0\xA7\xAB",  /* U+09EB bengali digit five */
+    /* 23 '6' */ "\xE0\xA7\xAC",  /* U+09EC bengali digit six */
+    /* 24 '7' */ "\xE0\xA7\xAD",  /* U+09ED bengali digit seven */
+    /* 25 '8' */ "\xE0\xA7\xAE",  /* U+09EE bengali digit eight */
+    /* 26 '9' */ "\xE0\xA7\xAF",  /* U+09EF bengali digit nine */
+    /* 27 '0' */ "\xE0\xA7\xA6",  /* U+09E6 bengali digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "=",
+    /* 2F '[' */ "\xE0\xA7\x87",  /* U+09C7 bengali vowel sign e */
+    /* 30 ']' */ "\xE0\xA7\x8B",  /* U+09CB bengali vowel sign o */
+    /* 31 '\\' */ "\xE2\x80\x8C",  /* U+200C zero width non-joiner */
+    /* 32  */ NULL,
+    /* 33 ';' */ ";",
+    /* 34 "'" */ "'",
+    /* 35 '`' */ "\xE2\x80\x8D",  /* U+200D zero width joiner */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '/' */ "\xE0\xA7\x8D",  /* U+09CD bengali sign virama */
+};
+
+static const char *const BN_PR_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA6\x85",  /* U+0985 bengali letter a */
+    /* 05 'B' */ "\xE0\xA6\xAD",  /* U+09AD bengali letter bha */
+    /* 06 'C' */ "\xE0\xA6\x9B",  /* U+099B bengali letter cha */
+    /* 07 'D' */ "\xE0\xA6\xA2",  /* U+09A2 bengali letter ddha */
+    /* 08 'E' */ "\xE0\xA6\x88",  /* U+0988 bengali letter ii */
+    /* 09 'F' */ "\xE0\xA6\xA5",  /* U+09A5 bengali letter tha */
+    /* 0A 'G' */ "\xE0\xA6\x98",  /* U+0998 bengali letter gha */
+    /* 0B 'H' */ "\xE0\xA6\x83",  /* U+0983 bengali sign visarga */
+    /* 0C 'I' */ "\xE0\xA6\x87",  /* U+0987 bengali letter i */
+    /* 0D 'J' */ "\xE0\xA6\x9D",  /* U+099D bengali letter jha */
+    /* 0E 'K' */ "\xE0\xA6\x96",  /* U+0996 bengali letter kha */
+    /* 0F 'L' */ "\xE0\xA6\x82",  /* U+0982 bengali sign anusvara */
+    /* 10 'M' */ "\xE0\xA6\x99",  /* U+0999 bengali letter nga */
+    /* 11 'N' */ "\xE0\xA6\xA3",  /* U+09A3 bengali letter nna */
+    /* 12 'O' */ "\xE0\xA6\x94",  /* U+0994 bengali letter au */
+    /* 13 'P' */ "\xE0\xA6\xAB",  /* U+09AB bengali letter pha */
+    /* 14 'Q' */ "\xE0\xA6\xA7",  /* U+09A7 bengali letter dha */
+    /* 15 'R' */ "\xE0\xA7\x9C",  /* U+09DC bengali letter rra */
+    /* 16 'S' */ "\xE0\xA6\xB7",  /* U+09B7 bengali letter ssa */
+    /* 17 'T' */ "\xE0\xA6\xA0",  /* U+09A0 bengali letter ttha */
+    /* 18 'U' */ "\xE0\xA6\x89",  /* U+0989 bengali letter u */
+    /* 19 'V' */ "\xE0\xA6\x8B",  /* U+098B bengali letter vocalic r */
+    /* 1A 'W' */ "\xE0\xA6\x8A",  /* U+098A bengali letter uu */
+    /* 1B 'X' */ "\xE0\xA7\x9D",  /* U+09DD bengali letter rha */
+    /* 1C 'Y' */ "\xE0\xA6\x90",  /* U+0990 bengali letter ai */
+    /* 1D 'Z' */ "\xE0\xA6\xAF",  /* U+09AF bengali letter ya */
+    /* 1E '!' */ "!",
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "#",
+    /* 21 '$' */ "\xE0\xA7\xB3",  /* U+09F3 bengali rupee sign */
+    /* 22 '%' */ "%",
+    /* 23 '^' */ "^",
+    /* 24 '&' */ "\xE0\xA6\x9E",  /* U+099E bengali letter nya */
+    /* 25 '*' */ "\xE0\xA7\x8E",  /* U+09CE bengali letter khanda ta */
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "_",
+    /* 2E '+' */ "+",
+    /* 2F '{' */ "\xE0\xA7\x88",  /* U+09C8 bengali vowel sign ai */
+    /* 30 '}' */ "\xE0\xA7\x8C",  /* U+09CC bengali vowel sign au */
+    /* 31 '|' */ "\xE0\xA5\xA5",  /* U+0965 devanagari double danda */
+    /* 32  */ NULL,
+    /* 33 ':' */ ":",
+    /* 34 '"' */ "\"",
+    /* 35 '~' */ "~",
+    /* 36 '<' */ "\xE0\xA7\x83",  /* U+09C3 bengali vowel sign vocalic r */
+    /* 37 '>' */ "\xE0\xA6\x81",  /* U+0981 bengali sign candrabindu */
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t BN_PR_EXTRA[] = {
+    { 0x1E, L_ALTGR, "\xE0\xA7\xB4" },  /* U+09F4 bengali currency numerator one */
+    { 0x1F, L_ALTGR, "\xE0\xA7\xB5" },  /* U+09F5 bengali currency numerator two */
+    { 0x20, L_ALTGR, "\xE0\xA7\xB6" },  /* U+09F6 bengali currency numerator three */
+    { 0x21, L_ALTGR_SHIFT, "\xE0\xA7\xB2" },  /* U+09F2 bengali rupee mark */
+    { 0x21, L_ALTGR, "\xE0\xA7\xB7" },  /* U+09F7 bengali currency numerator four */
+    { 0x24, L_ALTGR, "\xE0\xA7\xBA" },  /* U+09FA bengali isshar */
+    { 0x27, L_ALTGR_SHIFT, "\xE0\xA7\xB9" },  /* U+09F9 bengali currency denominator sixteen */
+    { 0x27, L_ALTGR, "\xE0\xA7\xB8" },  /* U+09F8 bengali currency numerator one less than the denominator */
+    { 0x15, L_ALTGR, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x30, L_ALTGR, "\xE0\xA7\x97" },  /* U+09D7 bengali au length mark */
+    { 0x04, L_ALTGR_SHIFT, "\xE0\xA7\xA0" },  /* U+09E0 bengali letter vocalic rr */
+    { 0x04, L_ALTGR, "\xE0\xA6\x8C" },  /* U+098C bengali letter vocalic l */
+    { 0x16, L_ALTGR_SHIFT, "\xE0\xA7\xA3" },  /* U+09E3 bengali vowel sign vocalic ll */
+    { 0x16, L_ALTGR, "\xE0\xA7\xA1" },  /* U+09E1 bengali letter vocalic ll */
+    { 0x07, L_ALTGR_SHIFT, "\xE0\xA7\xA2" },  /* U+09E2 bengali vowel sign vocalic l */
+    { 0x07, L_ALTGR, "\xE0\xA7\x84" },  /* U+09C4 bengali vowel sign vocalic rr */
+    { 0x0B, L_ALTGR, "\xE0\xA6\xBD" },  /* U+09BD bengali sign avagraha */
+    { 0x37, L_ALTGR, "\xE0\xA6\xBC" },  /* U+09BC bengali sign nukta */
+    { 0, 0, NULL },
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
+static const char *const BN_NJ_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA7\x83",  /* U+09C3 bengali vowel sign vocalic r */
+    /* 05 'b' */ "\xE0\xA6\xA8",  /* U+09A8 bengali letter na */
+    /* 06 'c' */ "\xE0\xA7\x87",  /* U+09C7 bengali vowel sign e */
+    /* 07 'd' */ "\xE0\xA6\xBF",  /* U+09BF bengali vowel sign i */
+    /* 08 'e' */ "\xE0\xA6\xA1",  /* U+09A1 bengali letter dda */
+    /* 09 'f' */ "\xE0\xA6\xAC",  /* U+09AC bengali letter ba */
+    /* 0A 'g' */ "\xE0\xA7\x8D",  /* U+09CD bengali sign virama */
+    /* 0B 'h' */ "\xE0\xA6\xBE",  /* U+09BE bengali vowel sign aa */
+    /* 0C 'i' */ "\xE0\xA6\xB9",  /* U+09B9 bengali letter ha */
+    /* 0D 'j' */ "\xE0\xA6\x95",  /* U+0995 bengali letter ka */
+    /* 0E 'k' */ "\xE0\xA6\xA4",  /* U+09A4 bengali letter ta */
+    /* 0F 'l' */ "\xE0\xA6\xA6",  /* U+09A6 bengali letter da */
+    /* 10 'm' */ "\xE0\xA6\xAE",  /* U+09AE bengali letter ma */
+    /* 11 'n' */ "\xE0\xA6\xB8",  /* U+09B8 bengali letter sa */
+    /* 12 'o' */ "\xE0\xA6\x97",  /* U+0997 bengali letter ga */
+    /* 13 'p' */ "\xE0\xA7\x9C",  /* U+09DC bengali letter rra */
+    /* 14 'q' */ "\xE0\xA6\x99",  /* U+0999 bengali letter nga */
+    /* 15 'r' */ "\xE0\xA6\xAA",  /* U+09AA bengali letter pa */
+    /* 16 's' */ "\xE0\xA7\x81",  /* U+09C1 bengali vowel sign u */
+    /* 17 't' */ "\xE0\xA6\x9F",  /* U+099F bengali letter tta */
+    /* 18 'u' */ "\xE0\xA6\x9C",  /* U+099C bengali letter ja */
+    /* 19 'v' */ "\xE0\xA6\xB0",  /* U+09B0 bengali letter ra */
+    /* 1A 'w' */ "\xE0\xA6\xAF",  /* U+09AF bengali letter ya */
+    /* 1B 'x' */ "\xE0\xA7\x8B",  /* U+09CB bengali vowel sign o */
+    /* 1C 'y' */ "\xE0\xA6\x9A",  /* U+099A bengali letter ca */
+    /* 1D 'z' */ "\xE0\xA6\x81",  /* U+0981 bengali sign candrabindu */
+    /* 1E '1' */ "\xE0\xA7\xA7",  /* U+09E7 bengali digit one */
+    /* 1F '2' */ "\xE0\xA7\xA8",  /* U+09E8 bengali digit two */
+    /* 20 '3' */ "\xE0\xA7\xA9",  /* U+09E9 bengali digit three */
+    /* 21 '4' */ "\xE0\xA7\xAA",  /* U+09EA bengali digit four */
+    /* 22 '5' */ "\xE0\xA7\xAB",  /* U+09EB bengali digit five */
+    /* 23 '6' */ "\xE0\xA7\xAC",  /* U+09EC bengali digit six */
+    /* 24 '7' */ "\xE0\xA7\xAD",  /* U+09ED bengali digit seven */
+    /* 25 '8' */ "\xE0\xA7\xAE",  /* U+09EE bengali digit eight */
+    /* 26 '9' */ "\xE0\xA7\xAF",  /* U+09EF bengali digit nine */
+    /* 27 '0' */ "\xE0\xA7\xA6",  /* U+09E6 bengali digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "=",
+    /* 2F '[' */ "[",
+    /* 30 ']' */ "]",
+    /* 31 '\\' */ "\\",
+    /* 32  */ NULL,
+    /* 33 ';' */ ";",
+    /* 34 "'" */ "'",
+    /* 35 '`' */ "\xE2\x80\x8C",  /* U+200C zero width non-joiner */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "/",
+};
+
+static const char *const BN_NJ_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA7\x97",  /* U+09D7 bengali au length mark */
+    /* 05 'B' */ "\xE0\xA6\xA3",  /* U+09A3 bengali letter nna */
+    /* 06 'C' */ "\xE0\xA7\x88",  /* U+09C8 bengali vowel sign ai */
+    /* 07 'D' */ "\xE0\xA7\x80",  /* U+09C0 bengali vowel sign ii */
+    /* 08 'E' */ "\xE0\xA6\xA2",  /* U+09A2 bengali letter ddha */
+    /* 09 'F' */ "\xE0\xA6\xAD",  /* U+09AD bengali letter bha */
+    /* 0A 'G' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 0B 'H' */ "\xE0\xA6\x85",  /* U+0985 bengali letter a */
+    /* 0C 'I' */ "\xE0\xA6\x9E",  /* U+099E bengali letter nya */
+    /* 0D 'J' */ "\xE0\xA6\x96",  /* U+0996 bengali letter kha */
+    /* 0E 'K' */ "\xE0\xA6\xA5",  /* U+09A5 bengali letter tha */
+    /* 0F 'L' */ "\xE0\xA6\xA7",  /* U+09A7 bengali letter dha */
+    /* 10 'M' */ "\xE0\xA6\xB6",  /* U+09B6 bengali letter sha */
+    /* 11 'N' */ "\xE0\xA6\xB7",  /* U+09B7 bengali letter ssa */
+    /* 12 'O' */ "\xE0\xA6\x98",  /* U+0998 bengali letter gha */
+    /* 13 'P' */ "\xE0\xA7\x9D",  /* U+09DD bengali letter rha */
+    /* 14 'Q' */ "\xE0\xA6\x82",  /* U+0982 bengali sign anusvara */
+    /* 15 'R' */ "\xE0\xA6\xAB",  /* U+09AB bengali letter pha */
+    /* 16 'S' */ "\xE0\xA7\x82",  /* U+09C2 bengali vowel sign uu */
+    /* 17 'T' */ "\xE0\xA6\xA0",  /* U+09A0 bengali letter ttha */
+    /* 18 'U' */ "\xE0\xA6\x9D",  /* U+099D bengali letter jha */
+    /* 19 'V' */ "\xE0\xA6\xB2",  /* U+09B2 bengali letter la */
+    /* 1A 'W' */ "\xE0\xA7\x9F",  /* U+09DF bengali letter yya */
+    /* 1B 'X' */ "\xE0\xA7\x8C",  /* U+09CC bengali vowel sign au */
+    /* 1C 'Y' */ "\xE0\xA6\x9B",  /* U+099B bengali letter cha */
+    /* 1D 'Z' */ "\xE0\xA6\x83",  /* U+0983 bengali sign visarga */
+    /* 1E '!' */ "!",
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "#",
+    /* 21 '$' */ "$",
+    /* 22 '%' */ "%",
+    /* 23 '^' */ "^",
+    /* 24 '&' */ "&",
+    /* 25 '*' */ "*",
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "_",
+    /* 2E '+' */ "+",
+    /* 2F '{' */ "{",
+    /* 30 '}' */ "}",
+    /* 31 '|' */ "|",
+    /* 32  */ NULL,
+    /* 33 ':' */ ":",
+    /* 34 '"' */ "\"",
+    /* 35 '~' */ "\xE2\x80\x8D",  /* U+200D zero width joiner */
+    /* 36 '<' */ "<",
+    /* 37 '>' */ ">",
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t BN_NJ_EXTRA[] = {
+    { 0x0B, L_ALTGR, "\xE0\xA6\x86" },  /* U+0986 bengali letter aa */
+    { 0x07, L_ALTGR, "\xE0\xA6\x87" },  /* U+0987 bengali letter i */
+    { 0x07, L_ALTGR_SHIFT, "\xE0\xA6\x88" },  /* U+0988 bengali letter ii */
+    { 0x16, L_ALTGR, "\xE0\xA6\x89" },  /* U+0989 bengali letter u */
+    { 0x16, L_ALTGR_SHIFT, "\xE0\xA6\x8A" },  /* U+098A bengali letter uu */
+    { 0x04, L_ALTGR, "\xE0\xA6\x8B" },  /* U+098B bengali letter vocalic r */
+    { 0x0F, L_ALTGR, "\xE0\xA6\x8C" },  /* U+098C bengali letter vocalic l */
+    { 0x06, L_ALTGR, "\xE0\xA6\x8F" },  /* U+098F bengali letter e */
+    { 0x06, L_ALTGR_SHIFT, "\xE0\xA6\x90" },  /* U+0990 bengali letter ai */
+    { 0x1B, L_ALTGR, "\xE0\xA6\x93" },  /* U+0993 bengali letter o */
+    { 0x1B, L_ALTGR_SHIFT, "\xE0\xA6\x94" },  /* U+0994 bengali letter au */
+    { 0x04, L_ALTGR_SHIFT, "\xE0\xA7\xA0" },  /* U+09E0 bengali letter vocalic rr */
+    { 0x0F, L_ALTGR_SHIFT, "\xE0\xA7\xA1" },  /* U+09E1 bengali letter vocalic ll */
+    { 0x08, L_ALTGR, "\xE0\xA7\x84" },  /* U+09C4 bengali vowel sign vocalic rr */
+    { 0x14, L_ALTGR, "\xE0\xA7\xA2" },  /* U+09E2 bengali vowel sign vocalic l */
+    { 0x14, L_ALTGR_SHIFT, "\xE0\xA7\xA3" },  /* U+09E3 bengali vowel sign vocalic ll */
+    { 0x23, L_ALTGR_SHIFT, "\xE0\xA7\x8E" },  /* U+09CE bengali letter khanda ta */
+    { 0x37, L_ALTGR, "\xE0\xA6\xBC" },  /* U+09BC bengali sign nukta */
+    { 0x0C, L_ALTGR, "\xE0\xA6\xBD" },  /* U+09BD bengali sign avagraha */
+    { 0x1D, L_ALTGR, "\xE0\xA7\xBA" },  /* U+09FA bengali isshar */
+    { 0x09, L_ALTGR, "\xE0\xA7\xB0" },  /* U+09F0 bengali letter ra with middle diagonal */
+    { 0x09, L_ALTGR_SHIFT, "\xE0\xA7\xB1" },  /* U+09F1 bengali letter ra with lower diagonal */
+    { 0x21, L_ALTGR_SHIFT, "\xE0\xA7\xB2" },  /* U+09F2 bengali rupee mark */
+    { 0x21, L_ALTGR, "\xE0\xA7\xB3" },  /* U+09F3 bengali rupee sign */
+    { 0x1E, L_ALTGR, "\xE0\xA7\xB4" },  /* U+09F4 bengali currency numerator one */
+    { 0x1F, L_ALTGR, "\xE0\xA7\xB5" },  /* U+09F5 bengali currency numerator two */
+    { 0x20, L_ALTGR, "\xE0\xA7\xB6" },  /* U+09F6 bengali currency numerator three */
+    { 0x22, L_ALTGR, "\xE0\xA7\xB7" },  /* U+09F7 bengali currency numerator four */
+    { 0x23, L_ALTGR, "\xE0\xA7\xB8" },  /* U+09F8 bengali currency numerator one less than the denominator */
+    { 0x27, L_ALTGR, "\xE0\xA7\xB9" },  /* U+09F9 bengali currency denominator sixteen */
+    { 0x0A, L_ALTGR, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0x0E, L_ALTGR, "\xE0\xA7\x8E" },  /* U+09CE bengali letter khanda ta */
+    { 0x2D, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x35, L_ALTGR_SHIFT, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0x35, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x2E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0, 0, NULL },
+};
+#endif
+#endif /* Bengali */
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -3214,6 +3669,15 @@ CHECK_TABLE(NE_TR_NORMAL); CHECK_TABLE(NE_TR_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
 CHECK_TABLE(NE_RO_NORMAL); CHECK_TABLE(NE_RO_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_IN
+CHECK_TABLE(BN_IN_NORMAL); CHECK_TABLE(BN_IN_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_PR
+CHECK_TABLE(BN_PR_NORMAL); CHECK_TABLE(BN_PR_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
+CHECK_TABLE(BN_NJ_NORMAL); CHECK_TABLE(BN_NJ_SHIFT);
+#endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
 static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
@@ -3321,6 +3785,15 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
     [KB_LAYOUT_NE_RO] = { NE_RO_NORMAL, NE_RO_SHIFT, NULL, "NE-RO", "Nepali Romanized", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_IN
+    [KB_LAYOUT_BN_IN] = { BN_IN_NORMAL, BN_IN_SHIFT, BN_IN_EXTRA, "BN-IN", "Bengali InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_PR
+    [KB_LAYOUT_BN_PR] = { BN_PR_NORMAL, BN_PR_SHIFT, BN_PR_EXTRA, "BN-PR", "Bengali Probhat", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
+    [KB_LAYOUT_BN_NJ] = { BN_NJ_NORMAL, BN_NJ_SHIFT, BN_NJ_EXTRA, "BN-NJ", "Bengali National (Jatiya)", KB_IME_BENGALI_NJ, false },
 #endif
 };
 

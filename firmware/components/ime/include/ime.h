@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Input methods of the Vietnamese, Korean, Japanese, Chinese and Tamil
+ * Input methods of the Vietnamese, Korean, Japanese, Chinese and Indic
  * language packs.
  *
  *   KB_IME_TELEX   Vietnamese Telex (aa -> a-circumflex, s/f/r/x/j tones)
@@ -11,6 +11,8 @@
  *   KB_IME_TAMIL99 Tamil 99: vowel after consonant joins, auto pulli
  *   KB_IME_TAMIL_TW  Tamil Typewriter: visual-order pieces reordered
  *   KB_IME_TARAVINYAS  Tamil Taravinyas: place + manner of articulation
+ *   KB_IME_BENGALI_NJ  Bengali National (Jatiya): a vowel key types the
+ *                  independent vowel where no consonant comes before
  *
  * The text being composed lives in the document itself, right before
  * the cursor; the input method edits it through the host callbacks

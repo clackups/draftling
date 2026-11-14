@@ -1,7 +1,8 @@
 /*
  * Host test of the Tamil input methods (Tamil 99, Typewriter,
- * Taravinyas): keys are typed into a fake document and the text is
- * compared with the expected Tamil (as UTF-8 escapes). Run ./run.sh.
+ * Taravinyas) and the Bengali National (Jatiya) vowel forming: keys are
+ * typed into a fake document and the text is compared with the
+ * expected Tamil / Bengali (as UTF-8 escapes). Run ./run.sh.
  */
 #include <stdio.h>
 #include <string.h>
@@ -17,7 +18,16 @@ static void type(kb_ime_t k, const char *keys){
     uint8_t kc = *p==' '?0x2C:0x04;
     if(!ime_handle_key(k,kc,0,t)){ rep(0,t); ime_commit(); } }
 }
+/* Type the layout outputs (one UTF-8 character per key) into an empty
+ * document. */
+static void typeu(kb_ime_t k, const char *s){
+  doc[0]=0; cur=0; ime_commit();
+  for(const char*p=s;*p;){ size_t n=((unsigned char)*p<0x80)?1:((unsigned char)*p<0xE0)?2:((unsigned char)*p<0xF0)?3:4;
+    char t[5]; memcpy(t,p,n); t[n]=0; p+=n;
+    if(!ime_handle_key(k,0x04,0,t)){ rep(0,t); ime_commit(); } }
+}
 static int fails;
+static void checku(kb_ime_t k,const char*keys,const char*want){ typeu(k,keys); if(strcmp(doc,want)){fails++; printf("FAIL bengali [%s] -> [%s] want [%s]\n",keys,doc,want);} else printf("ok   bengali %s\n",doc);}
 static void check(kb_ime_t k,const char*keys,const char*want){ type(k,keys); if(strcmp(doc,want)){fails++; printf("FAIL %s -> [%s] want [%s]\n",keys,doc,want);} else printf("ok   %-12s %s\n",keys,doc);}
 int main(void){ ime_init(&H,NULL,NULL);
  kb_ime_t T=KB_IME_TAMIL99;
@@ -34,4 +44,17 @@ int main(void){ ime_init(&H,NULL,NULL);
  check(V,"fj","\xE0\xAE\x95"); check(V,"sl","\xE0\xAE\xB4"); check(V,"su","\xE0\xAE\xB3"); check(V,"wl","\xE0\xAE\xB0"); check(V,"wu","\xE0\xAE\xB2"); check(V,"dl","\xE0\xAE\xAF"); check(V,"du","\xE0\xAE\xAF"); check(V,"wi","\xE0\xAE\xB8"); check(V,"fi","");
  check(V,"rjvsjx","\xE0\xAE\xA4""\xE0\xAF\x81"); check(V,"vfjvfkx","\xE0\xAE\x95""\xE0\xAE\xBE"); check(V,"vfjvfjx","\xE0\xAE\x95"); check(V,"rlc","\xE0\xAE\x90"); check(V,"elx","\xE0\xAF\x8C"); check(V,"fkc","\xE0\xAE\x86"); check(V,"aj","\xE0\xAF\x8D"); check(V,"vak","\xE0\xAE\xB9"); check(V,"al","\xE0\xAE\x95""\xE0\xAF\x8D""\xE0\xAE\xB7");
  check(V,"rjvdjxvejvaj","\xE0\xAE\xA4""\xE0\xAE\xBF""\xE0\xAE\xAA""\xE0\xAF\x8D"); check(V,"vfl",""); check(V,"rjekvdjxvslvaj","\xE0\xAE\xA4\xE0\xAE\xAE\xE0\xAE\xBF\xE0\xAE\xB4\xE0\xAF\x8D");
+ kb_ime_t B=KB_IME_BENGALI_NJ;
+ /* ka + aa sign; aa sign alone = letter aa; after a vowel sign too. */
+ checku(B,"\xE0\xA6\x95\xE0\xA6\xBE","\xE0\xA6\x95\xE0\xA6\xBE");
+ checku(B,"\xE0\xA6\xBE","\xE0\xA6\x86");
+ checku(B,"\xE0\xA6\x95\xE0\xA6\xBE\xE0\xA6\xBF","\xE0\xA6\x95\xE0\xA6\xBE\xE0\xA6\x87");
+ /* ka + hasanta + i sign = ka + letter i; hasanta + danda = double danda. */
+ checku(B,"\xE0\xA6\x95\xE0\xA7\x8D\xE0\xA6\xBF","\xE0\xA6\x95\xE0\xA6\x87");
+ checku(B,"\xE0\xA7\x8D\xE0\xA5\xA4","\xE0\xA5\xA5");
+ checku(B,"\xE0\xA6\x95\xE0\xA5\xA4","\xE0\xA6\x95\xE0\xA5\xA4");
+ /* ka + hasanta + ssa stays a conjunct; space + o sign = letter o; rra + e sign. */
+ checku(B,"\xE0\xA6\x95\xE0\xA7\x8D\xE0\xA6\xB7","\xE0\xA6\x95\xE0\xA7\x8D\xE0\xA6\xB7");
+ checku(B," \xE0\xA7\x8B"," \xE0\xA6\x93");
+ checku(B,"\xE0\xA7\x9C\xE0\xA7\x87","\xE0\xA7\x9C\xE0\xA7\x87");
  printf("%d failures\n",fails); return fails!=0; }
