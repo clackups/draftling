@@ -10,8 +10,8 @@ A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
 and [images](images/) demonstrate the firmware use.
 
-Seeed reterminal Sticky running Draftling firmware:
-![Sticky on a magsafe stand](images/Seeed_reTerminal_Sticky_01.jpg)
+Seeed reTerminal Sticky running Draftling firmware:
+![Sticky on a MagSafe stand](images/Seeed_reTerminal_Sticky_01.jpg)
 
 
 ## Supported hardware
@@ -26,7 +26,7 @@ load the firmware quickly without having to compile it.
   * [Xteink X4 Pro and Xteink X4 Classic](https://www.xteink.com) (**unlocked devices only!**).
   * [Seeed reTerminal Sticky](https://www.seeedstudio.com/sticky/docs/en/device-guide/hardware-overview/), so far the best value for money amongst e-paper devices.
   * M5Stack [PaperMono](https://docs.m5stack.com/en/core/PaperMono) / [PaperMono-Lite](https://docs.m5stack.com/en/core/PaperMono-Lite)
-  * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO)
+  * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO) (including the H752 variant)
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
   * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
@@ -39,6 +39,7 @@ load the firmware quickly without having to compile it.
   * [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html) ([GitHub](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792))
   * [Elecrow CrowPanel ESP32 HMI 5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html) (800x480 color LCD, capacitive touch)
   * [Guition JC4827W543C](https://www.atomic14.com/esp32/boards/guition-jc4827w543/) (4.3" 480x272 color LCD, capacitive touch)
+  * [Guition JC3248W535](HARDWARE.md#guition-jc3248w535) (3.5" 480x320 color LCD, capacitive touch)
   * [VIEWE UEDX80480043E-WB-A / -WB-B](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display) (4.3" 800x480 color LCD, capacitive touch)
   * [7" and 4.3" Sunton boards](https://github.com/rzeldent/platformio-espressif32-sunton)
   * [2.8", 3.5" and 4" Freenove boards](https://github.com/Freenove/Freenove_ESP32_S3_Display)
@@ -55,6 +56,12 @@ load the firmware quickly without having to compile it.
 
 - **Works with any Bluetooth Low Energy (BLE) keyboard**. M5Stack Tab5
   and MicroJournal Rev 5.0 / 5.1 also support a wired USB keyboard.
+
+- **Many languages**: 22 European and Canadian keyboard layouts in the
+  default firmware, and separate firmware images (language packs) for
+  Vietnamese, Korean, Japanese, Chinese and the Indic scripts
+  (Devanagari and Tamil), with their input methods and fonts. See
+  [Keyboard Layouts](#keyboard-layouts) below.
 
 - **Fountain screenplays**: `.fountain` files open in a screenplay
   mode that formats scenes, characters, dialogue and transitions as you
@@ -82,7 +89,7 @@ load the firmware quickly without having to compile it.
 
 - **Split screen editing**: You can split the screen in two equal
   halves, or 1/3 and 2/3 parts, and use a second file for side notes
-  or comments. Draftling supports also editing thge same file in both
+  or comments. Draftling also supports editing the same file in both
   windows. The split follows the display's long side -- left/right in
   landscape, top/bottom in portrait.
 
@@ -161,13 +168,14 @@ load the firmware quickly without having to compile it.
 | F1 | Open the main menu: Settings, Keyboard layout (when more than one is active), Sync, Connectivity (Bluetooth, WiFi), System & Storage, Sleep now, Help. Enter opens a sub-menu, Esc goes back one level, F1 closes the menu. The letter drawn bold picks its item on the current level: S Settings, K keyboard layout, Y Sync, C Connectivity, T System & Storage, H Help; in Sync: S Synchronize, C Connect a Draftbox repository, B Sync via browser; in Connectivity: B Bluetooth, W WiFi; in Bluetooth: S Scan; in WiFi: C Connect / D Disconnect, N Choose network; in System & Storage: I Hardware information, U SD card via USB, F Format SD card |
 | F10 | Help: the shortcuts of the current screen and, in the editor, the formatting syntax of the document (Markdown or Fountain). Up/Down, PgUp/PgDn (or Ctrl+Up/Down), Home/End scroll; Esc or Enter closes it |
 | Arrow keys | Move cursor |
+| Shift + any movement key | Extend the selection (Shift+Arrows, Shift+Home/End, Shift+PgUp/PgDn, Ctrl+Shift+Left/Right, ...) |
 | Home / End | Start / end of line |
 | PgUp / PgDn | Scroll by page |
 | Ctrl+Up/Down | Scroll by page (same as PgUp/PgDn) |
 | Ctrl+S | Save file |
 | Ctrl+O | Open file browser |
 | Ctrl+N | New file (asks for the format: Markdown, Fountain or plain text) |
-| Ctrl+L | Cycle keyboard layout |
+| Ctrl+L | Cycle through the active keyboard layouts (see [Keyboard Layouts](#keyboard-layouts)) |
 | Win+Space | Cycle keyboard layout (same as Ctrl+L) |
 | Ctrl+M | Menu (same as F1) |
 | Ctrl+P | Enter deep sleep. With unsaved changes, a dialog offers Save and sleep / Sleep without saving / Cancel |
@@ -326,6 +334,11 @@ demand with **Ctrl+P** or the **F1 -> "Sleep now"** menu entry. Wake
 with the boot / power button, or a touchscreen tap on boards that
 support it.
 
+Depending on the hardware, the device wakes up from deep sleep on a
+boot or power button, or on a touchscreen tap where the hardware allows
+it; on a few boards only the RESET button wakes it (see
+[HARDWARE.md](HARDWARE.md)).
+
 An automatic (timeout) sleep always saves any unsaved changes first. A
 sleep you trigger yourself asks what to do when the open document has
 unsaved changes -- **Save and sleep**, **Sleep without saving** (the
@@ -420,16 +433,32 @@ imprecise taps.
 
 
 
-### Wake from sleep
-
-Depending on the hardware, the device wakes up from deep sleep on a
-boot or power button, or on touchscreen tap where hardware allows it.
-
-
 ## Keyboard Layouts
 
-The editor supports 21 keyboard layouts that can be switched with
-**Ctrl+L** (or **Win+Space**) or through the **F1 menu**:
+Draftling comes in several **language packs**: separate firmware
+images, each with US-English plus the keyboard layouts, input methods
+and fonts of its languages. The [web flasher](https://flasher.draftling.art/)
+offers the packs available for each board; to build one yourself, see
+[BUILDING.md](BUILDING.md#language-packs).
+
+| Language pack | Keyboard layouts | Typing guide |
+|---------------|------------------|--------------|
+| Default | US-English and 21 European and Canadian layouts (below) | [default](docs/typing/default.md) |
+| Vietnamese | US, Vietnamese (Telex input) | [Vietnamese](docs/typing/vietnamese.md) |
+| Korean | US, Korean (2-set Hangul) | [Korean](docs/typing/korean.md) |
+| Japanese | US, Japanese (romaji to kana and kanji) | [Japanese](docs/typing/japanese.md) |
+| Chinese | US, Simplified Chinese (pinyin) | [Chinese](docs/typing/chinese.md) |
+| Indic | US; Devanagari: Hindi and Marathi InScript, Nepali Traditional and Romanized; Tamil: Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | [Indic](docs/typing/indic.md) |
+
+All the layouts of a pack are built into its firmware, but at first
+only US-English and the pack's main layouts are active (US-English
+alone in the default pack). Turn the others on in F1 -> Settings ->
+Keyboard -> Active layouts; **Ctrl+L** (or **Win+Space**) cycles
+through the active ones, and so does the keyboard layout entry of the
+**F1 menu**. The current layout is shown in the title bar when more
+than one is active.
+
+The **default language pack** has these 22 layouts:
 
 | Code | Layout |
 |------|--------|
@@ -457,29 +486,15 @@ The editor supports 21 keyboard layouts that can be switched with
 | FR-CA | Canadian French, traditional (QWERTY) |
 
 The accent keys of the European layouts are dead keys, as on a
-computer: press the accent, then the
-letter (acute + e gives e-acute). The accent followed by Space types
-the accent alone. The key left of Z on European keyboards (`<` `>`)
-works on all of these layouts.
-See the [typing guide](docs/typing/default.md).
+computer: press the accent, then the letter (acute + e gives e-acute).
+The accent followed by Space types the accent alone. The key left of Z
+on European keyboards (`<` `>`) works on all of these layouts.
 
-All of them are compiled into the default firmware, but only
-US-English is active at first. Turn the others on in F1 -> Settings -> Keyboard ->
-Active layouts; Ctrl+L cycles through the active ones. The current layout is
-shown in the title bar when more than one is active.
-
-Vietnamese, Korean, Japanese, Simplified Chinese and the Indic scripts
-(Devanagari and Tamil) come in separate firmware images, the language
-packs, each with US-English and the input methods of its languages
-(Telex, 2-set Hangul, romaji to kana and kanji, pinyin; Hindi and
-Marathi InScript and the Nepali layouts for Devanagari; the official
-Tamil 99, Typewriter and InScript layouts and the Taravinyas input
-engine for Tamil). Brief typing guides:
-[Vietnamese](docs/typing/vietnamese.md),
-[Korean](docs/typing/korean.md), [Japanese](docs/typing/japanese.md),
-[Chinese](docs/typing/chinese.md), [Indic](docs/typing/indic.md); the
-full details are in [docs/language-packs.md](docs/language-packs.md),
-and [BUILDING.md](BUILDING.md#language-packs) describes building them.
+With an input method (Vietnamese, Korean, Japanese, Chinese, and the
+Tamil layouts other than InScript), the text being typed is composed
+right in the document, and candidates to pick from are listed in the
+status bar. The full details of every pack are in
+[docs/language-packs.md](docs/language-packs.md).
 
 
 ## Formatting the SD card
@@ -579,8 +594,8 @@ ready-made and equipped with a battery, while others need a custom
 enclosure.
 
 See [HARDWARE.md](HARDWARE.md) for the full list of supported
-hardware. See [BUILDING.md](BUILDIgNG.md) for firmware compilation
-insttucctions.
+hardware. See [BUILDING.md](BUILDING.md) for firmware compilation
+instructions.
 
 
 ## Use of LLM
@@ -596,10 +611,37 @@ solution.
 
 ## Acknowledgements
 
-The firmware utilizes
-[Greybeard](https://github.com/flowchartsman/greybeard) and
-[Hack](https://github.com/source-foundry/Hack) fonts, both available
-under MIT license.
+Draftling is built on the work of many others:
+
+- [ESP-IDF](https://github.com/espressif/esp-idf) (Apache 2.0) and
+  [LVGL](https://github.com/lvgl/lvgl) (MIT); the e-paper boards with
+  a parallel panel use [epdiy](https://github.com/vroland/epdiy)
+  (LGPL 3.0).
+- Fonts: [Greybeard](https://github.com/flowchartsman/greybeard) (MIT)
+  and [Hack](https://github.com/source-foundry/Hack) (MIT / Bitstream
+  Vera License) for the Latin and European scripts;
+  [Noto Sans Mono](https://github.com/notofonts/latin-greek-cyrillic),
+  [Noto Sans Devanagari](https://github.com/notofonts/devanagari) and
+  [Noto Sans Tamil](https://github.com/notofonts/tamil),
+  [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) and
+  [GNU Unifont](https://unifoundry.com/unifont/) (SIL Open Font License
+  1.1) for Vietnamese, the Indic scripts and CJK.
+- [HarfBuzz](https://github.com/harfbuzz/harfbuzz) (Old MIT license)
+  shapes Devanagari on the device.
+- The Japanese and Chinese input methods use dictionaries derived from
+  [Mozc](https://github.com/google/mozc) (BSD 3-clause / IPAdic) and
+  the Android Open Source Project's PinyinIME (Apache 2.0).
+- Keyboard layouts and input methods follow the
+  [m17n](https://www.nongnu.org/m17n/) database and XKB layouts, the
+  Keyman Tamil keyboards and Bandhan Pramanik's
+  [Taravinyas](https://github.com/BandhanPramanik/tamil-input-engine-checkbox)
+  input engine (reimplemented, no code reused).
+- The Xteink X4 and reTerminal Sticky support builds on the
+  reverse-engineering of the [FreeInk SDK](https://github.com/Free-Ink/freeink-sdk)
+  (MIT).
+
+The license files of the fonts and dictionaries are next to them in
+`firmware/components/fonts/` and `firmware/components/ime/dict/`.
 
 
 ## License
