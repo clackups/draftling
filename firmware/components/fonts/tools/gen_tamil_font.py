@@ -23,7 +23,7 @@ font release used):
     gen_tamil_font.py NotoSansTamil-Regular.ttf fonts_dir out_dir
 
 fonts_dir holds lowres_NN.c / hires_NN.c, whose line height
-(plus the Tamil pack's extra, line_extra()), baseline and cell width
+(plus the Indic pack's extra, line_extra()), baseline and cell width
 each slot copies. Writes
 out_dir/tamil_<family>_<NN>.bin and out_dir/tamil_cells.h.
 
@@ -71,7 +71,7 @@ STANDALONE = ([0x0B83, 0x0B85, 0x0B86, 0x0B87, 0x0B88, 0x0B89, 0x0B8A,
                0x0B8E, 0x0B8F, 0x0B90, 0x0B92, 0x0B93, 0x0B94, 0x0BD0] +
               list(range(0x0BE6, 0x0BFB)))
 
-# Slots (line heights, with the Tamil pack's extra) rendered with
+# Slots (line heights, with the Indic pack's extra) rendered with
 # FreeType's auto-hinter. The font's own TrueType hints give clean
 # single-pixel strokes at the small sizes but a mix of one- and
 # two-pixel strokes from about 13 px up; the auto-hinter keeps the
@@ -88,9 +88,9 @@ EMBOLDEN_PX = 0.4
 
 
 def line_extra(lh):
-    """Extra line height of the Tamil pack over a base slot of line
+    """Extra line height of the Indic pack over a base slot of line
     height lh, and the part of it below the baseline. Same formulas as
-    TAMIL_LINE_EXTRA / TAMIL_BASE_EXTRA in include/tamil_font.h."""
+    TALL_LINE_EXTRA / TALL_BASE_EXTRA in include/tall_lines.h."""
     extra = (lh * 3 + 5) // 10
     return extra, extra // 2
 
@@ -283,7 +283,7 @@ def main():
             # Emboldening follows the Latin letters of the slot.
             bold = family == EMBOLDEN_FAMILY and lh >= EMBOLDEN_LINE
             r.embolden = EMBOLDEN_PX if bold else 0.0
-            # The Tamil pack's fonts have taller lines (see line_extra()),
+            # The Indic pack's fonts have taller lines (see line_extra()),
             # which the Tamil letters fill.
             extra, below = line_extra(lh)
             lh, bl = lh + extra, bl + below

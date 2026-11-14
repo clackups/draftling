@@ -8,16 +8,19 @@ in the git log.
 
 ### Added
 
-- **Tamil language pack**: a new firmware image with US-English and
-  Tamil. It has the official Tamil keyboard layouts -- Tamil 99 (the
-  Government of Tamil Nadu standard, with its automatic pulli), the
-  Tamil Typewriter layout and InScript -- and the Taravinyas input
-  engine, which picks letters by place and manner of articulation.
-  Tamil text is drawn with Noto Sans Tamil, each consonant joined
-  with its vowel sign, the letters of a word joined up and the k-ssa
-  and sri ligatures in place. Lines are spaced about 30 % further
-  apart in this firmware so the Tamil letters can be drawn large
-  enough to read. See docs/language-packs.md.
+- **Indic language pack**: a new firmware image with US-English,
+  Devanagari and Tamil. Devanagari (Hindi, Marathi, Nepali, Sanskrit)
+  has the Hindi and Marathi InScript layouts (the Government of India
+  standard) and the Nepali Traditional and Romanized layouts, and is
+  shaped on the device like on a desktop: conjuncts, half forms, the
+  reph and the i sign before its consonant cluster. Tamil has the
+  official layouts -- Tamil 99 (the Government of Tamil Nadu standard,
+  with its automatic pulli), the Tamil Typewriter layout and InScript
+  -- and the Taravinyas input engine, which picks letters by place and
+  manner of articulation. The letters come from Noto Sans Devanagari
+  and Noto Sans Tamil; lines are spaced about 30 % further apart in
+  this firmware so the Indic letters can be drawn large enough to
+  read. See docs/language-packs.md.
 
 ### Changed
 

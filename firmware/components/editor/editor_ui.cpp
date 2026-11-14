@@ -48,6 +48,9 @@
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
 #include "tamil_font.h"
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+#include "deva_font.h"
+#endif
 #include "wifi_manager.h"
 #include "git_sync.h"
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
@@ -86,10 +89,10 @@
  * defined on non-HIDPI boards, for the 22 px body size's H1).
  * Status bars always use FONT_11 regardless of the body font setting.
  */
-/* The Tamil pack renders with copies of the fonts whose lines are
- * about 30 % taller (lowres.c / hires.c, TAMIL_LINE_EXTRA), so the
- * Tamil letters can be drawn larger. */
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+/* The Indic pack renders with copies of the fonts whose lines are
+ * about 30 % taller (lowres.c / hires.c, tall_lines.h), so the Tamil
+ * and Devanagari letters can be drawn larger. */
+#ifdef CONFIG_DRAFTLING_TALL_LINES
 #define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
 #else
 #define SLOT_FONT(f) (&f)
@@ -712,8 +715,8 @@ static void save_name_suggest_to_nvs(void)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_ja"
 #elif defined(CONFIG_DRAFTLING_LANG_PACK_CHINESE)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
-#elif defined(CONFIG_DRAFTLING_LANG_PACK_TAMIL)
-#define NVS_KEY_ACTIVE_LAYOUTS "actlay_ta"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_INDIC)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_in"
 #else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
 #endif
@@ -2371,6 +2374,10 @@ static int cp_cells(uint32_t prev, uint32_t cp, uint32_t next)
     (void)prev;
     (void)next;
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+    int d = deva_cp_cells(cp);
+    if (d >= 0) return d;
+#endif
     return cp_is_wide(cp) ? 2 : 1;
 }
 
@@ -2547,6 +2554,40 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
         size_t start = b;
         uint32_t cp = utf8_decode(lt, ll, &b);
         if (hide[start]) continue;
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+        /* A run of Devanagari is shaped by HarfBuzz into the private-
+         * use code points of its glyphs (deva_font.h), each mapped to
+         * the first byte of the characters it shows. */
+        if (deva_in_run(cp)) {
+            size_t end = b;
+            while (end < ll && !hide[end]) {
+                size_t nx = end;
+                if (!deva_in_run(utf8_decode(lt, ll, &nx))) break;
+                end = nx;
+            }
+            static std::vector<deva_glyph_t> dg;
+            dg.resize((end - start) * 2 + 8);
+            size_t n = deva_shape(lt + start, end - start, dg.data(), dg.size());
+            for (size_t k = 0; k < n; k++) {
+                uint32_t c = dg[k].code;      /* planes 15 / 16: 4 bytes */
+                char u[4] = {
+                    (char)(0xF0 | (c >> 18)), (char)(0x80 | ((c >> 12) & 0x3F)),
+                    (char)(0x80 | ((c >> 6) & 0x3F)), (char)(0x80 | (c & 0x3F)),
+                };
+                text.append(u, 4);
+                size_t r = start + dg[k].cluster;
+                v->d2r.push_back((uint32_t)r);
+                v->flags.push_back(rflags[r < ll ? r : start]);
+            }
+            if (n > 0) {
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+                prev_cp = 0;
+#endif
+                b = end;
+                continue;
+            }
+        }
+#endif
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
         /* The k-ssa and sri ligatures span more code points than the
          * font sees: show each as its private-use code point, mapped
@@ -2650,13 +2691,14 @@ static uint32_t deco_draw_cp(uint32_t cp, uint32_t next)
 #endif
 }
 
-/* True when the cursor sits inside a Tamil syllable -- between a
- * consonant and the vowel sign drawn with it -- or inside a k-ssa /
- * sri ligature, where it would be shown at the same spot as after
- * it. Left / Right step over such positions. */
+/* True when the cursor sits inside a Tamil or Devanagari syllable --
+ * between a consonant and the vowel sign or other mark drawn with it,
+ * inside a conjunct, or inside a k-ssa / sri ligature -- where it would
+ * be shown at the same spot as after it. Left / Right step over such
+ * positions. */
 static bool cursor_mid_cluster(void)
 {
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#if defined(CONFIG_DRAFTLING_HAS_TAMIL) || defined(CONFIG_DRAFTLING_HAS_DEVANAGARI)
     char buf[24];
     size_t n = editor_peek_before(buf, 12);
     size_t c = editor_get_cursor();
@@ -2666,16 +2708,25 @@ static bool cursor_mid_cluster(void)
         if (ch == '\0' || ch == '\n') break;
         buf[total++] = ch;
     }
-    /* A mark right after the cursor, a base right before it. */
-    if (n > 0 && total > n) {
-        size_t i = n;
-        uint32_t next = utf8_decode(buf, total, &i);
+    /* The code points right before and after the cursor. */
+    uint32_t prev = 0, next = 0;
+    if (n > 0) {
         size_t st = n;
         while (st > 0 && ((unsigned char)buf[st - 1] & 0xC0) == 0x80) st--;
         if (st > 0) st--;
         size_t j = st;
-        if (tamil_is_mark(next) && tamil_is_base(utf8_decode(buf, n, &j))) return true;
+        prev = utf8_decode(buf, n, &j);
     }
+    if (total > n) {
+        size_t i = n;
+        next = utf8_decode(buf, total, &i);
+    }
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+    if (deva_mid_cluster(prev, next)) return true;
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+    /* A mark right after the cursor, a base right before it. */
+    if (tamil_is_mark(next) && tamil_is_base(prev)) return true;
     /* A ligature that starts before the cursor and ends after it. */
     for (size_t p = 0; p < n; p++) {
         if (((unsigned char)buf[p] & 0xC0) == 0x80) continue;
@@ -2683,6 +2734,7 @@ static bool cursor_mid_cluster(void)
         size_t L = tamil_ligature(buf + p, total - p, &lig);
         if (L && p + L > n) return true;
     }
+#endif
     return false;
 #else
     return false;
@@ -2893,7 +2945,7 @@ static void line_deco_draw_cb(lv_event_t *e)
     ld.opa  = LV_OPA_COVER;
 
     /* x-height centre (roughly), used by strikethrough and bullets. The
-     * Tamil pack's tall fonts point at their base font (user_data),
+     * Indic pack's tall fonts point at their base font (user_data),
      * whose ascent is that of the letters, not of the taller line. */
     int32_t asc_txt = asc;
     if (font->user_data) {
@@ -9816,15 +9868,17 @@ struct typing_pre_state_t {
 };
 
 /* True for a line whose width the cell count does not give exactly:
- * Tamil, whose glyphs are proportional. The typing fast path is not
+ * Tamil and Devanagari, whose glyphs are proportional. The typing fast path is not
  * used on such lines (the whole line is refreshed). */
 static bool line_has_proportional_text(const char *lt, size_t ll)
 {
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
-    /* U+0B80..U+0BFF is E0 AE xx / E0 AF xx in UTF-8. */
+#ifdef CONFIG_DRAFTLING_TALL_LINES
+    /* Devanagari U+0900..U+097F is E0 A4 xx / E0 A5 xx in UTF-8, Tamil
+     * U+0B80..U+0BFF E0 AE xx / E0 AF xx. */
     for (size_t i = 0; i + 1 < ll; i++) {
+        unsigned char c1 = (unsigned char)lt[i + 1];
         if ((unsigned char)lt[i] == 0xE0 &&
-            ((unsigned char)lt[i + 1] == 0xAE || (unsigned char)lt[i + 1] == 0xAF))
+            (c1 == 0xA4 || c1 == 0xA5 || c1 == 0xAE || c1 == 0xAF))
             return true;
     }
 #else

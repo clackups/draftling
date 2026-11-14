@@ -41,12 +41,15 @@ choice DRAFTLING_LANG_PACK
             PinyinIME dictionary, about 1 MB), with the GB 2312 hanzi
             pixel fonts in Simplified Chinese glyph style.
 
-    config DRAFTLING_LANG_PACK_TAMIL
-        bool "Tamil (US, Tamil 99, Typewriter, InScript, Taravinyas)"
+    config DRAFTLING_LANG_PACK_INDIC
+        bool "Indic (US, Devanagari, Tamil)"
         help
-            US-English plus Tamil with the official input methods
-            (Tamil 99, Tamil Typewriter, InScript) and the Taravinyas
-            input engine, with Tamil glyphs from Noto Sans Tamil.
+            US-English plus the Devanagari script (Hindi and Marathi
+            InScript, Nepali Traditional and Romanized layouts) and
+            Tamil (Tamil 99, Tamil Typewriter, InScript and the
+            Taravinyas input engine), with glyphs from Noto Sans
+            Devanagari and Noto Sans Tamil. Devanagari text is shaped
+            on the device with HarfBuzz.
 
 endchoice
 
@@ -57,7 +60,7 @@ config DRAFTLING_LANG_PACK_NAME
     default "korean" if DRAFTLING_LANG_PACK_KOREAN
     default "japanese" if DRAFTLING_LANG_PACK_JAPANESE
     default "chinese" if DRAFTLING_LANG_PACK_CHINESE
-    default "tamil" if DRAFTLING_LANG_PACK_TAMIL
+    default "indic" if DRAFTLING_LANG_PACK_INDIC
 
 config KB_LAYOUT_ENABLE_US
     bool "US-English (QWERTY)"
@@ -263,7 +266,7 @@ config KB_LAYOUT_ENABLE_ZH
 
 config KB_LAYOUT_ENABLE_TA99
     bool "Tamil 99"
-    default y if DRAFTLING_LANG_PACK_TAMIL
+    default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil 99 layout, the Government of Tamil Nadu
         standard (G.O. Ms. 17 of 1999): vowels on the left hand,
@@ -273,7 +276,7 @@ config KB_LAYOUT_ENABLE_TA99
 
 config KB_LAYOUT_ENABLE_TA_TW
     bool "Tamil Typewriter"
-    default y if DRAFTLING_LANG_PACK_TAMIL
+    default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil Typewriter layout of the Tamil Nadu
         government typewriting examinations (the layout of eKalappai
@@ -283,7 +286,7 @@ config KB_LAYOUT_ENABLE_TA_TW
 
 config KB_LAYOUT_ENABLE_TA_IN
     bool "Tamil InScript"
-    default y if DRAFTLING_LANG_PACK_TAMIL
+    default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil InScript layout, the Government of India
         standard for Indian scripts (as in Windows "Tamil" and XKB
@@ -293,7 +296,7 @@ config KB_LAYOUT_ENABLE_TA_IN
 
 config KB_LAYOUT_ENABLE_TA_TV
     bool "Tamil Taravinyas"
-    default y if DRAFTLING_LANG_PACK_TAMIL
+    default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Taravinyas Tamil input engine
         (github.com/BandhanPramanik/tamil-input-engine-checkbox): a
@@ -303,6 +306,54 @@ config KB_LAYOUT_ENABLE_TA_TV
 config DRAFTLING_HAS_TAMIL
     bool
     default y if KB_LAYOUT_ENABLE_TA99 || KB_LAYOUT_ENABLE_TA_TW || KB_LAYOUT_ENABLE_TA_IN || KB_LAYOUT_ENABLE_TA_TV
+
+config KB_LAYOUT_ENABLE_HI_IN
+    bool "Hindi InScript (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Devanagari InScript layout, the Government of India
+        standard (Enhanced InScript, BIS 2016, as m17n "hi-inscript2"):
+        vowel signs on the left hand (Shift: the vowels), consonants on
+        the right, Devanagari digits on the number row and the conjuncts
+        ksha, tra, jnya, shra on Shift + digits. Also types Sanskrit,
+        Konkani, Maithili and the other Devanagari languages. Pulls in
+        the Devanagari fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_MR_IN
+    bool "Marathi InScript (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Marathi Enhanced InScript layout (m17n
+        "mr-inscript2"): Hindi InScript plus the Marathi letters
+        (lla on Shift + N, eyelash ra on Shift + J, the candra signs).
+        Pulls in the Devanagari fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_NE_TR
+    bool "Nepali Traditional (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Nepali Traditional layout (m17n "ne-trad"), the
+        typewriter-derived layout used in Nepal. Pulls in the
+        Devanagari fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_NE_RO
+    bool "Nepali Romanized (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Nepali Romanized layout (m17n "ne-rom"): Devanagari
+        letters on the keys of their Latin sound (k = ka, s = sa).
+        Pulls in the Devanagari fonts and HarfBuzz.
+
+config DRAFTLING_HAS_DEVANAGARI
+    bool
+    default y if KB_LAYOUT_ENABLE_HI_IN || KB_LAYOUT_ENABLE_MR_IN || KB_LAYOUT_ENABLE_NE_TR || KB_LAYOUT_ENABLE_NE_RO
+
+# Indic scripts need much more room above and below the letter body
+# than Latin: with either, the fonts get taller lines (components/
+# fonts, TALL_LINE_EXTRA).
+config DRAFTLING_TALL_LINES
+    bool
+    default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI
 
 # Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
 # letters of the Central / Eastern European, Baltic and Turkish

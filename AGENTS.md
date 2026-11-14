@@ -27,9 +27,11 @@ they differ. Never commit under any other identity.
   ASCII-only. Use ASCII equivalents instead: `u` (or `micro`) for `mu`,
   `->` for an arrow, `--` for an em-dash, `>=` / `<=` for the inequality
   glyphs, `ohm` for the ohm symbol, `deg` for the degree sign, `sec.` for
-  the section sign, etc. The only exception is the auto-generated LVGL
+  the section sign, etc. The only exceptions are the auto-generated LVGL
   font sources under `components/fonts/` (e.g. `lowres_*.c`), whose
-  comments reference the Unicode glyphs they encode.
+  comments reference the Unicode glyphs they encode, and the vendored
+  third-party sources under `components/harfbuzz/src/` and its
+  `COPYING`, which stay byte-identical to the upstream release.
 - All board-specific configuration -- pin numbers, panel dimensions,
   wakeup GPIOs, brand strings, etc. -- belongs in `main/Kconfig.projbuild`
   and the per-board header files under `main/boards/`. C and C++ files
@@ -242,7 +244,7 @@ sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
 sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
-                            korean, japanese, chinese, tamil), appended by
+                            korean, japanese, chinese, indic), appended by
                             idf.py --lang-pack
 idf_ext.py                  idf.py extension: --lang-pack option /
                             DRAFTLING_LANG_PACK variable (see
@@ -263,15 +265,20 @@ components/                 Reusable IDF components
                             format hooks, LVGL UI
   fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
                             Vietnamese subsets, CJK pixel-font driver,
-                            Tamil cluster-glyph driver)
+                            Tamil cluster-glyph driver, Devanagari
+                            glyph driver + HarfBuzz shaping)
   git_sync/                 Native Git client (smart HTTP) + local history
+  harfbuzz/                 HarfBuzz 15.0.0 text shaper (vendored, only
+                            the files the HB_TINY build uses), for
+                            Devanagari
   io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
                             (M5Stack PaperMono) I2C IO-expander drivers
   ime/                      Input methods: Vietnamese Telex, Korean
                             Hangul, Japanese kana-kanji, Chinese pinyin,
                             Tamil 99 / Typewriter / Taravinyas
   kb_layout/                Keyboard layout translation (US/UA/DE/FR/HE/
-                            VI/KO/JA/ZH/TA) and language-pack Kconfig
+                            VI/KO/JA/ZH/TA/HI/MR/NE) and language-pack
+                            Kconfig
   kermit/                   Kermit file server on the serial console
                             ("Sync via browser")
   power/                    TCA9554-latched battery rail + PWR-button driver
@@ -1665,7 +1672,11 @@ Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
 Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q,
 Canadian French (traditional), Korean
 (Dubeolsik; the letter keys give Hangul Compatibility Jamo), Tamil
-InScript (`TA-IN`, as XKB `in(tam)`, AltGr + digit = Tamil digits) and
+InScript (`TA-IN`, as XKB `in(tam)`, AltGr + digit = Tamil digits), the
+Devanagari Hindi and Marathi InScript (`HI-IN`, `MR-IN`: m17n
+`hi-inscript2` / `mr-inscript2`, Enhanced InScript, with the keys m17n
+leaves empty taken from XKB `in(deva)`) and Nepali Traditional /
+Romanized (`NE-TR`, `NE-RO`: m17n `ne-trad` / `ne-rom`) and
 the US-based Vietnamese, Japanese, Chinese and Tamil 99 / Tamil
 Typewriter / Taravinyas (`TA99`, `TA-TW`, `TA-TV`) layouts.
 
@@ -2450,7 +2461,8 @@ IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR,
 FR-CA),
 `vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
-ZH) and `tamil` (US, TA99, TA-TW, TA-IN, TA-TV). Each is a separate image; the board preset picks the hardware and
+ZH) and `indic` (US, HI-IN, MR-IN, NE-TR, NE-RO, TA99, TA-TW, TA-IN,
+TA-TV). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
 **Build mechanism.** `firmware/idf_ext.py` is a project idf.py
@@ -2476,7 +2488,9 @@ layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
 
 Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
 2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
-Xteink X4 Pro), tamil 2.6 MB (2.9 MB on the X4 Pro). All fit
+Xteink X4 Pro), indic 3.2 MB (3.9 MB on the X4 Pro; 3.85 MB on the
+4 MB-flash Elecrow CrowPanel 5.0", whose 3.88 MB app partition it
+just fits). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
 slots.
 
@@ -2484,8 +2498,8 @@ slots.
 base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
 Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
 (`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Tamil
-runtime font -> Cyrillic (generated without a fallback, so always
-last). Missing subsets are
+runtime font -> Devanagari runtime font -> Cyrillic (generated without
+a fallback, so always last). Missing subsets are
 skipped (`slot_chain_t` table).
 
 **Latin Extended-A** (`lowres_latina_NN.c`, `hires_latina_NN.c`,
@@ -2531,7 +2545,7 @@ last resort. LVGL's word wrap breaks between CJK characters
 (`lv_text_is_a_word()`).
 
 **Tamil fonts** (`components/fonts/tamil_font.c`,
-`tamil/tamil_{greybeard,hack}_NN.bin`, `tamil/tamil_cells.h`, license
+`tamil/tamil_{lowres,hires}_NN.bin`, `tamil/tamil_cells.h`, license
 in `tamil/LICENSE.txt`): LVGL does no shaping, but it passes the next
 code point to `get_glyph_dsc()` (in the label draw, width and letter-
 position paths; only with `kerning` NORMAL, the default). So a base
@@ -2545,11 +2559,12 @@ line height (raised a pixel or two off the Latin baseline where the
 descenders need it). That line is about 30 % taller than the base
 font's: Tamil syllables need roughly twice their body height for loops
 and hooks, and in a Greybeard-height line the body of the 14 / 16 px
-sizes was 5-7 px tall. `lowres_init()` / `hires_init()` make mutable
-copies of the base fonts (`<font>_NN_tall`, `TAMIL_LINE_EXTRA()` more
-line height, `TAMIL_BASE_EXTRA()` of it below the baseline,
-`user_data` pointing at the base font) and the editor's `FONT_NN`
-macros (`SLOT_FONT()`) use them in the Tamil pack; the generator's
+sizes was 5-7 px tall. With Tamil or Devanagari compiled in
+(`DRAFTLING_TALL_LINES`), `lowres_init()` / `hires_init()` make mutable
+copies of the base fonts (`<font>_NN_tall`, `TALL_LINE_EXTRA()` more
+line height, `TALL_BASE_EXTRA()` of it below the baseline, see
+`include/tall_lines.h`; `user_data` pointing at the base font) and the
+editor's `FONT_NN` macros (`SLOT_FONT()`) use them; the generators'
 `line_extra()` uses the same formulas. Below a 17 px (tall) line the font's TrueType hints
 are used, from there up the FreeType auto-hinter (the TrueType
 hints mix one- and two-pixel strokes there), and the Greybeard slots
@@ -2579,6 +2594,42 @@ and its mark. Blobs are matched to a slot by
 line height and cell width, and only the family the board renders with
 is embedded.
 
+**Devanagari fonts and shaping** (`components/fonts/deva_font.c`,
+`deva/deva_layout.ttf`, `deva/deva_{lowres,hires}_NN.bin`,
+`deva/deva_tables.h`, license in `deva/LICENSE.txt`; HarfBuzz in
+`components/harfbuzz/`). Devanagari needs real shaping -- conjuncts and
+half forms, reph, the i-matra before its cluster, per-base mark
+positions, about 170 GSUB lookups in Noto Sans Devanagari -- so the
+editor shapes it on the device: `build_line_view()` hands each run of
+`deva_in_run()` characters to `deva_shape()`, which runs HarfBuzz
+(`HB_TINY`, a few ms per line, the first call ~200 ms for the shape
+plan; results of runs up to 512 bytes are kept in a 64-entry cache) on
+`deva_layout.ttf` -- the font subset to the Devanagari repertoire and
+its GSUB closure with outlines and hinting removed (cmap, GDEF, GSUB,
+GPOS, head, hhea, hmtx, maxp; 78 KB) -- and turns every output glyph
+into private-use code points that `deva_font.c` draws from 1 bpp
+bitmaps by glyph id: a spacing glyph is U+F8000 + gid * 32 + advance
+correction (HarfBuzz's kerning, 10-unit steps); a mark at the pen is
+U+108000 + gid; a mark with an offset is two code points, U+100000 |
+dx << 7 | dy (4- / 8-unit steps) and U+10C000 + gid, and the first draws
+the mark (LVGL passes it the next code point) while the second draws
+nothing. Each code maps (d2r) to HarfBuzz's cluster, which never
+decreases. `cursor_mid_cluster()` steps over positions inside a
+syllable (`deva_mid_cluster()`), `deva_cp_cells()` gives an upper bound
+in cells, and the e-paper typing fast path is off on Devanagari lines.
+Text outside the editor (titles, file names) is drawn unshaped from the
+nominal glyphs (`DEVA_CMAP`). `tools/gen_deva_font.py` writes the
+data: the pixel size per slot fits the tall line for all but 0.2 % of
+a synthetic set of syllables (every consonant with every vowel sign,
+modifier and reph, all two-consonant conjuncts with the below-base
+signs; the rare vocalic rr / l signs are left out), with the same
+hinting thresholds as the Tamil fonts. HarfBuzz uses about 1.3 KB of
+stack per call, so the LVGL task gets 12 KB instead of 8 KB with
+Devanagari (`lvgl_port.cpp`). Host test: `components/fonts/test/
+host/run.sh` (builds deva_font.c and HarfBuzz natively, shapes and
+draws sample lines into a PGM image, checks every glyph and the
+cache); run it after changing the Devanagari code or data.
+
 **Editor integration** (`editor_ui.cpp`, `DRAFTLING_HAS_IME`):
 `handle_editor_key()` hands typed keys -- and Space / Enter /
 Backspace / arrows / Esc while composing -- to `ime_handle_key()`
@@ -2586,8 +2637,9 @@ after the Ctrl block and before the special-key switch; Ctrl / Alt /
 Win combinations and F-keys call `ime_finish()` first. Width estimates
 (`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
 e-paper typing fast path) count CJK characters as two cells
-(`cp_is_wide()`, same ranges as `cjk_is_wide()`) and Tamil by
-`tamil_cp_cells()` (`cp_cells()`, which needs the code points around). The small text
+(`cp_is_wide()`, same ranges as `cjk_is_wide()`), Tamil by
+`tamil_cp_cells()` and Devanagari by `deva_cp_cells()` (`cp_cells()`,
+which needs the code points around). The small text
 fields (search, file names, WiFi) are not wired to the input methods.
 
 **Dictionaries** (`components/ime/tools/gen_ime_dicts.py`, licenses in
@@ -3226,17 +3278,23 @@ follows the pack:
 | KB_LAYOUT_ENABLE_KO | Korean (2-set Hangul) | y in the korean pack |
 | KB_LAYOUT_ENABLE_JA | Japanese (romaji, kana-kanji) | y in the japanese pack |
 | KB_LAYOUT_ENABLE_ZH | Chinese (pinyin) | y in the chinese pack |
-| KB_LAYOUT_ENABLE_TA99 | Tamil 99 | y in the tamil pack |
-| KB_LAYOUT_ENABLE_TA_TW | Tamil Typewriter | y in the tamil pack |
-| KB_LAYOUT_ENABLE_TA_IN | Tamil InScript | y in the tamil pack |
-| KB_LAYOUT_ENABLE_TA_TV | Tamil Taravinyas | y in the tamil pack |
+| KB_LAYOUT_ENABLE_TA99 | Tamil 99 | y in the indic pack |
+| KB_LAYOUT_ENABLE_TA_TW | Tamil Typewriter | y in the indic pack |
+| KB_LAYOUT_ENABLE_TA_IN | Tamil InScript | y in the indic pack |
+| KB_LAYOUT_ENABLE_TA_TV | Tamil Taravinyas | y in the indic pack |
+| KB_LAYOUT_ENABLE_HI_IN | Hindi InScript (Devanagari) | y in the indic pack |
+| KB_LAYOUT_ENABLE_MR_IN | Marathi InScript (Devanagari) | y in the indic pack |
+| KB_LAYOUT_ENABLE_NE_TR | Nepali Traditional (Devanagari) | y in the indic pack |
+| KB_LAYOUT_ENABLE_NE_RO | Nepali Romanized (Devanagari) | y in the indic pack |
 
 Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR or TR
 enabled) compiles the Latin Extended-A font subset;
 `DRAFTLING_HAS_CJK` (KO, JA or ZH enabled) compiles the CJK
 fonts; `DRAFTLING_CJK_FONT_SET` (`ja` / `zh` / `ko`, the first enabled
 of JA, ZH, KO) picks the font set under `components/fonts/cjk/`;
-`DRAFTLING_HAS_TAMIL` (any Tamil layout) compiles the Tamil fonts.
+`DRAFTLING_HAS_TAMIL` (any Tamil layout) compiles the Tamil fonts;
+`DRAFTLING_HAS_DEVANAGARI` (any Devanagari layout) the Devanagari
+fonts and HarfBuzz; `DRAFTLING_TALL_LINES` (either) the taller lines.
 
 Disabling unused layouts saves flash space because the translation
 tables for disabled layouts are excluded from the build. The `kb_layout`
@@ -3250,7 +3308,7 @@ Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
 Settings -> Keyboard), independent of this Kconfig menu -- see the `kb_layout`
 component writeup above. Its NVS key differs per pack (`actlayouts`,
-`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_ta`), because the bit
+`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_in`), because the bit
 order follows the compiled-in layouts.
 
 ## Building

@@ -26,7 +26,7 @@ import json
 import os
 from typing import Any
 
-LANG_PACKS = ('default', 'vietnamese', 'korean', 'japanese', 'chinese', 'tamil')
+LANG_PACKS = ('default', 'vietnamese', 'korean', 'japanese', 'chinese', 'indic')
 ENV_VAR = 'DRAFTLING_LANG_PACK'
 
 

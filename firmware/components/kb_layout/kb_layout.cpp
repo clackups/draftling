@@ -25,7 +25,7 @@
 static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
 /* Default "Active language layouts" set: US when compiled in, plus the
- * input-method layout (VI, KO, JA, ZH, TA99) of a pack, else the first
+ * main layouts of a pack (VI, KO, JA, ZH; TA99 and HI-IN), else the first
  * compiled-in layout so the set is never empty. */
 static uint32_t default_active_mask(void)
 {
@@ -44,6 +44,9 @@ static uint32_t default_active_mask(void)
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
     mask |= (1u << KB_LAYOUT_TA99);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
+    mask |= (1u << KB_LAYOUT_HI_IN);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
     mask |= (1u << KB_LAYOUT_US);
@@ -806,6 +809,520 @@ static const key_entry_t TA_IN_EXTRA[] = {
     { 0, 0, NULL },
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_TA_IN */
+
+#if defined(CONFIG_KB_LAYOUT_ENABLE_HI_IN) || defined(CONFIG_KB_LAYOUT_ENABLE_MR_IN) || \
+    defined(CONFIG_KB_LAYOUT_ENABLE_NE_TR) || defined(CONFIG_KB_LAYOUT_ENABLE_NE_RO)
+/* ------------------------------------------------------------------ */
+/* Devanagari: Hindi and Marathi InScript, Nepali Traditional and     */
+/* Romanized                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Generated from the m17n-db input methods "hi-inscript2" (Enhanced
+ * InScript, BIS 2016), "mr-inscript2", "ne-trad" and "ne-rom" (keys
+ * typed on a US keyboard -> output), with the InScript keys m17n
+ * leaves empty taken from XKB "in(deva)" (marked). Text is typed in
+ * Unicode order (consonant, then vowel sign); HarfBuzz shapes it for
+ * display. Keys without an m17n entry keep their US character, except
+ * letters, which type nothing. */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
+static const char *const HI_IN_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA5\x8B",  /* U+094B devanagari vowel sign o */
+    /* 05 'b' */ "\xE0\xA4\xB5",  /* U+0935 devanagari letter va */
+    /* 06 'c' */ "\xE0\xA4\xAE",  /* U+092E devanagari letter ma */
+    /* 07 'd' */ "\xE0\xA5\x8D",  /* U+094D devanagari sign virama */
+    /* 08 'e' */ "\xE0\xA4\xBE",  /* U+093E devanagari vowel sign aa */
+    /* 09 'f' */ "\xE0\xA4\xBF",  /* U+093F devanagari vowel sign i */
+    /* 0A 'g' */ "\xE0\xA5\x81",  /* U+0941 devanagari vowel sign u */
+    /* 0B 'h' */ "\xE0\xA4\xAA",  /* U+092A devanagari letter pa */
+    /* 0C 'i' */ "\xE0\xA4\x97",  /* U+0917 devanagari letter ga */
+    /* 0D 'j' */ "\xE0\xA4\xB0",  /* U+0930 devanagari letter ra */
+    /* 0E 'k' */ "\xE0\xA4\x95",  /* U+0915 devanagari letter ka */
+    /* 0F 'l' */ "\xE0\xA4\xA4",  /* U+0924 devanagari letter ta */
+    /* 10 'm' */ "\xE0\xA4\xB8",  /* U+0938 devanagari letter sa */
+    /* 11 'n' */ "\xE0\xA4\xB2",  /* U+0932 devanagari letter la */
+    /* 12 'o' */ "\xE0\xA4\xA6",  /* U+0926 devanagari letter da */
+    /* 13 'p' */ "\xE0\xA4\x9C",  /* U+091C devanagari letter ja */
+    /* 14 'q' */ "\xE0\xA5\x8C",  /* U+094C devanagari vowel sign au */
+    /* 15 'r' */ "\xE0\xA5\x80",  /* U+0940 devanagari vowel sign ii */
+    /* 16 's' */ "\xE0\xA5\x87",  /* U+0947 devanagari vowel sign e */
+    /* 17 't' */ "\xE0\xA5\x82",  /* U+0942 devanagari vowel sign uu */
+    /* 18 'u' */ "\xE0\xA4\xB9",  /* U+0939 devanagari letter ha */
+    /* 19 'v' */ "\xE0\xA4\xA8",  /* U+0928 devanagari letter na */
+    /* 1A 'w' */ "\xE0\xA5\x88",  /* U+0948 devanagari vowel sign ai */
+    /* 1B 'x' */ "\xE0\xA4\x82",  /* U+0902 devanagari sign anusvara */
+    /* 1C 'y' */ "\xE0\xA4\xAC",  /* U+092C devanagari letter ba */
+    /* 1D 'z' */ "\xE0\xA5\x86",  /* U+0946 devanagari vowel sign short e (XKB in(deva)) */
+    /* 1E '1' */ "\xE0\xA5\xA7",  /* U+0967 devanagari digit one */
+    /* 1F '2' */ "\xE0\xA5\xA8",  /* U+0968 devanagari digit two */
+    /* 20 '3' */ "\xE0\xA5\xA9",  /* U+0969 devanagari digit three */
+    /* 21 '4' */ "\xE0\xA5\xAA",  /* U+096A devanagari digit four */
+    /* 22 '5' */ "\xE0\xA5\xAB",  /* U+096B devanagari digit five */
+    /* 23 '6' */ "\xE0\xA5\xAC",  /* U+096C devanagari digit six */
+    /* 24 '7' */ "\xE0\xA5\xAD",  /* U+096D devanagari digit seven */
+    /* 25 '8' */ "\xE0\xA5\xAE",  /* U+096E devanagari digit eight */
+    /* 26 '9' */ "\xE0\xA5\xAF",  /* U+096F devanagari digit nine */
+    /* 27 '0' */ "\xE0\xA5\xA6",  /* U+0966 devanagari digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "\xE0\xA5\x83",  /* U+0943 devanagari vowel sign vocalic r */
+    /* 2F '[' */ "\xE0\xA4\xA1",  /* U+0921 devanagari letter dda */
+    /* 30 ']' */ "\xE0\xA4\xBC",  /* U+093C devanagari sign nukta */
+    /* 31 '\\' */ "\xE0\xA5\x89",  /* U+0949 devanagari vowel sign candra o */
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xA4\x9A",  /* U+091A devanagari letter ca */
+    /* 34 "'" */ "\xE0\xA4\x9F",  /* U+091F devanagari letter tta */
+    /* 35 '`' */ "\xE0\xA5\x8A",  /* U+094A devanagari vowel sign short o (XKB in(deva)) */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "\xE0\xA4\xAF",  /* U+092F devanagari letter ya */
+};
+
+static const char *const HI_IN_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA4\x93",  /* U+0913 devanagari letter o */
+    /* 05 'B' */ "\xE0\xA4\xB4",  /* U+0934 devanagari letter llla (XKB in(deva)) */
+    /* 06 'C' */ "\xE0\xA4\xA3",  /* U+0923 devanagari letter nna */
+    /* 07 'D' */ "\xE0\xA4\x85",  /* U+0905 devanagari letter a */
+    /* 08 'E' */ "\xE0\xA4\x86",  /* U+0906 devanagari letter aa */
+    /* 09 'F' */ "\xE0\xA4\x87",  /* U+0907 devanagari letter i */
+    /* 0A 'G' */ "\xE0\xA4\x89",  /* U+0909 devanagari letter u */
+    /* 0B 'H' */ "\xE0\xA4\xAB",  /* U+092B devanagari letter pha */
+    /* 0C 'I' */ "\xE0\xA4\x98",  /* U+0918 devanagari letter gha */
+    /* 0D 'J' */ "\xE0\xA4\xB1",  /* U+0931 devanagari letter rra (XKB in(deva)) */
+    /* 0E 'K' */ "\xE0\xA4\x96",  /* U+0916 devanagari letter kha */
+    /* 0F 'L' */ "\xE0\xA4\xA5",  /* U+0925 devanagari letter tha */
+    /* 10 'M' */ "\xE0\xA4\xB6",  /* U+0936 devanagari letter sha */
+    /* 11 'N' */ "\xE0\xA4\xB3",  /* U+0933 devanagari letter lla (XKB in(deva)) */
+    /* 12 'O' */ "\xE0\xA4\xA7",  /* U+0927 devanagari letter dha */
+    /* 13 'P' */ "\xE0\xA4\x9D",  /* U+091D devanagari letter jha */
+    /* 14 'Q' */ "\xE0\xA4\x94",  /* U+0914 devanagari letter au */
+    /* 15 'R' */ "\xE0\xA4\x88",  /* U+0908 devanagari letter ii */
+    /* 16 'S' */ "\xE0\xA4\x8F",  /* U+090F devanagari letter e */
+    /* 17 'T' */ "\xE0\xA4\x8A",  /* U+090A devanagari letter uu */
+    /* 18 'U' */ "\xE0\xA4\x99",  /* U+0919 devanagari letter nga */
+    /* 19 'V' */ "\xE0\xA4\xA9",  /* U+0929 devanagari letter nnna (XKB in(deva)) */
+    /* 1A 'W' */ "\xE0\xA4\x90",  /* U+0910 devanagari letter ai */
+    /* 1B 'X' */ "\xE0\xA4\x81",  /* U+0901 devanagari sign candrabindu */
+    /* 1C 'Y' */ "\xE0\xA4\xAD",  /* U+092D devanagari letter bha */
+    /* 1D 'Z' */ "\xE0\xA4\x8E",  /* U+090E devanagari letter short e (XKB in(deva)) */
+    /* 1E '!' */ "\xE0\xA4\x8D",  /* U+090D devanagari letter candra e */
+    /* 1F '@' */ "\xE0\xA5\x85",  /* U+0945 devanagari vowel sign candra e */
+    /* 20 '#' */ "\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 21 '$' */ "\xE0\xA4\xB0\xE0\xA5\x8D",  /* U+0930 devanagari letter ra U+094D devanagari sign virama */
+    /* 22 '%' */ "\xE0\xA4\x9C\xE0\xA5\x8D\xE0\xA4\x9E",  /* U+091C devanagari letter ja U+094D devanagari sign virama U+091E devanagari letter nya */
+    /* 23 '^' */ "\xE0\xA4\xA4\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0924 devanagari letter ta U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 24 '&' */ "\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB7",  /* U+0915 devanagari letter ka U+094D devanagari sign virama U+0937 devanagari letter ssa */
+    /* 25 '*' */ "\xE0\xA4\xB6\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0936 devanagari letter sha U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "\xE0\xA4\x83",  /* U+0903 devanagari sign visarga */
+    /* 2E '+' */ "\xE0\xA4\x8B",  /* U+090B devanagari letter vocalic r */
+    /* 2F '{' */ "\xE0\xA4\xA2",  /* U+0922 devanagari letter ddha */
+    /* 30 '}' */ "\xE0\xA4\x9E",  /* U+091E devanagari letter nya */
+    /* 31 '|' */ "\xE0\xA4\x91",  /* U+0911 devanagari letter candra o */
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xA4\x9B",  /* U+091B devanagari letter cha */
+    /* 34 '"' */ "\xE0\xA4\xA0",  /* U+0920 devanagari letter ttha */
+    /* 35 '~' */ "\xE0\xA4\x92",  /* U+0912 devanagari letter short o (XKB in(deva)) */
+    /* 36 '<' */ "\xE0\xA4\xB7",  /* U+0937 devanagari letter ssa */
+    /* 37 '>' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t HI_IN_EXTRA[] = {
+    { 0x2E, L_ALTGR_SHIFT, "\xE0\xA5\xA0" },  /* U+0960 devanagari letter vocalic rr */
+    { 0x36, L_ALTGR, "\xE0\xA5\xB0" },  /* U+0970 devanagari abbreviation sign */
+    { 0x37, L_ALTGR, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0x1E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0x1F, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x21, L_ALTGR, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x2E, L_ALTGR, "\xE0\xA5\x84" },  /* U+0944 devanagari vowel sign vocalic rr */
+    { 0x37, L_ALTGR_SHIFT, "\xE0\xA4\xBD" },  /* U+093D devanagari sign avagraha */
+    { 0x09, L_ALTGR_SHIFT, "\xE0\xA4\x8C" },  /* U+090C devanagari letter vocalic l */
+    { 0x0B, L_ALTGR_SHIFT, "\xE0\xA5\x9E" },  /* U+095E devanagari letter fa */
+    { 0x0E, L_ALTGR_SHIFT, "\xE0\xA5\x99" },  /* U+0959 devanagari letter khha */
+    { 0x11, L_ALTGR_SHIFT, "\xE0\xA4\xB3" },  /* U+0933 devanagari letter lla */
+    { 0x15, L_ALTGR_SHIFT, "\xE0\xA5\xA1" },  /* U+0961 devanagari letter vocalic ll */
+    { 0x1B, L_ALTGR_SHIFT, "\xE0\xA5\x90" },  /* U+0950 devanagari om */
+    { 0x2F, L_ALTGR, "\xE0\xA5\x9C" },  /* U+095C devanagari letter dddha */
+    { 0x09, L_ALTGR, "\xE0\xA5\xA2" },  /* U+0962 devanagari vowel sign vocalic l */
+    { 0x0C, L_ALTGR, "\xE0\xA5\x9A" },  /* U+095A devanagari letter ghha */
+    { 0x0E, L_ALTGR, "\xE0\xA5\x98" },  /* U+0958 devanagari letter qa */
+    { 0x13, L_ALTGR, "\xE0\xA5\x9B" },  /* U+095B devanagari letter za */
+    { 0x15, L_ALTGR, "\xE0\xA5\xA3" },  /* U+0963 devanagari vowel sign vocalic ll */
+    { 0x2F, L_ALTGR_SHIFT, "\xE0\xA5\x9D" },  /* U+095D devanagari letter rha */
+    { 0, 0, NULL },
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_MR_IN
+static const char *const MR_IN_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA5\x8B",  /* U+094B devanagari vowel sign o */
+    /* 05 'b' */ "\xE0\xA4\xB5",  /* U+0935 devanagari letter va */
+    /* 06 'c' */ "\xE0\xA4\xAE",  /* U+092E devanagari letter ma */
+    /* 07 'd' */ "\xE0\xA5\x8D",  /* U+094D devanagari sign virama */
+    /* 08 'e' */ "\xE0\xA4\xBE",  /* U+093E devanagari vowel sign aa */
+    /* 09 'f' */ "\xE0\xA4\xBF",  /* U+093F devanagari vowel sign i */
+    /* 0A 'g' */ "\xE0\xA5\x81",  /* U+0941 devanagari vowel sign u */
+    /* 0B 'h' */ "\xE0\xA4\xAA",  /* U+092A devanagari letter pa */
+    /* 0C 'i' */ "\xE0\xA4\x97",  /* U+0917 devanagari letter ga */
+    /* 0D 'j' */ "\xE0\xA4\xB0",  /* U+0930 devanagari letter ra */
+    /* 0E 'k' */ "\xE0\xA4\x95",  /* U+0915 devanagari letter ka */
+    /* 0F 'l' */ "\xE0\xA4\xA4",  /* U+0924 devanagari letter ta */
+    /* 10 'm' */ "\xE0\xA4\xB8",  /* U+0938 devanagari letter sa */
+    /* 11 'n' */ "\xE0\xA4\xB2",  /* U+0932 devanagari letter la */
+    /* 12 'o' */ "\xE0\xA4\xA6",  /* U+0926 devanagari letter da */
+    /* 13 'p' */ "\xE0\xA4\x9C",  /* U+091C devanagari letter ja */
+    /* 14 'q' */ "\xE0\xA5\x8C",  /* U+094C devanagari vowel sign au */
+    /* 15 'r' */ "\xE0\xA5\x80",  /* U+0940 devanagari vowel sign ii */
+    /* 16 's' */ "\xE0\xA5\x87",  /* U+0947 devanagari vowel sign e */
+    /* 17 't' */ "\xE0\xA5\x82",  /* U+0942 devanagari vowel sign uu */
+    /* 18 'u' */ "\xE0\xA4\xB9",  /* U+0939 devanagari letter ha */
+    /* 19 'v' */ "\xE0\xA4\xA8",  /* U+0928 devanagari letter na */
+    /* 1A 'w' */ "\xE0\xA5\x88",  /* U+0948 devanagari vowel sign ai */
+    /* 1B 'x' */ "\xE0\xA4\x82",  /* U+0902 devanagari sign anusvara */
+    /* 1C 'y' */ "\xE0\xA4\xAC",  /* U+092C devanagari letter ba */
+    /* 1D 'z' */ "\xE0\xA5\x86",  /* U+0946 devanagari vowel sign short e (XKB in(deva)) */
+    /* 1E '1' */ "\xE0\xA5\xA7",  /* U+0967 devanagari digit one */
+    /* 1F '2' */ "\xE0\xA5\xA8",  /* U+0968 devanagari digit two */
+    /* 20 '3' */ "\xE0\xA5\xA9",  /* U+0969 devanagari digit three */
+    /* 21 '4' */ "\xE0\xA5\xAA",  /* U+096A devanagari digit four */
+    /* 22 '5' */ "\xE0\xA5\xAB",  /* U+096B devanagari digit five */
+    /* 23 '6' */ "\xE0\xA5\xAC",  /* U+096C devanagari digit six */
+    /* 24 '7' */ "\xE0\xA5\xAD",  /* U+096D devanagari digit seven */
+    /* 25 '8' */ "\xE0\xA5\xAE",  /* U+096E devanagari digit eight */
+    /* 26 '9' */ "\xE0\xA5\xAF",  /* U+096F devanagari digit nine */
+    /* 27 '0' */ "\xE0\xA5\xA6",  /* U+0966 devanagari digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "\xE0\xA5\x83",  /* U+0943 devanagari vowel sign vocalic r */
+    /* 2F '[' */ "\xE0\xA4\xA1",  /* U+0921 devanagari letter dda */
+    /* 30 ']' */ "\xE0\xA4\xBC",  /* U+093C devanagari sign nukta */
+    /* 31 '\\' */ "\xE0\xA5\x89",  /* U+0949 devanagari vowel sign candra o */
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xA4\x9A",  /* U+091A devanagari letter ca */
+    /* 34 "'" */ "\xE0\xA4\x9F",  /* U+091F devanagari letter tta */
+    /* 35 '`' */ "\xE0\xA5\x8A",  /* U+094A devanagari vowel sign short o */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "\xE0\xA4\xAF",  /* U+092F devanagari letter ya */
+};
+
+static const char *const MR_IN_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA4\x93",  /* U+0913 devanagari letter o */
+    /* 05 'B' */ "\xE0\xA4\xB4",  /* U+0934 devanagari letter llla (XKB in(deva)) */
+    /* 06 'C' */ "\xE0\xA4\xA3",  /* U+0923 devanagari letter nna */
+    /* 07 'D' */ "\xE0\xA4\x85",  /* U+0905 devanagari letter a */
+    /* 08 'E' */ "\xE0\xA4\x86",  /* U+0906 devanagari letter aa */
+    /* 09 'F' */ "\xE0\xA4\x87",  /* U+0907 devanagari letter i */
+    /* 0A 'G' */ "\xE0\xA4\x89",  /* U+0909 devanagari letter u */
+    /* 0B 'H' */ "\xE0\xA4\xAB",  /* U+092B devanagari letter pha */
+    /* 0C 'I' */ "\xE0\xA4\x98",  /* U+0918 devanagari letter gha */
+    /* 0D 'J' */ "\xE0\xA4\xB1",  /* U+0931 devanagari letter rra */
+    /* 0E 'K' */ "\xE0\xA4\x96",  /* U+0916 devanagari letter kha */
+    /* 0F 'L' */ "\xE0\xA4\xA5",  /* U+0925 devanagari letter tha */
+    /* 10 'M' */ "\xE0\xA4\xB6",  /* U+0936 devanagari letter sha */
+    /* 11 'N' */ "\xE0\xA4\xB3",  /* U+0933 devanagari letter lla */
+    /* 12 'O' */ "\xE0\xA4\xA7",  /* U+0927 devanagari letter dha */
+    /* 13 'P' */ "\xE0\xA4\x9D",  /* U+091D devanagari letter jha */
+    /* 14 'Q' */ "\xE0\xA4\x94",  /* U+0914 devanagari letter au */
+    /* 15 'R' */ "\xE0\xA4\x88",  /* U+0908 devanagari letter ii */
+    /* 16 'S' */ "\xE0\xA4\x8F",  /* U+090F devanagari letter e */
+    /* 17 'T' */ "\xE0\xA4\x8A",  /* U+090A devanagari letter uu */
+    /* 18 'U' */ "\xE0\xA4\x99",  /* U+0919 devanagari letter nga */
+    /* 19 'V' */ "\xE0\xA4\xA9",  /* U+0929 devanagari letter nnna (XKB in(deva)) */
+    /* 1A 'W' */ "\xE0\xA4\x90",  /* U+0910 devanagari letter ai */
+    /* 1B 'X' */ "\xE0\xA4\x81",  /* U+0901 devanagari sign candrabindu */
+    /* 1C 'Y' */ "\xE0\xA4\xAD",  /* U+092D devanagari letter bha */
+    /* 1D 'Z' */ "\xE0\xA4\x8E",  /* U+090E devanagari letter short e (XKB in(deva)) */
+    /* 1E '!' */ "\xE0\xA5\xB2",  /* U+0972 devanagari letter candra a */
+    /* 1F '@' */ "\xE0\xA5\x85",  /* U+0945 devanagari vowel sign candra e */
+    /* 20 '#' */ "\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 21 '$' */ "\xE0\xA4\xB0\xE0\xA5\x8D",  /* U+0930 devanagari letter ra U+094D devanagari sign virama */
+    /* 22 '%' */ "\xE0\xA4\x9C\xE0\xA5\x8D\xE0\xA4\x9E",  /* U+091C devanagari letter ja U+094D devanagari sign virama U+091E devanagari letter nya */
+    /* 23 '^' */ "\xE0\xA4\xA4\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0924 devanagari letter ta U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 24 '&' */ "\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB7",  /* U+0915 devanagari letter ka U+094D devanagari sign virama U+0937 devanagari letter ssa */
+    /* 25 '*' */ "\xE0\xA4\xB6\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0936 devanagari letter sha U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "\xE0\xA4\x83",  /* U+0903 devanagari sign visarga */
+    /* 2E '+' */ "\xE0\xA4\x8B",  /* U+090B devanagari letter vocalic r */
+    /* 2F '{' */ "\xE0\xA4\xA2",  /* U+0922 devanagari letter ddha */
+    /* 30 '}' */ "\xE0\xA4\x9E",  /* U+091E devanagari letter nya */
+    /* 31 '|' */ "\xE0\xA4\x91",  /* U+0911 devanagari letter candra o */
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xA4\x9B",  /* U+091B devanagari letter cha */
+    /* 34 '"' */ "\xE0\xA4\xA0",  /* U+0920 devanagari letter ttha */
+    /* 35 '~' */ "\xE0\xA4\x92",  /* U+0912 devanagari letter short o */
+    /* 36 '<' */ "\xE0\xA4\xB7",  /* U+0937 devanagari letter ssa */
+    /* 37 '>' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t MR_IN_EXTRA[] = {
+    { 0x2E, L_ALTGR_SHIFT, "\xE0\xA5\xA0" },  /* U+0960 devanagari letter vocalic rr */
+    { 0x36, L_ALTGR, "\xE0\xA5\xB0" },  /* U+0970 devanagari abbreviation sign */
+    { 0x37, L_ALTGR, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0x1E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0x1F, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x21, L_ALTGR, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x2E, L_ALTGR, "\xE0\xA5\x84" },  /* U+0944 devanagari vowel sign vocalic rr */
+    { 0x37, L_ALTGR_SHIFT, "\xE0\xA4\xBD" },  /* U+093D devanagari sign avagraha */
+    { 0x09, L_ALTGR_SHIFT, "\xE0\xA4\x8C" },  /* U+090C devanagari letter vocalic l */
+    { 0x15, L_ALTGR_SHIFT, "\xE0\xA5\xA1" },  /* U+0961 devanagari letter vocalic ll */
+    { 0x1B, L_ALTGR_SHIFT, "\xE0\xA5\x90" },  /* U+0950 devanagari om */
+    { 0x09, L_ALTGR, "\xE0\xA5\xA2" },  /* U+0962 devanagari vowel sign vocalic l */
+    { 0x15, L_ALTGR, "\xE0\xA5\xA3" },  /* U+0963 devanagari vowel sign vocalic ll */
+    { 0, 0, NULL },
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_TR
+static const char *const NE_TR_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA4\xAC",  /* U+092C devanagari letter ba */
+    /* 05 'b' */ "\xE0\xA4\xA6",  /* U+0926 devanagari letter da */
+    /* 06 'c' */ "\xE0\xA4\x85",  /* U+0905 devanagari letter a */
+    /* 07 'd' */ "\xE0\xA4\xAE",  /* U+092E devanagari letter ma */
+    /* 08 'e' */ "\xE0\xA4\xAD",  /* U+092D devanagari letter bha */
+    /* 09 'f' */ "\xE0\xA4\xBE",  /* U+093E devanagari vowel sign aa */
+    /* 0A 'g' */ "\xE0\xA4\xA8",  /* U+0928 devanagari letter na */
+    /* 0B 'h' */ "\xE0\xA4\x9C",  /* U+091C devanagari letter ja */
+    /* 0C 'i' */ "\xE0\xA4\xB7",  /* U+0937 devanagari letter ssa */
+    /* 0D 'j' */ "\xE0\xA4\xB5",  /* U+0935 devanagari letter va */
+    /* 0E 'k' */ "\xE0\xA4\xAA",  /* U+092A devanagari letter pa */
+    /* 0F 'l' */ "\xE0\xA4\xBF",  /* U+093F devanagari vowel sign i */
+    /* 10 'm' */ "\xE0\xA4\x83",  /* U+0903 devanagari sign visarga */
+    /* 11 'n' */ "\xE0\xA4\xB2",  /* U+0932 devanagari letter la */
+    /* 12 'o' */ "\xE0\xA4\xAF",  /* U+092F devanagari letter ya */
+    /* 13 'p' */ "\xE0\xA4\x89",  /* U+0909 devanagari letter u */
+    /* 14 'q' */ "\xE0\xA4\xA4\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0924 devanagari letter ta U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 15 'r' */ "\xE0\xA4\x9A",  /* U+091A devanagari letter ca */
+    /* 16 's' */ "\xE0\xA4\x95",  /* U+0915 devanagari letter ka */
+    /* 17 't' */ "\xE0\xA4\xA4",  /* U+0924 devanagari letter ta */
+    /* 18 'u' */ "\xE0\xA4\x97",  /* U+0917 devanagari letter ga */
+    /* 19 'v' */ "\xE0\xA4\x96",  /* U+0916 devanagari letter kha */
+    /* 1A 'w' */ "\xE0\xA4\xA7",  /* U+0927 devanagari letter dha */
+    /* 1B 'x' */ "\xE0\xA4\xB9",  /* U+0939 devanagari letter ha */
+    /* 1C 'y' */ "\xE0\xA4\xA5",  /* U+0925 devanagari letter tha */
+    /* 1D 'z' */ "\xE0\xA4\xB6",  /* U+0936 devanagari letter sha */
+    /* 1E '1' */ "\xE0\xA5\xA7",  /* U+0967 devanagari digit one */
+    /* 1F '2' */ "\xE0\xA5\xA8",  /* U+0968 devanagari digit two */
+    /* 20 '3' */ "\xE0\xA5\xA9",  /* U+0969 devanagari digit three */
+    /* 21 '4' */ "\xE0\xA5\xAA",  /* U+096A devanagari digit four */
+    /* 22 '5' */ "\xE0\xA5\xAB",  /* U+096B devanagari digit five */
+    /* 23 '6' */ "\xE0\xA5\xAC",  /* U+096C devanagari digit six */
+    /* 24 '7' */ "\xE0\xA5\xAD",  /* U+096D devanagari digit seven */
+    /* 25 '8' */ "\xE0\xA5\xAE",  /* U+096E devanagari digit eight */
+    /* 26 '9' */ "\xE0\xA5\xAF",  /* U+096F devanagari digit nine */
+    /* 27 '0' */ "\xE0\xA5\xA6",  /* U+0966 devanagari digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "\xE0\xA4\x94",  /* U+0914 devanagari letter au */
+    /* 2E '=' */ "\xE2\x80\x8D",  /* U+200D zero width joiner */
+    /* 2F '[' */ "\xE0\xA4\xB0\xE0\xA5\x8D",  /* U+0930 devanagari letter ra U+094D devanagari sign virama */
+    /* 30 ']' */ "\xE0\xA5\x87",  /* U+0947 devanagari vowel sign e */
+    /* 31 '\\' */ "\xE0\xA5\x8D",  /* U+094D devanagari sign virama */
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xA4\xB8",  /* U+0938 devanagari letter sa */
+    /* 34 "'" */ "\xE0\xA5\x81",  /* U+0941 devanagari vowel sign u */
+    /* 35 '`' */ "\xE0\xA4\x9E",  /* U+091E devanagari letter nya */
+    /* 36 ',' */ "\xE0\xA4\xBD",  /* U+093D devanagari sign avagraha */
+    /* 37 '.' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '/' */ "\xE0\xA4\xB0",  /* U+0930 devanagari letter ra */
+};
+
+static const char *const NE_TR_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA4\x86",  /* U+0906 devanagari letter aa */
+    /* 05 'B' */ "\xE0\xA5\x8C",  /* U+094C devanagari vowel sign au */
+    /* 06 'C' */ "\xE0\xA4\x8B",  /* U+090B devanagari letter vocalic r */
+    /* 07 'D' */ "\xE0\xA4\x99\xE0\xA5\x8D\xE0\xA4\x97",  /* U+0919 devanagari letter nga U+094D devanagari sign virama U+0917 devanagari letter ga */
+    /* 08 'E' */ "\xE0\xA4\x90",  /* U+0910 devanagari letter ai */
+    /* 09 'F' */ "\xE0\xA4\x81",  /* U+0901 devanagari sign candrabindu */
+    /* 0A 'G' */ "\xE0\xA4\xA6\xE0\xA5\x8D\xE0\xA4\xA6",  /* U+0926 devanagari letter da U+094D devanagari sign virama U+0926 devanagari letter da */
+    /* 0B 'H' */ "\xE0\xA4\x9D",  /* U+091D devanagari letter jha */
+    /* 0C 'I' */ "\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\xB7",  /* U+0915 devanagari letter ka U+094D devanagari sign virama U+0937 devanagari letter ssa */
+    /* 0D 'J' */ "\xE0\xA5\x8B",  /* U+094B devanagari vowel sign o */
+    /* 0E 'K' */ "\xE0\xA4\xAB",  /* U+092B devanagari letter pha */
+    /* 0F 'L' */ "\xE0\xA5\x80",  /* U+0940 devanagari vowel sign ii */
+    /* 10 'M' */ "\xE0\xA4\xA1\xE0\xA5\x8D\xE0\xA4\xA1",  /* U+0921 devanagari letter dda U+094D devanagari sign virama U+0921 devanagari letter dda */
+    /* 11 'N' */ "\xE0\xA4\xA6\xE0\xA5\x8D\xE0\xA4\xAF",  /* U+0926 devanagari letter da U+094D devanagari sign virama U+092F devanagari letter ya */
+    /* 12 'O' */ "\xE0\xA4\x87",  /* U+0907 devanagari letter i */
+    /* 13 'P' */ "\xE0\xA4\x8F",  /* U+090F devanagari letter e */
+    /* 14 'Q' */ "\xE0\xA4\xA4\xE0\xA5\x8D\xE0\xA4\xA4",  /* U+0924 devanagari letter ta U+094D devanagari sign virama U+0924 devanagari letter ta */
+    /* 15 'R' */ "\xE0\xA4\xA6\xE0\xA5\x8D\xE0\xA4\xAC",  /* U+0926 devanagari letter da U+094D devanagari sign virama U+092C devanagari letter ba */
+    /* 16 'S' */ "\xE0\xA4\x99\xE0\xA5\x8D\xE0\xA4\x95",  /* U+0919 devanagari letter nga U+094D devanagari sign virama U+0915 devanagari letter ka */
+    /* 17 'T' */ "\xE0\xA4\x9F\xE0\xA5\x8D\xE0\xA4\x9F",  /* U+091F devanagari letter tta U+094D devanagari sign virama U+091F devanagari letter tta */
+    /* 18 'U' */ "\xE0\xA4\x8A",  /* U+090A devanagari letter uu */
+    /* 19 'V' */ "\xE0\xA5\x90",  /* U+0950 devanagari om */
+    /* 1A 'W' */ "\xE0\xA4\xA1\xE0\xA5\x8D\xE0\xA4\xA2",  /* U+0921 devanagari letter dda U+094D devanagari sign virama U+0922 devanagari letter ddha */
+    /* 1B 'X' */ "\xE0\xA4\xB9\xE0\xA5\x8D\xE0\xA4\xAF",  /* U+0939 devanagari letter ha U+094D devanagari sign virama U+092F devanagari letter ya */
+    /* 1C 'Y' */ "\xE0\xA4\xA0\xE0\xA5\x8D\xE0\xA4\xA0",  /* U+0920 devanagari letter ttha U+094D devanagari sign virama U+0920 devanagari letter ttha */
+    /* 1D 'Z' */ "\xE0\xA4\x95\xE0\xA5\x8D\xE0\xA4\x95",  /* U+0915 devanagari letter ka U+094D devanagari sign virama U+0915 devanagari letter ka */
+    /* 1E '!' */ "\xE0\xA4\x9C\xE0\xA5\x8D\xE0\xA4\x9E",  /* U+091C devanagari letter ja U+094D devanagari sign virama U+091E devanagari letter nya */
+    /* 1F '@' */ "\xE0\xA4\x88",  /* U+0908 devanagari letter ii */
+    /* 20 '#' */ "\xE0\xA4\x98",  /* U+0918 devanagari letter gha */
+    /* 21 '$' */ "\xE0\xA4\xA6\xE0\xA5\x8D\xE0\xA4\xA7",  /* U+0926 devanagari letter da U+094D devanagari sign virama U+0927 devanagari letter dha */
+    /* 22 '%' */ "\xE0\xA4\x9B",  /* U+091B devanagari letter cha */
+    /* 23 '^' */ "\xE0\xA4\x9F",  /* U+091F devanagari letter tta */
+    /* 24 '&' */ "\xE0\xA4\xA0",  /* U+0920 devanagari letter ttha */
+    /* 25 '*' */ "\xE0\xA4\xA1",  /* U+0921 devanagari letter dda */
+    /* 26 '(' */ "\xE0\xA4\xA2",  /* U+0922 devanagari letter ddha */
+    /* 27 ')' */ "\xE0\xA4\xA3",  /* U+0923 devanagari letter nna */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "\xE0\xA4\x93",  /* U+0913 devanagari letter o */
+    /* 2E '+' */ "\xE2\x80\x8C",  /* U+200C zero width non-joiner */
+    /* 2F '{' */ "\xE0\xA5\x83",  /* U+0943 devanagari vowel sign vocalic r */
+    /* 30 '}' */ "\xE0\xA5\x88",  /* U+0948 devanagari vowel sign ai */
+    /* 31 '|' */ "\xE0\xA4\x82",  /* U+0902 devanagari sign anusvara */
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xA4\x9F\xE0\xA5\x8D\xE0\xA4\xA0",  /* U+091F devanagari letter tta U+094D devanagari sign virama U+0920 devanagari letter ttha */
+    /* 34 '"' */ "\xE0\xA5\x82",  /* U+0942 devanagari vowel sign uu */
+    /* 35 '~' */ "\xE0\xA5\xA5",  /* U+0965 devanagari double danda */
+    /* 36 '<' */ "\xE0\xA4\x99",  /* U+0919 devanagari letter nga */
+    /* 37 '>' */ "\xE0\xA4\xB6\xE0\xA5\x8D\xE0\xA4\xB0",  /* U+0936 devanagari letter sha U+094D devanagari sign virama U+0930 devanagari letter ra */
+    /* 38 '?' */ "\xE0\xA4\xB0\xE0\xA5\x81",  /* U+0930 devanagari letter ra U+0941 devanagari vowel sign u */
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
+static const char *const NE_RO_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xA4\xBE",  /* U+093E devanagari vowel sign aa */
+    /* 05 'b' */ "\xE0\xA4\xAC",  /* U+092C devanagari letter ba */
+    /* 06 'c' */ "\xE0\xA4\x9B",  /* U+091B devanagari letter cha */
+    /* 07 'd' */ "\xE0\xA4\xA6",  /* U+0926 devanagari letter da */
+    /* 08 'e' */ "\xE0\xA5\x87",  /* U+0947 devanagari vowel sign e */
+    /* 09 'f' */ "\xE0\xA4\x89",  /* U+0909 devanagari letter u */
+    /* 0A 'g' */ "\xE0\xA4\x97",  /* U+0917 devanagari letter ga */
+    /* 0B 'h' */ "\xE0\xA4\xB9",  /* U+0939 devanagari letter ha */
+    /* 0C 'i' */ "\xE0\xA4\xBF",  /* U+093F devanagari vowel sign i */
+    /* 0D 'j' */ "\xE0\xA4\x9C",  /* U+091C devanagari letter ja */
+    /* 0E 'k' */ "\xE0\xA4\x95",  /* U+0915 devanagari letter ka */
+    /* 0F 'l' */ "\xE0\xA4\xB2",  /* U+0932 devanagari letter la */
+    /* 10 'm' */ "\xE0\xA4\xAE",  /* U+092E devanagari letter ma */
+    /* 11 'n' */ "\xE0\xA4\xA8",  /* U+0928 devanagari letter na */
+    /* 12 'o' */ "\xE0\xA5\x8B",  /* U+094B devanagari vowel sign o */
+    /* 13 'p' */ "\xE0\xA4\xAA",  /* U+092A devanagari letter pa */
+    /* 14 'q' */ "\xE0\xA4\x9F",  /* U+091F devanagari letter tta */
+    /* 15 'r' */ "\xE0\xA4\xB0",  /* U+0930 devanagari letter ra */
+    /* 16 's' */ "\xE0\xA4\xB8",  /* U+0938 devanagari letter sa */
+    /* 17 't' */ "\xE0\xA4\xA4",  /* U+0924 devanagari letter ta */
+    /* 18 'u' */ "\xE0\xA5\x81",  /* U+0941 devanagari vowel sign u */
+    /* 19 'v' */ "\xE0\xA4\xB5",  /* U+0935 devanagari letter va */
+    /* 1A 'w' */ "\xE0\xA5\x8C",  /* U+094C devanagari vowel sign au */
+    /* 1B 'x' */ "\xE0\xA4\xA1",  /* U+0921 devanagari letter dda */
+    /* 1C 'y' */ "\xE0\xA4\xAF",  /* U+092F devanagari letter ya */
+    /* 1D 'z' */ "\xE0\xA4\xB7",  /* U+0937 devanagari letter ssa */
+    /* 1E '1' */ "\xE0\xA5\xA7",  /* U+0967 devanagari digit one */
+    /* 1F '2' */ "\xE0\xA5\xA8",  /* U+0968 devanagari digit two */
+    /* 20 '3' */ "\xE0\xA5\xA9",  /* U+0969 devanagari digit three */
+    /* 21 '4' */ "\xE0\xA5\xAA",  /* U+096A devanagari digit four */
+    /* 22 '5' */ "\xE0\xA5\xAB",  /* U+096B devanagari digit five */
+    /* 23 '6' */ "\xE0\xA5\xAC",  /* U+096C devanagari digit six */
+    /* 24 '7' */ "\xE0\xA5\xAD",  /* U+096D devanagari digit seven */
+    /* 25 '8' */ "\xE0\xA5\xAE",  /* U+096E devanagari digit eight */
+    /* 26 '9' */ "\xE0\xA5\xAF",  /* U+096F devanagari digit nine */
+    /* 27 '0' */ "\xE0\xA5\xA6",  /* U+0966 devanagari digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "\xE2\x80\x8D",  /* U+200D zero width joiner */
+    /* 2F '[' */ "\xE0\xA4\x87",  /* U+0907 devanagari letter i */
+    /* 30 ']' */ "\xE0\xA4\x8F",  /* U+090F devanagari letter e */
+    /* 31 '\\' */ "\xE0\xA5\x90",  /* U+0950 devanagari om */
+    /* 32  */ NULL,
+    /* 33 ';' */ ";",
+    /* 34 "'" */ "'",
+    /* 35 '`' */ "\xE0\xA4\xBC",  /* U+093C devanagari sign nukta */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '/' */ "\xE0\xA5\x8D",  /* U+094D devanagari sign virama */
+};
+
+static const char *const NE_RO_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xA4\x86",  /* U+0906 devanagari letter aa */
+    /* 05 'B' */ "\xE0\xA4\xAD",  /* U+092D devanagari letter bha */
+    /* 06 'C' */ "\xE0\xA4\x9A",  /* U+091A devanagari letter ca */
+    /* 07 'D' */ "\xE0\xA4\xA7",  /* U+0927 devanagari letter dha */
+    /* 08 'E' */ "\xE0\xA5\x88",  /* U+0948 devanagari vowel sign ai */
+    /* 09 'F' */ "\xE0\xA4\x8A",  /* U+090A devanagari letter uu */
+    /* 0A 'G' */ "\xE0\xA4\x98",  /* U+0918 devanagari letter gha */
+    /* 0B 'H' */ "\xE0\xA4\x85",  /* U+0905 devanagari letter a */
+    /* 0C 'I' */ "\xE0\xA5\x80",  /* U+0940 devanagari vowel sign ii */
+    /* 0D 'J' */ "\xE0\xA4\x9D",  /* U+091D devanagari letter jha */
+    /* 0E 'K' */ "\xE0\xA4\x96",  /* U+0916 devanagari letter kha */
+    /* 0F 'L' */ "\xE0\xA5\xA5",  /* U+0965 devanagari double danda */
+    /* 10 'M' */ "\xE0\xA4\x82",  /* U+0902 devanagari sign anusvara */
+    /* 11 'N' */ "\xE0\xA4\xA3",  /* U+0923 devanagari letter nna */
+    /* 12 'O' */ "\xE0\xA4\x93",  /* U+0913 devanagari letter o */
+    /* 13 'P' */ "\xE0\xA4\xAB",  /* U+092B devanagari letter pha */
+    /* 14 'Q' */ "\xE0\xA4\xA0",  /* U+0920 devanagari letter ttha */
+    /* 15 'R' */ "\xE0\xA5\x83",  /* U+0943 devanagari vowel sign vocalic r */
+    /* 16 'S' */ "\xE0\xA4\xB6",  /* U+0936 devanagari letter sha */
+    /* 17 'T' */ "\xE0\xA4\xA5",  /* U+0925 devanagari letter tha */
+    /* 18 'U' */ "\xE0\xA5\x82",  /* U+0942 devanagari vowel sign uu */
+    /* 19 'V' */ "\xE0\xA4\x81",  /* U+0901 devanagari sign candrabindu */
+    /* 1A 'W' */ "\xE0\xA4\x94",  /* U+0914 devanagari letter au */
+    /* 1B 'X' */ "\xE0\xA4\xA2",  /* U+0922 devanagari letter ddha */
+    /* 1C 'Y' */ "\xE0\xA4\x9E",  /* U+091E devanagari letter nya */
+    /* 1D 'Z' */ "\xE0\xA4\x8B",  /* U+090B devanagari letter vocalic r */
+    /* 1E '!' */ "!",
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "#",
+    /* 21 '$' */ "\xE0\xA4\xB0\xE0\xA5\x81",  /* U+0930 devanagari letter ra U+0941 devanagari vowel sign u */
+    /* 22 '%' */ "%",
+    /* 23 '^' */ "^",
+    /* 24 '&' */ "&",
+    /* 25 '*' */ "*",
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "_",
+    /* 2E '+' */ "\xE2\x80\x8C",  /* U+200C zero width non-joiner */
+    /* 2F '{' */ "\xE0\xA4\x88",  /* U+0908 devanagari letter ii */
+    /* 30 '}' */ "\xE0\xA4\x90",  /* U+0910 devanagari letter ai */
+    /* 31 '|' */ "\xE0\xA4\x83",  /* U+0903 devanagari sign visarga */
+    /* 32  */ NULL,
+    /* 33 ':' */ ":",
+    /* 34 '"' */ "\"",
+    /* 35 '~' */ "\xE0\xA4\xBD",  /* U+093D devanagari sign avagraha */
+    /* 36 '<' */ "\xE0\xA4\x99",  /* U+0919 devanagari letter nga */
+    /* 37 '>' */ "\xE0\xA5\xA5",  /* U+0965 devanagari double danda */
+    /* 38 '?' */ "?",
+};
+#endif
+#endif /* Devanagari */
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -2685,6 +3202,18 @@ CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_IN
 CHECK_TABLE(TA_IN_NORMAL); CHECK_TABLE(TA_IN_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
+CHECK_TABLE(HI_IN_NORMAL); CHECK_TABLE(HI_IN_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_MR_IN
+CHECK_TABLE(MR_IN_NORMAL); CHECK_TABLE(MR_IN_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_TR
+CHECK_TABLE(NE_TR_NORMAL); CHECK_TABLE(NE_TR_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
+CHECK_TABLE(NE_RO_NORMAL); CHECK_TABLE(NE_RO_SHIFT);
+#endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
 static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
@@ -2780,6 +3309,18 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
     [KB_LAYOUT_TA_TV] = { US_NORMAL, US_SHIFT, NULL, "TA-TV", "Tamil Taravinyas", KB_IME_TARAVINYAS, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
+    [KB_LAYOUT_HI_IN] = { HI_IN_NORMAL, HI_IN_SHIFT, HI_IN_EXTRA, "HI-IN", "Hindi InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_MR_IN
+    [KB_LAYOUT_MR_IN] = { MR_IN_NORMAL, MR_IN_SHIFT, MR_IN_EXTRA, "MR-IN", "Marathi InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_TR
+    [KB_LAYOUT_NE_TR] = { NE_TR_NORMAL, NE_TR_SHIFT, NULL, "NE-TR", "Nepali Traditional", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
+    [KB_LAYOUT_NE_RO] = { NE_RO_NORMAL, NE_RO_SHIFT, NULL, "NE-RO", "Nepali Romanized", KB_IME_NONE, false },
 #endif
 };
 

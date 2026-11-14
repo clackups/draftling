@@ -1,11 +1,13 @@
-# Tamil language pack: US-English and Tamil (Tamil 99, Tamil Typewriter,
-# InScript and Taravinyas), with the Tamil glyphs of Noto Sans Tamil.
+# Indic language pack: US-English, Devanagari (Hindi and Marathi InScript,
+# Nepali Traditional and Romanized; shaped with HarfBuzz, glyphs of Noto
+# Sans Devanagari) and Tamil (Tamil 99, Tamil Typewriter, InScript and
+# Taravinyas; glyphs of Noto Sans Tamil).
 #
 # Applied after sdkconfig.defaults and the board's own defaults by
-# "idf.py --preset <board> --lang-pack tamil" (see idf_ext.py and
+# "idf.py --preset <board> --lang-pack indic" (see idf_ext.py and
 # BUILDING.md), so the explicit layout lines below override any board
 # that picks its own layout set.
-CONFIG_DRAFTLING_LANG_PACK_TAMIL=y
+CONFIG_DRAFTLING_LANG_PACK_INDIC=y
 CONFIG_KB_LAYOUT_ENABLE_US=y
 CONFIG_KB_LAYOUT_ENABLE_UA=n
 CONFIG_KB_LAYOUT_ENABLE_DE=n
@@ -36,3 +38,7 @@ CONFIG_KB_LAYOUT_ENABLE_TA99=y
 CONFIG_KB_LAYOUT_ENABLE_TA_TW=y
 CONFIG_KB_LAYOUT_ENABLE_TA_IN=y
 CONFIG_KB_LAYOUT_ENABLE_TA_TV=y
+CONFIG_KB_LAYOUT_ENABLE_HI_IN=y
+CONFIG_KB_LAYOUT_ENABLE_MR_IN=y
+CONFIG_KB_LAYOUT_ENABLE_NE_TR=y
+CONFIG_KB_LAYOUT_ENABLE_NE_RO=y
