@@ -77,7 +77,7 @@ variable:
 | `korean` | US-English, Korean (2-set Hangul) | 3.1 MB |
 | `japanese` | US-English, Japanese (romaji -> kana -> kanji) | 4.2 MB |
 | `chinese` | US-English, Simplified Chinese (pinyin) | 3.9 MB |
-| `indic` | US-English, Hindi and Marathi InScript, Nepali Traditional and Romanized (Devanagari), Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | 3.2 MB |
+| `indic` | US-English, Hindi and Marathi InScript, Nepali Traditional and Romanized (Devanagari), Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | 3.0 MB |
 
 Every pack fits every board, including the 8 MB-flash ones. On the
 4 MB-flash boards the default, Vietnamese, Korean and Indic packs fit

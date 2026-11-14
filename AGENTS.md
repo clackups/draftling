@@ -2488,7 +2488,7 @@ layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
 
 Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
 2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
-Xteink X4 Pro), indic 3.2 MB (3.9 MB on the X4 Pro; 3.85 MB on the
+Xteink X4 Pro), indic 3.0 MB (3.9 MB on the X4 Pro; 3.85 MB on the
 4 MB-flash Elecrow CrowPanel 5.0", whose 3.88 MB app partition it
 just fits). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
