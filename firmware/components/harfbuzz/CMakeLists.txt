@@ -9,9 +9,10 @@ if(NOT CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
 endif()
 
 idf_component_register(
-    SRCS "src/harfbuzz.cc"
+    SRCS "src/harfbuzz.cc" "draftling_alloc.c"
     INCLUDE_DIRS "src"
     PRIV_INCLUDE_DIRS "config"
+    PRIV_REQUIRES heap
 )
 
 # HB_TINY: OpenType layout and shaping only (no variable / color /

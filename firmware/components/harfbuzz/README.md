@@ -14,7 +14,10 @@ GPOS tables (see `components/fonts/indic_font.c`).
   `HB_NO_MT` (`CMakeLists.txt`): OpenType layout and the complex
   shapers, no variable / colour / bitmap fonts, AAT, drawing or
   subsetting. `config/hb_draftling_config.h` (outside `src/`) adjusts
-  that for ESP-IDF.
+  that for ESP-IDF and routes HarfBuzz's allocations to PSRAM
+  (`draftling_alloc.c`): its shape plans and table caches are many
+  small blocks, about 20 KB per script, that would otherwise take the
+  internal RAM the radio needs (the ESP32-C61 lost its BLE keyboard).
 
 `src/` holds only the files that build needs, unmodified. To update,
 unpack the new release and copy the files the compiler reports:

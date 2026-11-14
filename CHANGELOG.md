@@ -19,6 +19,14 @@ in the git log.
   Keyboard -> Active layouts. The letters come from Noto Sans Bengali.
   See docs/typing/indic.md.
 
+### Fixed
+
+- **OnePage Reader: keyboard no longer drops on Indic text**: on the
+  Indic firmware, opening or scrolling through Devanagari or Bengali
+  text could disconnect the Bluetooth keyboard, because the text
+  shaper used up the memory the radio needs. It now keeps its data in
+  the larger external memory (all boards).
+
 ### Changed
 
 - **Indic language pack no longer for 4 MB-flash boards**: with
