@@ -30,7 +30,7 @@ idf.py --preset waveshare_rlcd42 -p /dev/ttyACM0 flash
 
 Available preset names: `waveshare_rlcd42`, `m5stack_papers3`,
 `lilygo_t5_epd_s3_pro`, `lilygo_t5_epd_s3_pro_h752`,
-`waveshare_touch_lcd_349`, `m5stack_tab5`, `jc3248w535`,
+`waveshare_touch_lcd_349`, `m5stack_tab5`, `guition_jc3248w535`,
 `sunton_8048s070`, `sunton_8048s043`, `elecrow_crowpanel_50`,
 `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_touch_lcd_7`,
 `freenove_fnk0104a`, `freenove_fnk0104b`, `freenove_fnk0104s`,

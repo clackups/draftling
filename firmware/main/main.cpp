@@ -2963,7 +2963,7 @@ extern "C" void app_main(void)
          * portrait panel; its reference firmware also software-
          * rotates to 640x172 landscape (USER_DISP_ROT_90), so we
          * take the same path. */
-#if defined(CONFIG_DRAFTLING_MODEL_JC3248W535) || \
+#if defined(CONFIG_DRAFTLING_MODEL_GUITION_JC3248W535) || \
     defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349)
         cfg.swap_xy = true;
 #else

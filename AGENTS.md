@@ -3334,7 +3334,7 @@ PSRAM) are not supported.
 `firmware/` ships a `CMakePresets.json` with one preset per supported
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
-`jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
+`guition_jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,

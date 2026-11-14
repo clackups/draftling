@@ -40,7 +40,7 @@ Features used in the table:
 | [Waveshare ESP32-S3-Touch-LCD-3.49](#waveshare-esp32-s3-touch-lcd-349) | `waveshare_touch_lcd_349` | 3.49" 640x172 IPS | yes | yes | yes | yes |
 | [Waveshare ESP32-S3-Touch-LCD-7](#waveshare-esp32-s3-touch-lcd-7) | `waveshare_touch_lcd_7` | 7" 800x480 IPS | yes | on / off only | - | yes |
 | [Waveshare ESP32-S3-LCD-3.16](#waveshare-esp32-s3-lcd-316) | `waveshare_lcd_316` | 3.16" 820x320 IPS | - | yes | yes | yes |
-| [Guition JC3248W535](#guition-jc3248w535) | `jc3248w535` | 3.5" 480x320 IPS | yes | yes | - | - |
+| [Guition JC3248W535](#guition-jc3248w535) | `guition_jc3248w535` | 3.5" 480x320 IPS | yes | yes | - | - |
 | [Guition JC4827W543C](#guition-jc4827w543c) | `guition_jc4827w543c` | 4.3" 480x272 IPS | yes | yes | - | - |
 | [Sunton ESP32-8048S043C](#sunton-esp32-8048s043c-and-esp32-8048s070c) | `sunton_8048s043` | 4.3" 800x480 IPS | yes | yes | - | - |
 | [Sunton ESP32-8048S070C](#sunton-esp32-8048s043c-and-esp32-8048s070c) | `sunton_8048s070` | 7" 800x480 TN | optional | yes | - | - |
