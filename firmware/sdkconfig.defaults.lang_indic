@@ -1,7 +1,9 @@
 # Indic language pack: US-English, Devanagari (Hindi and Marathi InScript,
-# Nepali Traditional and Romanized; shaped with HarfBuzz, glyphs of Noto
-# Sans Devanagari) and Tamil (Tamil 99, Tamil Typewriter, InScript and
-# Taravinyas; glyphs of Noto Sans Tamil).
+# Nepali Traditional and Romanized; glyphs of Noto Sans Devanagari),
+# Bengali (InScript, Probhat and National (Jatiya); glyphs of Noto Sans
+# Bengali), both shaped with HarfBuzz, and Tamil (Tamil 99, Tamil
+# Typewriter, InScript and Taravinyas; glyphs of Noto Sans Tamil). Too
+# large for boards with 4 MB of flash (CMakeLists.txt refuses them).
 #
 # Applied after sdkconfig.defaults and the board's own defaults by
 # "idf.py --preset <board> --lang-pack indic" (see idf_ext.py and
@@ -42,3 +44,6 @@ CONFIG_KB_LAYOUT_ENABLE_HI_IN=y
 CONFIG_KB_LAYOUT_ENABLE_MR_IN=y
 CONFIG_KB_LAYOUT_ENABLE_NE_TR=y
 CONFIG_KB_LAYOUT_ENABLE_NE_RO=y
+CONFIG_KB_LAYOUT_ENABLE_BN_IN=y
+CONFIG_KB_LAYOUT_ENABLE_BN_PR=y
+CONFIG_KB_LAYOUT_ENABLE_BN_NJ=y

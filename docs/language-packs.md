@@ -11,7 +11,7 @@ methods and fonts of its languages:
 | Korean | US, KO |
 | Japanese | US, JA |
 | Chinese | US, ZH (Simplified Chinese) |
-| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
+| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), BN-IN (Bengali InScript), BN-PR (Bengali Probhat), BN-NJ (Bengali National / Jatiya), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
 
 How to build an image for a pack is described in
 [BUILDING.md](../BUILDING.md#language-packs).
@@ -20,11 +20,11 @@ Brief typing guides, one per pack:
 [default](typing/default.md) (European and Canadian layouts),
 [Vietnamese](typing/vietnamese.md), [Korean](typing/korean.md),
 [Japanese](typing/japanese.md), [Chinese](typing/chinese.md),
-[Indic](typing/indic.md) (Devanagari and Tamil). The sections below
+[Indic](typing/indic.md) (Devanagari, Bengali and Tamil). The sections below
 have the full details.
 
-With an input method (VI, KO, JA, ZH, and the Tamil layouts other
-than InScript), the text being typed is
+With an input method (VI, KO, JA, ZH, the Tamil layouts other than
+InScript, and the vowel keys of Bengali National), the text being typed is
 composed right in the document, before the cursor. Candidates to pick
 from are listed in the status bar at the bottom. Moving the cursor, a
 Ctrl / Alt shortcut or switching the layout ends the composition and
@@ -34,7 +34,7 @@ letters.
 
 Use a US-English (QWERTY) keyboard for all of them. Korean keyboards
 type the jamo printed on a US keyboard's keys in the Dubeolsik layout,
-Devanagari and Tamil keyboards the letters of their layout.
+Devanagari, Bengali and Tamil keyboards the letters of their layout.
 
 ## Vietnamese (VI): Telex
 
@@ -123,12 +123,17 @@ composition, `,` `.` `?` `!` `:` `;` and `\` type full-width Chinese
 punctuation. The dictionary comes from the Android Open Source
 Project's PinyinIME (about 65,000 words).
 
-## Indic: Devanagari and Tamil
+## Indic: Devanagari, Bengali and Tamil
 
 The Indic pack has Devanagari (Hindi, Marathi, Nepali, Sanskrit and the
-other languages written in it) and Tamil. US, Hindi InScript and Tamil
-99 are active at first; turn the others on in F1 -> Settings ->
-Keyboard -> Active layouts.
+other languages written in it), Bengali (Bengali / Bangla and
+Assamese) and Tamil. US, Hindi InScript and Tamil 99 are active at
+first; turn the others on in F1 -> Settings -> Keyboard -> Active
+layouts.
+
+The Indic pack does not fit boards with 4 MB of flash (Elecrow
+CrowPanel ESP32 HMI 5.0", Guition JC4827W543C); the build refuses it
+there.
 
 ### Devanagari
 
@@ -154,6 +159,40 @@ the way it is written (see "Indic text on the screen" below).
 The key tables are in the [typing guide](typing/indic.md). The Hindi
 Remington (typewriter) layout is not included yet: it is typed in
 visual order and needs an input method.
+
+### Bengali
+
+Three layouts, typed like Devanagari in the order a syllable is
+spoken -- consonant, then its vowel sign, even for the i, e, ai, o and
+au signs drawn before or around the consonant -- with the hasanta
+(virama) between the consonants of a conjunct. The editor draws the
+syllable the way it is written.
+
+- **BN-IN, Bengali InScript**: the Government of India standard,
+  Enhanced InScript as in the m17n "bn-inscript2" input method, with
+  the same key positions as Hindi InScript: vowel signs on the left
+  hand, the vowels with Shift, consonants on the right, the Bengali
+  digits on the number row, and on Shift + 1, 3 .. 8 the a-ya-aa,
+  ra-phala, reph, jnya, tra, ksha and shra. `z` types khanda ta
+  (as XKB "in(ben_inscript)"), AltGr the rarer letters and signs
+  (rra, rha, vocalic l, the taka sign) and AltGr + 1 / 2 the
+  zero-width joiner / non-joiner.
+- **BN-PR, Probhat**: a phonetic layout (m17n "bn-probhat", XKB
+  "bd(probhat)"): letters on the keys of their Latin sound -- `k` ka,
+  `m` ma, `a` aa sign, `i` i sign -- Shift for the aspirated or
+  retroflex letter, `/` hasanta, `.` danda. Common in Bangladesh and
+  on Linux.
+- **BN-NJ, National (Jatiya)**: the standard keyboard of Bangladesh
+  (m17n "bn-national-jatiya"; the key positions of Bijoy), with its
+  automatic vowel forming: a vowel key types the vowel sign right
+  after a consonant and the independent vowel anywhere else (`h` after
+  `j` gives ka-aa, `h` alone gives aa). To put an independent vowel
+  right after a consonant, type the hasanta `g` first: `j g d` = ka i.
+  Unlike Bijoy itself, the i, e and ai signs are typed after their
+  consonant, not before. The Assamese ra and wa are on AltGr + `f` and
+  AltGr + Shift + `F`.
+
+The key tables are in the [typing guide](typing/indic.md).
 
 ### Tamil
 
@@ -262,19 +301,20 @@ type as usual.
 
 ### Indic text on the screen
 
-Devanagari comes from Noto Sans Devanagari, Tamil from Noto Sans
-Tamil, both drawn in black and white. They need much more room above
+Devanagari comes from Noto Sans Devanagari, Bengali from Noto Sans
+Bengali, Tamil from Noto Sans Tamil, all drawn in black and white. They need much more room above
 and below the letters than Latin text, so the Indic firmware spaces
 all lines about 30 % further apart than the other firmware images and
 draws the Indic letters to fill that height; the Latin letters keep
 their size. The letters of a word join up with the fonts' own spacing
 (they are not squeezed into the monospace grid of the Latin text).
 
-Devanagari is shaped on the device with HarfBuzz, the text shaper of
-desktop systems, from the font's own rules: conjuncts and half forms,
-the reph, the i sign before its consonant cluster and the marks above
-and below are drawn as in a desktop editor. File names, titles and the
-status bar show Devanagari letter by letter, unshaped. A few rare
+Devanagari and Bengali are shaped on the device with HarfBuzz, the
+text shaper of desktop systems, from the fonts' own rules: conjuncts
+and half forms, the reph, ra- and ya-phala, the vowel signs before or
+around their consonant cluster and the marks above and below are
+drawn as in a desktop editor. File names, titles and the status bar
+show Devanagari and Bengali letter by letter, unshaped. A few rare
 stacks (vocalic rr / l signs, some deep conjuncts) may stick out of
 the line by a pixel or two.
 
@@ -298,10 +338,12 @@ plus every character of their dictionaries.
 Vietnamese letters, curly quotes and dashes come from Greybeard, or on
 high-density screens from Noto Sans Mono.
 
-Devanagari and Tamil letters come from Noto Sans Devanagari and Noto
-Sans Tamil (see "Indic text on the screen" above).
+Devanagari, Bengali and Tamil letters come from Noto Sans Devanagari,
+Noto Sans Bengali and Noto Sans Tamil (see "Indic text on the screen"
+above).
 
 Font and dictionary licenses: `firmware/components/fonts/cjk/LICENSE.txt`,
 `firmware/components/fonts/deva/LICENSE.txt`,
+`firmware/components/fonts/beng/LICENSE.txt`,
 `firmware/components/fonts/tamil/LICENSE.txt` and
 `firmware/components/ime/dict/LICENSE.txt`.

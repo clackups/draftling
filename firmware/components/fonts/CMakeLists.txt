@@ -85,21 +85,31 @@ if(CONFIG_DRAFTLING_HAS_TAMIL)
     endif()
 endif()
 
-# Devanagari (see deva/LICENSE.txt): shaped by HarfBuzz with the layout
-# tables in deva_layout.ttf, drawn from the glyph bitmaps of the font
-# set the board renders with.
+# Devanagari and Bengali (see deva/LICENSE.txt, beng/LICENSE.txt):
+# shaped by HarfBuzz with the layout tables in <script>_layout.ttf,
+# drawn by indic_font.c from the glyph bitmaps of the font set the
+# board renders with.
+set(indic_scripts)
 if(CONFIG_DRAFTLING_HAS_DEVANAGARI)
-    list(APPEND srcs "deva_font.c")
-    list(APPEND embed_files "deva/deva_layout.ttf")
-    if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
-        foreach(n ${font_slots_hack})
-            list(APPEND embed_files "deva/deva_hires_${n}.bin")
-        endforeach()
-    else()
-        foreach(n ${font_slots_gb})
-            list(APPEND embed_files "deva/deva_lowres_${n}.bin")
-        endforeach()
-    endif()
+    list(APPEND indic_scripts deva)
+endif()
+if(CONFIG_DRAFTLING_HAS_BENGALI)
+    list(APPEND indic_scripts beng)
+endif()
+if(CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
+    list(APPEND srcs "indic_font.c")
+    foreach(sc ${indic_scripts})
+        list(APPEND embed_files "${sc}/${sc}_layout.ttf")
+        if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+            foreach(n ${font_slots_hack})
+                list(APPEND embed_files "${sc}/${sc}_hires_${n}.bin")
+            endforeach()
+        else()
+            foreach(n ${font_slots_gb})
+                list(APPEND embed_files "${sc}/${sc}_lowres_${n}.bin")
+            endforeach()
+        endif()
+    endforeach()
 endif()
 
 if(CONFIG_DRAFTLING_DISPLAY_HIDPI)
@@ -163,7 +173,7 @@ idf_component_register(
 )
 
 # Kconfig-conditional requirement: HarfBuzz is an empty component
-# unless Devanagari is enabled.
-if(CONFIG_DRAFTLING_HAS_DEVANAGARI)
+# unless Devanagari or Bengali is enabled.
+if(CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
     idf_component_optional_requires(PRIVATE harfbuzz)
 endif()

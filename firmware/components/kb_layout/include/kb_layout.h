@@ -118,13 +118,23 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
     KB_LAYOUT_NE_RO,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_IN
+    KB_LAYOUT_BN_IN,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_PR
+    KB_LAYOUT_BN_PR,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
+    KB_LAYOUT_BN_NJ,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 
 /* Input method attached to a layout. Layouts with an input method
  * produce keystrokes that the editor hands to the `ime` component,
  * which composes them into the final text (Vietnamese tone marks,
- * Hangul syllables, kana / kanji, hanzi, Tamil syllables). */
+ * Hangul syllables, kana / kanji, hanzi, Tamil syllables, Bengali
+ * independent vowels). */
 typedef enum {
     KB_IME_NONE = 0,
     KB_IME_TELEX,      /* Vietnamese Telex */
@@ -134,6 +144,7 @@ typedef enum {
     KB_IME_TAMIL99,    /* Tamil 99 (auto pulli, vowel joins consonant) */
     KB_IME_TAMIL_TW,   /* Tamil Typewriter (visual-order glyph keys) */
     KB_IME_TARAVINYAS, /* Tamil Taravinyas (place + manner of articulation) */
+    KB_IME_BENGALI_NJ, /* Bengali National (Jatiya): automatic vowel forming */
 } kb_ime_t;
 
 /* Input method of the active layout (KB_IME_NONE for plain layouts). */

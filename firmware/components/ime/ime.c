@@ -326,6 +326,9 @@ static const ime_engine_t *engine_for(kb_ime_t kind)
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
     case KB_IME_TARAVINYAS: return &ime_taravinyas_engine;
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
+    case KB_IME_BENGALI_NJ: return &ime_bengali_nj_engine;
+#endif
     default:            return NULL;
     }
 }

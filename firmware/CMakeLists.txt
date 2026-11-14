@@ -64,6 +64,18 @@ if(DEFINED DRAFTLING_LANG_PACK AND NOT DRAFTLING_LANG_PACK STREQUAL CONFIG_DRAFT
         "Delete that sdkconfig (or the whole build directory) and build again.")
 endif()
 
+# The Indic language pack (Devanagari, Bengali and Tamil fonts,
+# HarfBuzz) does not fit the app partition of a 4 MB flash
+# (partitions_4mb.csv, ~3.9 MB): refuse it there before compiling
+# anything, instead of failing at the end on the image size check.
+if(CONFIG_DRAFTLING_LANG_PACK_INDIC AND
+   (CONFIG_ESPTOOLPY_FLASHSIZE_4MB OR CONFIG_ESPTOOLPY_FLASHSIZE_2MB))
+    message(FATAL_ERROR
+        "The Indic language pack does not fit boards with "
+        "${CONFIG_ESPTOOLPY_FLASHSIZE} of flash. Build another language "
+        "pack for this board.")
+endif()
+
 # Silence warnings emitted from the vroland/epdiy managed component
 # (last upstream release 2.0.0, Nov 2023). The component still uses
 # APIs that have since been deprecated in ESP-IDF:

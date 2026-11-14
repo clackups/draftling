@@ -30,6 +30,8 @@ cd "$(dirname "$0")"
 ALL_PACKS="default vietnamese korean japanese chinese indic"
 # Boards that get every language pack; the others get only "default".
 ALL_PACK_BOARDS="seeed_reterminal_sticky freenove_fnk0104a freenove_fnk0104s"
+# Packs too large for a 4 MB flash (CMakeLists.txt refuses them there).
+LARGE_PACKS="indic"
 # One line per dependency set.
 DEP_GROUPS=(
     "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono freenove_fnk0104a freenove_fnk0104s"
@@ -43,6 +45,10 @@ export IDF_PY_BUILD_JOBS=${IDF_PY_BUILD_JOBS:-4}
 LOGDIR=build/release-logs
 mkdir -p "$LOGDIR"
 : > "$LOGDIR/failed"
+
+flash_4mb() {   # board: true when its flash is 4 MB or smaller
+    grep -qE '^CONFIG_ESPTOOLPY_FLASHSIZE_(2|4)MB=y' "sdkconfig.defaults.$1" 2>/dev/null
+}
 
 wanted() {   # board
     [ ${#ONLY[@]} -eq 0 ] && return 0
@@ -79,7 +85,13 @@ for group in "${DEP_GROUPS[@]}"; do
         if wanted "$b"; then
             packs=default
             case " $ALL_PACK_BOARDS " in *" $b "*) packs=$ALL_PACKS ;; esac
-            for p in $packs; do queue+=("$b $p"); done
+            for p in $packs; do
+                if flash_4mb "$b" && [[ " $LARGE_PACKS " == *" $p "* ]]; then
+                    echo "skip    $b $p (does not fit 4 MB flash)"
+                    continue
+                fi
+                queue+=("$b $p")
+            done
         fi
     done
     [ ${#queue[@]} -eq 0 ] && continue

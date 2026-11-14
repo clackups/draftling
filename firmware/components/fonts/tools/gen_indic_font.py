@@ -1,34 +1,38 @@
 #!/usr/bin/env python3
-"""Generate the Devanagari font data of the Indic language pack.
+"""Generate the font data of the shaped Indic scripts of the Indic
+language pack: Devanagari and Bengali.
 
-Devanagari is shaped on the device by HarfBuzz (components/harfbuzz)
-with the layout tables of Noto Sans Devanagari; this script writes what
-that needs and the glyph bitmaps the shaped text is drawn with:
+Both are shaped on the device by HarfBuzz (components/harfbuzz) with
+the layout tables of the script's Noto Sans font; this script writes
+what that needs and the glyph bitmaps the shaped text is drawn with
+(<s> = deva / beng):
 
-  deva/deva_layout.ttf      the font subset to the Devanagari repertoire
+  <s>/<s>_layout.ttf        the font subset to the script's repertoire
                             (and the glyphs its GSUB reaches), without
                             outlines or hinting: cmap, GDEF, GSUB, GPOS,
                             head, hhea, hmtx, maxp; embedded for HarfBuzz
-  deva/deva_<set>_<NN>.bin  1 bpp glyph bitmaps per font slot, by glyph
+  <s>/<s>_<set>_<NN>.bin    1 bpp glyph bitmaps per font slot, by glyph
                             id of that subset (set = lowres / hires)
-  deva/deva_tables.h        per-glyph advances, the nominal glyph and
+  <s>/<s>_tables.h          per-glyph advances, the nominal glyph and
                             cell count per code point
 
 Usage (needs uharfbuzz, freetype-py and fontTools; see deva/LICENSE.txt
-for the font release used):
-    gen_deva_font.py NotoSansDevanagari-Regular.ttf fonts_dir out_dir
+and beng/LICENSE.txt for the font releases used):
+    gen_indic_font.py deva NotoSansDevanagari-Regular.ttf fonts_dir out_dir
+    gen_indic_font.py beng NotoSansBengali-Regular.ttf fonts_dir out_dir
 
 fonts_dir holds lowres_NN.c / hires_NN.c, whose line height (plus the
 tall-line extra of the Indic pack, gen_tamil_font.line_extra()),
 baseline and cell width each slot copies.
 
 Blob format (little endian):
-  "DDEV", u8 version (1), u8 line_height, u8 base_line, u8 cell_w,
-  u8 pixel size, u8 pad, u16 glyph count, then one 8-byte entry per
-  glyph id: u32 bitmap offset (from the start of the bitmap area),
-  u8 box_w, u8 box_h, i8 ofs_x, i8 ofs_y (LVGL glyph metrics: left and
-  bottom edge of the box relative to the pen and the baseline); then
-  the bitmaps, 1 bpp, rows packed MSB-first, ceil(w*h/8) bytes.
+  magic ("DDEV" / "DBEN"), u8 version (1), u8 line_height, u8 base_line,
+  u8 cell_w, u8 pixel size, u8 pad, u16 glyph count, then one 8-byte
+  entry per glyph id: u32 bitmap offset (from the start of the bitmap
+  area), u8 box_w, u8 box_h, i8 ofs_x, i8 ofs_y (LVGL glyph metrics:
+  left and bottom edge of the box relative to the pen and the
+  baseline); then the bitmaps, 1 bpp, rows packed MSB-first,
+  ceil(w*h/8) bytes.
 """
 
 import io
@@ -45,49 +49,93 @@ from fontTools.ttLib import TTFont
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gen_tamil_font as gt  # noqa: E402  (shared slot / tall-line helpers)
 
-# The repertoire: the Devanagari and Devanagari Extended blocks, the
+DANDAS = [0x0964, 0x0965]
+
+
+class Script:
+    """What differs between the scripts: the repertoire and the sample
+    syllables the pixel size of each slot is fitted to."""
+
+    def __init__(self, name, magic, block, unicodes, consonants, matras,
+                 modifiers, below, virama, ra, extra):
+        self.name = name              # file prefix, upper case = C prefix
+        self.magic = magic
+        self.block = block            # first code point of the block
+        self.unicodes = unicodes
+        self.consonants = consonants
+        self.matras = matras
+        self.modifiers = modifiers
+        self.below = below
+        self.virama = virama
+        self.ra = ra
+        self.extra = extra            # vowels, digits: alone
+
+    def sample_texts(self):
+        """Syllables the size is fitted to: every consonant with every
+        vowel sign and modifier, with reph, and every two-consonant
+        conjunct with the below-base vowel signs."""
+        out = []
+        for c in self.consonants:
+            for m in self.matras:
+                for mod in self.modifiers:
+                    out.append(chr(c) + chr(m) + mod)
+                    out.append(self.ra + self.virama + chr(c) + chr(m) + mod)
+        for c1 in self.consonants:
+            for c2 in self.consonants:
+                for b in self.below:
+                    out.append(chr(c1) + self.virama + chr(c2) + b)
+        out += [chr(cp) for cp in self.extra]
+        return out
+
+
+# Devanagari: the Devanagari and Devanagari Extended blocks, the
 # joiners, the dotted circle HarfBuzz inserts before a lone mark, and
-# the rupee sign of the InScript layouts.
-UNICODES = (list(range(0x0900, 0x0980)) + list(range(0xA8E0, 0xA900)) +
-            [0x200C, 0x200D, 0x25CC, 0x20B9])
+# the rupee sign of the InScript layouts. The rare vocalic rr / l / ll
+# signs (U+0944, U+0962, U+0963) are left out of the fitting sample and
+# may stick out of the line a little.
+DEVA = Script(
+    "deva", b"DDEV", 0x0900,
+    list(range(0x0900, 0x0980)) + list(range(0xA8E0, 0xA900)) +
+    [0x200C, 0x200D, 0x25CC, 0x20B9],
+    list(range(0x0915, 0x093A)),
+    [cp for cp in range(0x093E, 0x094D) if cp != 0x0944],
+    ["", "\u0902", "\u0901"],                    # none, anusvara, candrabindu
+    ["", "\u0941", "\u0942", "\u0943"],
+    "\u094d", "\u0930",
+    list(range(0x0904, 0x0915)) + list(range(0x0966, 0x0970)))
+
+# Bengali: the Bengali block (Bengali and Assamese letters), the
+# Devanagari dandas Bengali text uses, the joiners, the dotted circle
+# and the rupee sign. As for Devanagari, the rare vocalic rr / l / ll
+# signs (U+09C4, U+09E2, U+09E3) are left out of the fitting sample.
+BENG_CONSONANTS = ([cp for cp in range(0x0995, 0x09BA)
+                    if cp not in (0x09A9, 0x09B1, 0x09B3, 0x09B4, 0x09B5)] +
+                   [0x09DC, 0x09DD, 0x09DF, 0x09F0, 0x09F1])
+BENG = Script(
+    "beng", b"DBEN", 0x0980,
+    list(range(0x0980, 0x0A00)) + DANDAS + [0x200C, 0x200D, 0x25CC, 0x20B9],
+    BENG_CONSONANTS,
+    [0x09BE, 0x09BF, 0x09C0, 0x09C1, 0x09C2, 0x09C3, 0x09C7, 0x09C8,
+     0x09CB, 0x09CC],
+    ["", "\u0982", "\u0981"],                    # none, anusvara, candrabindu
+    ["", "\u09c1", "\u09c2", "\u09c3"],
+    "\u09cd", "\u09b0",
+    [cp for cp in range(0x0985, 0x0995) if cp not in (0x098D, 0x098E, 0x0991, 0x0992)] +
+    list(range(0x09E6, 0x09F0)))
+
+SCRIPTS = {"deva": DEVA, "beng": BENG}
 
 # Tables the device's HarfBuzz needs; outlines and hinting are only
 # used here, for the bitmaps.
 LAYOUT_TABLES = ("cmap", "GDEF", "GSUB", "GPOS", "head", "hhea", "hmtx", "maxp")
 
-CONSONANTS = [cp for cp in range(0x0915, 0x093A)]
-# Vowel signs of the fitting sample; the rare vocalic rr / l / ll signs
-# (U+0944, U+0962, U+0963) may stick out of the line a little.
-MATRAS = [cp for cp in range(0x093E, 0x094D) if cp != 0x0944]
 # Share of the sample syllables that may stick out of the line by a
 # pixel or two (some deep conjunct stacks), so the common text gets a
 # larger size.
 OVERFLOW = 0.002
-MODIFIERS = ["", "\u0902", "\u0901"]   # none, anusvara, candrabindu
-BELOW = ["", "\u0941", "\u0942", "\u0943"]
-VIRAMA = "\u094d"
 
 
-def sample_texts():
-    """Syllables the size is fitted to: every consonant with every
-    vowel sign and modifier, with reph, and every two-consonant
-    conjunct with the below-base vowel signs."""
-    out = []
-    for c in CONSONANTS:
-        for m in MATRAS:
-            for mod in MODIFIERS:
-                out.append(chr(c) + chr(m) + mod)
-                out.append("\u0930" + VIRAMA + chr(c) + chr(m) + mod)
-    for c1 in CONSONANTS:
-        for c2 in CONSONANTS:
-            for b in BELOW:
-                out.append(chr(c1) + VIRAMA + chr(c2) + b)
-    out += [chr(cp) for cp in range(0x0904, 0x0915)]           # vowels
-    out += [chr(cp) for cp in range(0x0966, 0x0970)]           # digits
-    return out
-
-
-def subset_font(path):
+def subset_font(path, unicodes):
     """(full subset TTFont, layout-only bytes)."""
     opts = subset.Options()
     opts.layout_features = ["*"]
@@ -97,7 +145,7 @@ def subset_font(path):
     opts.hinting = True
     font = TTFont(path, recalcTimestamp=False)
     sub = subset.Subsetter(opts)
-    sub.populate(unicodes=UNICODES)
+    sub.populate(unicodes=unicodes)
     sub.subset(font)
     full = io.BytesIO()
     font.save(full)
@@ -183,22 +231,24 @@ def fit_size(r, shaped, lh, autohint):
 
 
 def main():
-    if len(sys.argv) != 4:
+    if len(sys.argv) != 5 or sys.argv[1] not in SCRIPTS:
         sys.exit(__doc__)
-    ttf, fonts_dir, out_dir = sys.argv[1:]
+    sc = SCRIPTS[sys.argv[1]]
+    ttf, fonts_dir, out_dir = sys.argv[2:]
+    name, NAME, blk = sc.name, sc.name.upper(), sc.block
     os.makedirs(out_dir, exist_ok=True)
-    full, layout, font = subset_font(ttf)
-    with open(os.path.join(out_dir, "deva_layout.ttf"), "wb") as f:
+    full, layout, font = subset_font(ttf, sc.unicodes)
+    with open(os.path.join(out_dir, f"{name}_layout.ttf"), "wb") as f:
         f.write(layout)
 
     order = font.getGlyphOrder()
     ngl = len(order)
     hmtx = font["hmtx"].metrics
-    adv = [hmtx[name][0] for name in order]
+    adv = [hmtx[n][0] for n in order]
     cmap = font.getBestCmap()
 
     r = GlyphRenderer(full)
-    shaped = [r.shape(t) for t in sample_texts()]
+    shaped = [r.shape(t) for t in sc.sample_texts()]
 
     cells = {}
     for family in ("lowres", "hires"):
@@ -210,9 +260,9 @@ def main():
             r.set(px, autohint)
             shift = max(0, desc - bl)
             scale = px / r.upem
-            for cp, name in cmap.items():
-                if 0x0900 <= cp < 0x0980:
-                    gid = order.index(name)
+            for cp, gname in cmap.items():
+                if blk <= cp < blk + 0x80:
+                    gid = order.index(gname)
                     n = math.ceil(adv[gid] * scale / cw) if adv[gid] else 0
                     cells[cp] = max(cells.get(cp, 0), n)
             entries = bytearray()
@@ -232,36 +282,41 @@ def main():
                 entries += struct.pack("<IBBbb", len(bitmaps), w, h, left,
                                        top - h + shift)
                 bitmaps += packed
-            out = bytearray(b"DDEV")
+            out = bytearray(sc.magic)
             out += struct.pack("<BBBBBBH", 1, lh, bl, cw, px, 0, ngl)
             out += entries + bitmaps
-            with open(os.path.join(out_dir, f"deva_{family}_{slot}.bin"), "wb") as f:
+            with open(os.path.join(out_dir, f"{name}_{family}_{slot}.bin"), "wb") as f:
                 f.write(out)
-            print(f"{family}_{slot}: line {lh}, cell {cw}, devanagari {px} px, "
+            print(f"{family}_{slot}: line {lh}, cell {cw}, {name} {px} px, "
                   f"asc {asc} desc {desc} shift {shift}, {len(out)} bytes")
 
-    with open(os.path.join(out_dir, "deva_tables.h"), "w", encoding="ascii") as f:
-        f.write("/* Generated by tools/gen_deva_font.py -- do not edit. */\n"
+    with open(os.path.join(out_dir, f"{name}_tables.h"), "w", encoding="ascii") as f:
+        f.write("/* Generated by tools/gen_indic_font.py -- do not edit. */\n"
                 "#pragma once\n#include <stdint.h>\n\n")
-        f.write(f"#define DEVA_UPEM {r.upem}\n#define DEVA_GLYPHS {ngl}\n\n")
+        f.write(f"#define {NAME}_UPEM {r.upem}\n#define {NAME}_GLYPHS {ngl}\n\n")
         f.write("/* Advance width of each glyph id, font units. */\n"
-                "static const uint16_t DEVA_ADVANCE[DEVA_GLYPHS] = {\n")
+                f"static const uint16_t {NAME}_ADVANCE[{NAME}_GLYPHS] = {{\n")
         for i in range(0, ngl, 12):
             f.write("    " + ", ".join(str(a) for a in adv[i:i + 12]) + ",\n")
-        f.write("};\n\n/* Nominal glyph id of U+0900 + i (0 = none): the glyphs\n"
-                " * drawn for Devanagari outside the editor, unshaped. */\n"
-                "static const uint16_t DEVA_CMAP[128] = {\n")
-        nom = [order.index(cmap[0x0900 + i]) if (0x0900 + i) in cmap else 0
+        f.write(f"}};\n\n/* Nominal glyph id of U+{blk:04X} + i (0 = none): the glyphs\n"
+                " * drawn outside the editor, unshaped. */\n"
+                f"static const uint16_t {NAME}_CMAP[128] = {{\n")
+        nom = [order.index(cmap[blk + i]) if (blk + i) in cmap else 0
                for i in range(128)]
         for i in range(0, 128, 16):
             f.write("    " + ", ".join(str(c) for c in nom[i:i + 16]) + ",\n")
-        f.write("};\n\n/* Most monospace cells the nominal glyph of U+0900 + i takes\n"
+        f.write(f"}};\n\n/* Most monospace cells the nominal glyph of U+{blk:04X} + i takes\n"
                 " * in any slot (an upper bound for width estimates). */\n"
-                "static const uint8_t DEVA_CELLS[128] = {\n")
-        row = [cells.get(0x0900 + i, 0) for i in range(128)]
+                f"static const uint8_t {NAME}_CELLS[128] = {{\n")
+        row = [cells.get(blk + i, 0) for i in range(128)]
         for i in range(0, 128, 16):
             f.write("    " + ", ".join(str(c) for c in row[i:i + 16]) + ",\n")
         f.write("};\n")
+        if blk != 0x0900:
+            dg = [order.index(cmap[d]) if d in cmap else 0 for d in DANDAS]
+            f.write("\n/* Nominal glyph ids of the danda and double danda (U+0964,\n"
+                    " * U+0965), for builds without Devanagari. */\n"
+                    f"static const uint16_t {NAME}_DANDA[2] = {{ {dg[0]}, {dg[1]} }};\n")
 
 
 if __name__ == "__main__":

@@ -41,15 +41,15 @@
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_KB_LAYOUT_ENABLE_KO) || \
     defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH) || \
     defined(CONFIG_KB_LAYOUT_ENABLE_TA99) || defined(CONFIG_KB_LAYOUT_ENABLE_TA_TW) || \
-    defined(CONFIG_KB_LAYOUT_ENABLE_TA_TV)
+    defined(CONFIG_KB_LAYOUT_ENABLE_TA_TV) || defined(CONFIG_KB_LAYOUT_ENABLE_BN_NJ)
 #define DRAFTLING_HAS_IME 1
 #include "ime.h"
 #endif
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
 #include "tamil_font.h"
 #endif
-#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
-#include "deva_font.h"
+#ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
+#include "indic_font.h"
 #endif
 #include "wifi_manager.h"
 #include "git_sync.h"
@@ -90,8 +90,8 @@
  * Status bars always use FONT_11 regardless of the body font setting.
  */
 /* The Indic pack renders with copies of the fonts whose lines are
- * about 30 % taller (lowres.c / hires.c, tall_lines.h), so the Tamil
- * and Devanagari letters can be drawn larger. */
+ * about 30 % taller (lowres.c / hires.c, tall_lines.h), so the Tamil,
+ * Devanagari and Bengali letters can be drawn larger. */
 #ifdef CONFIG_DRAFTLING_TALL_LINES
 #define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
 #else
@@ -2374,8 +2374,8 @@ static int cp_cells(uint32_t prev, uint32_t cp, uint32_t next)
     (void)prev;
     (void)next;
 #endif
-#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
-    int d = deva_cp_cells(cp);
+#ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
+    int d = indic_cp_cells(cp);
     if (d >= 0) return d;
 #endif
     return cp_is_wide(cp) ? 2 : 1;
@@ -2554,20 +2554,27 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
         size_t start = b;
         uint32_t cp = utf8_decode(lt, ll, &b);
         if (hide[start]) continue;
-#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
-        /* A run of Devanagari is shaped by HarfBuzz into the private-
-         * use code points of its glyphs (deva_font.h), each mapped to
-         * the first byte of the characters it shows. */
-        if (deva_in_run(cp)) {
+#ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
+        /* A run of Devanagari or Bengali is shaped by HarfBuzz into the
+         * private-use code points of its glyphs (indic_font.h), each
+         * mapped to the first byte of the characters it shows. A run is
+         * one script; the joiners and dandas go with either. */
+        indic_script_t sc = indic_script(cp);
+        if (sc != INDIC_NONE) {
             size_t end = b;
             while (end < ll && !hide[end]) {
                 size_t nx = end;
-                if (!deva_in_run(utf8_decode(lt, ll, &nx))) break;
+                indic_script_t s2 = indic_script(utf8_decode(lt, ll, &nx));
+                if (s2 == INDIC_NONE) break;
+                if (s2 != INDIC_ANY) {
+                    if (sc == INDIC_ANY) sc = s2;
+                    else if (s2 != sc) break;
+                }
                 end = nx;
             }
-            static std::vector<deva_glyph_t> dg;
+            static std::vector<indic_glyph_t> dg;
             dg.resize((end - start) * 2 + 8);
-            size_t n = deva_shape(lt + start, end - start, dg.data(), dg.size());
+            size_t n = indic_shape(sc, lt + start, end - start, dg.data(), dg.size());
             for (size_t k = 0; k < n; k++) {
                 uint32_t c = dg[k].code;      /* planes 15 / 16: 4 bytes */
                 char u[4] = {
@@ -2691,14 +2698,14 @@ static uint32_t deco_draw_cp(uint32_t cp, uint32_t next)
 #endif
 }
 
-/* True when the cursor sits inside a Tamil or Devanagari syllable --
- * between a consonant and the vowel sign or other mark drawn with it,
- * inside a conjunct, or inside a k-ssa / sri ligature -- where it would
- * be shown at the same spot as after it. Left / Right step over such
- * positions. */
+/* True when the cursor sits inside a Tamil, Devanagari or Bengali
+ * syllable -- between a consonant and the vowel sign or other mark
+ * drawn with it, inside a conjunct, or inside a k-ssa / sri ligature --
+ * where it would be shown at the same spot as after it. Left / Right
+ * step over such positions. */
 static bool cursor_mid_cluster(void)
 {
-#if defined(CONFIG_DRAFTLING_HAS_TAMIL) || defined(CONFIG_DRAFTLING_HAS_DEVANAGARI)
+#if defined(CONFIG_DRAFTLING_HAS_TAMIL) || defined(CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
     char buf[24];
     size_t n = editor_peek_before(buf, 12);
     size_t c = editor_get_cursor();
@@ -2721,8 +2728,8 @@ static bool cursor_mid_cluster(void)
         size_t i = n;
         next = utf8_decode(buf, total, &i);
     }
-#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
-    if (deva_mid_cluster(prev, next)) return true;
+#ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
+    if (indic_mid_cluster(prev, next)) return true;
 #endif
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
     /* A mark right after the cursor, a base right before it. */
@@ -9868,17 +9875,19 @@ struct typing_pre_state_t {
 };
 
 /* True for a line whose width the cell count does not give exactly:
- * Tamil and Devanagari, whose glyphs are proportional. The typing fast path is not
- * used on such lines (the whole line is refreshed). */
+ * Tamil, Devanagari and Bengali, whose glyphs are proportional. The
+ * typing fast path is not used on such lines (the whole line is
+ * refreshed). */
 static bool line_has_proportional_text(const char *lt, size_t ll)
 {
 #ifdef CONFIG_DRAFTLING_TALL_LINES
-    /* Devanagari U+0900..U+097F is E0 A4 xx / E0 A5 xx in UTF-8, Tamil
-     * U+0B80..U+0BFF E0 AE xx / E0 AF xx. */
+    /* Devanagari U+0900..U+097F is E0 A4 xx / E0 A5 xx in UTF-8,
+     * Bengali U+0980..U+09FF E0 A6 xx / E0 A7 xx, Tamil U+0B80..U+0BFF
+     * E0 AE xx / E0 AF xx. */
     for (size_t i = 0; i + 1 < ll; i++) {
         unsigned char c1 = (unsigned char)lt[i + 1];
         if ((unsigned char)lt[i] == 0xE0 &&
-            (c1 == 0xA4 || c1 == 0xA5 || c1 == 0xAE || c1 == 0xAF))
+            ((c1 >= 0xA4 && c1 <= 0xA7) || c1 == 0xAE || c1 == 0xAF))
             return true;
     }
 #else
