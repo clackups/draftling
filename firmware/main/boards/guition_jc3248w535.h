@@ -15,7 +15,7 @@
  * without code changes.
  *
  * Included by main/app_config.h when
- * CONFIG_DRAFTLING_MODEL_JC3248W535 is selected.
+ * CONFIG_DRAFTLING_MODEL_GUITION_JC3248W535 is selected.
  */
 
 #define BOARD_NAME          "Guition JC3248W535"

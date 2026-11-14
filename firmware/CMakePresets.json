@@ -56,12 +56,12 @@
             }
         },
         {
-            "name": "jc3248w535",
+            "name": "guition_jc3248w535",
             "displayName": "Guition JC3248W535",
-            "binaryDir": "build/jc3248w535",
+            "binaryDir": "build/guition_jc3248w535",
             "cacheVariables": {
-                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.jc3248w535",
-                "SDKCONFIG": "build/jc3248w535/sdkconfig"
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.guition_jc3248w535",
+                "SDKCONFIG": "build/guition_jc3248w535/sdkconfig"
             }
         },
         {

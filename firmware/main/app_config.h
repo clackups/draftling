@@ -69,8 +69,8 @@
 #include "boards/m5stack_papers3.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349)
 #include "boards/waveshare_touch_lcd_349.h"
-#elif defined(CONFIG_DRAFTLING_MODEL_JC3248W535)
-#include "boards/jc3248w535.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_GUITION_JC3248W535)
+#include "boards/guition_jc3248w535.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
 #include "boards/m5stack_tab5.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_SUNTON_8048S070)
