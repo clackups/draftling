@@ -22,6 +22,18 @@
 #include "hb.h"
 #include "indic_font.h"
 
+/* The shaping cache lives in PSRAM: its many small blocks would
+ * otherwise go to internal RAM (see components/harfbuzz/config). */
+#ifdef ESP_PLATFORM
+#include "esp_heap_caps.h"
+#define cache_alloc(n) \
+    heap_caps_malloc_prefer((n), 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT, MALLOC_CAP_8BIT)
+#define cache_free(p) heap_caps_free(p)
+#else
+#define cache_alloc(n) malloc(n)
+#define cache_free(p) free(p)
+#endif
+
 #ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
 #include "deva/deva_tables.h"
 #else
@@ -311,11 +323,11 @@ size_t indic_shape(indic_script_t script, const char *s, size_t len,
     }
     size_t n = shape_uncached(script, s, len, out, max);
     if (e && n > 0) {
-        char *t = (char *)malloc(len);
-        indic_glyph_t *g = (indic_glyph_t *)malloc(n * sizeof(indic_glyph_t));
+        char *t = (char *)cache_alloc(len);
+        indic_glyph_t *g = (indic_glyph_t *)cache_alloc(n * sizeof(indic_glyph_t));
         if (t && g) {
-            free(e->text);
-            free(e->glyphs);
+            cache_free(e->text);
+            cache_free(e->glyphs);
             memcpy(t, s, len);
             memcpy(g, out, n * sizeof(indic_glyph_t));
             e->text = t;
@@ -324,8 +336,8 @@ size_t indic_shape(indic_script_t script, const char *s, size_t len,
             e->count = (uint16_t)n;
             e->script = (uint8_t)script;
         } else {
-            free(t);
-            free(g);
+            cache_free(t);
+            cache_free(g);
         }
     }
     return n;
