@@ -82,8 +82,8 @@ extern const lv_font_t lowres_26;
 extern const lv_font_t lowres_30;
 extern const lv_font_t lowres_34;
 
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
-/* Tamil pack: the same fonts with taller lines (see lowres.c). */
+#ifdef CONFIG_DRAFTLING_TALL_LINES
+/* Indic pack: the same fonts with taller lines (see lowres.c). */
 extern lv_font_t lowres_11_tall;
 extern lv_font_t lowres_14_tall;
 extern lv_font_t lowres_16_tall;

@@ -84,8 +84,8 @@ extern const lv_font_t hires_22;
 extern const lv_font_t hires_26;
 extern const lv_font_t hires_30;
 
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
-/* Tamil pack: the same fonts with taller lines (see hires.c). */
+#ifdef CONFIG_DRAFTLING_TALL_LINES
+/* Indic pack: the same fonts with taller lines (see hires.c). */
 extern lv_font_t hires_9_tall;
 extern lv_font_t hires_11_tall;
 extern lv_font_t hires_14_tall;

@@ -106,6 +106,18 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA_TV
     KB_LAYOUT_TA_TV,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
+    KB_LAYOUT_HI_IN,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_MR_IN
+    KB_LAYOUT_MR_IN,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_TR
+    KB_LAYOUT_NE_TR,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_NE_RO
+    KB_LAYOUT_NE_RO,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 

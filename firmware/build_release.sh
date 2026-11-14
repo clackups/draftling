@@ -26,7 +26,7 @@
 set -u
 cd "$(dirname "$0")"
 
-PACKS="default vietnamese korean japanese chinese tamil"
+PACKS="default vietnamese korean japanese chinese indic"
 # One line per dependency set.
 DEP_GROUPS=(
     "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 lilygo_t5_epd_s3_pro seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono"

@@ -2,8 +2,9 @@
 # Elecrow CrowPanel ESP32 HMI 5.0" and the Guition JC4827W543C (both
 # ESP32-S3-WROOM-1-N4R8: 4 MB flash, 8 MB PSRAM). factory takes everything after the 64 KB boot area up to
 # the last 64 KB block (0x3E0000, ~3.9 MB): enough for the default and
-# Vietnamese / Korean / Tamil language-pack images (~2.4 / ~3.2 /
-# ~2.6 MB), not for the Japanese / Chinese ones.
+# Vietnamese / Korean / Indic language-pack images (~2.4 / ~3.2 /
+# ~3.0 MB; Indic on the hi-res CrowPanel 5.0" ~3.85 MB), not for the
+# Japanese / Chinese ones.
 # Name,   Type, SubType, Offset,  Size, Flags
 nvs,      data, nvs,     ,        0x6000,
 phy_init, data, phy,     ,        0x1000,

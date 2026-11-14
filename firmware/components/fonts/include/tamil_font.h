@@ -40,12 +40,6 @@ extern "C" {
 /* Dotted circle: the base the editor shows a lone vowel sign on. */
 #define TAMIL_DOTTED_CIRCLE 0x25CCu
 
-/* Extra line height of the Tamil pack's fonts over a base font slot
- * of line height lh (about 30 %), and how much of it goes below the
- * baseline. tools/gen_tamil_font.py uses the same formulas. */
-#define TAMIL_LINE_EXTRA(lh) (((lh) * 3 + 5) / 10)
-#define TAMIL_BASE_EXTRA(lh) (TAMIL_LINE_EXTRA(lh) / 2)
-
 /* Private-use code points the editor shows for the ligatures. */
 #define TAMIL_LIG_KSSA 0xE001u
 #define TAMIL_LIG_SRI  0xE002u

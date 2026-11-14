@@ -21,6 +21,7 @@
  *        --> hires_latinx_NN   --> hires_NN_lx_next (router)   [Vietnamese / CJK]
  *        --> CJK runtime font (cjk_font.c)                  [Korean / Japanese / Chinese]
  *        --> Tamil runtime font (tamil_font.c)              [Tamil]
+ *        --> Devanagari runtime font (deva_font.c)          [Devanagari]
  *        --> hires_cyrillic_NN                                [Ukrainian]
  *
  * Subsets that are not compiled in are skipped; the Cyrillic subset is
@@ -47,6 +48,12 @@
 #endif
 #ifdef CONFIG_DRAFTLING_HAS_TAMIL
 #include "tamil_font.h"
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+#include "deva_font.h"
+#endif
+#ifdef CONFIG_DRAFTLING_TALL_LINES
+#include "tall_lines.h"
 #endif
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_DRAFTLING_HAS_CJK)
@@ -177,10 +184,10 @@ extern const lv_font_t hires_latinx_26;
 extern const lv_font_t hires_latinx_30;
 #endif
 
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
-/* Copies of the base fonts with taller lines (TAMIL_LINE_EXTRA), made
- * by hires_init(): the Tamil pack renders with them so that the
- * Tamil letters, whose loops and hooks need much more room above and
+#ifdef CONFIG_DRAFTLING_TALL_LINES
+/* Copies of the base fonts with taller lines (TALL_LINE_EXTRA), made
+ * by hires_init(): the Indic pack renders with them so that the
+ * Tamil and Devanagari letters, which need much more room above and
  * below their body than Latin letters, can be drawn larger. */
 lv_font_t hires_9_tall;
 lv_font_t hires_11_tall;
@@ -205,7 +212,7 @@ typedef struct {
     const lv_font_t *latina;
     const lv_font_t *latinx;
     const lv_font_t *cyrillic;
-    lv_font_t *tall;            /* Tamil pack: the base with taller lines */
+    lv_font_t *tall;            /* Indic pack: the base with taller lines */
 } slot_chain_t;
 
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HE
@@ -259,17 +266,24 @@ void hires_init(void)
                                          lv_font_get_glyph_width(c->base, 'M', 0));
         if (cjk) { tail->fallback = cjk; tail = cjk; }
 #endif
-#ifdef CONFIG_DRAFTLING_HAS_TAMIL
+#ifdef CONFIG_DRAFTLING_TALL_LINES
         /* The tall copy: the extra height goes partly below the
          * baseline, partly above the Latin letters. */
         int32_t lh = c->base->line_height;
         *c->tall = *c->base;
-        c->tall->line_height = lh + TAMIL_LINE_EXTRA(lh);
-        c->tall->base_line = c->base->base_line + TAMIL_BASE_EXTRA(lh);
+        c->tall->line_height = lh + TALL_LINE_EXTRA(lh);
+        c->tall->base_line = c->base->base_line + TALL_BASE_EXTRA(lh);
         c->tall->user_data = (void *)c->base;   /* for the editor's decorations */
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TAMIL
         lv_font_t *ta = tamil_font_create(c->tall->line_height,
                                           lv_font_get_glyph_width(c->base, 'M', 0));
         if (ta) { tail->fallback = ta; tail = ta; }
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_DEVANAGARI
+        lv_font_t *dv = deva_font_create(c->tall->line_height,
+                                         lv_font_get_glyph_width(c->base, 'M', 0));
+        if (dv) { tail->fallback = dv; tail = dv; }
 #endif
         /* The Cyrillic subsets are generated without a fallback, so
          * they end the chain. */

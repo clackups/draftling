@@ -1,4 +1,4 @@
-# Language packs: Vietnamese, Korean, Japanese, Chinese, Tamil
+# Language packs: Vietnamese, Korean, Japanese, Chinese, Indic
 
 Draftling firmware comes in several language packs. Each one is a
 separate firmware image with US-English plus the layouts, input
@@ -11,7 +11,7 @@ methods and fonts of its languages:
 | Korean | US, KO |
 | Japanese | US, JA |
 | Chinese | US, ZH (Simplified Chinese) |
-| Tamil | US, TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
+| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
 
 How to build an image for a pack is described in
 [BUILDING.md](../BUILDING.md#language-packs).
@@ -20,7 +20,8 @@ Brief typing guides, one per pack:
 [default](typing/default.md) (European and Canadian layouts),
 [Vietnamese](typing/vietnamese.md), [Korean](typing/korean.md),
 [Japanese](typing/japanese.md), [Chinese](typing/chinese.md),
-[Tamil](typing/tamil.md). The sections below have the full details.
+[Indic](typing/indic.md) (Devanagari and Tamil). The sections below
+have the full details.
 
 With an input method (VI, KO, JA, ZH, and the Tamil layouts other
 than InScript), the text being typed is
@@ -33,7 +34,7 @@ letters.
 
 Use a US-English (QWERTY) keyboard for all of them. Korean keyboards
 type the jamo printed on a US keyboard's keys in the Dubeolsik layout,
-Tamil keyboards the letters of their layout.
+Devanagari and Tamil keyboards the letters of their layout.
 
 ## Vietnamese (VI): Telex
 
@@ -122,13 +123,43 @@ composition, `,` `.` `?` `!` `:` `;` and `\` type full-width Chinese
 punctuation. The dictionary comes from the Android Open Source
 Project's PinyinIME (about 65,000 words).
 
-## Tamil
+## Indic: Devanagari and Tamil
 
-The Tamil pack has the official Tamil keyboard layouts -- Tamil 99
-(the Government of Tamil Nadu standard), the Tamil Typewriter layout
-and InScript (the Government of India standard) -- plus the
-Taravinyas input engine. Only US and Tamil 99 are active at first;
-turn the others on in F1 -> Settings -> Keyboard -> Active layouts.
+The Indic pack has Devanagari (Hindi, Marathi, Nepali, Sanskrit and the
+other languages written in it) and Tamil. US, Hindi InScript and Tamil
+99 are active at first; turn the others on in F1 -> Settings ->
+Keyboard -> Active layouts.
+
+### Devanagari
+
+Four plain layouts, without an input method: type each syllable in
+the order it is spoken -- consonant, then its vowel sign -- and join
+consonants with the virama (halant). The editor draws the syllable
+the way it is written (see "Indic text on the screen" below).
+
+- **HI-IN, Hindi InScript**: the Government of India standard,
+  Enhanced InScript (BIS 2016) as in the m17n "hi-inscript2" input
+  method: vowel signs on the left hand, the vowels with Shift,
+  consonants on the right, the Devanagari digits on the number row,
+  and on Shift + 3 .. 8 the rakar, reph, jnya, tra, ksha and shra.
+  AltGr types the rarer letters (the nukta letters, vocalic l, om,
+  avagraha) and AltGr + 1 / 2 the zero-width joiner / non-joiner.
+- **MR-IN, Marathi InScript**: the same with the Marathi letters
+  (m17n "mr-inscript2"): eyelash ra on Shift + J, candra a on Shift + 1.
+- **NE-TR, Nepali Traditional**: the layout of Nepali typewriters
+  (m17n "ne-trad").
+- **NE-RO, Nepali Romanized**: letters on the keys of their Latin sound
+  (m17n "ne-rom").
+
+The key tables are in the [typing guide](typing/indic.md). The Hindi
+Remington (typewriter) layout is not included yet: it is typed in
+visual order and needs an input method.
+
+### Tamil
+
+The official Tamil keyboard layouts -- Tamil 99 (the Government of
+Tamil Nadu standard), the Tamil Typewriter layout and InScript (the
+Government of India standard) -- plus the Taravinyas input engine.
 The letters are named here by their usual transliteration (`ka`,
 `Ta` = retroflex t, `Na` = retroflex n, `n2a` = the alveolar n,
 `zha`, `La`, `Ra`); the vowel sign of a vowel is "the aa sign" and
@@ -229,16 +260,26 @@ consonant mode, is `r j` (ta) `e k` (ma) `v` `d j x` (i sign) `v`
 step, other letter keys do nothing, and digits, punctuation and Space
 type as usual.
 
-### Tamil text on the screen
+### Indic text on the screen
 
-The Tamil letters come from Noto Sans Tamil, drawn in black and
-white. Tamil needs much more room above and below the letters than
-Latin text, so the Tamil firmware spaces all lines about 30 % further
-apart than the other firmware images and draws the Tamil letters to
-fill that height; the Latin letters keep their size. A consonant and its vowel sign
-are drawn as one syllable, the letters of a word join up with the
-font's own spacing (Tamil is not squeezed into the monospace grid of
-the Latin text), and the ligatures k-ssa and sri are drawn as such.
+Devanagari comes from Noto Sans Devanagari, Tamil from Noto Sans
+Tamil, both drawn in black and white. They need much more room above
+and below the letters than Latin text, so the Indic firmware spaces
+all lines about 30 % further apart than the other firmware images and
+draws the Indic letters to fill that height; the Latin letters keep
+their size. The letters of a word join up with the fonts' own spacing
+(they are not squeezed into the monospace grid of the Latin text).
+
+Devanagari is shaped on the device with HarfBuzz, the text shaper of
+desktop systems, from the font's own rules: conjuncts and half forms,
+the reph, the i sign before its consonant cluster and the marks above
+and below are drawn as in a desktop editor. File names, titles and the
+status bar show Devanagari letter by letter, unshaped. A few rare
+stacks (vocalic rr / l signs, some deep conjuncts) may stick out of
+the line by a pixel or two.
+
+A Tamil consonant and its vowel sign are drawn as one syllable, and
+the ligatures k-ssa and sri are drawn as such.
 The cursor steps over a syllable or ligature as a whole with Left /
 Right; Backspace removes the vowel sign first, then the consonant. A vowel sign without a consonant before it is shown on a
 dotted circle.
@@ -257,9 +298,10 @@ plus every character of their dictionaries.
 Vietnamese letters, curly quotes and dashes come from Greybeard, or on
 high-density screens from Noto Sans Mono.
 
-Tamil letters come from Noto Sans Tamil (see "Tamil text on the
-screen" above).
+Devanagari and Tamil letters come from Noto Sans Devanagari and Noto
+Sans Tamil (see "Indic text on the screen" above).
 
 Font and dictionary licenses: `firmware/components/fonts/cjk/LICENSE.txt`,
+`firmware/components/fonts/deva/LICENSE.txt`,
 `firmware/components/fonts/tamil/LICENSE.txt` and
 `firmware/components/ime/dict/LICENSE.txt`.
