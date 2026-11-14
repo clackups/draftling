@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Build every web-flasher image of a release (every board x every
-# language pack) in parallel. Run from anywhere with ESP-IDF exported.
+# Build every web-flasher image of a release in parallel: the default
+# language pack for every flasher board, and every pack for the boards
+# in ALL_PACK_BOARDS. Run from anywhere with ESP-IDF exported.
 #
-#   ./build_release.sh                 # all flasher boards, all packs
+#   ./build_release.sh                 # all flasher boards
 #   ./build_release.sh xteink_x4_pro   # only the boards named
 #
 # Builds of one project tree share managed_components/,
@@ -26,10 +27,12 @@
 set -u
 cd "$(dirname "$0")"
 
-PACKS="default vietnamese korean japanese chinese indic"
+ALL_PACKS="default vietnamese korean japanese chinese indic"
+# Boards that get every language pack; the others get only "default".
+ALL_PACK_BOARDS="seeed_reterminal_sticky freenove_fnk0104a freenove_fnk0104s"
 # One line per dependency set.
 DEP_GROUPS=(
-    "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 lilygo_t5_epd_s3_pro seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono"
+    "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono freenove_fnk0104a freenove_fnk0104s"
     "microjournal_rev5"
     "m5stack_tab5"
 )
@@ -74,7 +77,9 @@ for group in "${DEP_GROUPS[@]}"; do
     queue=()
     for b in $group; do
         if wanted "$b"; then
-            for p in $PACKS; do queue+=("$b $p"); done
+            packs=default
+            case " $ALL_PACK_BOARDS " in *" $b "*) packs=$ALL_PACKS ;; esac
+            for p in $packs; do queue+=("$b $p"); done
         fi
     done
     [ ${#queue[@]} -eq 0 ] && continue

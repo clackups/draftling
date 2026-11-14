@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.27] - 2026-11-14
+
 ### Added
 
 - **Indic language pack**: a new firmware image with US-English,

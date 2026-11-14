@@ -3390,11 +3390,14 @@ A release also publishes prebuilt binaries for the boards covered by
 the web flasher (https://flasher.draftling.art/, see below), in the
 separate `clackups/draftling-flasher` repository only -- never as
 GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
-`waveshare_rlcd42`, `waveshare_epaper_397`, `lilygo_t5_epd_s3_pro`,
+`waveshare_rlcd42`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
-`m5stack_papermono`, `microjournal_rev5` and `m5stack_tab5`, each in
-every language pack (the default image plus one per non-default pack,
-listed in the release's `languagePacks` array in `manifest.json`).
+`m5stack_papermono`, `freenove_fnk0104a`, `freenove_fnk0104s`,
+`microjournal_rev5` and `m5stack_tab5`, each with the default language
+pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
+`freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
+also get one image per non-default pack, listed in the release's
+`languagePacks` array in `manifest.json`.
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
@@ -3424,13 +3427,13 @@ tree referenced in steps 1-4.
    `CHANGELOG.md` `[Unreleased]` entries under a new `[X.Y.Z]` heading
    (see "Changelog" above), commit, and push `main` (along with
    whatever else is going into the release).
-2. Build every board with prebuilt binaries, in every language pack,
-   at the commit that will be tagged -- always in parallel, with
+2. Build every board with prebuilt binaries (the default pack, and
+   every pack for the `ALL_PACK_BOARDS`) at the commit that will be tagged -- always in parallel, with
    `firmware/build_release.sh` (never one `idf.py` build after
    another):
    ```bash
    cd firmware
-   ./build_release.sh                  # every flasher board x pack
+   ./build_release.sh                  # every flasher board
    ./build_release.sh xteink_x4_pro    # or just the boards named
    ```
    The script runs `PARALLEL` builds at once (default: half the CPUs),
