@@ -7,8 +7,8 @@ ESP32-S3 booard with a 4" 480x320 LCD screen.
 This enclosure consists of two 3d-printed parts, tied together by 8 M3
 screws and 4 spacers. Inside there's a pocket for a LiPo battery up to
 10mm thick (606090 type was used on the photos, but other types would
-fit too, such as 103450 or 103665). JST 1.25mm 2-pin plug should be
-used for the battery.
+fit too, such as 103450 or 103665. The biggest battery that would fit
+is 105080 type). JST 1.25mm 2-pin plug should be used for the battery.
 
 A small piece of the packaging foam is recommended between the board
 and the battery in order to fixate it and reduce the vibrations.
