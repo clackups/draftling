@@ -12,7 +12,9 @@ in the git log.
   bar of the editor now disappear at the first key press and come
   back when you stop typing for 30 seconds, or right away when there
   is a message to show (Saved, Git progress, input-method
-  candidates). The text area does not move. Turn it off with F1 ->
+  candidates). While they are hidden the text uses the whole screen
+  height; when they return, the view scrolls if the cursor would end
+  up under them. Turn it off with F1 ->
   Settings -> Editor -> "Hide status bars while typing", and pick 15,
   30, 60 or 120 seconds with "Show status bars after idle".
 

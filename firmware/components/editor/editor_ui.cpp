@@ -162,16 +162,17 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 #define HEADER_H     32
 #define STATUS_H     32
-#define EDITOR_Y     HEADER_H
-#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #else
 #define HEADER_H     16
 #define STATUS_H     16
-#define EDITOR_Y     HEADER_H
-#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
+/* The editor body sits between the bars, or fills the screen while
+ * they are hidden (Settings -> Editor -> "Hide status bars while
+ * typing", s_bars_hidden). */
+#define EDITOR_Y     (s_bars_hidden ? 0 : HEADER_H)
+#define EDITOR_H     (s_bars_hidden ? SCR_H : (SCR_H - HEADER_H - STATUS_H))
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -1457,13 +1458,14 @@ static int find_bars_idle_option(uint16_t s)
     return 1;   /* 30 s */
 }
 
+static void bars_relayout(void);
+
 static void bars_set_hidden(bool hidden)
 {
     s_bars_hidden = hidden;
     lv_opa_t opa = hidden ? LV_OPA_TRANSP : LV_OPA_COVER;
     lv_obj_t *objs[] = {
-        s_lbl_title, s_editor_hline, s_editor_sline, s_lbl_status,
-        s_img_wifi,
+        s_lbl_title, s_lbl_status, s_img_wifi,
 #if defined(CONFIG_DRAFTLING_HAS_BATTERY)
         s_lbl_dev_batt,
 #endif
@@ -1471,6 +1473,15 @@ static void bars_set_hidden(bool hidden)
     for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
         if (objs[i]) lv_obj_set_style_opa(objs[i], opa, 0);
     }
+    /* The rules are plain (clickable) objects lying over the expanded
+     * text area: hide them outright so they do not swallow taps. */
+    lv_obj_t *rules[] = { s_editor_hline, s_editor_sline };
+    for (size_t i = 0; i < 2; i++) {
+        if (!rules[i]) continue;
+        if (hidden) lv_obj_add_flag(rules[i], LV_OBJ_FLAG_HIDDEN);
+        else        lv_obj_remove_flag(rules[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    bars_relayout();
 }
 
 /* Set by bars_typing_begin() while a key is being handled: the bars
@@ -10304,6 +10315,30 @@ static void editor_ui_apply_split_mode(split_mode_t mode)
      * restore below runs before the first lv_scr_load). */
     if (s_editor_screen_active) epd_full_screen_repaint();
 #endif
+    editor_ui_refresh();
+}
+
+/* The bars were hidden or shown: resize the panes to the new editor
+ * body (EDITOR_Y / EDITOR_H) and redraw. When the body shrinks, a
+ * cursor now below the last visible row is scrolled up to it, by as
+ * few lines as needed (refresh_active_pane() adds more if wrapped
+ * lines still push it off the pane). */
+static void bars_relayout(void)
+{
+    if (!s_scr) return;
+    layout_panes();
+    invalidate_all_render_caches();
+    for (int p = 0; p < s_pane_count; p++) {
+        pane_bind(p);
+        int cur_line, cur_col;
+        editor_get_cursor_pos(&cur_line, &cur_col);
+        (void)cur_col;
+        int scroll = editor_get_scroll_line();
+        if (cur_line >= scroll + VISIBLE_LINES) {
+            editor_set_scroll_line(cur_line - VISIBLE_LINES + 1);
+        }
+    }
+    pane_bind_focus();
     editor_ui_refresh();
 }
 

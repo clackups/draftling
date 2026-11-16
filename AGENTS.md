@@ -1191,9 +1191,12 @@ by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):
 widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
 made transparent with style opa, since other code toggles their
 HIDDEN flag) and restarts `s_bars_timer`; the timer and every
-`set_status_with_timeout()` call bring them back (`bars_show()`). The
-text area keeps its size. On e-paper a key that hides the bars drops
-the typing fast-path clip so the bar area is refreshed.
+`set_status_with_timeout()` call bring them back (`bars_show()`).
+`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden` (full screen while
+hidden), and `bars_relayout()` re-runs `layout_panes()`, scrolls each
+pane just enough to keep its cursor row visible when the body shrinks,
+and redraws. On e-paper a key that hides the bars drops the typing
+fast-path clip so the whole changed area is refreshed.
 
 **Backlight** (NN%) is only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` (the value is persisted in NVS
