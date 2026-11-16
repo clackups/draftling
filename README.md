@@ -57,7 +57,7 @@ load the firmware quickly without having to compile it.
 - **Works with any Bluetooth Low Energy (BLE) keyboard**. M5Stack Tab5
   and MicroJournal Rev 5.0 / 5.1 also support a wired USB keyboard.
 
-- **Many languages**: 22 European and Canadian keyboard layouts in the
+- **Many languages**: 24 European and Canadian keyboard layouts in the
   default firmware, and separate firmware images (language packs) for
   Vietnamese, Korean, Japanese, Chinese and the Indic scripts
   (Devanagari, Bengali and Tamil), with their input methods and fonts. See
@@ -450,7 +450,7 @@ offers the packs available for each board; to build one yourself, see
 
 | Language pack | Keyboard layouts | Typing guide |
 |---------------|------------------|--------------|
-| Default | US-English and 21 European and Canadian layouts (below) | [default](docs/typing/default.md) |
+| Default | US-English and 23 European and Canadian layouts (below) | [default](docs/typing/default.md) |
 | Vietnamese | US, Vietnamese (Telex input) | [Vietnamese](docs/typing/vietnamese.md) |
 | Korean | US, Korean (2-set Hangul) | [Korean](docs/typing/korean.md) |
 | Japanese | US, Japanese (romaji to kana and kanji) | [Japanese](docs/typing/japanese.md) |
@@ -465,7 +465,7 @@ through the active ones, and so does the keyboard layout entry of the
 **F1 menu**. The current layout is shown in the title bar when more
 than one is active.
 
-The **default language pack** has these 22 layouts:
+The **default language pack** has these 24 layouts:
 
 | Code | Layout |
 |------|--------|
@@ -491,6 +491,8 @@ The **default language pack** has these 22 layouts:
 | HR/SI | Croatian / Slovenian (QWERTZ) |
 | TR | Turkish Q (QWERTY) |
 | FR-CA | Canadian French, traditional (QWERTY) |
+| CRH | Crimean Tatar, Latin ([Ave Team](https://keyboard.aveteam.org/en/crh-more)) |
+| CRH-B | Crimean Tatar, Latin, variant B (i and dotless i keys swapped) |
 
 The accent keys of the European layouts are dead keys, as on a
 computer: press the accent, then the letter (acute + e gives e-acute).

@@ -1,13 +1,14 @@
 # Typing guide: default pack (European and Canadian layouts)
 
-The default firmware has US-English plus 21 layouts: Ukrainian (UA),
+The default firmware has US-English plus 23 layouts: Ukrainian (UA),
 German (DE), French (FR), Hebrew (HE), Swiss German (DE-CH), Swiss
 French (FR-CH), Italian (IT), Portuguese (PT), Spanish (ES), United
 Kingdom (GB), Swedish / Finnish (SE/FI), Norwegian (NO), Danish (DK),
 Polish (PL), Czech (CZ), Slovak (SK), Hungarian (HU), Romanian (RO),
-Croatian / Slovenian (HR/SI), Turkish Q (TR) and Canadian French
-(FR-CA). Each one matches the standard Windows layout of its country,
-so use a keyboard with those keys printed on it.
+Croatian / Slovenian (HR/SI), Turkish Q (TR), Canadian French
+(FR-CA) and Crimean Tatar Latin (CRH, CRH-B). Each one matches the
+standard Windows layout of its country (Crimean Tatar: Ave Team's
+layout), so use a keyboard with those keys printed on it.
 
 ## Getting started
 
@@ -51,3 +52,21 @@ caron, `3` circumflex, `4` breve, `5` ring, `6` ogonek, `8` dot above,
   the way the arrows point. Caps Lock types Latin capitals, as on
   Windows.
 - **Turkish**: the dotless i key counts as I for shortcuts.
+- **Crimean Tatar** (CRH, Ave Team's
+  [Crimean Tatar Roman layout](https://keyboard.aveteam.org/en/crh-more)):
+  QWERTY letters with the Ukrainian punctuation on the number row
+  (Shift + `2` `"`, `3` No., `4` `;`, `6` `:`, `7` `?`, and `.` `,` on
+  the `/` key). The Crimean Tatar letters have their own keys: g-breve
+  and u-diaeresis on `[` `]`, s-cedilla and i on `;` `'`, o-diaeresis
+  and c-cedilla on `,` `.`, a-circumflex left of `1`, n-tilde on `\`;
+  the I key types the dotless i. AltGr + a, c, g, i, n, o, s, u also
+  types the letter with its mark (AltGr + i gives i with a dot).
+  AltGr + `-` en dash (with Shift: em dash), AltGr + `'` the right
+  single quote, AltGr + `[` `]` `\` `/` the brackets, backslash and
+  `<`. For the Romanian Crimean Tatar spelling, AltGr + Shift + `6` is
+  a dead breve (dotless i -> i-breve), `7` a dead acute (a, i, o, u),
+  `8` a dead comma below (s -> s-comma) and AltGr + Shift + the
+  a-circumflex key a dead circumflex (dotless i -> i-circumflex).
+  **CRH-B** is the same layout with the I key and the key right of
+  s-cedilla swapped (I key: i, with Shift the dotted capital I; AltGr +
+  i: the dotless i).

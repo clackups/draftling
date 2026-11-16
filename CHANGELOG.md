@@ -6,6 +6,20 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Crimean Tatar keyboard layout**: the default firmware now includes
+  Ave Team's Crimean Tatar Roman layout (CRH, see
+  https://keyboard.aveteam.org/en/crh-more) and its variant B (CRH-B,
+  with the i and dotless i keys swapped): every Crimean Tatar letter on
+  its own key, the Ukrainian punctuation, and dead keys for the
+  Romanian Crimean Tatar letters. Turn it on in F1 -> Settings ->
+  Keyboard -> Active layouts.
+- **En / em dashes and the curly apostrophe are displayed**: in the
+  default firmware, text containing an en dash, an em dash or a right
+  single quote (as typed by many desktop editors) now shows these
+  characters; they used to be left blank.
+
 ## [1.0.28] - 2026-11-16
 
 ### Added

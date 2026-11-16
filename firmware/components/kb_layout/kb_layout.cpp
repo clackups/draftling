@@ -114,6 +114,7 @@ typedef struct {
 #define DK_RING   "\x01\xCB\x9A"  /* U+02DA ring above */
 #define DK_OGONEK "\x01\xCB\x9B"  /* U+02DB ogonek */
 #define DK_DACUTE "\x01\xCB\x9D"  /* U+02DD double acute */
+#define DK_COMMA  "\x01,"        /* comma below (no spacing form: a comma) */
 
 /* Latin-1 / punctuation characters used by the European layouts. */
 #define CH_SECT   "\xC2\xA7"  /* section sign */
@@ -3565,6 +3566,142 @@ static const key_entry_t FR_CA_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_FR_CA */
 
+#if defined(CONFIG_KB_LAYOUT_ENABLE_CRH) || defined(CONFIG_KB_LAYOUT_ENABLE_CRH_B)
+/* ------------------------------------------------------------------ */
+/* Crimean Tatar, Latin (Ave Team)                                    */
+/* ------------------------------------------------------------------ */
+/* Ave Team's Crimean Tatar Roman layout (keyboard.aveteam.org/en/
+ * crh-more; sources, CC0: gitlab.com/aveteam/crimean-tatar-keyboard-
+ * layout-sources, Windows/Regular/CRH.klc and Version B/CRHB.klc).
+ * QWERTY letters with the Ukrainian (Windows) punctuation; the
+ * Crimean Tatar letters on the keys that are Cyrillic letters on the
+ * Ukrainian layout: g-breve / u-diaeresis on [ ], s-cedilla / i on
+ * ; ', o-diaeresis / c-cedilla on , . , a-circumflex left of 1 and
+ * n-tilde on the backslash key. The I key types dotless i (Shift: I);
+ * variant B (CRH-B) swaps it with the key right of S-cedilla (i,
+ * Shift: I-dot). AltGr + a / s / g / c / n / o / u / i types the
+ * letter with its diacritic; AltGr + Shift + 6 / 7 / 8 and AltGr +
+ * Shift + the a-circumflex key are dead breve, acute, comma below and
+ * circumflex (for the Romanian Crimean Tatar spelling). */
+#define CH_i_DOTLESS "\xC4\xB1"  /* U+0131 latin small letter dotless i */
+#define CH_I_DOT     "\xC4\xB0"  /* U+0130 latin capital letter i with dot above */
+#define CH_a_CIRC    "\xC3\xA2"  /* U+00E2 latin small letter a with circumflex */
+#define CH_A_CIRC    "\xC3\x82"  /* U+00C2 latin capital letter a with circumflex */
+#define CH_g_BREVE   "\xC4\x9F"  /* U+011F latin small letter g with breve */
+#define CH_G_BREVE   "\xC4\x9E"  /* U+011E latin capital letter g with breve */
+#define CH_s_CED     "\xC5\x9F"  /* U+015F latin small letter s with cedilla */
+#define CH_S_CED     "\xC5\x9E"  /* U+015E latin capital letter s with cedilla */
+#define CH_O_UML     "\xC3\x96"  /* U+00D6 latin capital letter o with diaeresis */
+#define CH_U_UML     "\xC3\x9C"  /* U+00DC latin capital letter u with diaeresis */
+
+/* Keycodes 0x04..0x1D with the I key (0x0C) given by the variant. */
+#define CRH_LETTERS(i_key) \
+    "a","b","c","d","e","f","g","h",i_key,"j","k","l", \
+    "m","n","o","p","q","r","s","t","u","v","w","x","y","z"
+#define CRH_LETTERS_UP(i_key) \
+    "A","B","C","D","E","F","G","H",i_key,"J","K","L", \
+    "M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"
+
+/* 0x1E..0x38 after the letters; quote_key is the key right of
+ * s-cedilla (0x34). */
+#define CRH_REST_NORMAL(quote_key) \
+    DIGITS, CTRL_KEYS, \
+    /* 2D */ "-", \
+    /* 2E */ "=", \
+    /* 2F */ CH_g_BREVE, \
+    /* 30 */ CH_u_UML, \
+    /* 31 */ CH_n_TIL, \
+    /* 32 */ CH_n_TIL, \
+    /* 33 */ CH_s_CED, \
+    /* 34 */ quote_key, \
+    /* 35 */ CH_a_CIRC, \
+    /* 36 */ CH_o_UML, \
+    /* 37 */ CH_c_CED, \
+    /* 38 */ "."
+#define CRH_REST_SHIFT(quote_key) \
+    "!","\x22","\xE2\x84\x96",";","%",":","?","*","(",")", \
+    CTRL_KEYS, \
+    /* 2D */ "_", \
+    /* 2E */ "+", \
+    /* 2F */ CH_G_BREVE, \
+    /* 30 */ CH_U_UML, \
+    /* 31 */ CH_N_TIL, \
+    /* 32 */ CH_N_TIL, \
+    /* 33 */ CH_S_CED, \
+    /* 34 */ quote_key, \
+    /* 35 */ CH_A_CIRC, \
+    /* 36 */ CH_O_UML, \
+    /* 37 */ CH_C_CED, \
+    /* 38 */ ","
+
+/* AltGr layers; i_lo / i_up are AltGr (+ Shift) on the I key. */
+#define CRH_EXTRA_ENTRIES(i_lo, i_up) \
+    { 0x1E,   L_ALTGR_SHIFT, "|" }, \
+    { 0x1F,   L_ALTGR_SHIFT, "@" }, \
+    { 0x20,   L_ALTGR_SHIFT, "#" }, \
+    { 0x21,   L_ALTGR,       "$" }, \
+    { 0x21,   L_ALTGR_SHIFT, CH_EURO }, \
+    { 0x23,   L_ALTGR_SHIFT, DK_BREVE }, \
+    { 0x24,   L_ALTGR_SHIFT, DK_ACUTE }, \
+    { 0x25,   L_ALTGR_SHIFT, DK_COMMA }, \
+    { 0x26,   L_ALTGR_SHIFT, "`" }, \
+    { 0x2D,   L_ALTGR,       "\xE2\x80\x93" },  /* U+2013 en dash */ \
+    { 0x2D,   L_ALTGR_SHIFT, "\xE2\x80\x94" },  /* U+2014 em dash */ \
+    { 0x2E,   L_ALTGR,       "{" }, \
+    { 0x2E,   L_ALTGR_SHIFT, "}" }, \
+    { 0x2F,   L_ALTGR,       "[" }, \
+    { 0x30,   L_ALTGR,       "]" }, \
+    { 0x31,   L_ALTGR,       "\\" }, \
+    { 0x31,   L_ALTGR_SHIFT, "/" }, \
+    { 0x32,   L_ALTGR,       "\\" }, \
+    { 0x32,   L_ALTGR_SHIFT, "/" }, \
+    { 0x34,   L_ALTGR,       "\xE2\x80\x99" },  /* U+2019 right single quotation mark */ \
+    { 0x34,   L_ALTGR_SHIFT, "'" }, \
+    { 0x35,   L_ALTGR,       "\xE2\x82\xB4" },  /* U+20B4 hryvnia sign */ \
+    { 0x35,   L_ALTGR_SHIFT, DK_CIRC }, \
+    { 0x38,   L_ALTGR,       "<" }, \
+    { 0x38,   L_ALTGR_SHIFT, ">" }, \
+    { 0x04,   L_ALTGR,       CH_a_CIRC }, \
+    { 0x04,   L_ALTGR_SHIFT, CH_A_CIRC }, \
+    { 0x06,   L_ALTGR,       CH_c_CED }, \
+    { 0x06,   L_ALTGR_SHIFT, CH_C_CED }, \
+    { 0x0A,   L_ALTGR,       CH_g_BREVE }, \
+    { 0x0A,   L_ALTGR_SHIFT, CH_G_BREVE }, \
+    { 0x0C,   L_ALTGR,       i_lo }, \
+    { 0x0C,   L_ALTGR_SHIFT, i_up }, \
+    { 0x11,   L_ALTGR,       CH_n_TIL }, \
+    { 0x11,   L_ALTGR_SHIFT, CH_N_TIL }, \
+    { 0x12,   L_ALTGR,       CH_o_UML }, \
+    { 0x12,   L_ALTGR_SHIFT, CH_O_UML }, \
+    { 0x16,   L_ALTGR,       CH_s_CED }, \
+    { 0x16,   L_ALTGR_SHIFT, CH_S_CED }, \
+    { 0x18,   L_ALTGR,       CH_u_UML }, \
+    { 0x18,   L_ALTGR_SHIFT, CH_U_UML }, \
+    { KC_ISO, L_NORMAL,      "\\" }, \
+    { KC_ISO, L_SHIFT,       "/" }, \
+    { 0, 0, NULL }
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH
+static const char *const CRH_NORMAL[] = {
+    CRH_LETTERS(CH_i_DOTLESS), CRH_REST_NORMAL("i"),
+};
+static const char *const CRH_SHIFT[] = {
+    CRH_LETTERS_UP("I"), CRH_REST_SHIFT(CH_I_DOT),
+};
+static const key_entry_t CRH_EXTRA[] = { CRH_EXTRA_ENTRIES("i", CH_I_DOT) };
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH_B
+static const char *const CRH_B_NORMAL[] = {
+    CRH_LETTERS("i"), CRH_REST_NORMAL(CH_i_DOTLESS),
+};
+static const char *const CRH_B_SHIFT[] = {
+    CRH_LETTERS_UP(CH_I_DOT), CRH_REST_SHIFT("I"),
+};
+static const key_entry_t CRH_B_EXTRA[] = { CRH_EXTRA_ENTRIES(CH_i_DOTLESS, "I") };
+#endif
+
 /* ------------------------------------------------------------------ */
 /* Layout table structure                                             */
 /* ------------------------------------------------------------------ */
@@ -3650,6 +3787,12 @@ CHECK_TABLE(TR_NORMAL); CHECK_TABLE(TR_SHIFT);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
 CHECK_TABLE(FR_CA_NORMAL); CHECK_TABLE(FR_CA_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH
+CHECK_TABLE(CRH_NORMAL); CHECK_TABLE(CRH_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH_B
+CHECK_TABLE(CRH_B_NORMAL); CHECK_TABLE(CRH_B_SHIFT);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
@@ -3750,6 +3893,12 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
     [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "Canadian French", KB_IME_NONE, true },
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH
+    [KB_LAYOUT_CRH] = { CRH_NORMAL, CRH_SHIFT, CRH_EXTRA, "CRH", "Crimean Tatar (Latin)", KB_IME_NONE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_CRH_B
+    [KB_LAYOUT_CRH_B] = { CRH_B_NORMAL, CRH_B_SHIFT, CRH_B_EXTRA, "CRH-B", "Crimean Tatar (Latin, variant B)", KB_IME_NONE, true },
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
     [KB_LAYOUT_VI] = { US_NORMAL, US_SHIFT, NULL, "VI", "Vietnamese (Telex)", KB_IME_TELEX, true },
 #endif
@@ -3833,8 +3982,8 @@ DK_TABLE(CEDIL, "cstgklnrCSTGKLNR",
 DK_TABLE(CARON, "cdenrstzlCDENRSTZL",
          0x10D,0x10F,0x11B,0x148,0x159,0x161,0x165,0x17E,0x13E,
          0x10C,0x10E,0x11A,0x147,0x158,0x160,0x164,0x17D,0x13D)
-DK_TABLE(BREVE, "aguAGU",
-         0x103,0x11F,0x16D, 0x102,0x11E,0x16C)
+DK_TABLE(BREVE, "aguiAGUI",
+         0x103,0x11F,0x16D,0x12D, 0x102,0x11E,0x16C,0x12C)
 DK_TABLE(DOT, "zecgIZECG",
          0x17C,0x117,0x10B,0x121, 0x130, 0x17B,0x116,0x10A,0x120)
 DK_TABLE(RING, "auAU",
@@ -3843,6 +3992,8 @@ DK_TABLE(OGONEK, "aeiuAEIU",
          0x105,0x119,0x12F,0x173, 0x104,0x118,0x12E,0x172)
 DK_TABLE(DACUTE, "ouOU",
          0x151,0x171, 0x150,0x170)
+DK_TABLE(COMMA, "stST",
+         0x219,0x21B, 0x218,0x21A)
 
 static const dead_key_t s_dead_keys[] = {
     { DK_GRAVE + 1,  GRAVE_BASES,  GRAVE_CPS },
@@ -3857,6 +4008,7 @@ static const dead_key_t s_dead_keys[] = {
     { DK_RING + 1,   RING_BASES,   RING_CPS },
     { DK_OGONEK + 1, OGONEK_BASES, OGONEK_CPS },
     { DK_DACUTE + 1, DACUTE_BASES, DACUTE_CPS },
+    { DK_COMMA + 1,  COMMA_BASES,  COMMA_CPS },
 };
 
 /* ------------------------------------------------------------------ */
@@ -4037,8 +4189,13 @@ static const char *apply_dead_key(const char *dk, const char *next)
     /* Space or the same dead key again: the accent alone. */
     if (strcmp(next, " ") == 0 || strcmp(next, dk) == 0) return spacing;
 
-    if (d && next[0] && !next[1]) {
-        const char *p = strchr(d->bases, next[0]);
+    /* Dotless i (Turkish, Crimean Tatar) takes the accents of i:
+     * acute + dotless i = i-acute, as on the Crimean Tatar layout. */
+    char base = (next[0] && !next[1]) ? next[0]
+              : (strcmp(next, "\xC4\xB1") == 0) ? 'i' : 0;
+
+    if (d && base) {
+        const char *p = strchr(d->bases, base);
         if (p) {
             uint16_t cp = d->cps[p - d->bases];   /* < U+0800 */
             buf[0] = (char)(0xC0 | (cp >> 6));
