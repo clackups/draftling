@@ -162,16 +162,18 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 #define HEADER_H     32
 #define STATUS_H     32
-#define EDITOR_Y     HEADER_H
-#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #else
 #define HEADER_H     16
 #define STATUS_H     16
-#define EDITOR_Y     HEADER_H
-#define EDITOR_H     (SCR_H - HEADER_H - STATUS_H)
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
+/* The editor body sits between the bars, or fills the screen while
+ * they are hidden (Settings -> Editor -> "Hide status bars while
+ * typing", s_bars_hidden). bars_relayout() shifts each pane's view by
+ * whole pixels (pane_t::top_px / lead_px) so the text stays put. */
+#define EDITOR_Y     (s_bars_hidden ? 0 : HEADER_H)
+#define EDITOR_H     (s_bars_hidden ? SCR_H : (SCR_H - HEADER_H - STATUS_H))
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -1428,6 +1430,135 @@ static lv_timer_t *s_batt_timer     = NULL;
 static lv_obj_t *s_img_wifi    = NULL;  /* editor screen */
 static lv_obj_t *s_img_br_wifi = NULL;  /* file browser screen */
 
+/* ---- Hide status bars while typing ----
+ * Toggled from F1 -> Settings -> Editor and persisted in NVS; on by
+ * default. While on, the editor screen's title bar and status bar
+ * (labels, separator rules, battery and WiFi icon) disappear at the
+ * first key the editor handles and come back once no key has been
+ * pressed for s_bars_idle_s seconds. A status message (Saved, Git
+ * progress, input-method candidates, ...) brings them back at once.
+ * The text area keeps its size, so nothing reflows when the bars
+ * come and go. The bars are made transparent rather than flagged
+ * hidden, because other code already toggles LV_OBJ_FLAG_HIDDEN on
+ * the status label and the WiFi icon. */
+#define NVS_KEY_HIDE_BARS   "hidebars"
+#define NVS_KEY_BARS_IDLE   "barsidle"
+static bool     s_hide_bars   = true;
+static uint16_t s_bars_idle_s = 30;
+static const uint16_t BARS_IDLE_OPTIONS[] = { 15, 30, 60, 120 };
+#define BARS_IDLE_OPTION_COUNT 4
+static bool        s_bars_hidden = false;   /* bars currently hidden */
+static lv_timer_t *s_bars_timer  = NULL;    /* idle timer, paused when unused */
+static lv_obj_t   *s_editor_hline = NULL;   /* title bar separator rule */
+static lv_obj_t   *s_editor_sline = NULL;   /* status bar separator rule */
+
+static int find_bars_idle_option(uint16_t s)
+{
+    for (int i = 0; i < BARS_IDLE_OPTION_COUNT; i++)
+        if (BARS_IDLE_OPTIONS[i] == s) return i;
+    return 1;   /* 30 s */
+}
+
+static void bars_relayout(void);
+
+static void bars_set_hidden(bool hidden)
+{
+    s_bars_hidden = hidden;
+    lv_opa_t opa = hidden ? LV_OPA_TRANSP : LV_OPA_COVER;
+    lv_obj_t *objs[] = {
+        s_lbl_title, s_lbl_status, s_img_wifi,
+#if defined(CONFIG_DRAFTLING_HAS_BATTERY)
+        s_lbl_dev_batt,
+#endif
+    };
+    for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
+        if (objs[i]) lv_obj_set_style_opa(objs[i], opa, 0);
+    }
+    /* The rules are plain (clickable) objects lying over the expanded
+     * text area: hide them outright so they do not swallow taps. */
+    lv_obj_t *rules[] = { s_editor_hline, s_editor_sline };
+    for (size_t i = 0; i < 2; i++) {
+        if (!rules[i]) continue;
+        if (hidden) lv_obj_add_flag(rules[i], LV_OBJ_FLAG_HIDDEN);
+        else        lv_obj_remove_flag(rules[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    bars_relayout();
+}
+
+/* Set by bars_typing_begin() while a key is being handled: the bars
+ * are hidden after the key unless the key posted a status message. */
+static bool s_bars_hide_pending = false;
+
+/* Show the bars and stop the idle timer (status message, idle
+ * timeout, setting switched off). */
+static void bars_show(void)
+{
+    s_bars_hide_pending = false;
+    if (s_bars_timer) lv_timer_pause(s_bars_timer);
+    if (s_bars_hidden) bars_set_hidden(false);
+}
+
+static void bars_idle_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    bars_show();
+}
+
+/* A key reached the editor: schedule hiding the bars for when the key
+ * is done (bars_typing_end()). */
+static void bars_typing_begin(void)
+{
+    s_bars_hide_pending = s_hide_bars;
+}
+
+/* After the key: hide the bars unless the key posted a status message,
+ * and restart the idle countdown. Returns true when the bars changed
+ * from shown to hidden. */
+static bool bars_typing_end(void)
+{
+    if (!s_bars_hide_pending) return false;
+    s_bars_hide_pending = false;
+    uint32_t ms = (uint32_t)s_bars_idle_s * 1000U;
+    if (!s_bars_timer) {
+        s_bars_timer = lv_timer_create(bars_idle_timer_cb, ms, NULL);
+        if (!s_bars_timer) return false;
+    } else {
+        lv_timer_set_period(s_bars_timer, ms);
+    }
+    lv_timer_reset(s_bars_timer);
+    lv_timer_resume(s_bars_timer);
+    if (s_bars_hidden) return false;
+    bars_set_hidden(true);
+    return true;
+}
+
+static void load_hide_bars_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 1;
+        if (nvs_get_u8(h, NVS_KEY_HIDE_BARS, &v) == ESP_OK) {
+            s_hide_bars = (v != 0);
+        }
+        uint16_t s = 30;
+        if (nvs_get_u16(h, NVS_KEY_BARS_IDLE, &s) == ESP_OK) {
+            s_bars_idle_s = BARS_IDLE_OPTIONS[find_bars_idle_option(s)];
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_hide_bars_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_HIDE_BARS, s_hide_bars ? 1 : 0);
+        nvs_set_u16(h, NVS_KEY_BARS_IDLE, s_bars_idle_s);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 /* ---- Key-event input queue ----
  * The BLE callback runs on the HID host task and must not block on the
  * LVGL mutex.  Key events are enqueued here from the BLE context (ISR-
@@ -1616,6 +1747,19 @@ typedef struct {
     int           top_px;
     int           top_px_line;
     editor_doc_t *top_px_doc;
+    /* top_px was set by bars_relayout() to keep the text in place when
+     * the status bars hid / showed: it need not be a whole number of
+     * visual rows, so refresh_active_pane() leaves it alone. */
+    bool          top_px_free;
+
+    /* Blank pixels above the scroll line, under the same validity rule
+     * as top_px (lead_line / lead_doc). Set by bars_relayout() when the
+     * status bars hide with the document's first line at the top: no
+     * text above to fill the title bar's place, so the text starts
+     * lower instead of moving up. */
+    int           lead_px;
+    int           lead_line;
+    editor_doc_t *lead_doc;
 
     /* The format's scan state (Markdown code fence, Fountain element)
      * after lines 0..scan_ck_line-1 of scan_ck_doc, so a refresh does
@@ -1685,7 +1829,22 @@ static void pane_set_top_px(int px)
     s_rp->top_px      = px > 0 ? px : 0;
     s_rp->top_px_line = editor_get_scroll_line();
     s_rp->top_px_doc  = s_rp->doc;
+    s_rp->top_px_free = false;
 }
+
+/* Current pane's blank lead above the scroll line (pane_t::lead_px);
+ * 0 once the scroll line or document has changed. */
+static int pane_lead_px(void)
+{
+    if (s_rp->lead_px <= 0) return 0;
+    if (s_rp->lead_doc != s_rp->doc ||
+        s_rp->lead_line != editor_get_scroll_line()) return 0;
+    return s_rp->lead_px;
+}
+
+/* Set while bars_relayout() renders a pane only to measure a line:
+ * refresh_active_pane() then does not scroll to the cursor. */
+static bool s_no_autoscroll = false;
 
 /* Split layout: single pane, or a two-pane split along the display's
  * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
@@ -3192,7 +3351,7 @@ static void refresh_active_pane(bool draw_cursor)
         /* running y position in editor content area; the scroll line
          * may start above the pane top (see pane_t::top_px) */
         int top_px = pane_top_px();
-        int y_pos = -top_px;
+        int y_pos = pane_lead_px() - top_px;
         int first_h = 0;     /* rendered height of the scroll line */
         int first_pitch = LINE_H; /* its visual row pitch */
         cur_y = -1;
@@ -3492,6 +3651,7 @@ static void refresh_active_pane(bool draw_cursor)
          * Clamped to cur_line so the jump cannot scroll past the very
          * line it is trying to bring into view. Use cur_y + cur_h to
          * ensure the full cursor row is visible. */
+        if (s_no_autoscroll) break;
         if (scroll < cur_line &&
             (!cur_rendered || cur_y + cur_h > s_rp->h)) {
             int new_scroll = scroll + scroll_jump_step();
@@ -3508,6 +3668,7 @@ static void refresh_active_pane(bool draw_cursor)
          * the edge it crossed, like the line-granular jumps above,
          * and top_px is kept a whole number of visual rows so no row
          * is cut at the top edge. */
+        bool top_free = s_rp->top_px_free && top_px > 0;
         if (cur_line == scroll && cur_rendered && !s_touch_panning &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
             int step_px = scroll_jump_step() * first_pitch;
@@ -3523,7 +3684,8 @@ static void refresh_active_pane(bool draw_cursor)
                 pane_set_top_px(new_top);
                 continue;
             }
-        } else if (top_px > 0 && top_px > first_h - first_pitch) {
+        } else if (top_px > 0 && top_px > first_h - first_pitch &&
+                   !(top_free && top_px < first_h)) {
             /* The scroll line shrank (text deleted) below the hidden
              * part: keep at least its last row on screen. */
             pane_set_top_px(first_h - first_pitch);
@@ -4909,6 +5071,7 @@ static void set_status_with_timeout(const char *msg, uint32_t timeout_ms)
     if (s_lbl_status) lv_label_set_text(s_lbl_status, msg);
     if (s_lbl_br_status) lv_label_set_text(s_lbl_br_status, msg);
     update_status_visibility();
+    bars_show();
     if (s_status_clear_timer) {
         lv_timer_delete(s_status_clear_timer);
         s_status_clear_timer = NULL;
@@ -5541,6 +5704,8 @@ enum settings_item_t {
     SET_ITEM_FONTSZ,
     SET_ITEM_APPEND_ONLY,
     SET_ITEM_NAME_SUGGEST,
+    SET_ITEM_HIDE_BARS,
+    SET_ITEM_BARS_IDLE,      /* only while SET_ITEM_HIDE_BARS is on */
     /* Display */
     SET_ITEM_BACKLIGHT,      /* HAS_BACKLIGHT && !BACKLIGHT_BINARY */
     SET_ITEM_THEME,          /* DISPLAY_COLOR */
@@ -5639,6 +5804,15 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "Suggest character names: %s",
                  s_name_suggest ? "on" : "off");
         settings_add(SET_ITEM_NAME_SUGGEST, buf);
+        /* Hide the title / status bars while typing */
+        snprintf(buf, sizeof(buf), "Hide status bars while typing: %s",
+                 s_hide_bars ? "on" : "off");
+        settings_add(SET_ITEM_HIDE_BARS, buf);
+        if (s_hide_bars) {
+            snprintf(buf, sizeof(buf), "Show status bars after idle: %us",
+                     (unsigned)s_bars_idle_s);
+            settings_add(SET_ITEM_BARS_IDLE, buf);
+        }
         break;
 
     case SET_LVL_DISPLAY:
@@ -6053,6 +6227,21 @@ static bool settings_cycle_item(int row, int dir)
         /* Only two states, so either direction toggles it. */
         s_name_suggest = !s_name_suggest;
         save_name_suggest_to_nvs();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_HIDE_BARS) {
+        /* Only two states, so either direction toggles it. Switching
+         * it off brings hidden bars back at once. */
+        s_hide_bars = !s_hide_bars;
+        save_hide_bars_to_nvs();
+        if (!s_hide_bars) bars_show();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_BARS_IDLE) {
+        int oi = find_bars_idle_option(s_bars_idle_s);
+        oi = (oi + dir + BARS_IDLE_OPTION_COUNT) % BARS_IDLE_OPTION_COUNT;
+        s_bars_idle_s = BARS_IDLE_OPTIONS[oi];
+        save_hide_bars_to_nvs();
         refresh_settings_items();
         return true;
     } else if (idx == SET_ITEM_ORIENTATION) {
@@ -10161,6 +10350,90 @@ static void editor_ui_apply_split_mode(split_mode_t mode)
     editor_ui_refresh();
 }
 
+/* Rendered height of line `line` of the bound pane's document: render
+ * the pane from that line (without scrolling to the cursor) and read
+ * the first slot. The caller restores the view and renders again. */
+static int bars_measure_line(int line)
+{
+    editor_set_scroll_line(line);
+    s_rp->top_px = 0;
+    s_rp->lead_px = 0;
+    s_no_autoscroll = true;
+    refresh_active_pane(false);
+    s_no_autoscroll = false;
+    return s_prev_line_h[0] > 0 ? s_prev_line_h[0] : LINE_H;
+}
+
+/* Move the bound pane's text down by delta pixels relative to the pane
+ * (up when negative), by whole pixels: lines above the scroll line
+ * come in when it moves down, rows go out above the top when it moves
+ * up. heights[] are the rendered heights of the lines from the scroll
+ * line on, as last drawn. */
+static void bars_shift_view(int delta, const int *heights, int n)
+{
+    int scroll = editor_get_scroll_line();
+    int off = pane_lead_px() - pane_top_px() + delta;  /* origin of the scroll line */
+    int lead = 0, top = 0;
+    if (off > 0) {
+        while (off > 0 && scroll > 0) {
+            scroll--;
+            off -= bars_measure_line(scroll);
+        }
+        if (off > 0) lead = off;
+        else         top = -off;
+    } else {
+        top = -off;
+        for (int i = 0; i < n && heights[i] > 0 && top >= heights[i]; i++) {
+            top -= heights[i];
+            scroll++;
+        }
+    }
+    editor_set_scroll_line(scroll);
+    s_rp->top_px      = top;
+    s_rp->top_px_line = scroll;
+    s_rp->top_px_doc  = s_rp->doc;
+    s_rp->top_px_free = true;
+    s_rp->lead_px     = lead;
+    s_rp->lead_line   = scroll;
+    s_rp->lead_doc    = s_rp->doc;
+}
+
+/* The bars were hidden or shown: resize the panes to the new editor
+ * body (EDITOR_Y / EDITOR_H), shift each pane's view so the text stays
+ * where it is on screen, and redraw. When the body shrinks, a cursor
+ * now below the last visible row is scrolled up to it
+ * (refresh_active_pane() adds more if wrapped lines still push it off
+ * the pane). */
+static void bars_relayout(void)
+{
+    if (!s_scr) return;
+    int old_y[EDITOR_MAX_PANES];
+    int heights[EDITOR_MAX_PANES][MAX_LINE_LABELS];
+    for (int p = 0; p < s_pane_count; p++) {
+        old_y[p] = s_panes[p].y;
+        for (int i = 0; i < MAX_LINE_LABELS; i++)
+            heights[p][i] = s_panes[p].prev_line_visible[i]
+                          ? s_panes[p].prev_line_h[i] : 0;
+    }
+    layout_panes();
+    for (int p = 0; p < s_pane_count; p++) {
+        pane_bind(p);
+        int delta = old_y[p] - s_panes[p].y;
+        if (delta != 0 && s_editor_screen_active)
+            bars_shift_view(delta, heights[p], MAX_LINE_LABELS);
+        invalidate_render_cache();
+        int cur_line, cur_col;
+        editor_get_cursor_pos(&cur_line, &cur_col);
+        (void)cur_col;
+        int scroll = editor_get_scroll_line();
+        if (cur_line >= scroll + VISIBLE_LINES) {
+            editor_set_scroll_line(cur_line - VISIBLE_LINES + 1);
+        }
+    }
+    pane_bind_focus();
+    editor_ui_refresh();
+}
+
 /* Ctrl+3: enter / cycle the asymmetric split. First press (from single
  * or equal split) makes the first pane 2/3; a subsequent Ctrl+3 toggles
  * the first pane between 2/3 and 1/3. (First pane = left in landscape,
@@ -10478,8 +10751,19 @@ static void handle_editor_key_main(const kb_event_t *ev);
 static void handle_editor_key(const kb_event_t *ev)
 {
     s_sugg_kept = false;
+    /* A status message the key posts keeps the bars shown
+     * (set_status_with_timeout() -> bars_show()). */
+    bars_typing_begin();
     handle_editor_key_main(ev);
     if (!s_sugg_kept) suggest_hide();
+    bool bars_changed = bars_typing_end();
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* The typing fast path clips the next refresh to the cursor line,
+     * which would leave the bars on the glass. */
+    if (bars_changed) display_set_partial_clip(0, 0, 0, 0);
+#else
+    (void)bars_changed;
+#endif
 }
 
 static void handle_editor_key_main(const kb_event_t *ev)
@@ -12429,6 +12713,7 @@ static void build_screens(void)
 
     /* Header separator line */
     lv_obj_t *hline = lv_obj_create(s_scr);
+    s_editor_hline = hline;
     lv_obj_set_size(hline, SCR_W, 1);
     lv_obj_set_pos(hline, 0, HEADER_H - 1);
     lv_obj_set_style_bg_color(hline, theme_fg(), 0);
@@ -12510,6 +12795,7 @@ static void build_screens(void)
 
     /* Status bar */
     lv_obj_t *sline = lv_obj_create(s_scr);
+    s_editor_sline = sline;
     lv_obj_set_size(sline, SCR_W, 1);
     lv_obj_set_pos(sline, 0, SCR_H - STATUS_H);
     lv_obj_set_style_bg_color(sline, theme_fg(), 0);
@@ -13385,6 +13671,10 @@ static void teardown_screens(void)
      * The per-pane widgets (container, cursor, logo, line label
      * pool) are cleared for every pane. */
     s_lbl_title = s_lbl_status = NULL;
+    s_editor_hline = s_editor_sline = NULL;
+    /* The rebuilt bars start out shown. */
+    s_bars_hidden = false;
+    if (s_bars_timer) lv_timer_pause(s_bars_timer);
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
     {
@@ -13546,6 +13836,7 @@ extern "C" void editor_ui_init(void)
 #endif
     load_append_only_from_nvs();
     load_name_suggest_from_nvs();
+    load_hide_bars_from_nvs();
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();

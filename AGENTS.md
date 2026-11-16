@@ -1176,13 +1176,34 @@ header `s_lbl_settings_hdr`):
 
 ```
 Editor...     Base font size, Append-only editing, Suggest character
-              names
+              names, Hide status bars while typing, Show status bars
+              after idle (15 / 30 / 60 / 120 s, only while hiding)
 Display...    Backlight, Color theme, Orientation, Rotate 180,
               Invert display, 2x scale, Screen margins... (Left,
               Right, Top, Bottom)
 Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
+
+**Hide status bars while typing** (`s_hide_bars`, NVS `hidebars`, on
+by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):
+`handle_editor_key()` hides the editor screen's title / status bar
+widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
+made transparent with style opa, since other code toggles their
+HIDDEN flag) and restarts `s_bars_timer`; the timer and every
+`set_status_with_timeout()` call bring them back (`bars_show()`).
+`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden` (full screen while
+hidden). `bars_relayout()` re-runs `layout_panes()` and shifts each
+pane's view by the distance its top edge moved, in pixels
+(`bars_shift_view()`), so the text stays where it is: lines above the
+scroll line come in (their heights measured by rendering from them,
+`bars_measure_line()`, with `s_no_autoscroll`) or rows go out above
+the top, via `pane_t::top_px` with `top_px_free` set (not a whole
+number of rows, so `refresh_active_pane()` keeps it). At the top of
+the document the remaining gap is `pane_t::lead_px`, blank pixels
+above the first line. Both reset with the next line scroll. A cursor
+row that would fall below a shrinking body is scrolled into view. On e-paper a key that hides the bars drops the typing
+fast-path clip so the whole changed area is refreshed.
 
 **Backlight** (NN%) is only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` (the value is persisted in NVS

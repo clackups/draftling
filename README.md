@@ -93,6 +93,13 @@ load the firmware quickly without having to compile it.
   windows. The split follows the display's long side -- left/right in
   landscape, top/bottom in portrait.
 
+- **Distraction-free typing**: the title bar and status bar disappear
+  while you type, and the text area grows into their space without
+  moving the text; they come back
+  after 30 seconds without a key press, or as soon as there is a
+  message to show. Turn it off, or choose
+  15, 30, 60 or 120 seconds, in F1 -> Settings -> Editor.
+
 - **Portrait or landscape**: F1 -> Settings -> Display -> "Orientation"
   turns the whole UI 90 degrees. Takes effect after a restart.
 
