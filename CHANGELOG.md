@@ -13,11 +13,11 @@ in the git log.
   back when you stop typing for 30 seconds, or right away when there
   is a message to show (Saved, Git progress, input-method
   candidates). While they are hidden the text area grows into their
-  space without moving the text; from the next scroll on it uses the
-  whole screen height. When they return, the view scrolls if the cursor would end
-  up under them. Turn it off with F1 ->
-  Settings -> Editor -> "Hide status bars while typing", and pick 15,
-  30, 60 or 120 seconds with "Show status bars after idle".
+  space without moving the text: where the title bar was, the text
+  above shows. When they return the text stays put too, and the view
+  scrolls if the cursor would end up under them. Turn it off with
+  F1 -> Settings -> Editor -> "Hide status bars while typing", and
+  pick 15, 30, 60 or 120 seconds with "Show status bars after idle".
 
 - **Bengali in the Indic language pack**: the Indic firmware now also
   writes Bengali (Bangla) and Assamese, shaped on the device like on a

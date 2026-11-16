@@ -1192,13 +1192,17 @@ widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
 made transparent with style opa, since other code toggles their
 HIDDEN flag) and restarts `s_bars_timer`; the timer and every
 `set_status_with_timeout()` call bring them back (`bars_show()`).
-`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden`: while hidden the body
-reaches the bottom edge, and keeps starting at `HEADER_H` so the text
-does not move (`s_bars_top_gap`) until a key scrolls the focused pane
-(`handle_editor_key()` compares the scroll line and `pane_top_px()`
-around the key); then it starts at 0, and `bars_relayout()` re-runs `layout_panes()`, scrolls each
-pane just enough to keep its cursor row visible when the body shrinks,
-and redraws. On e-paper a key that hides the bars drops the typing
+`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden` (full screen while
+hidden). `bars_relayout()` re-runs `layout_panes()` and shifts each
+pane's view by the distance its top edge moved, in pixels
+(`bars_shift_view()`), so the text stays where it is: lines above the
+scroll line come in (their heights measured by rendering from them,
+`bars_measure_line()`, with `s_no_autoscroll`) or rows go out above
+the top, via `pane_t::top_px` with `top_px_free` set (not a whole
+number of rows, so `refresh_active_pane()` keeps it). At the top of
+the document the remaining gap is `pane_t::lead_px`, blank pixels
+above the first line. Both reset with the next line scroll. A cursor
+row that would fall below a shrinking body is scrolled into view. On e-paper a key that hides the bars drops the typing
 fast-path clip so the whole changed area is refreshed.
 
 **Backlight** (NN%) is only on boards with

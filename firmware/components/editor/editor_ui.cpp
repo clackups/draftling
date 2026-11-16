@@ -168,14 +168,12 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #define STATUS_H     16
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
-/* The editor body sits between the bars, or reaches the bottom of the
- * screen while they are hidden (Settings -> Editor -> "Hide status
- * bars while typing", s_bars_hidden). Right after hiding, the body
- * still starts below the title bar's place (s_bars_top_gap), so the
- * text does not move; the first scroll drops the gap. */
-#define EDITOR_Y     ((s_bars_hidden && !s_bars_top_gap) ? 0 : HEADER_H)
-#define EDITOR_H     (s_bars_hidden ? (SCR_H - EDITOR_Y) \
-                                    : (SCR_H - HEADER_H - STATUS_H))
+/* The editor body sits between the bars, or fills the screen while
+ * they are hidden (Settings -> Editor -> "Hide status bars while
+ * typing", s_bars_hidden). bars_relayout() shifts each pane's view by
+ * whole pixels (pane_t::top_px / lead_px) so the text stays put. */
+#define EDITOR_Y     (s_bars_hidden ? 0 : HEADER_H)
+#define EDITOR_H     (s_bars_hidden ? SCR_H : (SCR_H - HEADER_H - STATUS_H))
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -1450,7 +1448,6 @@ static uint16_t s_bars_idle_s = 30;
 static const uint16_t BARS_IDLE_OPTIONS[] = { 15, 30, 60, 120 };
 #define BARS_IDLE_OPTION_COUNT 4
 static bool        s_bars_hidden = false;   /* bars currently hidden */
-static bool        s_bars_top_gap = false;  /* hidden, body still below title */
 static lv_timer_t *s_bars_timer  = NULL;    /* idle timer, paused when unused */
 static lv_obj_t   *s_editor_hline = NULL;   /* title bar separator rule */
 static lv_obj_t   *s_editor_sline = NULL;   /* status bar separator rule */
@@ -1467,7 +1464,6 @@ static void bars_relayout(void);
 static void bars_set_hidden(bool hidden)
 {
     s_bars_hidden = hidden;
-    s_bars_top_gap = hidden;
     lv_opa_t opa = hidden ? LV_OPA_TRANSP : LV_OPA_COVER;
     lv_obj_t *objs[] = {
         s_lbl_title, s_lbl_status, s_img_wifi,
@@ -1751,6 +1747,19 @@ typedef struct {
     int           top_px;
     int           top_px_line;
     editor_doc_t *top_px_doc;
+    /* top_px was set by bars_relayout() to keep the text in place when
+     * the status bars hid / showed: it need not be a whole number of
+     * visual rows, so refresh_active_pane() leaves it alone. */
+    bool          top_px_free;
+
+    /* Blank pixels above the scroll line, under the same validity rule
+     * as top_px (lead_line / lead_doc). Set by bars_relayout() when the
+     * status bars hide with the document's first line at the top: no
+     * text above to fill the title bar's place, so the text starts
+     * lower instead of moving up. */
+    int           lead_px;
+    int           lead_line;
+    editor_doc_t *lead_doc;
 
     /* The format's scan state (Markdown code fence, Fountain element)
      * after lines 0..scan_ck_line-1 of scan_ck_doc, so a refresh does
@@ -1820,7 +1829,22 @@ static void pane_set_top_px(int px)
     s_rp->top_px      = px > 0 ? px : 0;
     s_rp->top_px_line = editor_get_scroll_line();
     s_rp->top_px_doc  = s_rp->doc;
+    s_rp->top_px_free = false;
 }
+
+/* Current pane's blank lead above the scroll line (pane_t::lead_px);
+ * 0 once the scroll line or document has changed. */
+static int pane_lead_px(void)
+{
+    if (s_rp->lead_px <= 0) return 0;
+    if (s_rp->lead_doc != s_rp->doc ||
+        s_rp->lead_line != editor_get_scroll_line()) return 0;
+    return s_rp->lead_px;
+}
+
+/* Set while bars_relayout() renders a pane only to measure a line:
+ * refresh_active_pane() then does not scroll to the cursor. */
+static bool s_no_autoscroll = false;
 
 /* Split layout: single pane, or a two-pane split along the display's
  * long axis with the first pane occupying 1/2, 2/3 or 1/3 of it.
@@ -3327,7 +3351,7 @@ static void refresh_active_pane(bool draw_cursor)
         /* running y position in editor content area; the scroll line
          * may start above the pane top (see pane_t::top_px) */
         int top_px = pane_top_px();
-        int y_pos = -top_px;
+        int y_pos = pane_lead_px() - top_px;
         int first_h = 0;     /* rendered height of the scroll line */
         int first_pitch = LINE_H; /* its visual row pitch */
         cur_y = -1;
@@ -3627,6 +3651,7 @@ static void refresh_active_pane(bool draw_cursor)
          * Clamped to cur_line so the jump cannot scroll past the very
          * line it is trying to bring into view. Use cur_y + cur_h to
          * ensure the full cursor row is visible. */
+        if (s_no_autoscroll) break;
         if (scroll < cur_line &&
             (!cur_rendered || cur_y + cur_h > s_rp->h)) {
             int new_scroll = scroll + scroll_jump_step();
@@ -3643,6 +3668,7 @@ static void refresh_active_pane(bool draw_cursor)
          * the edge it crossed, like the line-granular jumps above,
          * and top_px is kept a whole number of visual rows so no row
          * is cut at the top edge. */
+        bool top_free = s_rp->top_px_free && top_px > 0;
         if (cur_line == scroll && cur_rendered && !s_touch_panning &&
             (cur_y < 0 || cur_y + cur_h > s_rp->h)) {
             int step_px = scroll_jump_step() * first_pitch;
@@ -3658,7 +3684,8 @@ static void refresh_active_pane(bool draw_cursor)
                 pane_set_top_px(new_top);
                 continue;
             }
-        } else if (top_px > 0 && top_px > first_h - first_pitch) {
+        } else if (top_px > 0 && top_px > first_h - first_pitch &&
+                   !(top_free && top_px < first_h)) {
             /* The scroll line shrank (text deleted) below the hidden
              * part: keep at least its last row on screen. */
             pane_set_top_px(first_h - first_pitch);
@@ -10323,18 +10350,78 @@ static void editor_ui_apply_split_mode(split_mode_t mode)
     editor_ui_refresh();
 }
 
+/* Rendered height of line `line` of the bound pane's document: render
+ * the pane from that line (without scrolling to the cursor) and read
+ * the first slot. The caller restores the view and renders again. */
+static int bars_measure_line(int line)
+{
+    editor_set_scroll_line(line);
+    s_rp->top_px = 0;
+    s_rp->lead_px = 0;
+    s_no_autoscroll = true;
+    refresh_active_pane(false);
+    s_no_autoscroll = false;
+    return s_prev_line_h[0] > 0 ? s_prev_line_h[0] : LINE_H;
+}
+
+/* Move the bound pane's text down by delta pixels relative to the pane
+ * (up when negative), by whole pixels: lines above the scroll line
+ * come in when it moves down, rows go out above the top when it moves
+ * up. heights[] are the rendered heights of the lines from the scroll
+ * line on, as last drawn. */
+static void bars_shift_view(int delta, const int *heights, int n)
+{
+    int scroll = editor_get_scroll_line();
+    int off = pane_lead_px() - pane_top_px() + delta;  /* origin of the scroll line */
+    int lead = 0, top = 0;
+    if (off > 0) {
+        while (off > 0 && scroll > 0) {
+            scroll--;
+            off -= bars_measure_line(scroll);
+        }
+        if (off > 0) lead = off;
+        else         top = -off;
+    } else {
+        top = -off;
+        for (int i = 0; i < n && heights[i] > 0 && top >= heights[i]; i++) {
+            top -= heights[i];
+            scroll++;
+        }
+    }
+    editor_set_scroll_line(scroll);
+    s_rp->top_px      = top;
+    s_rp->top_px_line = scroll;
+    s_rp->top_px_doc  = s_rp->doc;
+    s_rp->top_px_free = true;
+    s_rp->lead_px     = lead;
+    s_rp->lead_line   = scroll;
+    s_rp->lead_doc    = s_rp->doc;
+}
+
 /* The bars were hidden or shown: resize the panes to the new editor
- * body (EDITOR_Y / EDITOR_H) and redraw. When the body shrinks, a
- * cursor now below the last visible row is scrolled up to it, by as
- * few lines as needed (refresh_active_pane() adds more if wrapped
- * lines still push it off the pane). */
+ * body (EDITOR_Y / EDITOR_H), shift each pane's view so the text stays
+ * where it is on screen, and redraw. When the body shrinks, a cursor
+ * now below the last visible row is scrolled up to it
+ * (refresh_active_pane() adds more if wrapped lines still push it off
+ * the pane). */
 static void bars_relayout(void)
 {
     if (!s_scr) return;
+    int old_y[EDITOR_MAX_PANES];
+    int heights[EDITOR_MAX_PANES][MAX_LINE_LABELS];
+    for (int p = 0; p < s_pane_count; p++) {
+        old_y[p] = s_panes[p].y;
+        for (int i = 0; i < MAX_LINE_LABELS; i++)
+            heights[p][i] = s_panes[p].prev_line_visible[i]
+                          ? s_panes[p].prev_line_h[i] : 0;
+    }
     layout_panes();
-    invalidate_all_render_caches();
     for (int p = 0; p < s_pane_count; p++) {
         pane_bind(p);
+        int delta = old_y[p] - s_panes[p].y;
+        if (delta != 0 && s_editor_screen_active)
+            bars_shift_view(delta, heights[p], MAX_LINE_LABELS);
+        invalidate_render_cache();
         int cur_line, cur_col;
         editor_get_cursor_pos(&cur_line, &cur_col);
         (void)cur_col;
@@ -10667,24 +10754,9 @@ static void handle_editor_key(const kb_event_t *ev)
     /* A status message the key posts keeps the bars shown
      * (set_status_with_timeout() -> bars_show()). */
     bars_typing_begin();
-    pane_bind_focus();
-    const pane_t *kp = s_rp;
-    int pre_scroll = editor_get_scroll_line();
-    int pre_top_px = pane_top_px();
     handle_editor_key_main(ev);
     if (!s_sugg_kept) suggest_hide();
     bool bars_changed = bars_typing_end();
-    /* The view scrolled while the bars are hidden: the text moves
-     * anyway, so let the body take the title bar's place too. */
-    if (s_bars_hidden && s_bars_top_gap) {
-        pane_bind_focus();
-        if (s_rp == kp && (editor_get_scroll_line() != pre_scroll ||
-                           pane_top_px() != pre_top_px)) {
-            s_bars_top_gap = false;
-            bars_relayout();
-            bars_changed = true;
-        }
-    }
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     /* The typing fast path clips the next refresh to the cursor line,
      * which would leave the bars on the glass. */
@@ -13602,7 +13674,6 @@ static void teardown_screens(void)
     s_editor_hline = s_editor_sline = NULL;
     /* The rebuilt bars start out shown. */
     s_bars_hidden = false;
-    s_bars_top_gap = false;
     if (s_bars_timer) lv_timer_pause(s_bars_timer);
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
