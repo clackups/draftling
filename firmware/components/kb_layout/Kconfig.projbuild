@@ -230,6 +230,25 @@ config KB_LAYOUT_ENABLE_FR_CA
         circumflex / cedilla / diaeresis / grave dead keys, guillemets
         on the key left of Z.
 
+config KB_LAYOUT_ENABLE_CRH
+    bool "Crimean Tatar, Latin (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable Ave Team's Crimean Tatar Roman keyboard layout
+        (keyboard.aveteam.org/en/crh-more): QWERTY letters with the
+        Ukrainian punctuation, the Crimean Tatar letters (dotless i,
+        g-breve, s-cedilla, n-tilde, a-circumflex, o / u-diaeresis,
+        c-cedilla) on their own keys and on AltGr. Pulls in the Latin
+        Extended-A font subset.
+
+config KB_LAYOUT_ENABLE_CRH_B
+    bool "Crimean Tatar, Latin, variant B (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Variant B of the Crimean Tatar Roman layout: the I key types
+        i (Shift: I-dot) and the key right of s-cedilla types the
+        dotless i. Pulls in the Latin Extended-A font subset.
+
 config KB_LAYOUT_ENABLE_VI
     bool "Vietnamese (Telex input)"
     default y if DRAFTLING_LANG_PACK_VIETNAMESE
@@ -400,11 +419,12 @@ config DRAFTLING_TALL_LINES
     default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI
 
 # Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
-# letters of the Central / Eastern European, Baltic and Turkish
-# languages and the spacing accents of their dead keys.
+# letters of the Central / Eastern European, Baltic, Turkish and
+# Crimean Tatar languages, the spacing accents of their dead keys and
+# a few punctuation marks (dashes, curly quotes) their layouts type.
 config DRAFTLING_HAS_LATIN_EXT_A
     bool
-    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR
+    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B
 
 config DRAFTLING_HAS_CJK
     bool

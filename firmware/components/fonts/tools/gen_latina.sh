@@ -3,11 +3,13 @@
 # pack: lowres_latina_NN.c and hires_latina_NN.c.
 #
 # Coverage: Latin Extended-A (U+0100..U+017F: Polish, Czech, Slovak,
-# Hungarian, Croatian, Slovenian, Turkish, Baltic, ...), the Romanian
+# Hungarian, Croatian, Slovenian, Turkish, Crimean Tatar, Baltic, ...), the Romanian
 # s / t with comma below (U+0218..U+021B), the spacing accents typed by
 # the dead keys (caron U+02C7, breve U+02D8, dot above U+02D9, ring
-# U+02DA, ogonek U+02DB, double acute U+02DD) and the low / high double
-# quotes (U+201D, U+201E) of the Polish and Romanian layouts.
+# U+02DA, ogonek U+02DB, double acute U+02DD), the low / high double
+# quotes (U+201D, U+201E) of the Polish and Romanian layouts and the
+# en / em dashes and right single quote (U+2013, U+2014, U+2019) of the
+# Crimean Tatar layout.
 #
 # Greybeard and Hack both cover all of it.
 #
@@ -18,7 +20,7 @@
 set -e
 CONV="node $1"; GB="$2"; HACK="$3"; OUT="$4"
 
-RANGE=0x100-0x17F,0x218-0x21B,0x2C7,0x2D8-0x2DB,0x2DD,0x201D-0x201E
+RANGE=0x100-0x17F,0x218-0x21B,0x2C7,0x2D8-0x2DB,0x2DD,0x2013-0x2014,0x2019,0x201D-0x201E
 
 fixup() {
     # Replace lv_font_conv's include block with a plain #include "lvgl.h"
