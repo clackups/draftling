@@ -1428,6 +1428,125 @@ static lv_timer_t *s_batt_timer     = NULL;
 static lv_obj_t *s_img_wifi    = NULL;  /* editor screen */
 static lv_obj_t *s_img_br_wifi = NULL;  /* file browser screen */
 
+/* ---- Hide status bars while typing ----
+ * Toggled from F1 -> Settings -> Editor and persisted in NVS; on by
+ * default. While on, the editor screen's title bar and status bar
+ * (labels, separator rules, battery and WiFi icon) disappear at the
+ * first key the editor handles and come back once no key has been
+ * pressed for s_bars_idle_s seconds. A status message (Saved, Git
+ * progress, input-method candidates, ...) brings them back at once.
+ * The text area keeps its size, so nothing reflows when the bars
+ * come and go. The bars are made transparent rather than flagged
+ * hidden, because other code already toggles LV_OBJ_FLAG_HIDDEN on
+ * the status label and the WiFi icon. */
+#define NVS_KEY_HIDE_BARS   "hidebars"
+#define NVS_KEY_BARS_IDLE   "barsidle"
+static bool     s_hide_bars   = true;
+static uint16_t s_bars_idle_s = 30;
+static const uint16_t BARS_IDLE_OPTIONS[] = { 15, 30, 60, 120 };
+#define BARS_IDLE_OPTION_COUNT 4
+static bool        s_bars_hidden = false;   /* bars currently hidden */
+static lv_timer_t *s_bars_timer  = NULL;    /* idle timer, paused when unused */
+static lv_obj_t   *s_editor_hline = NULL;   /* title bar separator rule */
+static lv_obj_t   *s_editor_sline = NULL;   /* status bar separator rule */
+
+static int find_bars_idle_option(uint16_t s)
+{
+    for (int i = 0; i < BARS_IDLE_OPTION_COUNT; i++)
+        if (BARS_IDLE_OPTIONS[i] == s) return i;
+    return 1;   /* 30 s */
+}
+
+static void bars_set_hidden(bool hidden)
+{
+    s_bars_hidden = hidden;
+    lv_opa_t opa = hidden ? LV_OPA_TRANSP : LV_OPA_COVER;
+    lv_obj_t *objs[] = {
+        s_lbl_title, s_editor_hline, s_editor_sline, s_lbl_status,
+        s_img_wifi,
+#if defined(CONFIG_DRAFTLING_HAS_BATTERY)
+        s_lbl_dev_batt,
+#endif
+    };
+    for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
+        if (objs[i]) lv_obj_set_style_opa(objs[i], opa, 0);
+    }
+}
+
+/* Set by bars_typing_begin() while a key is being handled: the bars
+ * are hidden after the key unless the key posted a status message. */
+static bool s_bars_hide_pending = false;
+
+/* Show the bars and stop the idle timer (status message, idle
+ * timeout, setting switched off). */
+static void bars_show(void)
+{
+    s_bars_hide_pending = false;
+    if (s_bars_timer) lv_timer_pause(s_bars_timer);
+    if (s_bars_hidden) bars_set_hidden(false);
+}
+
+static void bars_idle_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    bars_show();
+}
+
+/* A key reached the editor: schedule hiding the bars for when the key
+ * is done (bars_typing_end()). */
+static void bars_typing_begin(void)
+{
+    s_bars_hide_pending = s_hide_bars;
+}
+
+/* After the key: hide the bars unless the key posted a status message,
+ * and restart the idle countdown. Returns true when the bars changed
+ * from shown to hidden. */
+static bool bars_typing_end(void)
+{
+    if (!s_bars_hide_pending) return false;
+    s_bars_hide_pending = false;
+    uint32_t ms = (uint32_t)s_bars_idle_s * 1000U;
+    if (!s_bars_timer) {
+        s_bars_timer = lv_timer_create(bars_idle_timer_cb, ms, NULL);
+        if (!s_bars_timer) return false;
+    } else {
+        lv_timer_set_period(s_bars_timer, ms);
+    }
+    lv_timer_reset(s_bars_timer);
+    lv_timer_resume(s_bars_timer);
+    if (s_bars_hidden) return false;
+    bars_set_hidden(true);
+    return true;
+}
+
+static void load_hide_bars_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 1;
+        if (nvs_get_u8(h, NVS_KEY_HIDE_BARS, &v) == ESP_OK) {
+            s_hide_bars = (v != 0);
+        }
+        uint16_t s = 30;
+        if (nvs_get_u16(h, NVS_KEY_BARS_IDLE, &s) == ESP_OK) {
+            s_bars_idle_s = BARS_IDLE_OPTIONS[find_bars_idle_option(s)];
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_hide_bars_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_HIDE_BARS, s_hide_bars ? 1 : 0);
+        nvs_set_u16(h, NVS_KEY_BARS_IDLE, s_bars_idle_s);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
 /* ---- Key-event input queue ----
  * The BLE callback runs on the HID host task and must not block on the
  * LVGL mutex.  Key events are enqueued here from the BLE context (ISR-
@@ -4909,6 +5028,7 @@ static void set_status_with_timeout(const char *msg, uint32_t timeout_ms)
     if (s_lbl_status) lv_label_set_text(s_lbl_status, msg);
     if (s_lbl_br_status) lv_label_set_text(s_lbl_br_status, msg);
     update_status_visibility();
+    bars_show();
     if (s_status_clear_timer) {
         lv_timer_delete(s_status_clear_timer);
         s_status_clear_timer = NULL;
@@ -5541,6 +5661,8 @@ enum settings_item_t {
     SET_ITEM_FONTSZ,
     SET_ITEM_APPEND_ONLY,
     SET_ITEM_NAME_SUGGEST,
+    SET_ITEM_HIDE_BARS,
+    SET_ITEM_BARS_IDLE,      /* only while SET_ITEM_HIDE_BARS is on */
     /* Display */
     SET_ITEM_BACKLIGHT,      /* HAS_BACKLIGHT && !BACKLIGHT_BINARY */
     SET_ITEM_THEME,          /* DISPLAY_COLOR */
@@ -5639,6 +5761,15 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "Suggest character names: %s",
                  s_name_suggest ? "on" : "off");
         settings_add(SET_ITEM_NAME_SUGGEST, buf);
+        /* Hide the title / status bars while typing */
+        snprintf(buf, sizeof(buf), "Hide status bars while typing: %s",
+                 s_hide_bars ? "on" : "off");
+        settings_add(SET_ITEM_HIDE_BARS, buf);
+        if (s_hide_bars) {
+            snprintf(buf, sizeof(buf), "Show status bars after idle: %us",
+                     (unsigned)s_bars_idle_s);
+            settings_add(SET_ITEM_BARS_IDLE, buf);
+        }
         break;
 
     case SET_LVL_DISPLAY:
@@ -6053,6 +6184,21 @@ static bool settings_cycle_item(int row, int dir)
         /* Only two states, so either direction toggles it. */
         s_name_suggest = !s_name_suggest;
         save_name_suggest_to_nvs();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_HIDE_BARS) {
+        /* Only two states, so either direction toggles it. Switching
+         * it off brings hidden bars back at once. */
+        s_hide_bars = !s_hide_bars;
+        save_hide_bars_to_nvs();
+        if (!s_hide_bars) bars_show();
+        refresh_settings_items();
+        return true;
+    } else if (idx == SET_ITEM_BARS_IDLE) {
+        int oi = find_bars_idle_option(s_bars_idle_s);
+        oi = (oi + dir + BARS_IDLE_OPTION_COUNT) % BARS_IDLE_OPTION_COUNT;
+        s_bars_idle_s = BARS_IDLE_OPTIONS[oi];
+        save_hide_bars_to_nvs();
         refresh_settings_items();
         return true;
     } else if (idx == SET_ITEM_ORIENTATION) {
@@ -10478,8 +10624,19 @@ static void handle_editor_key_main(const kb_event_t *ev);
 static void handle_editor_key(const kb_event_t *ev)
 {
     s_sugg_kept = false;
+    /* A status message the key posts keeps the bars shown
+     * (set_status_with_timeout() -> bars_show()). */
+    bars_typing_begin();
     handle_editor_key_main(ev);
     if (!s_sugg_kept) suggest_hide();
+    bool bars_changed = bars_typing_end();
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* The typing fast path clips the next refresh to the cursor line,
+     * which would leave the bars on the glass. */
+    if (bars_changed) display_set_partial_clip(0, 0, 0, 0);
+#else
+    (void)bars_changed;
+#endif
 }
 
 static void handle_editor_key_main(const kb_event_t *ev)
@@ -12429,6 +12586,7 @@ static void build_screens(void)
 
     /* Header separator line */
     lv_obj_t *hline = lv_obj_create(s_scr);
+    s_editor_hline = hline;
     lv_obj_set_size(hline, SCR_W, 1);
     lv_obj_set_pos(hline, 0, HEADER_H - 1);
     lv_obj_set_style_bg_color(hline, theme_fg(), 0);
@@ -12510,6 +12668,7 @@ static void build_screens(void)
 
     /* Status bar */
     lv_obj_t *sline = lv_obj_create(s_scr);
+    s_editor_sline = sline;
     lv_obj_set_size(sline, SCR_W, 1);
     lv_obj_set_pos(sline, 0, SCR_H - STATUS_H);
     lv_obj_set_style_bg_color(sline, theme_fg(), 0);
@@ -13385,6 +13544,10 @@ static void teardown_screens(void)
      * The per-pane widgets (container, cursor, logo, line label
      * pool) are cleared for every pane. */
     s_lbl_title = s_lbl_status = NULL;
+    s_editor_hline = s_editor_sline = NULL;
+    /* The rebuilt bars start out shown. */
+    s_bars_hidden = false;
+    if (s_bars_timer) lv_timer_pause(s_bars_timer);
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
     {
@@ -13546,6 +13709,7 @@ extern "C" void editor_ui_init(void)
 #endif
     load_append_only_from_nvs();
     load_name_suggest_from_nvs();
+    load_hide_bars_from_nvs();
     load_active_layouts_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();

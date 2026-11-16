@@ -1176,13 +1176,24 @@ header `s_lbl_settings_hdr`):
 
 ```
 Editor...     Base font size, Append-only editing, Suggest character
-              names
+              names, Hide status bars while typing, Show status bars
+              after idle (15 / 30 / 60 / 120 s, only while hiding)
 Display...    Backlight, Color theme, Orientation, Rotate 180,
               Invert display, 2x scale, Screen margins... (Left,
               Right, Top, Bottom)
 Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
+
+**Hide status bars while typing** (`s_hide_bars`, NVS `hidebars`, on
+by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):
+`handle_editor_key()` hides the editor screen's title / status bar
+widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
+made transparent with style opa, since other code toggles their
+HIDDEN flag) and restarts `s_bars_timer`; the timer and every
+`set_status_with_timeout()` call bring them back (`bars_show()`). The
+text area keeps its size. On e-paper a key that hides the bars drops
+the typing fast-path clip so the bar area is refreshed.
 
 **Backlight** (NN%) is only on boards with
 `CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT` (the value is persisted in NVS
