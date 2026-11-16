@@ -20,6 +20,13 @@ in the git log.
   single quote (as typed by many desktop editors) now shows these
   characters; they used to be left blank.
 
+### Changed
+
+- **Layout switch shows the status bars briefly**: while the status
+  bars are hidden for typing, switching the keyboard layout (Ctrl+L or
+  Win+Space) shows them for half a second, so you can see the new
+  layout in the title bar.
+
 ## [1.0.28] - 2026-11-16
 
 ### Added

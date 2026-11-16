@@ -1489,11 +1489,43 @@ static void bars_set_hidden(bool hidden)
  * are hidden after the key unless the key posted a status message. */
 static bool s_bars_hide_pending = false;
 
+/* A keyboard layout switch flashes the bars, so the new layout tag in
+ * the title bar can be seen: bars_flash_request() during the key makes
+ * bars_typing_end() show them for BARS_FLASH_MS, then hide them again
+ * (the idle countdown keeps running meanwhile). */
+#define BARS_FLASH_MS 500
+static bool        s_bars_flash_req   = false;
+static lv_timer_t *s_bars_flash_timer = NULL;   /* paused when unused */
+
+static void bars_flash_request(void)
+{
+    /* The title bar shows the layout tag only with several active. */
+    if (kb_layout_active_count() > 1) s_bars_flash_req = true;
+}
+
+static void bars_flash_stop(void)
+{
+    s_bars_flash_req = false;
+    if (s_bars_flash_timer) lv_timer_pause(s_bars_flash_timer);
+}
+
+static void bars_flash_timer_cb(lv_timer_t *timer)
+{
+    lv_timer_pause(timer);
+    if (!s_hide_bars || s_bars_hidden) return;
+    bars_set_hidden(true);
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    /* Refresh the whole changed area, not a typing clip. */
+    display_set_partial_clip(0, 0, 0, 0);
+#endif
+}
+
 /* Show the bars and stop the idle timer (status message, idle
  * timeout, setting switched off). */
 static void bars_show(void)
 {
     s_bars_hide_pending = false;
+    bars_flash_stop();
     if (s_bars_timer) lv_timer_pause(s_bars_timer);
     if (s_bars_hidden) bars_set_hidden(false);
 }
@@ -1516,6 +1548,8 @@ static void bars_typing_begin(void)
  * from shown to hidden. */
 static bool bars_typing_end(void)
 {
+    bool flash = s_bars_flash_req;
+    bars_flash_stop();
     if (!s_bars_hide_pending) return false;
     s_bars_hide_pending = false;
     uint32_t ms = (uint32_t)s_bars_idle_s * 1000U;
@@ -1527,6 +1561,19 @@ static bool bars_typing_end(void)
     }
     lv_timer_reset(s_bars_timer);
     lv_timer_resume(s_bars_timer);
+    if (flash) {
+        if (!s_bars_flash_timer) {
+            s_bars_flash_timer = lv_timer_create(bars_flash_timer_cb,
+                                                 BARS_FLASH_MS, NULL);
+        }
+        if (s_bars_flash_timer) {
+            lv_timer_reset(s_bars_flash_timer);
+            lv_timer_resume(s_bars_flash_timer);
+            if (!s_bars_hidden) return false;
+            bars_set_hidden(false);
+            return true;
+        }
+    }
     if (s_bars_hidden) return false;
     bars_set_hidden(true);
     return true;
@@ -10851,6 +10898,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
     if ((ev->modifier & (KB_MOD_LGUI | KB_MOD_RGUI)) &&
         ev->keycode == KB_KEY_SPACE) {
         kb_layout_next();
+        bars_flash_request();
         ensure_cursor_visible();
         editor_ui_refresh();
         return;
@@ -10987,6 +11035,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
         case 'l':
             /* Ctrl+L: cycle keyboard layout */
             kb_layout_next();
+            bars_flash_request();
             break;
         case 'm':
             /* Ctrl+M: menu, equivalent to F1 */
@@ -13675,6 +13724,7 @@ static void teardown_screens(void)
     /* The rebuilt bars start out shown. */
     s_bars_hidden = false;
     if (s_bars_timer) lv_timer_pause(s_bars_timer);
+    bars_flash_stop();
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
     {
