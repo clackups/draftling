@@ -2,7 +2,7 @@
 
 [Freenove
 FNK0104S](https://github.com/Freenove/Freenove_ESP32_S3_Display) is an
-ESP32-S3 booard with a 4" 480x320 LCD screen.
+ESP32-S3 board with a 4" 480x320 LCD screen.
 
 This enclosure consists of two 3d-printed parts, tied together by 8 M3
 screws and 4 spacers. Inside there's a pocket for a LiPo battery up to

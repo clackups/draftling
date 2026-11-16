@@ -42,7 +42,7 @@ load the firmware quickly without having to compile it.
   * [Guition JC3248W535](HARDWARE.md#guition-jc3248w535) (3.5" 480x320 color LCD, capacitive touch)
   * [VIEWE UEDX80480043E-WB-A / -WB-B](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display) (4.3" 800x480 color LCD, capacitive touch)
   * [7" and 4.3" Sunton boards](https://github.com/rzeldent/platformio-espressif32-sunton)
-  * [2.8", 3.5" and 4" Freenove boards](https://github.com/Freenove/Freenove_ESP32_S3_Display)
+  * [2.8", 3.5" and 4" Freenove boards](https://github.com/Freenove/Freenove_ESP32_S3_Display) (3D-printed enclosures available for [2.8"](3D_Prints/Freenove_fnk0104b) and [4"](3D_Prints/Freenove_fnk0104s) boards)
   * [Viewe UEDX24320028E-WB-A](https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display) board with the [UEED035HV-RX40-L001](https://viewedisplay.com/product/3-5-inch-320x480-sunlight-readable-transflective-with-super-low-power-tft-lcd-module/) 3.5" transflective display
   * [Waveshare ESP32-S3-Touch-LCD-7](https://docs.waveshare.com/ESP32-S3-Touch-LCD-7)
   * [Waveshare ESP32-S3-LCD-3.16](https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16)
