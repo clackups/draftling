@@ -1192,8 +1192,11 @@ widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
 made transparent with style opa, since other code toggles their
 HIDDEN flag) and restarts `s_bars_timer`; the timer and every
 `set_status_with_timeout()` call bring them back (`bars_show()`).
-`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden` (full screen while
-hidden), and `bars_relayout()` re-runs `layout_panes()`, scrolls each
+`EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden`: while hidden the body
+reaches the bottom edge, and keeps starting at `HEADER_H` so the text
+does not move (`s_bars_top_gap`) until a key scrolls the focused pane
+(`handle_editor_key()` compares the scroll line and `pane_top_px()`
+around the key); then it starts at 0, and `bars_relayout()` re-runs `layout_panes()`, scrolls each
 pane just enough to keep its cursor row visible when the body shrinks,
 and redraws. On e-paper a key that hides the bars drops the typing
 fast-path clip so the whole changed area is refreshed.

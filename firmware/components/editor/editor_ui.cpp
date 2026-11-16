@@ -168,11 +168,14 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
 #define STATUS_H     16
 #define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
 #endif
-/* The editor body sits between the bars, or fills the screen while
- * they are hidden (Settings -> Editor -> "Hide status bars while
- * typing", s_bars_hidden). */
-#define EDITOR_Y     (s_bars_hidden ? 0 : HEADER_H)
-#define EDITOR_H     (s_bars_hidden ? SCR_H : (SCR_H - HEADER_H - STATUS_H))
+/* The editor body sits between the bars, or reaches the bottom of the
+ * screen while they are hidden (Settings -> Editor -> "Hide status
+ * bars while typing", s_bars_hidden). Right after hiding, the body
+ * still starts below the title bar's place (s_bars_top_gap), so the
+ * text does not move; the first scroll drops the gap. */
+#define EDITOR_Y     ((s_bars_hidden && !s_bars_top_gap) ? 0 : HEADER_H)
+#define EDITOR_H     (s_bars_hidden ? (SCR_H - EDITOR_Y) \
+                                    : (SCR_H - HEADER_H - STATUS_H))
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -1447,6 +1450,7 @@ static uint16_t s_bars_idle_s = 30;
 static const uint16_t BARS_IDLE_OPTIONS[] = { 15, 30, 60, 120 };
 #define BARS_IDLE_OPTION_COUNT 4
 static bool        s_bars_hidden = false;   /* bars currently hidden */
+static bool        s_bars_top_gap = false;  /* hidden, body still below title */
 static lv_timer_t *s_bars_timer  = NULL;    /* idle timer, paused when unused */
 static lv_obj_t   *s_editor_hline = NULL;   /* title bar separator rule */
 static lv_obj_t   *s_editor_sline = NULL;   /* status bar separator rule */
@@ -1463,6 +1467,7 @@ static void bars_relayout(void);
 static void bars_set_hidden(bool hidden)
 {
     s_bars_hidden = hidden;
+    s_bars_top_gap = hidden;
     lv_opa_t opa = hidden ? LV_OPA_TRANSP : LV_OPA_COVER;
     lv_obj_t *objs[] = {
         s_lbl_title, s_lbl_status, s_img_wifi,
@@ -10662,9 +10667,24 @@ static void handle_editor_key(const kb_event_t *ev)
     /* A status message the key posts keeps the bars shown
      * (set_status_with_timeout() -> bars_show()). */
     bars_typing_begin();
+    pane_bind_focus();
+    const pane_t *kp = s_rp;
+    int pre_scroll = editor_get_scroll_line();
+    int pre_top_px = pane_top_px();
     handle_editor_key_main(ev);
     if (!s_sugg_kept) suggest_hide();
     bool bars_changed = bars_typing_end();
+    /* The view scrolled while the bars are hidden: the text moves
+     * anyway, so let the body take the title bar's place too. */
+    if (s_bars_hidden && s_bars_top_gap) {
+        pane_bind_focus();
+        if (s_rp == kp && (editor_get_scroll_line() != pre_scroll ||
+                           pane_top_px() != pre_top_px)) {
+            s_bars_top_gap = false;
+            bars_relayout();
+            bars_changed = true;
+        }
+    }
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     /* The typing fast path clips the next refresh to the cursor line,
      * which would leave the bars on the glass. */
@@ -13582,6 +13602,7 @@ static void teardown_screens(void)
     s_editor_hline = s_editor_sline = NULL;
     /* The rebuilt bars start out shown. */
     s_bars_hidden = false;
+    s_bars_top_gap = false;
     if (s_bars_timer) lv_timer_pause(s_bars_timer);
     s_img_wifi = s_img_br_wifi = NULL;
     s_pane_divider = NULL;
