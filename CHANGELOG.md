@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.28] - 2026-11-16
+
 ### Added
 
 - **Status bars hide while you type**: the title bar and the status
