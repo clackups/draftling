@@ -12359,23 +12359,34 @@ static void ble_status_text_cb(const char *text)
  * for them, and a dropped result would leave the scan picker on
  * "Scanning..." or the Draftbox prompt on its WiFi step for good --
  * e-paper flushes hold the lock longer than a short timeout. */
+/* The WiFi worker tasks below have 4 KB stacks; like wifi_state_cb(),
+ * they hand their results to the LVGL task with lv_async_call() instead
+ * of touching the UI themselves (status-bar text goes through the font
+ * chain and, with the Indic pack, HarfBuzz shaping). */
+
+/* UI side of a wifi_connect_task() failure (LVGL task, lock held). */
+static void wifi_connect_fail_apply(void *arg)
+{
+    bool not_found = (arg != NULL);
+    editor_ui_set_status(not_found ? "WiFi: no credentials found"
+                                   : "WiFi: busy, try again");
+    dbx_wifi_done(false, not_found
+        ? "No WiFi network is configured. Use F1 -> "
+          "Connectivity -> WiFi -> \"Choose network...\" first."
+        : "WiFi is busy, try again.");
+    sync_wifi_done(false);
+}
+
 static void wifi_connect_task(void *arg)
 {
     (void)arg;
     esp_err_t ret = wifi_manager_connect();
     if (ret == ESP_ERR_NOT_FOUND || ret == ESP_ERR_INVALID_STATE) {
         /* No credentials, or another connect/scan is running -- the
-         * wifi_state callback will not fire, so update the status bar
-         * directly. */
+         * wifi_state callback will not fire, so report it here. */
         if (draftling_lvgl_port_lock(-1)) {
-            editor_ui_set_status(ret == ESP_ERR_NOT_FOUND
-                                     ? "WiFi: no credentials found"
-                                     : "WiFi: busy, try again");
-            dbx_wifi_done(false, ret == ESP_ERR_NOT_FOUND
-                ? "No WiFi network is configured. Use F1 -> "
-                  "Connectivity -> WiFi -> \"Choose network...\" first."
-                : "WiFi is busy, try again.");
-            sync_wifi_done(false);
+            lv_async_call(wifi_connect_fail_apply,
+                          ret == ESP_ERR_NOT_FOUND ? (void *)1 : NULL);
             draftling_lvgl_port_unlock();
         }
     }
@@ -12397,30 +12408,52 @@ static void wifi_connect_async(void)
 /* ---- WiFi scan task ----
  * wifi_manager_scan() blocks for a few seconds; run it off the LVGL
  * task like wifi_connect_task() above. */
+typedef struct {
+    esp_err_t ret;
+    int count;
+    wifi_scan_result_t results[WIFI_SCAN_MAX_RESULTS];
+} wifi_scan_outcome_t;
+
+/* UI side of a finished scan (LVGL task, lock held). arg is a
+ * wifi_scan_outcome_t to free, or NULL when it could not be allocated
+ * (reported as a failed scan). */
+static void wifi_scan_apply(void *arg)
+{
+    wifi_scan_outcome_t *o = (wifi_scan_outcome_t *)arg;
+    esp_err_t ret = o ? o->ret : ESP_ERR_NO_MEM;
+    /* Only touch the UI if the picker is still what's on screen --
+     * the user may have backed out (Esc) while the scan was in
+     * flight. */
+    if (s_wifi_scan_picker_open) {
+        s_wifi_scan_in_progress = false;
+        s_wifi_scan_count = (ret == ESP_OK) ? o->count : 0;
+        if (ret == ESP_OK && o->count > 0) {
+            memcpy(s_wifi_scan_results, o->results,
+                   sizeof(o->results[0]) * (size_t)o->count);
+        }
+        s_wifi_scan_picker_sel = 0;
+        refresh_wifi_scan_picker_items();
+        if (ret != ESP_OK) {
+            editor_ui_set_status("WiFi: scan failed");
+        }
+    }
+    free(o);
+}
+
 static void wifi_scan_task(void *arg)
 {
     (void)arg;
-    wifi_scan_result_t results[WIFI_SCAN_MAX_RESULTS];
-    int count = 0;
-    esp_err_t ret = wifi_manager_scan(results, WIFI_SCAN_MAX_RESULTS, &count);
+    wifi_scan_outcome_t *o =
+        (wifi_scan_outcome_t *)calloc(1, sizeof(wifi_scan_outcome_t));
+    if (o) {
+        o->ret = wifi_manager_scan(o->results, WIFI_SCAN_MAX_RESULTS, &o->count);
+    }
 
     if (draftling_lvgl_port_lock(-1)) {
-        /* Only touch the UI if the picker is still what's on screen --
-         * the user may have backed out (Esc) while the scan was in
-         * flight. */
-        if (s_wifi_scan_picker_open) {
-            s_wifi_scan_in_progress = false;
-            s_wifi_scan_count = (ret == ESP_OK) ? count : 0;
-            if (ret == ESP_OK && count > 0) {
-                memcpy(s_wifi_scan_results, results, sizeof(results[0]) * (size_t)count);
-            }
-            s_wifi_scan_picker_sel = 0;
-            refresh_wifi_scan_picker_items();
-            if (ret != ESP_OK) {
-                editor_ui_set_status("WiFi: scan failed");
-            }
-        }
+        if (lv_async_call(wifi_scan_apply, o) != LV_RESULT_OK) free(o);
         draftling_lvgl_port_unlock();
+    } else {
+        free(o);
     }
     vTaskDelete(NULL);
 }
@@ -12449,6 +12482,12 @@ typedef struct {
     char password[65];
 } wifi_connect_args_t;
 
+/* UI side of a busy wifi_connect_picked_task() (LVGL task, lock held). */
+static void wifi_picked_busy_apply(void *)
+{
+    editor_ui_set_status("WiFi: busy, try again");
+}
+
 static void wifi_connect_picked_task(void *arg)
 {
     wifi_connect_args_t *args = (wifi_connect_args_t *)arg;
@@ -12457,7 +12496,7 @@ static void wifi_connect_picked_task(void *arg)
         wifi_manager_save_to_file(args->ssid, args->password);
     } else if (ret == ESP_ERR_INVALID_STATE) {
         if (draftling_lvgl_port_lock(-1)) {
-            editor_ui_set_status("WiFi: busy, try again");
+            lv_async_call(wifi_picked_busy_apply, NULL);
             draftling_lvgl_port_unlock();
         }
     }
@@ -12557,16 +12596,60 @@ static void draftbox_connect_async(const char *site, const char *otp)
 }
 
 /* ---- WiFi state callback ----
- * Called from the WiFi manager (event handler context) when the
- * connection state changes.  Must take the LVGL lock before touching
- * any UI objects. */
+ * The WiFi manager calls wifi_state_cb() from the default event loop
+ * task ("sys_evt"), whose stack is only ESP_SYSTEM_EVENT_TASK_STACK_SIZE
+ * (2304 bytes). The handling below sets the status bar (text fitting
+ * and glyph lookups through the whole font chain, plus HarfBuzz shaping
+ * with the Indic pack), saves documents and starts a Git sync, which
+ * overflowed that stack (Seeed reTerminal Sticky, Indic pack, on
+ * "WiFi: connected"). So the callback only queues the state, and
+ * wifi_state_apply() runs on the LVGL task (8-12 KB stack, LVGL lock
+ * held). A FIFO keeps the order of states that arrive in quick
+ * succession (lv_async_call() timers created in one cycle would not
+ * run in creation order). */
+#define WIFI_STATE_Q_LEN 8
+static wifi_state_t s_wifi_state_q[WIFI_STATE_Q_LEN];
+static int  s_wifi_state_q_head = 0;   /* next to apply */
+static int  s_wifi_state_q_cnt  = 0;
+static bool s_wifi_state_q_armed = false;
+
+static void wifi_state_apply(wifi_state_t state);
+
+/* lv_async_call() handler (LVGL task, lock held). */
+static void wifi_state_drain(void *)
+{
+    s_wifi_state_q_armed = false;
+    while (s_wifi_state_q_cnt > 0) {
+        wifi_state_t st = s_wifi_state_q[s_wifi_state_q_head];
+        s_wifi_state_q_head = (s_wifi_state_q_head + 1) % WIFI_STATE_Q_LEN;
+        s_wifi_state_q_cnt--;
+        wifi_state_apply(st);
+    }
+}
+
 static void wifi_state_cb(wifi_state_t state)
 {
     /* Generous timeout: an e-paper full refresh can hold the LVGL lock
      * for over a second, and a dropped CONNECTING / ERROR update would
      * leave the user with no idea what the device is doing. */
     if (!draftling_lvgl_port_lock(2000)) return;
+    if (s_wifi_state_q_cnt == WIFI_STATE_Q_LEN) {
+        /* Full: drop the oldest; the newest state is what matters. */
+        s_wifi_state_q_head = (s_wifi_state_q_head + 1) % WIFI_STATE_Q_LEN;
+        s_wifi_state_q_cnt--;
+    }
+    s_wifi_state_q[(s_wifi_state_q_head + s_wifi_state_q_cnt) % WIFI_STATE_Q_LEN] = state;
+    s_wifi_state_q_cnt++;
+    if (!s_wifi_state_q_armed &&
+        lv_async_call(wifi_state_drain, NULL) == LV_RESULT_OK) {
+        s_wifi_state_q_armed = true;
+    }
+    draftling_lvgl_port_unlock();
+}
 
+/* The UI side of a WiFi state change (LVGL task, LVGL lock held). */
+static void wifi_state_apply(wifi_state_t state)
+{
     /* While a Git sync is running, do not overwrite the on-screen
      * progress messages with WiFi state notifications -- the user
      * would otherwise see "WiFi: SSID (IP)" flicker in between
@@ -12646,7 +12729,6 @@ static void wifi_state_cb(wifi_state_t state)
     }
 
     update_wifi_icons();
-    draftling_lvgl_port_unlock();
 }
 
 /* ---- Git sync callback ----

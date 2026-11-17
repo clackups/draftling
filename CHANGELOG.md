@@ -27,6 +27,14 @@ in the git log.
   Win+Space) shows them for half a second, so you can see the new
   layout in the title bar.
 
+### Fixed
+
+- **Crash when WiFi connects**: with the Indic language pack (seen on
+  the Seeed reTerminal Sticky), the device could restart the moment
+  WiFi connected, before showing "WiFi: connected". WiFi status
+  updates are now handled by the user-interface task, which has room
+  for them.
+
 ## [1.0.28] - 2026-11-16
 
 ### Added
