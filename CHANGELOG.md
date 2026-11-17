@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.29] - 2026-11-17
+
 ### Added
 
 - **Crimean Tatar keyboard layout**: the default firmware now includes
