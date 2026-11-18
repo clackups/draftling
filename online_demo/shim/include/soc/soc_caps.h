@@ -1,0 +1,4 @@
+#pragma once
+#define SOC_WIFI_SUPPORTED 1
+#define SOC_BT_SUPPORTED   1
+#define SOC_SDMMC_HOST_SUPPORTED 1

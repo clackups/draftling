@@ -1,0 +1,222 @@
+/* Draftling online demo -- same palette as the project website (web/styles.css). */
+
+:root {
+  --bg: #f7f4ef;
+  --band: #efe9e0;
+  --surface: #ffffff;
+  --text: #22201d;
+  --muted: #6b655c;
+  --border: #e0d8cc;
+  --accent: #e0622a;
+  --accent-strong: #c24f1c;
+  --board: #1f2a24;
+  --board-edge: #121915;
+  --bezel: #0b0b0c;
+  --shadow: 0 1px 2px rgba(34, 32, 29, 0.08), 0 18px 40px rgba(34, 32, 29, 0.22);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614;
+    --band: #1e1c19;
+    --surface: #26231f;
+    --text: #ece8e1;
+    --muted: #a39c91;
+    --border: #38342e;
+    --accent: #f07a45;
+    --accent-strong: #ff9461;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent-strong); text-underline-offset: 0.18em; }
+a:hover { color: var(--accent); }
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  padding: 0.05em 0.4em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem;
+  max-width: 68rem;
+  margin: 0 auto;
+}
+.brand {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand::before { content: "# "; color: var(--accent); }
+.tag {
+  font-size: 0.8rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 0.6rem;
+}
+.top nav { margin-left: auto; display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.95rem; }
+
+main {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+
+/* ---- the device ---- */
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 0 1.5rem;
+}
+
+.device {
+  /* --zoom is set by demo.js: CSS pixels per panel pixel. */
+  --zoom: 2;
+  background: linear-gradient(160deg, var(--board), var(--board-edge));
+  border-radius: 18px;
+  padding: 18px 18px 10px;
+  box-shadow: var(--shadow);
+  max-width: 100%;
+}
+.bezel {
+  background: var(--bezel);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.glass {
+  position: relative;
+  line-height: 0;
+  background: #000;
+  overflow: hidden;
+}
+#screen {
+  display: block;
+  width: calc(480px * var(--zoom));
+  height: calc(320px * var(--zoom));
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  cursor: text;
+  outline: none;
+  transition: filter 120ms linear;
+  touch-action: none;
+}
+.glass::after {
+  /* a faint reflection on the glass */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 40%);
+}
+.device.focused .bezel { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 0 2px var(--accent); }
+
+.board-label {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.82);
+  color: #eee;
+  line-height: 1.5;
+  text-align: center;
+  padding: 1rem;
+  cursor: pointer;
+}
+.overlay[hidden] { display: none; }
+.overlay p { margin: 0; max-width: 26rem; font-size: 1rem; }
+
+.focus-hint {
+  font-size: 0.9rem;
+  color: var(--muted);
+  min-height: 1.4em;
+}
+.focus-hint.hidden { visibility: hidden; }
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+}
+button {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button:active { transform: translateY(1px); border-bottom-width: 2px; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.keys button { font-family: var(--font-mono); font-size: 0.85rem; }
+.keys button span { font-family: var(--font-sans); color: var(--muted); margin-left: 0.25rem; }
+
+/* ---- text ---- */
+
+.about {
+  max-width: 44rem;
+  margin: 0 auto;
+}
+.about h1 {
+  font-size: 1.6rem;
+  line-height: 1.2;
+  margin: 1rem 0 0.75rem;
+}
+.about ul { padding-left: 1.2rem; }
+.about li { margin: 0.3rem 0; }
+.actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; margin: 0.25rem 0; }
+.noscript { text-align: center; padding: 2rem; }
+
+@media (max-width: 600px) {
+  .device { padding: 10px 10px 6px; border-radius: 12px; }
+  .bezel { padding: 6px; }
+  .top nav { margin-left: 0; }
+}

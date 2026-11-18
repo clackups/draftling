@@ -1,0 +1,4 @@
+# Build output and fetched sources (see Makefile); the compiled
+# WebAssembly is not kept in git.
+build/
+dist/

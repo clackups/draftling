@@ -7,8 +7,8 @@ document -- `main/...`, `components/...`, `CMakeLists.txt`,
 `build/<board>` -- is relative to `firmware/` unless stated otherwise.
 The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
 (separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
-and the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this
-file.
+`online_demo/` (the WebAssembly demo, see "Online demo" below), and the
+top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
 
 ## Git Author
 
@@ -209,6 +209,27 @@ new board needs:
   otherwise), runs OTA begin / write (1 KB chunks) / end / activate
   (activate is required on 2.6+; 1.x and FG switch the boot slot in
   OTA end), then resets the C6 and checks the new version.
+
+## Online demo
+
+`online_demo/` builds the editor firmware to WebAssembly with
+Emscripten for https://demo.draftling.art/ (a simulated Freenove
+FNK0104S); `online_demo/README.md` has the toolchain installation,
+build, deployment and design notes. Its `Makefile` compiles the
+firmware's own `components/editor`, `kb_layout`, `fonts` (default
+pack, Greybeard set), `sd_card/sd_card.cpp` and
+`display/display_{margins,orientation,flip,scale}.cpp` unchanged
+against LVGL 9.6.0, with `build/sdkconfig.h` generated from the real
+`Kconfig.projbuild` files and `sdkconfig.defaults.freenove_fnk0104s`
+(`tools/gen_sdkconfig.py`, kconfiglib). ESP-IDF headers are stood in
+for by `online_demo/shim/include/`, and FreeRTOS, NVS, the display /
+touch port, BLE keyboard, WiFi, Git sync, USB MSC / Kermit, standby
+and battery by `online_demo/src/*_demo.*`: single-threaded (a task
+runs from a one-shot LVGL timer), storage in IndexedDB, network and
+USB simulated. When the editor starts using a new ESP-IDF / FreeRTOS
+call or a new function of one of those component APIs, add the stand-in
+there too, and check that `make` in `online_demo/` still builds. The
+build output (`build/`, `dist/`, the `.wasm`) is not committed.
 
 ## Repository Layout
 
