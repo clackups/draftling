@@ -1185,6 +1185,22 @@ Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
 
+**Writing timer.** `Ctrl+T` in the editor or either file browser
+opens the interval picker (`s_pt_panel`, `show_ptimer_prompt()` /
+`handle_ptimer_prompt_key()`): 15 / 25 / 50 minutes, the last pick
+preselected (NVS `ptimer`, default 25), plus "Stop the timer" while one
+runs. `ptimer_start()` sets `s_ptimer_strip` (2 px, 4 px with
+`CONFIG_DRAFTLING_DISPLAY_HIDPI`, divided by the 2x scale), and the
+editor and browser screens lay out in `CONTENT_W` (`SCR_W` minus the
+strip); `ptimer_relayout()` re-applies it to the bars, the file list
+and the panes. The line (`s_pt_bar`) is on `lv_layer_top()`, so it
+shows on every screen; `ptimer_timer_cb()` grows it from the top (on
+e-paper in 30 s steps, each followed by `lv_refr_now()` with the
+typing clip reset), blinks it for 5 s when the time is up, then
+`ptimer_stop()` gives the strip back. `standby_set_idle_inhibit()` is
+held while it runs. Code that sizes editor or browser widgets must use
+`CONTENT_W`, not `SCR_W`.
+
 **Hide status bars while typing** (`s_hide_bars`, NVS `hidebars`, on
 by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):
 `handle_editor_key()` hides the editor screen's title / status bar
@@ -2065,6 +2081,11 @@ range. The countdown is only armed on boards with
 `CONFIG_DRAFTLING_HAS_BATTERY` -- the USB-only Guition JC3248W535
 skips it, since there is nothing to conserve and unexpectedly
 blanking the display during bring-up is more disruptive than helpful.
+
+`standby_set_idle_inhibit(true)` only stops the inactivity and
+no-keyboard timers from putting the device to sleep;
+`standby_enter_sleep()` still works (Ctrl+P, power buttons). The
+editor sets it while the Ctrl+T writing timer runs.
 
 `standby_set_inhibit(true)` keeps the device awake (the editor sets it
 for the duration of a "Sync via browser" session): the timers then do

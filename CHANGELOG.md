@@ -6,6 +6,17 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Writing timer**: Ctrl+T, in the editor or the file browser, starts
+  a 15, 25 or 50 minute timer (the last choice is offered first next
+  time; 25 minutes the first time). A thin line on the right edge of
+  the screen grows from the top and reaches the bottom when the time is
+  up, then blinks for 5 seconds and goes away. The text moves aside to
+  make room for the line, so nothing is covered. The device does not go
+  to sleep on its own while a timer runs. Ctrl+T while a timer runs
+  shows the minutes left and lets you restart or stop it.
+
 ## [1.0.29] - 2026-11-17
 
 ### Added

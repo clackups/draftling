@@ -47,6 +47,15 @@ void standby_set_pre_sleep_cb(standby_pre_sleep_cb_t cb);
 void standby_set_inhibit(bool inhibit);
 
 /*
+ * Keep the device from sleeping on its own: while set, the inactivity
+ * and no-keyboard timers do nothing, but standby_enter_sleep() still
+ * works, so Ctrl+P and the power buttons put the device to sleep.
+ * Clearing it restarts the inactivity timer. Used by the editor's
+ * Ctrl+T writing timer.
+ */
+void standby_set_idle_inhibit(bool inhibit);
+
+/*
  * Enter deep sleep immediately (unless inhibited, see above).
  * On Waveshare RLCD: wakes on GPIO18 low.
  * If a pre-sleep callback is registered it is invoked first.

@@ -154,6 +154,12 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
     ? (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()) \
     : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())) \
     / display_scale_factor())
+/* Width the editor and file browser screens lay out in: the screen
+ * minus the strip on the right edge that holds the Ctrl+T writing
+ * timer's progress line while a timer runs (s_ptimer_strip, 0
+ * otherwise; see "Writing timer" below). */
+static int s_ptimer_strip = 0;
+#define CONTENT_W    (SCR_W - s_ptimer_strip)
 /* Header / status bar heights. These bars always use FONT_11, so on
  * high-density boards (which render 1:1 with the taller Hack font
  * instead of the old 2x upscale) they must be twice as tall to fit the
@@ -882,7 +888,7 @@ static void save_font_size_to_nvs(void)
  * real global here. */
 static lv_obj_t *s_scr       = NULL;
 static lv_obj_t *s_lbl_title = NULL;
-#define TITLE_W (SCR_W - 4)   /* title label width, set in build_screens() */
+#define TITLE_W (CONTENT_W - 4)   /* title label width, set in build_screens() */
 static lv_obj_t *s_lbl_status= NULL;
 static lv_obj_t *s_scr_browser = NULL;
 static lv_obj_t *s_list_files  = NULL;
@@ -1451,6 +1457,7 @@ static bool        s_bars_hidden = false;   /* bars currently hidden */
 static lv_timer_t *s_bars_timer  = NULL;    /* idle timer, paused when unused */
 static lv_obj_t   *s_editor_hline = NULL;   /* title bar separator rule */
 static lv_obj_t   *s_editor_sline = NULL;   /* status bar separator rule */
+static lv_obj_t   *s_br_sline = NULL;       /* file browser status bar rule */
 
 static int find_bars_idle_option(uint16_t s)
 {
@@ -2127,7 +2134,7 @@ static void recalc_pane_geometry(void)
 {
     if (s_pane_count <= 1) {
         s_panes[0].x = 0;
-        s_panes[0].w = SCR_W;
+        s_panes[0].w = CONTENT_W;
         s_panes[0].y = EDITOR_Y;
         s_panes[0].h = EDITOR_H;
         s_panes[1].x = 0;
@@ -2144,18 +2151,18 @@ static void recalc_pane_geometry(void)
         split_first_fraction(total, &top_h);
         int bot_h = total - top_h;
         s_panes[0].x = 0;
-        s_panes[0].w = SCR_W;
+        s_panes[0].w = CONTENT_W;
         s_panes[0].y = EDITOR_Y;
         s_panes[0].h = top_h;
         s_panes[1].x = 0;
-        s_panes[1].w = SCR_W;
+        s_panes[1].w = CONTENT_W;
         s_panes[1].y = EDITOR_Y + top_h + 1;
         s_panes[1].h = bot_h;
         return;
     }
 
     /* Left / right split: vary x + width, full height. */
-    int total = SCR_W - 1;            /* 1 px reserved for the divider */
+    int total = CONTENT_W - 1;            /* 1 px reserved for the divider */
     int left_w;
     split_first_fraction(total, &left_w);
     int right_w = total - left_w;
@@ -2192,7 +2199,7 @@ static void layout_panes(void)
             if (display_orientation_is_portrait()) {
                 /* Horizontal rule between the top and bottom panes. */
                 lv_obj_set_pos(s_pane_divider, 0, s_panes[0].y + s_panes[0].h);
-                lv_obj_set_size(s_pane_divider, SCR_W, 1);
+                lv_obj_set_size(s_pane_divider, CONTENT_W, 1);
             } else {
                 /* Vertical rule between the left and right panes. */
                 lv_obj_set_pos(s_pane_divider, s_panes[0].x + s_panes[0].w, EDITOR_Y);
@@ -5022,7 +5029,7 @@ static int status_avail_width(void)
     /* No battery; only the wifi icon at SCR_W-15. */
     right_reserved = 15 + 2;
 #endif
-    int avail = SCR_W - 2 /* left margin */ - right_reserved;
+    int avail = CONTENT_W - 2 /* left margin */ - right_reserved;
     if (avail < 0) avail = 0;
     return avail;
 }
@@ -8096,6 +8103,7 @@ static void help_common_rows(std::string &out, int cols, int kc)
     help_row(out, cols, kc, "Ctrl+R", "Full screen refresh (clears ghosting)");
 #endif
     help_row(out, cols, kc, "Ctrl+Q", "Same as Esc, for keyboards without one");
+    help_row(out, cols, kc, "Ctrl+T", "Writing timer: 15, 25 or 50 minutes, shown as a line on the right edge");
 }
 
 static void build_help_text(std::string &out, help_origin_t origin, int cols)
@@ -9552,6 +9560,347 @@ static void handle_newfmt_prompt_key(const kb_event_t *ev)
     }
 }
 
+/* ---- Writing timer (Ctrl+T) ----
+ *
+ * Ctrl+T in the editor or either file browser asks for an interval
+ * (15 / 25 / 50 minutes; the last one picked is remembered in NVS,
+ * 25 on a fresh install) and starts a timer. While it runs, a line on
+ * the right edge of the screen grows from the top and reaches the
+ * bottom when the time is up; the editor and file browser screens
+ * shrink by its width (s_ptimer_strip, CONTENT_W) so the line never
+ * covers them. The line lives on lv_layer_top(), so it shows on every
+ * screen. When the time is up the line blinks for PTIMER_BLINK_MS,
+ * then the strip is given back. Idle sleep (the inactivity and
+ * no-keyboard timers) is held off while a timer runs; Ctrl+P and the
+ * power buttons still put the device to sleep, which ends the timer. */
+#define NVS_KEY_PTIMER   "ptimer"
+#define PTIMER_OPT_COUNT 3
+static const uint8_t PTIMER_OPTIONS[PTIMER_OPT_COUNT] = { 15, 25, 50 };
+#define PTIMER_ROW_STOP  PTIMER_OPT_COUNT   /* "Stop the timer" row */
+#define PTIMER_ROW_MAX   (PTIMER_OPT_COUNT + 1)
+#define PTIMER_BLINK_MS  5000
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+/* Every change of the line is a panel refresh: grow it in steps of
+ * 30 s and blink slowly. */
+#define PTIMER_STEP_MS   30000
+#define PTIMER_BLINK_PERIOD_MS 1000
+#else
+#define PTIMER_STEP_MS   0
+#define PTIMER_BLINK_PERIOD_MS 500
+#endif
+#define PTIMER_TICK_MS   1000
+
+typedef enum { PTIMER_IDLE, PTIMER_RUNNING, PTIMER_BLINKING } ptimer_state_t;
+
+static ptimer_state_t s_pt_state    = PTIMER_IDLE;
+static uint8_t        s_pt_minutes  = 25;     /* last interval picked */
+static uint32_t       s_pt_start_ms = 0;      /* lv_tick_get() at start */
+static uint32_t       s_pt_total_ms = 0;
+static uint32_t       s_pt_blink_start_ms = 0;
+static lv_timer_t    *s_pt_timer    = NULL;   /* tick / blink timer */
+static lv_obj_t      *s_pt_bar      = NULL;   /* the line, on lv_layer_top() */
+static int            s_pt_bar_h    = -1;     /* height last drawn */
+static bool           s_pt_bar_on   = true;   /* blink phase */
+
+/* Interval picker overlay (moved onto the active screen when shown). */
+static lv_obj_t *s_pt_panel = NULL;
+static lv_obj_t *s_pt_hdr_lbl = NULL;
+static lv_obj_t *s_pt_opt_lbl[PTIMER_ROW_MAX] = { NULL, NULL, NULL, NULL };
+static bool      s_pt_open = false;
+static int       s_pt_sel  = 1;
+static int       s_pt_rows = PTIMER_OPT_COUNT;
+
+static void load_ptimer_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_PTIMER, &v) == ESP_OK) {
+            for (int i = 0; i < PTIMER_OPT_COUNT; i++)
+                if (PTIMER_OPTIONS[i] == v) s_pt_minutes = v;
+        }
+        nvs_close(h);
+    }
+}
+
+static void save_ptimer_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_PTIMER, s_pt_minutes);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+/* Width of the line: 2 px, 4 px on high-density panels, in panel
+ * pixels (the 2x scale setting doubles every LVGL pixel). */
+static int ptimer_strip_width(void)
+{
+#if defined(CONFIG_DRAFTLING_DISPLAY_HIDPI)
+    int w = 4;
+#else
+    int w = 2;
+#endif
+    w /= display_scale_factor();
+    return w < 1 ? 1 : w;
+}
+
+/* On e-paper a key handled in the same LVGL cycle may have set a
+ * one-shot partial-refresh clip for its own edit (ClipGuard), which
+ * would drop the line's change from the panel refresh. Refresh now,
+ * with the whole changed area. */
+static void ptimer_flush_now(void)
+{
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    display_set_partial_clip(0, 0, 0, 0);
+    lv_refr_now(NULL);
+#endif
+}
+
+/* Re-apply CONTENT_W to the editor and file browser screens after the
+ * strip appeared or went away, and re-wrap the editor text. */
+static void ptimer_relayout(void)
+{
+    if (!s_scr) return;
+    /* Editor screen bars */
+    if (s_lbl_title)    lv_obj_set_width(s_lbl_title, TITLE_W);
+    if (s_editor_hline) lv_obj_set_width(s_editor_hline, CONTENT_W);
+    if (s_editor_sline) lv_obj_set_width(s_editor_sline, CONTENT_W);
+    if (s_lbl_status) {
+        lv_obj_set_width(s_lbl_status, status_avail_width());
+        update_status_visibility();
+    }
+#if defined(CONFIG_DRAFTLING_HAS_BATTERY)
+    const int wifi_off = 95;
+#else
+    const int wifi_off = 15;
+#endif
+#if defined(DRAFTLING_HAS_BATT_INDICATOR)
+    if (s_lbl_dev_batt)    lv_obj_set_x(s_lbl_dev_batt, CONTENT_W - 80);
+    if (s_lbl_br_dev_batt) lv_obj_set_x(s_lbl_br_dev_batt, CONTENT_W - 80);
+#endif
+    if (s_img_wifi)    lv_obj_set_x(s_img_wifi, CONTENT_W - wifi_off);
+    if (s_img_br_wifi) lv_obj_set_x(s_img_br_wifi, CONTENT_W - wifi_off);
+    /* File browser screen */
+    if (s_list_files)    lv_obj_set_width(s_list_files, CONTENT_W);
+    if (s_br_sline)      lv_obj_set_width(s_br_sline, CONTENT_W);
+    if (s_lbl_br_status) lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4);
+
+    /* Editor panes: new widths, text re-wrapped. */
+    suggest_hide();
+    layout_panes();
+    if (s_inpane_browser_open && s_inpane_list && s_inpane_hdr) {
+        const pane_t *fp = &s_panes[s_focus];
+        lv_obj_set_width(s_inpane_hdr, (fp->w > 4) ? fp->w - 4 : fp->w);
+        lv_obj_set_width(s_inpane_list, fp->w);
+    }
+    invalidate_all_render_caches();
+    pane_bind_focus();
+    ensure_cursor_visible();
+    editor_ui_refresh();
+    update_title_bar();
+}
+
+/* Position and size the line for the current state. */
+static void ptimer_update_bar(void)
+{
+    if (!s_pt_bar) return;
+    if (s_pt_state == PTIMER_IDLE) {
+        lv_obj_add_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+        s_pt_bar_h = -1;
+        return;
+    }
+    int h = SCR_H;
+    if (s_pt_state == PTIMER_RUNNING) {
+        uint32_t el = lv_tick_elaps(s_pt_start_ms);
+        if (el > s_pt_total_ms) el = s_pt_total_ms;
+#if PTIMER_STEP_MS > 0
+        if (el < s_pt_total_ms) el -= el % PTIMER_STEP_MS;
+#endif
+        h = (int)((int64_t)SCR_H * el / s_pt_total_ms);
+    }
+    bool show = (s_pt_state == PTIMER_RUNNING) ? true : s_pt_bar_on;
+    bool hidden = lv_obj_has_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+    if (h == s_pt_bar_h && show == !hidden) return;
+    s_pt_bar_h = h;
+    int sw = ptimer_strip_width();
+    lv_obj_set_pos(s_pt_bar, SCR_W - sw, 0);
+    lv_obj_set_size(s_pt_bar, sw, h > 0 ? h : 1);
+    if (show && h > 0) lv_obj_remove_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+    else               lv_obj_add_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+    ptimer_flush_now();
+}
+
+/* (Re)create the line on the top layer in the current theme; called
+ * by build_screens(), also after a color-theme change. */
+static void ptimer_build_bar(void)
+{
+    if (s_pt_bar) lv_obj_delete(s_pt_bar);
+    s_pt_bar = lv_obj_create(lv_layer_top());
+    lv_obj_set_style_bg_color(s_pt_bar, theme_fg(), 0);
+    lv_obj_set_style_bg_opa(s_pt_bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(s_pt_bar, 0, 0);
+    lv_obj_set_style_radius(s_pt_bar, 0, 0);
+    lv_obj_set_style_pad_all(s_pt_bar, 0, 0);
+    lv_obj_remove_flag(s_pt_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_pt_bar, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+    s_pt_bar_h = -1;
+    ptimer_update_bar();
+}
+
+/* End the timer (after blinking, or "Stop the timer"): hide the line,
+ * give the strip back to the editor and file browser, allow idle
+ * sleep again. */
+static void ptimer_stop(void)
+{
+    if (s_pt_state == PTIMER_IDLE) return;
+    s_pt_state = PTIMER_IDLE;
+    if (s_pt_timer) {
+        lv_timer_delete(s_pt_timer);
+        s_pt_timer = NULL;
+    }
+    standby_set_idle_inhibit(false);
+    if (s_pt_bar) lv_obj_add_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
+    s_pt_bar_h = -1;
+    s_ptimer_strip = 0;
+    ptimer_relayout();
+    ptimer_flush_now();
+}
+
+static void ptimer_timer_cb(lv_timer_t *t)
+{
+    (void)t;
+    if (s_pt_state == PTIMER_RUNNING) {
+        if (lv_tick_elaps(s_pt_start_ms) >= s_pt_total_ms) {
+            s_pt_state = PTIMER_BLINKING;
+            s_pt_blink_start_ms = lv_tick_get();
+            s_pt_bar_on = true;
+            lv_timer_set_period(s_pt_timer, PTIMER_BLINK_PERIOD_MS);
+        }
+        ptimer_update_bar();
+        return;
+    }
+    if (s_pt_state == PTIMER_BLINKING) {
+        if (lv_tick_elaps(s_pt_blink_start_ms) >= PTIMER_BLINK_MS) {
+            ptimer_stop();
+            return;
+        }
+        s_pt_bar_on = !s_pt_bar_on;
+        ptimer_update_bar();
+    }
+}
+
+static void ptimer_start(uint8_t minutes)
+{
+    bool had_strip = (s_ptimer_strip > 0);
+    s_pt_state    = PTIMER_RUNNING;
+    s_pt_start_ms = lv_tick_get();
+    s_pt_total_ms = (uint32_t)minutes * 60u * 1000u;
+    s_pt_bar_on   = true;
+    s_pt_bar_h    = -1;
+    if (s_pt_timer) lv_timer_set_period(s_pt_timer, PTIMER_TICK_MS);
+    else            s_pt_timer = lv_timer_create(ptimer_timer_cb, PTIMER_TICK_MS, NULL);
+    standby_set_idle_inhibit(true);
+    if (!had_strip) {
+        s_ptimer_strip = ptimer_strip_width();
+        ptimer_relayout();
+    }
+    char msg[40];
+    snprintf(msg, sizeof(msg), "Timer: %u minutes", (unsigned)minutes);
+    editor_ui_set_status(msg);
+    ptimer_update_bar();
+}
+
+static void refresh_ptimer_prompt(void)
+{
+    if (!s_pt_panel) return;
+    for (int i = 0; i < PTIMER_ROW_MAX; i++) {
+        if (!s_pt_opt_lbl[i]) continue;
+        if (i >= s_pt_rows) {
+            lv_obj_add_flag(s_pt_opt_lbl[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_remove_flag(s_pt_opt_lbl[i], LV_OBJ_FLAG_HIDDEN);
+        bool sel = (i == s_pt_sel);
+        lv_obj_set_style_bg_color(s_pt_opt_lbl[i], sel ? theme_fg() : theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_pt_opt_lbl[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(s_pt_opt_lbl[i], sel ? theme_bg() : theme_fg(), 0);
+    }
+}
+
+static void show_ptimer_prompt(void)
+{
+    if (!s_pt_panel) return;
+    s_pt_open = true;
+    s_pt_rows = (s_pt_state == PTIMER_IDLE) ? PTIMER_OPT_COUNT : PTIMER_ROW_MAX;
+    s_pt_sel = 1;
+    for (int i = 0; i < PTIMER_OPT_COUNT; i++)
+        if (PTIMER_OPTIONS[i] == s_pt_minutes) s_pt_sel = i;
+
+    char hdr[64];
+    if (s_pt_state == PTIMER_RUNNING) {
+        uint32_t el = lv_tick_elaps(s_pt_start_ms);
+        uint32_t left = (el < s_pt_total_ms) ? s_pt_total_ms - el : 0;
+        snprintf(hdr, sizeof(hdr), "Timer: %u min left (Enter/Esc):",
+                 (unsigned)((left + 59999) / 60000));
+    } else {
+        snprintf(hdr, sizeof(hdr), "Start a timer (Enter/Esc):");
+    }
+    lv_label_set_text(s_pt_hdr_lbl, hdr);
+
+    int panel_h = overlay_row_y() + s_pt_rows * overlay_row_pitch() + 2 * OVERLAY_PAD;
+    lv_obj_set_size(s_pt_panel, CONTENT_W - 20, panel_h);
+    lv_obj_set_pos(s_pt_panel, 10, (SCR_H - panel_h) / 2);
+    lv_obj_set_parent(s_pt_panel, lv_scr_act());
+    lv_obj_remove_flag(s_pt_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_pt_panel);
+    refresh_ptimer_prompt();
+}
+
+static void close_ptimer_prompt(void)
+{
+    s_pt_open = false;
+    if (s_pt_panel) lv_obj_add_flag(s_pt_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void ptimer_prompt_activate(void)
+{
+    int sel = s_pt_sel;
+    close_ptimer_prompt();
+    if (sel == PTIMER_ROW_STOP) {
+        ptimer_stop();
+        editor_ui_set_status("Timer stopped");
+        return;
+    }
+    s_pt_minutes = PTIMER_OPTIONS[sel];
+    save_ptimer_to_nvs();
+    ptimer_start(s_pt_minutes);
+}
+
+static void handle_ptimer_prompt_key(const kb_event_t *ev)
+{
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        s_pt_sel = (s_pt_sel + s_pt_rows - 1) % s_pt_rows;
+        refresh_ptimer_prompt();
+        return;
+    case KB_KEY_DOWN:
+        s_pt_sel = (s_pt_sel + 1) % s_pt_rows;
+        refresh_ptimer_prompt();
+        return;
+    case KB_KEY_ENTER:
+        ptimer_prompt_activate();
+        return;
+    case KB_KEY_ESCAPE:
+        close_ptimer_prompt();
+        return;
+    default:
+        break;
+    }
+}
+
 /* ---- Delete-file confirmation logic ---- */
 
 static void refresh_delete_prompt(void)
@@ -10674,7 +11023,7 @@ static bool suggest_place(void)
     for (int i = 0; i < s_sugg.count; i++) lv_obj_set_width(s_sugg_lbl[i], inner_w);
     int w = inner_w + 2 * (pad + border);
     int h = s_sugg.count * lh + 2 * (pad + border);
-    if (w > SCR_W) w = SCR_W;
+    if (w > CONTENT_W) w = CONTENT_W;
 
     /* The typed text ends at the cursor; the list starts under its
      * first character. */
@@ -10697,7 +11046,7 @@ static bool suggest_place(void)
     int cy = s_rp->y + lv_obj_get_y(s_cursor);
     int ch = lv_obj_get_height(s_cursor);
     int x = cx - (tl ? utf8_cells_in_bytes(typed, tl) * cw : 0) - pad - border;
-    if (x + w > SCR_W) x = SCR_W - w;
+    if (x + w > CONTENT_W) x = CONTENT_W - w;
     if (x < 0) x = 0;
     int y = cy + ch + 1;
     if (y + h > s_rp->y + s_rp->h && cy - h - 1 >= 0) y = cy - h - 1;
@@ -10965,6 +11314,10 @@ static void handle_editor_key_main(const kb_event_t *ev)
             /* New empty document in the focused pane, in the format
              * picked from the overlay (see newfmt_prompt_activate()). */
             show_newfmt_prompt(NEWDOC_EDITOR);
+            return;
+        case 't':
+            /* Ctrl+T: start / stop the writing timer. */
+            show_ptimer_prompt();
             return;
         case 'o':
             /* Opening another file leaves the current document behind.
@@ -11603,6 +11956,11 @@ static void handle_browser_key(const kb_event_t *ev)
             show_menu();
             return;
         }
+        if (ck == 't') {
+            /* Ctrl+T: start / stop the writing timer. */
+            show_ptimer_prompt();
+            return;
+        }
         if (ck == 'w') {
             if (!wifi_manager_is_connected()) {
                 editor_ui_set_status("WiFi: connecting...");
@@ -11846,6 +12204,8 @@ static void process_key_event(const kb_event_t *ev)
         handle_save_prompt_key(e);
     } else if (s_newfmt_open) {
         handle_newfmt_prompt_key(e);
+    } else if (s_pt_open) {
+        handle_ptimer_prompt_key(e);
     } else if (s_del_open) {
         handle_delete_prompt_key(e);
     } else if (s_exit_open) {
@@ -12845,7 +13205,7 @@ static void build_screens(void)
     /* Header separator line */
     lv_obj_t *hline = lv_obj_create(s_scr);
     s_editor_hline = hline;
-    lv_obj_set_size(hline, SCR_W, 1);
+    lv_obj_set_size(hline, CONTENT_W, 1);
     lv_obj_set_pos(hline, 0, HEADER_H - 1);
     lv_obj_set_style_bg_color(hline, theme_fg(), 0);
     lv_obj_set_style_bg_opa(hline, LV_OPA_COVER, 0);
@@ -12863,7 +13223,7 @@ static void build_screens(void)
 
         s_cont_edit = lv_obj_create(s_scr);
         lv_obj_set_pos(s_cont_edit, 0, EDITOR_Y);
-        lv_obj_set_size(s_cont_edit, SCR_W, EDITOR_H);
+        lv_obj_set_size(s_cont_edit, CONTENT_W, EDITOR_H);
         lv_obj_set_style_bg_opa(s_cont_edit, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(s_cont_edit, 0, 0);
         lv_obj_set_style_pad_all(s_cont_edit, 0, 0);
@@ -12886,7 +13246,7 @@ static void build_screens(void)
 
         /* "draftling" text label shown when no file is open */
         s_img_logo = lv_label_create(s_cont_edit);
-        lv_obj_set_width(s_img_logo, SCR_W);
+        lv_obj_set_width(s_img_logo, CONTENT_W);
         lv_obj_set_style_text_font(s_img_logo, FONT_18, 0);
         lv_obj_set_style_text_color(s_img_logo, lv_color_make(0x80, 0x80, 0x80), 0);
         lv_obj_set_style_text_align(s_img_logo, LV_TEXT_ALIGN_CENTER, 0);
@@ -12912,7 +13272,7 @@ static void build_screens(void)
      * placeholder values. */
     s_pane_divider = lv_obj_create(s_scr);
     lv_obj_set_size(s_pane_divider, 1, EDITOR_H);
-    lv_obj_set_pos(s_pane_divider, SCR_W / 2, EDITOR_Y);
+    lv_obj_set_pos(s_pane_divider, CONTENT_W / 2, EDITOR_Y);
     lv_obj_set_style_bg_color(s_pane_divider, theme_fg(), 0);
     lv_obj_set_style_bg_opa(s_pane_divider, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(s_pane_divider, 0, 0);
@@ -12927,7 +13287,7 @@ static void build_screens(void)
     /* Status bar */
     lv_obj_t *sline = lv_obj_create(s_scr);
     s_editor_sline = sline;
-    lv_obj_set_size(sline, SCR_W, 1);
+    lv_obj_set_size(sline, CONTENT_W, 1);
     lv_obj_set_pos(sline, 0, SCR_H - STATUS_H);
     lv_obj_set_style_bg_color(sline, theme_fg(), 0);
     lv_obj_set_style_bg_opa(sline, LV_OPA_COVER, 0);
@@ -12954,7 +13314,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_lbl_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_dev_batt, theme_fg(), 0);
     lv_obj_set_style_text_align(s_lbl_dev_batt, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_lbl_dev_batt, SCR_W - 80, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_dev_batt, CONTENT_W - 80, SCR_H - STATUS_H + 2);
     lv_obj_set_width(s_lbl_dev_batt, 78);
     lv_label_set_text(s_lbl_dev_batt, "");
 #define WIFI_ICON_RIGHT_OFFSET 95   /* leave room for battery on its left */
@@ -12968,7 +13328,7 @@ static void build_screens(void)
      * status bars exist; only the fixed horizontal position is set
      * here. */
     s_img_wifi = lv_image_create(s_scr);
-    lv_obj_set_x(s_img_wifi, SCR_W - WIFI_ICON_RIGHT_OFFSET);
+    lv_obj_set_x(s_img_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET);
     lv_obj_add_flag(s_img_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
@@ -12997,7 +13357,7 @@ static void build_screens(void)
 
     s_list_files = lv_list_create(s_scr_browser);
     lv_obj_set_pos(s_list_files, 0, HEADER_H);
-    lv_obj_set_size(s_list_files, SCR_W, LIST_PANEL_H - STATUS_H);
+    lv_obj_set_size(s_list_files, CONTENT_W, LIST_PANEL_H - STATUS_H);
     lv_obj_set_style_border_width(s_list_files, 0, 0);
     lv_obj_set_style_radius(s_list_files, 0, 0);
     lv_obj_set_style_pad_all(s_list_files, 0, 0);
@@ -13034,7 +13394,8 @@ static void build_screens(void)
     lv_obj_set_style_bg_opa(s_inpane_list, LV_OPA_COVER, 0);
     lv_obj_add_flag(s_inpane_list, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *br_sline = lv_obj_create(s_scr_browser);
-    lv_obj_set_size(br_sline, SCR_W, 1);
+    s_br_sline = br_sline;
+    lv_obj_set_size(br_sline, CONTENT_W, 1);
     lv_obj_set_pos(br_sline, 0, SCR_H - STATUS_H);
     lv_obj_set_style_bg_color(br_sline, theme_fg(), 0);
     lv_obj_set_style_bg_opa(br_sline, LV_OPA_COVER, 0);
@@ -13044,7 +13405,7 @@ static void build_screens(void)
 
     s_lbl_br_status = lv_label_create(s_scr_browser);
     lv_obj_set_pos(s_lbl_br_status, 2, SCR_H - STATUS_H + 2);
-    lv_obj_set_width(s_lbl_br_status, SCR_W - 4);
+    lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4);
     lv_obj_set_style_text_font(s_lbl_br_status, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_status, theme_fg(), 0);
     lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  F2:Rename");
@@ -13055,7 +13416,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_lbl_br_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_dev_batt, theme_fg(), 0);
     lv_obj_set_style_text_align(s_lbl_br_dev_batt, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_lbl_br_dev_batt, SCR_W - 80, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_br_dev_batt, CONTENT_W - 80, SCR_H - STATUS_H + 2);
     lv_obj_set_width(s_lbl_br_dev_batt, 78);
     lv_label_set_text(s_lbl_br_dev_batt, "");
 
@@ -13075,7 +13436,7 @@ static void build_screens(void)
      * See the matching editor-screen icon above: update_wifi_icons()
      * picks the source image and vertical position. */
     s_img_br_wifi = lv_image_create(s_scr_browser);
-    lv_obj_set_x(s_img_br_wifi, SCR_W - WIFI_ICON_RIGHT_OFFSET);
+    lv_obj_set_x(s_img_br_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET);
     lv_obj_add_flag(s_img_br_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
@@ -13575,6 +13936,41 @@ static void build_screens(void)
         }
     }
 
+    /* ---- Writing-timer interval picker (Ctrl+T; sized and moved onto
+     * the active screen by show_ptimer_prompt()) ---- */
+    {
+        s_pt_open = false;
+        s_pt_panel = lv_obj_create(s_scr);
+        lv_obj_set_style_bg_color(s_pt_panel, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_pt_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_pt_panel, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_pt_panel, 2, 0);
+        lv_obj_set_style_radius(s_pt_panel, 4, 0);
+        lv_obj_set_style_pad_all(s_pt_panel, OVERLAY_PAD, 0);
+        lv_obj_remove_flag(s_pt_panel, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_pt_panel, LV_OBJ_FLAG_HIDDEN);
+
+        s_pt_hdr_lbl = lv_label_create(s_pt_panel);
+        lv_obj_set_style_text_font(s_pt_hdr_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(s_pt_hdr_lbl, theme_fg(), 0);
+        lv_obj_set_pos(s_pt_hdr_lbl, 0, 0);
+
+        for (int i = 0; i < PTIMER_ROW_MAX; i++) {
+            s_pt_opt_lbl[i] = lv_label_create(s_pt_panel);
+            lv_obj_set_style_text_font(s_pt_opt_lbl[i], FONT_11, 0);
+            lv_obj_set_style_text_color(s_pt_opt_lbl[i], theme_fg(), 0);
+            lv_obj_set_width(s_pt_opt_lbl[i], SCR_W - 20 - 12 - 8);
+            lv_obj_set_style_pad_hor(s_pt_opt_lbl[i], 2, 0);
+            if (i < PTIMER_OPT_COUNT)
+                lv_label_set_text_fmt(s_pt_opt_lbl[i], "%u minutes",
+                                      (unsigned)PTIMER_OPTIONS[i]);
+            else
+                lv_label_set_text(s_pt_opt_lbl[i], "Stop the timer");
+            lv_obj_set_pos(s_pt_opt_lbl[i], 0,
+                           overlay_row_y() + i * overlay_row_pitch());
+        }
+    }
+
     /* ---- Name-suggestion drop-down (editor screen; laid out by
      * suggest_place()) ---- */
     {
@@ -13761,6 +14157,9 @@ static void build_screens(void)
      * them, including the BLE prompt screen loaded below. */
     battery_labels_repaint();
 
+    /* Writing-timer line on the top layer, in the current theme. */
+    ptimer_build_bar();
+
     /* Start on BLE prompt screen (transitions to file browser on connect) */
     lv_scr_load(s_scr_ble_prompt);
 }
@@ -13841,6 +14240,9 @@ static void teardown_screens(void)
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
     s_newfmt_opt_lbl[0] = s_newfmt_opt_lbl[1] = s_newfmt_opt_lbl[2] = NULL;
+    s_pt_panel = s_pt_hdr_lbl = NULL;
+    for (int i = 0; i < PTIMER_ROW_MAX; i++) s_pt_opt_lbl[i] = NULL;
+    s_br_sline = NULL;
     s_del_panel = s_del_hdr_lbl = NULL;
     s_del_opt_lbl[0] = s_del_opt_lbl[1] = NULL;
     s_search_panel = s_search_hdr_lbl = NULL;
@@ -13873,6 +14275,7 @@ static void teardown_screens(void)
 #endif
     s_exit_open               = false;
     s_newfmt_open             = false;
+    s_pt_open                 = false;
     s_del_open                = false;
     s_search_open             = false;
     s_search_replace_mode     = false;
@@ -13967,6 +14370,7 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+    load_ptimer_from_nvs();
     load_name_suggest_from_nvs();
     load_hide_bars_from_nvs();
     load_active_layouts_from_nvs();

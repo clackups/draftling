@@ -76,6 +76,7 @@ static uint32_t s_timeout_sec = STANDBY_DEFAULT_TIMEOUT_SEC;
 static esp_timer_handle_t s_timer = NULL;
 static standby_pre_sleep_cb_t s_pre_sleep_cb = NULL;
 static volatile bool s_inhibit = false;    /* see standby_set_inhibit() */
+static volatile bool s_idle_inhibit = false; /* see standby_set_idle_inhibit() */
 
 /* "No keyboard connected" countdown. Armed in standby_init() from
  * CONFIG_DRAFTLING_NO_KEYBOARD_SLEEP_SEC. When it fires it checks
@@ -99,6 +100,10 @@ static volatile bool s_display_off_wake_req = false;
 static void inactivity_cb(void *arg)
 {
     (void)arg;
+    if (s_idle_inhibit) {
+        ESP_LOGI(TAG, "Inactivity timeout reached, idle sleep inhibited");
+        return;
+    }
     ESP_LOGI(TAG, "Inactivity timeout reached -- entering deep sleep");
     standby_enter_sleep();
 }
@@ -114,6 +119,10 @@ static void inactivity_cb(void *arg)
 static void kb_wait_cb(void *arg)
 {
     (void)arg;
+    if (s_idle_inhibit) {
+        ESP_LOGI(TAG, "No-keyboard timer fired, idle sleep inhibited");
+        return;
+    }
     int64_t last_pair = ble_keyboard_last_pairing_activity_us();
     if (last_pair > 0 && !ble_keyboard_is_connected()) {
         int64_t remaining = last_pair + KB_WAIT_AFTER_PAIRING_US
@@ -412,6 +421,14 @@ extern "C" void standby_set_inhibit(bool inhibit)
 {
     s_inhibit = inhibit;
     ESP_LOGI(TAG, "Sleep %s", inhibit ? "inhibited" : "allowed again");
+    if (!inhibit) standby_reset_timer();
+}
+
+extern "C" void standby_set_idle_inhibit(bool inhibit)
+{
+    if (s_idle_inhibit == inhibit) return;
+    s_idle_inhibit = inhibit;
+    ESP_LOGI(TAG, "Idle sleep %s", inhibit ? "inhibited" : "allowed again");
     if (!inhibit) standby_reset_timer();
 }
 
