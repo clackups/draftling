@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Draftling online demo</title>
+<meta name="description" content="Try Draftling, the open-source writerdeck firmware, in your browser: the real editor compiled to WebAssembly on a simulated color LCD or e-paper device.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='14' height='10' rx='2' fill='%23e0622a'/%3E%3Crect x='3' y='5' width='10' height='6' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="demo.css?v=@BUILD@">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="https://draftling.art/">Draftling</a>
+  <span class="tag">online demo</span>
+  <nav>
+    <a href="https://draftling.art/">Website</a>
+    <a href="https://github.com/clackups/draftling">GitHub</a>
+    <a href="https://flasher.draftling.art/">Install on a device</a>
+  </nav>
+</header>
+
+<main>
+  <form class="picker" id="picker" aria-label="Simulated device">
+    <label>Screen
+      <select id="board"></select>
+    </label>
+    <label>Language pack
+      <select id="pack"></select>
+    </label>
+    <button type="button" id="reset" class="secondary"
+            title="Delete the demo's documents and settings in this browser and start over">Reset demo</button>
+  </form>
+
+  <section class="stage" aria-label="Simulated Draftling device">
+    <div class="device" id="device">
+      <div class="device-row">
+        <div class="side-buttons" id="side-buttons" aria-label="Device buttons"></div>
+        <div class="bezel">
+          <div class="glass" id="glass">
+            <canvas id="screen" width="480" height="320" tabindex="0"
+                    aria-label="Draftling screen. Click here, then type."></canvas>
+            <!-- Phones and tablets: the focused text field brings up the
+                 on-screen keyboard; demo.js turns its input into keys. -->
+            <textarea id="kbd-proxy" class="kbd-proxy" tabindex="-1" rows="1"
+                      autocapitalize="off" autocomplete="off" autocorrect="off"
+                      spellcheck="false" aria-label="Keyboard input for the Draftling screen"></textarea>
+            <div class="overlay" id="overlay" hidden>
+              <p id="overlay-text"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="board-label">
+        <span id="board-label">Loading&hellip;</span>
+        <span class="busy" id="busy" hidden title="The e-paper panel is refreshing">refresh</span>
+      </div>
+    </div>
+
+    <div class="focus-hint" id="focus-hint">Click the screen, then type.</div>
+
+    <div class="keys" aria-label="Keys the browser may keep for itself">
+      <button type="button" data-key="F1">F1 <span>Menu</span></button>
+      <button type="button" data-key="Escape">Esc <span>Back</span></button>
+      <button type="button" data-key="F10">F10 <span>Help</span></button>
+      <button type="button" data-key="Ctrl+KeyL">Ctrl+L <span>Layout</span></button>
+      <button type="button" data-key="Ctrl+KeyN">Ctrl+N <span>New</span></button>
+      <button type="button" data-key="Ctrl+KeyW">Ctrl+W <span>WiFi</span></button>
+      <button type="button" data-key="Ctrl+KeyT">Ctrl+T <span>Timer</span></button>
+      <button type="button" data-key="Ctrl+Tab">Ctrl+Tab <span>Pane</span></button>
+      <span class="touch-keys">
+        <button type="button" data-key="Tab">Tab</button>
+        <button type="button" data-key="ArrowLeft" aria-label="Left">&larr;</button>
+        <button type="button" data-key="ArrowUp" aria-label="Up">&uarr;</button>
+        <button type="button" data-key="ArrowDown" aria-label="Down">&darr;</button>
+        <button type="button" data-key="ArrowRight" aria-label="Right">&rarr;</button>
+        <button type="button" data-key="Ctrl+KeyS">Ctrl+S <span>Save</span></button>
+      </span>
+    </div>
+  </section>
+
+  <section class="about">
+    <h1>Draftling in your browser</h1>
+    <p>
+      This is the real Draftling editor firmware, compiled to WebAssembly and
+      running on a simulated device. Pick the screen and the language pack
+      above: each combination is the firmware image that device would run.
+      Your keyboard stands in for the Bluetooth keyboard; the mouse or your
+      finger works the touch screen, and the buttons beside the screen are
+      the device's own.
+    </p>
+    <p class="pack-tip" id="pack-tip"></p>
+    <ul>
+      <li>Documents are kept <strong>in this browser only</strong> and shared
+        by every screen and language pack, like a MicroSD card moved between
+        devices; each screen keeps its own settings. Nothing is uploaded.</li>
+      <li>The e-paper screen refreshes with the panel's real delays: about
+        0.4 s per update, and a longer full refresh after start-up. Keys typed
+        meanwhile are queued, as on the device.</li>
+      <li>WiFi, Git sync and USB are simulated: the menus work, but no network
+        or computer is involved.</li>
+      <li>Some shortcuts belong to the browser (<kbd>Ctrl</kbd>+<kbd>N</kbd>,
+        <kbd>Ctrl</kbd>+<kbd>W</kbd>, <kbd>Ctrl</kbd>+<kbd>T</kbd>,
+        <kbd>Ctrl</kbd>+<kbd>Tab</kbd>): use the buttons under the screen.</li>
+      <li><kbd>F10</kbd> lists every shortcut, <kbd>F1</kbd> opens the menu.</li>
+      <li>On a phone or tablet, tap the screen to bring up the keyboard; the
+        arrow keys and a few more are under the screen. The phone keyboard
+        types as a US keyboard: switch to the firmware's own layouts with
+        <kbd>Ctrl</kbd>+<kbd>L</kbd>.</li>
+      <li><strong>Reset demo</strong> deletes all of the demo's documents and
+        settings in this browser and starts a fresh demo.</li>
+    </ul>
+    <p class="muted small" id="status">Loading the firmware&hellip;</p>
+    <p class="muted small">Draftling @VERSION@</p>
+  </section>
+</main>
+
+<noscript><p class="noscript">The demo needs JavaScript and WebAssembly.</p></noscript>
+
+<script src="variants.js?v=@BUILD@"></script>
+<script src="demo.js?v=@BUILD@"></script>
+</body>
+</html>

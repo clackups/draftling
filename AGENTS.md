@@ -7,8 +7,8 @@ document -- `main/...`, `components/...`, `CMakeLists.txt`,
 `build/<board>` -- is relative to `firmware/` unless stated otherwise.
 The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
 (separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
-and the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this
-file.
+`online_demo/` (the WebAssembly demo, see "Online demo" below), and the
+top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
 
 ## Git Author
 
@@ -209,6 +209,38 @@ new board needs:
   otherwise), runs OTA begin / write (1 KB chunks) / end / activate
   (activate is required on 2.6+; 1.x and FG switch the boot slot in
   OTA end), then resets the C6 and checks the new version.
+
+## Online demo
+
+`online_demo/` builds the editor firmware to WebAssembly with
+Emscripten for https://demo.draftling.art/; `online_demo/README.md` has
+the toolchain installation, build, deployment and design notes. The
+visitor picks a screen -- a simulated Freenove FNK0104S (color LCD) or
+Seeed reTerminal Sticky (e-paper) -- and a language pack; each pair is
+its own build (`BOARDS` x `PACKS` in the `Makefile`, one variant per
+`variant.mk` run, LVGL shared as one library from `lvgl.mk`). A
+variant's `sdkconfig.h` is generated from the real `Kconfig.projbuild`
+files, `sdkconfig.defaults.<board>` and `sdkconfig.defaults.lang_<pack>`
+(`tools/gen_sdkconfig.py`, kconfiglib) and read back into make, which
+selects the firmware's own `components/editor`, `kb_layout`, `fonts`,
+`ime`, `harfbuzz`, `sd_card/sd_card.cpp` and
+`display/display_{margins,orientation,flip,scale}.cpp` -- compiled
+unchanged against LVGL 9.6.0 -- the way the component `CMakeLists.txt`
+files do; `EMBED_FILES` blobs come in through `.incbin`
+(`tools/gen_embed.py`). ESP-IDF headers are stood in for by
+`online_demo/shim/include/`, and FreeRTOS, NVS, the display / touch
+port, BLE keyboard, board buttons, WiFi, Git sync, USB MSC / Kermit,
+standby and battery by `online_demo/src/*_demo.*`: single-threaded (a
+task runs from a one-shot LVGL timer), storage in IndexedDB, network
+and USB simulated. The e-paper panel (`src/display_demo.c`) follows
+`display_reterminal_sticky.cpp` (first refresh full, later ones fast,
+the next update waits while the panel is busy); keep the two in step.
+When the editor starts using a new ESP-IDF / FreeRTOS call or a new
+function of one of those component APIs, or a font / input-method
+source or data file is added, add the stand-in or the `variant.mk`
+selection there too, and check that `make` in `online_demo/` still
+builds. The build output (`build/`, `dist/`, the `.wasm`) is not
+committed.
 
 ## Repository Layout
 

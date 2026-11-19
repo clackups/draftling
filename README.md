@@ -10,6 +10,11 @@ A few [demo
 videos](https://youtube.com/playlist?list=PLbRMZQ9npKJRDrk0BhtI4gXMBIHM0c_v_)
 and [images](images/) demonstrate the firmware use.
 
+Try it in your browser: the [online demo](https://demo.draftling.art/)
+runs the real editor firmware, compiled to WebAssembly, on a simulated
+color LCD or e-paper device, with every language pack (see
+[online_demo/](online_demo/)).
+
 Seeed reTerminal Sticky running Draftling firmware:
 ![Sticky on a MagSafe stand](images/Seeed_reTerminal_Sticky_01.jpg)
 
