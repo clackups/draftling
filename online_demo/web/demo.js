@@ -1,19 +1,25 @@
 /*
  * Draftling online demo -- the page side of the simulated device.
  *
- * - Storage: the simulated SD card (/sdcard) and the settings store
- *   (/persist, holding NVS) are Emscripten IDBFS mounts, loaded from
+ * - Variants: one firmware build per screen (board) and language pack,
+ *   in fw/<board>/<pack>/ (variants.js lists the ones built). The page
+ *   loads the one picked, remembered in the URL and in localStorage.
+ * - Storage: the simulated SD card (/sdcard, shared by all variants)
+ *   and the settings store (/persist: one NVS file per board, see
+ *   src/nvs_demo.cpp) are Emscripten IDBFS mounts, loaded from
  *   IndexedDB before the firmware starts and written back every few
- *   seconds, when the firmware asks (src/demo_host.c), and when the
- *   page is hidden.
- * - Screen: the firmware hands over changed RGB565 rectangles of its
- *   frame buffer (Module.demoPresent); they are drawn 1:1 into the
- *   canvas, which CSS scales up with crisp pixels.
+ *   seconds, when the firmware asks, and when the page is hidden.
+ * - Screen: a color LCD gets changed RGB565 rectangles of the frame
+ *   buffer (Module.demoPresent). An e-paper panel gets whole frames
+ *   with the time its refresh starts and lasts (Module.demoEpdRefresh),
+ *   drawn as the panel shows them: pixels that change go grey during a
+ *   fast refresh, the whole screen flashes during a full one.
  * - Keyboard: KeyboardEvent.code (the physical key) -> HID usage code,
  *   plus the HID modifier byte, delivered like the BLE keyboard does.
  *   The firmware repeats held keys itself, so browser auto-repeat is
  *   ignored. Keyboard layouts are applied by the firmware (Ctrl+L).
  * - Touch: mouse / pen / finger on the canvas -> LVGL pointer.
+ * - Buttons: the board's own buttons beside the screen -> demo_button().
  */
 "use strict";
 
@@ -21,6 +27,66 @@
   /* Emscripten's draftling.js adopts this object as its Module. */
   const Module = window.Module = window.Module || {};
 
+  const BOARDS = {
+    freenove_fnk0104s: {
+      name: "Freenove FNK0104S",
+      label: "Freenove FNK0104S \u00b7 ST7796 4.0\" color LCD \u00b7 480\u00d7320",
+      option: "Freenove FNK0104S -- 4.0\" color LCD",
+      style: "lcd",
+      buttons: [
+        { id: 0, label: "BOOT", title: "BOOT button. Hold 2 s: forget the paired keyboards" },
+      ],
+    },
+    seeed_reterminal_sticky: {
+      name: "Seeed reTerminal Sticky",
+      label: "Seeed reTerminal Sticky \u00b7 SSD1677 3.97\" e-paper \u00b7 800\u00d7480",
+      option: "Seeed reTerminal Sticky -- 3.97\" e-paper",
+      style: "epaper",
+      buttons: [
+        { id: 0, label: "Power", title: "Power button. Press: sleep. Hold 2 s: forget the paired keyboards" },
+        { id: 1, label: "Up", title: "Page Up" },
+        { id: 2, label: "Down", title: "Page Down" },
+      ],
+    },
+  };
+
+  const PACKS = {
+    default: {
+      option: "Default -- European layouts",
+      tip: "Default pack: US, Ukrainian, German, French, Hebrew and 20 more European layouts. " +
+           "Turn on the ones you want in F1 \u2192 Settings \u2192 Keyboard \u2192 Active layouts, " +
+           "then switch with Ctrl+L.",
+    },
+    vietnamese: {
+      option: "Vietnamese",
+      tip: "Vietnamese pack: switch to VI with Ctrl+L and type Telex (aa = \u00e2, aw = \u0103, " +
+           "dd = \u0111, s f r x j = tones).",
+    },
+    korean: {
+      option: "Korean",
+      tip: "Korean pack: switch to KO with Ctrl+L; the keys type Dubeolsik Hangul and compose syllables.",
+    },
+    japanese: {
+      option: "Japanese",
+      tip: "Japanese pack: switch to JA with Ctrl+L, type romaji; Space converts to kanji, " +
+           "Enter accepts.",
+    },
+    chinese: {
+      option: "Chinese",
+      tip: "Chinese pack: switch to ZH with Ctrl+L, type pinyin and pick a candidate with " +
+           "Space or a digit.",
+    },
+    indic: {
+      option: "Indic -- Hindi, Marathi, Nepali, Bengali, Tamil",
+      tip: "Indic pack: Hindi, Marathi, Nepali, Bengali and Tamil layouts, shaped on the device " +
+           "with HarfBuzz. Tamil 99 and Hindi InScript are on: switch with Ctrl+L. Turn on the " +
+           "others in F1 \u2192 Settings \u2192 Keyboard \u2192 Active layouts.",
+    },
+  };
+
+  const DEFAULT_BOARD = "freenove_fnk0104s";
+  const DEFAULT_PACK = "default";
+  const CHOICE_KEY = "draftling-demo-variant";
   const RESET_FLAG = "draftling-demo-reset";
   const IDB_NAMES = ["/sdcard", "/persist"];
 
@@ -31,8 +97,11 @@
   const overlayText = document.getElementById("overlay-text");
   const statusEl = document.getElementById("status");
   const focusHint = document.getElementById("focus-hint");
+  const boardSel = document.getElementById("board");
+  const packSel = document.getElementById("pack");
+  const busyEl = document.getElementById("busy");
 
-  let screenW = 480, screenH = 320, screenScale = 1, upsideDown = false;
+  let screenW = 480, screenH = 320, screenScale = 1, upsideDown = false, epaper = false;
   let running = false;
   let halted = false;
   let storageOk = true;
@@ -47,7 +116,75 @@
     overlay.onclick = onClick || null;
   }
 
-  /* ---- storage ---------------------------------------------------- */
+  function lsGet(key) {
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function lsSet(key, value) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch (e) { /* ignore */ }
+  }
+
+  /* ---- variant ------------------------------------------------------ */
+
+  const built = new Set(window.DEMO_VARIANTS || []);
+  function isBuilt(board, pack) { return built.has(board + "/" + pack); }
+
+  function pickVariant() {
+    const params = new URLSearchParams(location.search);
+    const saved = (lsGet(CHOICE_KEY) || "").split("/");
+    let board = params.get("board") || saved[0] || DEFAULT_BOARD;
+    let pack = params.get("pack") || saved[1] || DEFAULT_PACK;
+    if (!BOARDS[board]) board = DEFAULT_BOARD;
+    if (!PACKS[pack]) pack = DEFAULT_PACK;
+    if (!isBuilt(board, pack)) {
+      const any = [...built].find((v) => v.startsWith(board + "/")) || [...built][0];
+      if (any) [board, pack] = any.split("/");
+    }
+    return { board, pack };
+  }
+
+  const variant = pickVariant();
+  const board = BOARDS[variant.board];
+
+  function fillPicker() {
+    for (const [id, b] of Object.entries(BOARDS)) {
+      const o = new Option(b.option, id, false, id === variant.board);
+      o.disabled = ![...built].some((v) => v.startsWith(id + "/"));
+      boardSel.add(o);
+    }
+    for (const [id, p] of Object.entries(PACKS)) {
+      const o = new Option(p.option, id, false, id === variant.pack);
+      o.disabled = !isBuilt(variant.board, id);
+      packSel.add(o);
+    }
+    const change = () => {
+      let b = boardSel.value, p = packSel.value;
+      if (!isBuilt(b, p)) p = isBuilt(b, DEFAULT_PACK) ? DEFAULT_PACK
+        : ([...built].find((v) => v.startsWith(b + "/")) || "/").split("/")[1];
+      switchTo(b, p);
+    };
+    boardSel.addEventListener("change", change);
+    packSel.addEventListener("change", change);
+    document.getElementById("pack-tip").textContent = PACKS[variant.pack].tip;
+    document.getElementById("board-label").textContent = board.label;
+    device.classList.add(board.style);
+  }
+
+  function switchTo(b, p) {
+    halted = true;
+    showOverlay("Loading " + BOARDS[b].name + "\u2026");
+    lsSet(CHOICE_KEY, b + "/" + p);
+    syncStorage(() => {
+      const params = new URLSearchParams(location.search);
+      params.set("board", b);
+      params.set("pack", p);
+      location.search = params.toString();
+    });
+  }
+
+  /* ---- storage ------------------------------------------------------ */
 
   let syncing = false, syncAgain = false, syncTimer = 0;
 
@@ -72,10 +209,9 @@
 
   function mountStorage() {
     const FS = Module.FS;
-    const IDBFS = Module.IDBFS;
     for (const dir of IDB_NAMES) {
       FS.mkdir(dir);
-      FS.mount(IDBFS, {}, dir);
+      FS.mount(Module.IDBFS, {}, dir);
     }
     Module.addRunDependency("idbfs");
     const finish = () => {
@@ -87,30 +223,34 @@
         Module.removeRunDependency("idbfs");
       });
     };
-    let reset = false;
-    try { reset = localStorage.getItem(RESET_FLAG) === "1"; } catch (e) { /* ignore */ }
-    if (reset) {
-      try { localStorage.removeItem(RESET_FLAG); } catch (e) { /* ignore */ }
+    if (lsGet(RESET_FLAG) === "1") {
+      lsSet(RESET_FLAG, null);
       deleteDatabases().then(finish);
     } else {
       finish();
     }
   }
 
-  /* ---- screen ----------------------------------------------------- */
+  /* ---- screen ------------------------------------------------------- */
+
+  /* E-paper colours: ink on paper, and the grey of a pixel in mid-waveform. */
+  const PAPER = [226, 224, 216], INK = [38, 38, 42], MID = [140, 139, 134];
 
   let image = null;
+  let panelW = 480, panelH = 320;   /* canvas pixels */
 
   function fitScreen() {
     /* As large as the window allows, up to 3x. */
     const physW = screenW * screenScale, physH = screenH * screenScale;
-    let chrome = 0;   /* horizontal padding of the board and the bezel */
+    let chrome = 0;   /* horizontal padding of the board, the bezel and the side buttons */
     for (const el of [device, device.querySelector(".bezel")]) {
       const cs = getComputedStyle(el);
       chrome += parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     }
+    const side = document.getElementById("side-buttons");
+    if (side.offsetWidth) chrome += side.offsetWidth + 12;
     const avail = device.parentElement.clientWidth - chrome;
-    const maxH = Math.max(window.innerHeight * 0.75, 240);
+    const maxH = Math.max(window.innerHeight * 0.72, 240);
     let zoom = Math.min(avail / physW, maxH / physH, 3);
     /* Whole multiples keep every panel pixel the same size; below 2x
      * a fractional zoom that fills the space reads better. */
@@ -119,12 +259,20 @@
     canvas.style.height = Math.round(physH * zoom) + "px";
   }
 
-  Module.demoSetScreen = function (w, h, scale, flip) {
-    screenW = w; screenH = h; screenScale = scale; upsideDown = !!flip;
-    canvas.width = w;
-    canvas.height = h;
+  Module.demoSetScreen = function (w, h, scale, flip, epd) {
+    screenW = w; screenH = h; screenScale = scale; upsideDown = !!flip; epaper = !!epd;
+    /* An LCD canvas is the LVGL frame (CSS scales it); an e-paper one is
+     * the panel, which gets the frame scaled up already. */
+    panelW = epaper ? w * scale : w;
+    panelH = epaper ? h * scale : h;
+    canvas.width = panelW;
+    canvas.height = panelH;
     canvas.style.transform = upsideDown ? "rotate(180deg)" : "";
-    image = ctx.createImageData(w, h);
+    image = ctx.createImageData(panelW, panelH);
+    if (epaper) {
+      shown = new Uint8Array(panelW * panelH).fill(1);
+      paint(shown, null, null);
+    }
     fitScreen();
   };
 
@@ -135,7 +283,7 @@
     const base = fbPtr >> 1;
     for (let row = y; row < y + h; row++) {
       let s = base + row * fbW + x;
-      let d = (row * screenW + x) * 4;
+      let d = (row * panelW + x) * 4;
       for (let col = 0; col < w; col++, s++, d += 4) {
         const p = src[s];
         const r = p >> 11, g = (p >> 5) & 0x3f, b = p & 0x1f;
@@ -148,7 +296,69 @@
     ctx.putImageData(image, 0, 0, x, y, w, h);
   };
 
+  /* ---- e-paper ------------------------------------------------------ */
+
+  let shown = null;       /* what the glass shows: 1 byte per pixel, 1 = white */
+  let busyCount = 0;
+
+  /* Draw frame px; where mask is set, draw maskColor instead. */
+  function paint(px, mask, maskColor) {
+    const d = image.data;
+    for (let i = 0, j = 0; i < px.length; i++, j += 4) {
+      const c = mask && mask[i] ? maskColor : (px[i] ? PAPER : INK);
+      d[j] = c[0]; d[j + 1] = c[1]; d[j + 2] = c[2]; d[j + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  function fill(color) {
+    const d = image.data;
+    for (let j = 0; j < d.length; j += 4) {
+      d[j] = color[0]; d[j + 1] = color[1]; d[j + 2] = color[2]; d[j + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  function setBusy(delta) {
+    busyCount += delta;
+    busyEl.hidden = busyCount <= 0;
+  }
+
+  Module.demoEpdRefresh = function (ptr, w, h, full, delayMs, durMs) {
+    if (!image || w !== panelW || h !== panelH) return;
+    /* Copy now: the firmware reuses the buffer for the next frame. */
+    const next = Module.HEAPU8.slice(ptr, ptr + w * h);
+    setBusy(1);
+    setTimeout(() => {
+      const prev = shown;
+      if (full) {
+        /* Full refresh: every pixel is re-driven -- the screen flashes
+         * inverted, black, white, then shows the new frame. */
+        const inv = prev.map((v) => v ^ 1);
+        paint(inv, null, null);
+        setTimeout(() => fill(INK), durMs * 0.25);
+        setTimeout(() => fill(PAPER), durMs * 0.5);
+        setTimeout(() => paint(next, null, null), durMs * 0.75);
+      } else {
+        /* Fast (differential) refresh: only the pixels that change are
+         * driven; they pass through grey before settling. */
+        const changed = new Uint8Array(next.length);
+        let any = false;
+        for (let i = 0; i < next.length; i++) {
+          if (next[i] !== prev[i]) { changed[i] = 1; any = true; }
+        }
+        if (any) {
+          paint(prev, changed, MID);
+          setTimeout(() => paint(next, null, null), durMs * 0.6);
+        }
+      }
+      shown = next;
+      setTimeout(() => setBusy(-1), durMs);
+    }, Math.max(0, delayMs));
+  };
+
   Module.demoSetBacklight = function (percent) {
+    if (epaper) return;
     /* A dimmed LCD, not a black one: keep some light at 0 %. */
     const level = Math.max(0, Math.min(100, percent));
     canvas.style.filter = level >= 100 ? "" : "brightness(" + (0.25 + 0.75 * level / 100).toFixed(3) + ")";
@@ -167,7 +377,8 @@
 
   Module.demoSleep = function () {
     halted = true;
-    canvas.style.filter = "brightness(0)";
+    /* An LCD goes dark; e-paper keeps its last picture. */
+    if (!epaper) canvas.style.filter = "brightness(0)";
     syncStorage(() => {
       showOverlay("Draftling is asleep.\nPress any key or click to wake it up.", () => location.reload());
     });
@@ -293,7 +504,38 @@
     });
   }
 
-  /* ---- touch ---------------------------------------------------------- */
+  /* ---- the board's buttons ------------------------------------------- */
+
+  function addBoardButtons() {
+    const box = document.getElementById("side-buttons");
+    for (const b of board.buttons) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "hw-button";
+      btn.textContent = b.label;
+      btn.title = b.title;
+      const press = (down) => {
+        if (running && !halted) Module._demo_button(b.id, down ? 1 : 0);
+      };
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        btn.classList.add("down");
+        press(true);
+      });
+      const up = () => {
+        if (!btn.classList.contains("down")) return;
+        btn.classList.remove("down");
+        press(false);
+        canvas.focus();
+      };
+      btn.addEventListener("pointerup", up);
+      btn.addEventListener("pointercancel", up);
+      box.appendChild(btn);
+    }
+  }
+
+  /* ---- touch -------------------------------------------------------- */
 
   function pointerPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -328,14 +570,20 @@
   canvas.addEventListener("pointercancel", pointerUp);
   canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  /* ---- page ----------------------------------------------------------- */
+  /* ---- page --------------------------------------------------------- */
 
+  /* Start a fresh demo: every document and setting of every screen and
+   * language pack, and the remembered choice, go. The databases are
+   * deleted at the next start, before anything opens them. */
   document.getElementById("reset").addEventListener("click", () => {
-    if (!confirm("Delete the demo's documents and settings in this browser and start over?")) return;
+    if (!confirm("Delete all of the demo's documents and settings in this browser " +
+                 "and start a fresh demo?")) return;
     halted = true;
-    try { localStorage.setItem(RESET_FLAG, "1"); } catch (e) { /* ignore */ }
+    running = false;   /* no more saving */
+    lsSet(RESET_FLAG, "1");
+    lsSet(CHOICE_KEY, null);
     showOverlay("Resetting\u2026");
-    location.reload();
+    location.href = location.pathname;
   });
 
   window.addEventListener("resize", fitScreen);
@@ -345,18 +593,29 @@
   });
   window.addEventListener("pagehide", () => syncStorage());
 
+  /* ---- start ----------------------------------------------------------- */
+
+  if (built.size === 0) {
+    setStatus("No firmware has been built (run make in online_demo/).");
+    return;
+  }
+
+  fillPicker();
+  addBoardButtons();
   fitScreen();
 
-  /* ---- Emscripten module ---------------------------------------------- */
+  const base = "fw/" + variant.board + "/" + variant.pack + "/";
+  const version = (document.querySelector('script[src^="demo.js"]').src.split("?v=")[1]) || "";
 
   Object.assign(Module, {
     preRun: [mountStorage],
-    locateFile: (path) => path + "?v=" + encodeURIComponent(
-      (document.querySelector('script[src^="draftling.js"]').src.split("?v=")[1]) || ""),
+    locateFile: (path) => base + path + "?v=" + encodeURIComponent(version),
     onRuntimeInitialized: () => {
       running = true;
+      lsSet(CHOICE_KEY, variant.board + "/" + variant.pack);
       setStatus(storageOk
-        ? "Running. Your documents are kept in this browser."
+        ? "Running " + board.name + " with the " + variant.pack +
+          " language pack. Your documents are kept in this browser."
         : "Running, but this browser does not allow storage: changes are lost on reload.");
       canvas.focus();
     },
@@ -368,4 +627,9 @@
                   () => location.reload());
     },
   });
+
+  const script = document.createElement("script");
+  script.src = base + "draftling.js?v=" + encodeURIComponent(version);
+  script.onerror = () => setStatus("Could not load " + script.src);
+  document.body.appendChild(script);
 })();

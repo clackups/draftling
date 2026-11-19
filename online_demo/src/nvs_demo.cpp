@@ -3,7 +3,8 @@
  *
  * Every namespace / key / typed value is kept in memory and written to
  * DEMO_NVS_FILE, which lives on an IndexedDB-backed file system
- * mounted by web/demo.js, so settings (font size, theme, active
+ * mounted by web/demo.js; each simulated board has its own (the SD card
+ * is shared, like a card moved between devices), so settings (font size, theme, active
  * layouts, ...) survive a page reload the way they survive a reboot.
  * nvs_flash_erase() (Factory reset) deletes them all.
  */
@@ -18,7 +19,10 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 
-#define DEMO_NVS_FILE "/persist/nvs.bin"
+#ifndef DEMO_BOARD
+#define DEMO_BOARD "board"
+#endif
+#define DEMO_NVS_FILE "/persist/nvs-" DEMO_BOARD ".bin"
 
 namespace {
 

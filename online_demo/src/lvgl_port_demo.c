@@ -1,14 +1,23 @@
 /*
  * Online demo: LVGL display and touch port.
  *
- * LVGL renders the same logical screen as on the device (480x320 minus
- * the screen margins, turned for portrait, halved for 2x scale) into a
- * frame buffer here; after each pass of the LVGL loop the changed
- * rectangle goes to the page's canvas (demo_host_present()). The page
- * turns, scales and dims the canvas itself, so no software rotation is
- * needed. Mouse and touch input on the canvas arrive through
- * demo_pointer() in LVGL coordinates and drive a pointer input device,
- * as the FT6336U touch controller does on the board.
+ * LVGL renders the same logical screen as on the device (the panel
+ * minus the screen margins, turned for portrait, halved for 2x scale).
+ * The simulator shows that frame upright, so no software rotation is
+ * needed; the page turns the canvas for "Rotate 180".
+ *
+ * Color LCD: tiles go into an RGB565 frame buffer, and after each pass
+ * of the LVGL loop the changed rectangle goes to the page's canvas
+ * (demo_host_present()).
+ *
+ * E-paper: as lvgl_port.cpp does, tiles (scaled up for 2x) are pushed
+ * into the display backend with display_push_rgb565() and the last
+ * tile of a pass calls display_flush() -- here the simulated panel of
+ * display_demo.c, which shows each refresh with its delay.
+ *
+ * Mouse and touch input on the canvas arrive through demo_pointer() in
+ * LVGL coordinates and drive a pointer input device, as the touch
+ * controller does on the board.
  */
 
 #include <stdlib.h>
@@ -17,14 +26,24 @@
 #include <emscripten.h>
 
 #include "demo_host.h"
+#include "display.h"
+#include "display/lv_display_private.h"
 #include "display_flip.h"
 #include "lvgl.h"
 #include "lvgl_port.h"
+#include "sdkconfig.h"
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+#define PORT_EPD 1
+#else
+#define PORT_EPD 0
+#endif
 
 static lv_display_t *s_disp;
-static uint16_t *s_fb;
+static uint16_t *s_fb;        /* LCD: the frame buffer */
+static uint16_t *s_scale_buf; /* e-paper with 2x: one upscaled tile */
 static int s_w, s_h, s_scale = 1;
-static int s_dx1, s_dy1, s_dx2 = -1, s_dy2 = -1;   /* dirty box */
+static int s_dx1, s_dy1, s_dx2 = -1, s_dy2 = -1;   /* LCD dirty box */
 
 static int s_ptr_x, s_ptr_y;
 static bool s_ptr_down;
@@ -34,7 +53,7 @@ static uint32_t tick_cb(void)
     return (uint32_t)emscripten_get_now();
 }
 
-static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
+static void flush_lcd(const lv_area_t *area, const uint8_t *px)
 {
     int w = lv_area_get_width(area);
     const uint16_t *src = (const uint16_t *)px;
@@ -49,6 +68,35 @@ static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
         if (area->y1 < s_dy1) s_dy1 = area->y1;
         if (area->x2 > s_dx2) s_dx2 = area->x2;
         if (area->y2 > s_dy2) s_dy2 = area->y2;
+    }
+}
+
+static void flush_epd(const lv_area_t *area, const uint8_t *px)
+{
+    int w = lv_area_get_width(area), h = lv_area_get_height(area);
+    int x = area->x1, y = area->y1;
+    const uint16_t *src = (const uint16_t *)px;
+    if (s_scale > 1) {
+        int sw = w * s_scale;
+        s_scale_buf = (uint16_t *)realloc(s_scale_buf, (size_t)sw * h * s_scale * 2);
+        for (int ty = 0; ty < h * s_scale; ty++) {
+            for (int tx = 0; tx < sw; tx++) {
+                s_scale_buf[(size_t)ty * sw + tx] = src[(ty / s_scale) * w + tx / s_scale];
+            }
+        }
+        src = s_scale_buf;
+        x *= s_scale; y *= s_scale; w = sw; h *= s_scale;
+    }
+    display_push_rgb565(x, y, w, h, src);
+}
+
+static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px)
+{
+    if (PORT_EPD) {
+        flush_epd(area, px);
+        if (lv_display_flush_is_last(disp)) display_flush();
+    } else {
+        flush_lcd(area, px);
     }
     lv_display_flush_ready(disp);
 }
@@ -79,7 +127,8 @@ void draftling_lvgl_port_init(int width, int height, int rotate_deg, int scale)
     if (rotate_deg == 90 || rotate_deg == 270) {
         int t = s_w; s_w = s_h; s_h = t;
     }
-    s_fb = (uint16_t *)calloc((size_t)s_w * s_h, 2);
+    if (PORT_EPD) demo_display_epd_init(s_w * s_scale, s_h * s_scale);
+    else          s_fb = (uint16_t *)calloc((size_t)s_w * s_h, 2);
 
     s_disp = lv_display_create(s_w, s_h);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
@@ -93,15 +142,24 @@ void draftling_lvgl_port_init(int width, int height, int rotate_deg, int scale)
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, pointer_read_cb);
 
-    demo_host_set_screen(s_w, s_h, s_scale, display_flip_is_upside_down());
+    demo_host_set_screen(s_w, s_h, s_scale, display_flip_is_upside_down(), PORT_EPD);
 }
 
-/* After every LVGL pass: hand the changed rectangle to the page. */
+/* LCD: after every LVGL pass, hand the changed rectangle to the page. */
 void demo_lvgl_port_present(void)
 {
-    if (s_dx2 < 0) return;
+    if (PORT_EPD || s_dx2 < 0) return;
     demo_host_present(s_fb, s_w, s_dx1, s_dy1, s_dx2 - s_dx1 + 1, s_dy2 - s_dy1 + 1);
     s_dx2 = s_dy2 = -1;
+}
+
+/* E-paper: true while LVGL has something to draw and the panel is
+ * still busy with the previous refresh. On the device the LVGL task
+ * blocks in the backend's flush then; here the main loop does not run
+ * LVGL until the panel is free. */
+bool demo_lvgl_port_blocked(void)
+{
+    return PORT_EPD && s_disp && s_disp->inv_p > 0 && demo_display_busy();
 }
 
 /* Everything runs on the browser's main thread: nothing to lock. */

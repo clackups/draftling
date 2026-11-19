@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Draftling online demo</title>
-<meta name="description" content="Try Draftling, the open-source writerdeck firmware, in your browser: the real editor compiled to WebAssembly on a simulated 4-inch color screen.">
+<meta name="description" content="Try Draftling, the open-source writerdeck firmware, in your browser: the real editor compiled to WebAssembly on a simulated color LCD or e-paper device.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='3' width='14' height='10' rx='2' fill='%23e0622a'/%3E%3Crect x='3' y='5' width='10' height='6' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="demo.css?v=@VERSION@">
 </head>
@@ -20,18 +20,35 @@
 </header>
 
 <main>
+  <form class="picker" id="picker" aria-label="Simulated device">
+    <label>Screen
+      <select id="board"></select>
+    </label>
+    <label>Language pack
+      <select id="pack"></select>
+    </label>
+    <button type="button" id="reset" class="secondary"
+            title="Delete the demo's documents and settings in this browser and start over">Reset demo</button>
+  </form>
+
   <section class="stage" aria-label="Simulated Draftling device">
     <div class="device" id="device">
-      <div class="bezel">
-        <div class="glass" id="glass">
-          <canvas id="screen" width="480" height="320" tabindex="0"
-                  aria-label="Draftling screen. Click here, then type."></canvas>
-          <div class="overlay" id="overlay" hidden>
-            <p id="overlay-text"></p>
+      <div class="device-row">
+        <div class="side-buttons" id="side-buttons" aria-label="Device buttons"></div>
+        <div class="bezel">
+          <div class="glass" id="glass">
+            <canvas id="screen" width="480" height="320" tabindex="0"
+                    aria-label="Draftling screen. Click here, then type."></canvas>
+            <div class="overlay" id="overlay" hidden>
+              <p id="overlay-text"></p>
+            </div>
           </div>
         </div>
       </div>
-      <div class="board-label">Freenove FNK0104S &middot; ST7796 4.0&quot; 480&times;320 &middot; simulated</div>
+      <div class="board-label">
+        <span id="board-label">Loading&hellip;</span>
+        <span class="busy" id="busy" hidden title="The e-paper panel is refreshing">refresh</span>
+      </div>
     </div>
 
     <div class="focus-hint" id="focus-hint">Click the screen, then type.</div>
@@ -40,6 +57,7 @@
       <button type="button" data-key="F1">F1 <span>Menu</span></button>
       <button type="button" data-key="Escape">Esc <span>Back</span></button>
       <button type="button" data-key="F10">F10 <span>Help</span></button>
+      <button type="button" data-key="Ctrl+KeyL">Ctrl+L <span>Layout</span></button>
       <button type="button" data-key="Ctrl+KeyN">Ctrl+N <span>New</span></button>
       <button type="button" data-key="Ctrl+KeyW">Ctrl+W <span>WiFi</span></button>
       <button type="button" data-key="Ctrl+KeyT">Ctrl+T <span>Timer</span></button>
@@ -51,24 +69,29 @@
     <h1>Draftling in your browser</h1>
     <p>
       This is the real Draftling editor firmware, compiled to WebAssembly and
-      running on a simulated Freenove FNK0104S with its 4-inch color screen.
+      running on a simulated device. Pick the screen and the language pack
+      above: each combination is the firmware image that device would run.
       Your keyboard stands in for the Bluetooth keyboard; the mouse or your
-      finger works the touch screen.
+      finger works the touch screen, and the buttons beside the screen are
+      the device's own.
     </p>
+    <p class="pack-tip" id="pack-tip"></p>
     <ul>
-      <li>Documents and settings are kept <strong>in this browser only</strong>.
-        Nothing is uploaded.</li>
+      <li>Documents are kept <strong>in this browser only</strong> and shared
+        by every screen and language pack, like a MicroSD card moved between
+        devices; each screen keeps its own settings. Nothing is uploaded.</li>
+      <li>The e-paper screen refreshes with the panel's real delays: about
+        0.4 s per update, and a longer full refresh after start-up. Keys typed
+        meanwhile are queued, as on the device.</li>
       <li>WiFi, Git sync and USB are simulated: the menus work, but no network
         or computer is involved.</li>
       <li>Some shortcuts belong to the browser (<kbd>Ctrl</kbd>+<kbd>N</kbd>,
         <kbd>Ctrl</kbd>+<kbd>W</kbd>, <kbd>Ctrl</kbd>+<kbd>T</kbd>,
         <kbd>Ctrl</kbd>+<kbd>Tab</kbd>): use the buttons under the screen.</li>
       <li><kbd>F10</kbd> lists every shortcut, <kbd>F1</kbd> opens the menu.</li>
+      <li><strong>Reset demo</strong> deletes all of the demo's documents and
+        settings in this browser and starts a fresh demo.</li>
     </ul>
-    <p class="actions">
-      <button type="button" id="reset" class="secondary">Reset demo</button>
-      <span class="muted">Deletes the demo's documents and settings in this browser.</span>
-    </p>
     <p class="muted small" id="status">Loading the firmware&hellip;</p>
     <p class="muted small">Draftling @VERSION@</p>
   </section>
@@ -76,7 +99,7 @@
 
 <noscript><p class="noscript">The demo needs JavaScript and WebAssembly.</p></noscript>
 
+<script src="variants.js?v=@VERSION@"></script>
 <script src="demo.js?v=@VERSION@"></script>
-<script src="draftling.js?v=@VERSION@" async></script>
 </body>
 </html>

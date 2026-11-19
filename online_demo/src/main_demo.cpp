@@ -1,7 +1,7 @@
 /*
  * Online demo: entry point. Mirrors app_main() in firmware/main/main.cpp
- * for the Freenove FNK0104S (the board app_config.h selects from the
- * generated sdkconfig.h), minus the hardware bring-up, then runs the
+ * for the simulated board (the one app_config.h selects from the
+ * variant's generated sdkconfig.h), minus the hardware bring-up, then runs the
  * LVGL loop from the browser's animation frames.
  *
  * On the first visit the sample documents embedded at /seed are
@@ -18,6 +18,7 @@
 
 #include "app_config.h"
 #include "battery.h"
+#include "driver/spi_common.h"  /* SPI2_HOST for boards with the SD card on SPI */
 #include "ble_keyboard.h"
 #include "demo_host.h"
 #include "display.h"
@@ -38,6 +39,7 @@ static const char *TAG = "Draftling";
 #define SEED_MARKER "/persist/seeded"
 
 extern "C" void demo_lvgl_port_present(void);
+extern "C" bool demo_lvgl_port_blocked(void);
 
 static void copy_tree(const char *from, const char *to)
 {
@@ -101,6 +103,10 @@ static void pre_sleep_demo(void)
 
 static void main_loop(void)
 {
+    /* E-paper: while the panel is still busy with the last refresh and
+     * there is something new to draw, the device's LVGL task sits in
+     * the backend's flush; keys typed meanwhile wait in the key queue. */
+    if (demo_lvgl_port_blocked()) return;
     lv_timer_handler();
     demo_lvgl_port_present();
 }
@@ -119,12 +125,22 @@ int main(void)
                              DISPLAY_ROTATE_EFFECTIVE, DISPLAY_SCALE);
     display_set_backlight(50);   /* editor_ui_init() applies the saved level */
 
+#if defined(CONFIG_DRAFTLING_BATTERY_BQ27220)
+    battery_init_bq27220(nullptr);
+#else
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
+#endif
 
     editor_ui_set_board_name(BOARD_NAME " (online demo)");
     editor_ui_init();
 
-    if (sd_card_init(SD_CLK_PIN, SD_CMD_PIN, SD_D0_PIN, SD_MOUNT_POINT) != ESP_OK) {
+#if defined(CONFIG_DRAFTLING_SD_SDMMC)
+    esp_err_t sd_ret = sd_card_init(SD_CLK_PIN, SD_CMD_PIN, SD_D0_PIN, SD_MOUNT_POINT);
+#else
+    esp_err_t sd_ret = sd_card_init_spi(SD_SPI_HOST_NUM, SD_SPI_MISO_PIN, SD_SPI_MOSI_PIN,
+                                        SD_SPI_SCK_PIN, SD_SPI_CS_PIN, -1, SD_MOUNT_POINT);
+#endif
+    if (sd_ret != ESP_OK) {
         editor_ui_set_status("ERROR: SD card not ready");
     }
 

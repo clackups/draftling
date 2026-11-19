@@ -1,22 +1,25 @@
 # Draftling online demo: the editor firmware compiled to WebAssembly.
 #
-#   make            fetch LVGL + kconfiglib, build, assemble dist/
+#   make -j8        fetch LVGL + kconfiglib, build every board x language
+#                   pack variant, assemble dist/
+#   make BOARDS=freenove_fnk0104s PACKS=default
+#                   build only some variants (the page offers only what
+#                   was built)
 #   make serve      build, then serve dist/ on http://localhost:8000/
-#   make clean      remove build/ and dist/ (keeps the fetched sources)
+#   make clean      remove the build output (keeps the fetched sources)
 #   make distclean  remove everything that is not in git
 #
 # Needs the Emscripten SDK (emcc / em++ on PATH, see README.md), git,
 # curl, python3 and GNU make. The output in dist/ is static files only;
-# copy them to the web server.
+# copy them to the web server. One variant is built by variant.mk.
 
-FIRMWARE   := ../firmware
-COMPONENTS := $(FIRMWARE)/components
-BUILD      := build
-DIST       := dist
+FIRMWARE := ../firmware
+BUILD    := build
+DIST     := dist
 
-# The board the demo simulates: its sdkconfig defaults drive the
-# firmware's Kconfig, exactly like `idf.py --preset freenove_fnk0104s`.
-BOARD_DEFAULTS := $(FIRMWARE)/sdkconfig.defaults.freenove_fnk0104s
+# Simulated boards (firmware presets) and language packs.
+BOARDS ?= freenove_fnk0104s seeed_reterminal_sticky
+PACKS  ?= default vietnamese korean japanese chinese indic
 
 # Pinned dependencies. LVGL matches what the ESP-IDF component manager
 # resolves "lvgl/lvgl ^9.2" (main/idf_component.yml) to.
@@ -25,86 +28,22 @@ KCONFIGLIB_VERSION := v14.1.0
 
 LVGL_DIR   := $(BUILD)/lvgl
 LVGL_STAMP := $(LVGL_DIR)/.fetched-$(LVGL_VERSION)
+LVGL_LIB   := $(BUILD)/liblvgl.a
 KCONFIGLIB := $(BUILD)/kconfiglib/kconfiglib.py
-SDKCONFIG  := $(BUILD)/sdkconfig.h
 
 VERSION := $(shell sed -n 's/^set(PROJECT_VER "\(.*\)")/\1/p' $(FIRMWARE)/CMakeLists.txt)
 
 CC  := emcc
-CXX := em++
-
 OPT ?= -O2
-
-# ---- sources ------------------------------------------------------------
-
-# The firmware's own code, compiled unchanged.
-FW_SRCS := \
-	$(wildcard $(COMPONENTS)/editor/*.cpp) \
-	$(wildcard $(COMPONENTS)/editor/*.c) \
-	$(COMPONENTS)/kb_layout/kb_layout.cpp \
-	$(COMPONENTS)/sd_card/sd_card.cpp \
-	$(COMPONENTS)/display/display_margins.cpp \
-	$(COMPONENTS)/display/display_orientation.cpp \
-	$(COMPONENTS)/display/display_flip.cpp \
-	$(COMPONENTS)/display/display_scale.cpp \
-	$(COMPONENTS)/display/lv_rtl_line_width.c
-
-# Fonts of the default language pack on a standard-density board
-# (Greybeard "lowres" set with the Cyrillic, Hebrew and Latin
-# Extended-A subsets), as components/fonts/CMakeLists.txt selects them.
-FONT_SLOTS := 11 14 16 18 22 26 30 34
-FW_SRCS += $(COMPONENTS)/fonts/lowres.c \
-	$(foreach n,$(FONT_SLOTS),$(COMPONENTS)/fonts/lowres_$(n).c) \
-	$(foreach s,cyrillic hebrew latina,$(foreach n,$(FONT_SLOTS),$(COMPONENTS)/fonts/lowres_$(s)_$(n).c))
-
-# Stand-ins for the hardware, the network and the RTOS.
-DEMO_SRCS := $(wildcard src/*.c) $(wildcard src/*.cpp)
-
-# Filled in by the second make pass, once LVGL has been fetched.
-LVGL_SRCS = $(shell find $(LVGL_DIR)/src -name '*.c')
-
-# build/obj/<path>.o; "../" becomes "up/" so firmware objects stay inside build/.
-obj = $(patsubst %,$(BUILD)/obj/%.o,$(subst ../,up/,$(1)))
-
-FW_OBJS   := $(call obj,$(FW_SRCS))
-DEMO_OBJS := $(call obj,$(DEMO_SRCS))
-LVGL_OBJS  = $(call obj,$(LVGL_SRCS))
-
-# ---- flags --------------------------------------------------------------
-
-INCLUDES := \
-	-Ishim/include -Ishim -Isrc -I$(BUILD) \
-	-I$(LVGL_DIR) -I$(LVGL_DIR)/src \
-	-I$(FIRMWARE)/main \
-	$(foreach c,editor display sd_card ble_keyboard kb_layout wifi_manager \
-		git_sync standby battery fonts usb_msc kermit,-I$(COMPONENTS)/$(c)/include) \
-	-I$(COMPONENTS)/editor/private_include
-
-DEFINES := -DLV_CONF_INCLUDE_SIMPLE -D_GNU_SOURCE \
-	-DDRAFTLING_VERSION='"$(VERSION)"'
-
-WARN := -Wno-deprecated-declarations -Wno-string-plus-int -Wno-\#warnings -Wno-unused-command-line-argument
-
-CFLAGS   := $(OPT) -MMD -MP $(DEFINES) $(INCLUDES) $(WARN)
-CXXFLAGS := $(CFLAGS) -std=gnu++17
 LVGL_CFLAGS := $(OPT) -MMD -MP -DLV_CONF_INCLUDE_SIMPLE -Ishim -I$(LVGL_DIR) -Wno-\#warnings
 
-LDFLAGS := $(OPT) \
-	-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 -sSTACK_SIZE=1048576 \
-	-sENVIRONMENT=web -sFORCE_FILESYSTEM=1 -lidbfs.js \
-	-sEXPORTED_FUNCTIONS=_main,_demo_key,_demo_pointer \
-	-sEXPORTED_RUNTIME_METHODS=FS,IDBFS,HEAPU16,addRunDependency,removeRunDependency \
-	-Wl,--wrap=lv_text_get_line_width \
-	--embed-file samples@/seed
+VARIANTS := $(foreach b,$(BOARDS),$(foreach p,$(PACKS),$(b)--$(p)))
 
-# ---- targets ------------------------------------------------------------
+.PHONY: all deps lvgl variants web serve clean distclean
 
-.PHONY: all deps wasm serve clean distclean
+all: web
 
-all: deps
-	@$(MAKE) --no-print-directory wasm
-
-deps: $(LVGL_STAMP) $(SDKCONFIG)
+deps: $(LVGL_STAMP) $(KCONFIGLIB)
 
 $(LVGL_STAMP):
 	rm -rf $(LVGL_DIR)
@@ -118,27 +57,30 @@ $(KCONFIGLIB):
 		https://raw.githubusercontent.com/ulfalizer/Kconfiglib/$(KCONFIGLIB_VERSION)/kconfiglib.py
 	mv $@.tmp $@
 
-# Re-run whenever a Kconfig file or the board defaults change.
-KCONFIG_INPUTS := tools/Kconfig.demo tools/gen_sdkconfig.py $(BOARD_DEFAULTS) \
-	$(FIRMWARE)/main/Kconfig.projbuild \
-	$(COMPONENTS)/kb_layout/Kconfig.projbuild \
-	$(COMPONENTS)/editor/Kconfig.projbuild
+# LVGL does not depend on the board or the pack: one library for all.
+lvgl: deps
+	@$(MAKE) --no-print-directory -f lvgl.mk LVGL_DIR=$(LVGL_DIR) \
+		LVGL_LIB=$(LVGL_LIB) LVGL_CFLAGS='$(LVGL_CFLAGS)'
 
-$(SDKCONFIG): $(KCONFIG_INPUTS) $(KCONFIGLIB)
-	mkdir -p $(dir $@)
-	PYTHONPATH=$(dir $(KCONFIGLIB)) python3 tools/gen_sdkconfig.py \
-		$(FIRMWARE) $(BOARD_DEFAULTS) $@
+variants: $(addprefix variant-,$(VARIANTS))
+
+variant-%: lvgl
+	@$(MAKE) --no-print-directory -f variant.mk \
+		BOARD=$(word 1,$(subst --, ,$*)) PACK=$(word 2,$(subst --, ,$*))
 
 WEB_FILES := $(wildcard web/*)
 
-wasm: $(DIST)/draftling.js $(patsubst web/%,$(DIST)/%,$(WEB_FILES))
+web: variants $(patsubst web/%,$(DIST)/%,$(WEB_FILES))
+	@# The variants present in dist/ (also ones built earlier), for the page.
+	@( printf '/* Generated by the Makefile: the firmware variants in fw/. */\n'; \
+	   printf 'window.DEMO_VARIANTS = ['; \
+	   cd $(DIST)/fw && find . -name draftling.js | sed 's|^\./||; s|/draftling.js$$||' | sort \
+	     | sed 's/.*/"&"/' | paste -sd, - | tr -d '\n'; \
+	   printf '];\n' ) > $(DIST)/variants.js
+	@echo "Variants: $$(sed -n 's/^window.DEMO_VARIANTS = //p' $(DIST)/variants.js)"
 
-$(DIST)/draftling.js: $(FW_OBJS) $(DEMO_OBJS) $(LVGL_OBJS) $(shell find samples -type f)
-	mkdir -p $(DIST)
-	$(CXX) $(FW_OBJS) $(DEMO_OBJS) $(LVGL_OBJS) $(LDFLAGS) -o $@
-
-# The page loads draftling.js / .wasm with ?v=<version> so a new
-# release is not hidden by a cached copy.
+# The page loads its files with ?v=<version> so a new release is not
+# hidden by a cached copy.
 $(DIST)/index.html: web/index.html $(FIRMWARE)/CMakeLists.txt
 	mkdir -p $(DIST)
 	sed 's/@VERSION@/$(VERSION)/g' $< > $@
@@ -147,38 +89,11 @@ $(DIST)/%: web/%
 	mkdir -p $(dir $@)
 	cp $< $@
 
-$(BUILD)/obj/build/lvgl/%.c.o: $(BUILD)/lvgl/%.c
-	@mkdir -p $(dir $@)
-	@echo "CC  $<"
-	@$(CC) $(LVGL_CFLAGS) -c $< -o $@
-
-$(BUILD)/obj/up/%.c.o: ../%.c $(SDKCONFIG)
-	@mkdir -p $(dir $@)
-	@echo "CC  $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD)/obj/up/%.cpp.o: ../%.cpp $(SDKCONFIG)
-	@mkdir -p $(dir $@)
-	@echo "CXX $<"
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-
-$(BUILD)/obj/src/%.c.o: src/%.c $(SDKCONFIG)
-	@mkdir -p $(dir $@)
-	@echo "CC  $<"
-	@$(CC) $(CFLAGS) -c $< -o $@
-
-$(BUILD)/obj/src/%.cpp.o: src/%.cpp $(SDKCONFIG)
-	@mkdir -p $(dir $@)
-	@echo "CXX $<"
-	@$(CXX) $(CXXFLAGS) -c $< -o $@
-
 serve: all
 	cd $(DIST) && python3 -m http.server 8000
 
 clean:
-	rm -rf $(BUILD)/obj $(SDKCONFIG) $(DIST)
+	rm -rf $(BUILD)/v $(BUILD)/lvgl-obj $(LVGL_LIB) $(DIST)
 
 distclean:
 	rm -rf $(BUILD) $(DIST)
-
--include $(shell find $(BUILD)/obj -name '*.d' 2>/dev/null)

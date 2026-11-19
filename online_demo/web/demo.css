@@ -220,3 +220,86 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .bezel { padding: 6px; }
   .top nav { margin-left: 0; }
 }
+
+/* ---- device picker ---- */
+
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.6rem 1rem;
+  margin: 0.25rem 0 0.75rem;
+}
+.picker label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: var(--muted);
+  gap: 0.15rem;
+}
+select {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  max-width: 80vw;
+}
+select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- device variants ---- */
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.side-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.side-buttons:empty { display: none; }
+.hw-button {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  min-width: 3.4rem;
+  padding: 0.45rem 0.4rem;
+  color: #ddd;
+  background: linear-gradient(180deg, #3a3d3b, #262826);
+  border: 1px solid #111;
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+}
+.hw-button.down { transform: translateY(1px); border-bottom-width: 1px; }
+
+/* The reTerminal Sticky: a light enclosure around the e-paper panel. */
+.device.epaper {
+  background: linear-gradient(160deg, #f4f3ef, #d9d7d0);
+}
+.device.epaper .bezel { background: #c9c7c0; }
+.device.epaper .glass { background: #e2e0d8; }
+.device.epaper .glass::after { background: none; }
+.device.epaper .board-label { color: rgba(0, 0, 0, 0.5); }
+.device.epaper #screen { cursor: text; }
+.device.epaper .hw-button {
+  color: #333;
+  background: linear-gradient(180deg, #fbfaf7, #dddbd4);
+  border-color: #a9a7a0;
+}
+
+.busy {
+  display: inline-block;
+  margin-left: 0.6rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  color: #fff;
+  background: var(--accent);
+}
+.busy[hidden] { display: none; }

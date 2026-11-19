@@ -32,6 +32,9 @@ esp_err_t gpio_config(const gpio_config_t *cfg);
 esp_err_t gpio_set_level(gpio_num_t gpio, uint32_t level);
 
 typedef int spi_host_device_t;
+#define SPI1_HOST 0
+#define SPI2_HOST 1
+#define SPI3_HOST 2
 #define SPI_DMA_CH_AUTO 3
 typedef struct {
     int mosi_io_num, miso_io_num, sclk_io_num, quadwp_io_num, quadhd_io_num;
