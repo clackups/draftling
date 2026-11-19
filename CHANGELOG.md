@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.30] - 2026-11-19
+
 ### Added
 
 - **Writing timer**: Ctrl+T, in the editor or the file browser, starts
