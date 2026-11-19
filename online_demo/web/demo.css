@@ -107,6 +107,9 @@ main {
   padding: 18px 18px 10px;
   box-shadow: var(--shadow);
   max-width: 100%;
+  caret-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .bezel {
   background: var(--bezel);
@@ -130,6 +133,9 @@ main {
   outline: none;
   transition: filter 120ms linear;
   touch-action: none;
+  /* Firefox (caret browsing, F7) draws a blinking text caret at the
+   * focused canvas; the firmware draws its own. */
+  caret-color: transparent;
 }
 .glass::after {
   /* a faint reflection on the glass */
