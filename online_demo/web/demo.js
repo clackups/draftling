@@ -605,11 +605,11 @@
   fitScreen();
 
   const base = "fw/" + variant.board + "/" + variant.pack + "/";
-  const version = (document.querySelector('script[src^="demo.js"]').src.split("?v=")[1]) || "";
+  const build = (document.querySelector('script[src^="demo.js"]').src.split("?v=")[1]) || "";
 
   Object.assign(Module, {
     preRun: [mountStorage],
-    locateFile: (path) => base + path + "?v=" + encodeURIComponent(version),
+    locateFile: (path) => base + path + "?v=" + encodeURIComponent(build),
     onRuntimeInitialized: () => {
       running = true;
       lsSet(CHOICE_KEY, variant.board + "/" + variant.pack);
@@ -629,7 +629,7 @@
   });
 
   const script = document.createElement("script");
-  script.src = base + "draftling.js?v=" + encodeURIComponent(version);
+  script.src = base + "draftling.js?v=" + encodeURIComponent(build);
   script.onerror = () => setStatus("Could not load " + script.src);
   document.body.appendChild(script);
 })();

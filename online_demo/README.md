@@ -104,7 +104,7 @@ of `.incbin`s that defines the same `_binary_*_start` / `_end` symbols
 
 | File | |
 |------|---|
-| `index.html` | the page (the firmware version is filled in by `make`) |
+| `index.html` | the page (`make` fills in the firmware version and the build id) |
 | `demo.js`, `demo.css` | the page's script and styles |
 | `variants.js` | the firmware variants present in `fw/` |
 | `fw/<board>/<pack>/draftling.js`, `.wasm` | the firmware variants |
@@ -112,8 +112,13 @@ of `.incbin`s that defines the same `_binary_*_start` / `_end` symbols
 Copy them to the web root of demo.draftling.art. The server must send
 `.wasm` files as `application/wasm` (most servers do). No special
 headers are needed: the demo runs on the browser's main thread and does
-not use `SharedArrayBuffer`. The page loads its files with
-`?v=<firmware version>`, so long cache lifetimes are fine.
+not use `SharedArrayBuffer`. The page loads every other file with
+`?v=<build id>`, a hash of all the files `make` put in `dist/`, so a
+browser never mixes cached files of an older build with new ones,
+even when the firmware version has not changed. Long cache lifetimes
+are therefore fine for everything except `index.html` itself, which
+should be sent with `Cache-Control: no-cache` so the new build id is
+seen right after an update.
 
 ## How it works
 
