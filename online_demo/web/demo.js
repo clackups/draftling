@@ -251,12 +251,18 @@
     if (side.offsetWidth) chrome += side.offsetWidth + 12;
     const avail = device.parentElement.clientWidth - chrome;
     const maxH = Math.max(window.innerHeight * 0.72, 240);
-    let zoom = Math.min(avail / physW, maxH / physH, 3);
-    /* Whole multiples keep every panel pixel the same size; below 2x
-     * a fractional zoom that fills the space reads better. */
-    if (zoom >= 2) zoom = Math.floor(zoom);
-    canvas.style.width = Math.round(physW * zoom) + "px";
-    canvas.style.height = Math.round(physH * zoom) + "px";
+    /* Work in device pixels: with 125 % / 150 % display scaling a CSS
+     * pixel is not a screen pixel. Each panel pixel gets a whole number
+     * of screen pixels, so none is doubled or dropped (a fractional
+     * nearest-neighbour zoom made the text grainy and lost strokes).
+     * Only a window too small for 1:1 shrinks the panel, smoothly. */
+    const dpr = window.devicePixelRatio || 1;
+    let dz = Math.min(avail / physW, maxH / physH, 3) * dpr;
+    const crisp = dz >= 1;
+    if (crisp) dz = Math.floor(dz);
+    canvas.style.imageRendering = crisp ? "pixelated" : "auto";
+    canvas.style.width = (physW * dz / dpr) + "px";
+    canvas.style.height = (physH * dz / dpr) + "px";
   }
 
   Module.demoSetScreen = function (w, h, scale, flip, epd) {
