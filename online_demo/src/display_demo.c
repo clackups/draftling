@@ -14,11 +14,13 @@
  * the dirty box meets the editor's partial clip. The first refresh
  * after power-on is a full one, every later one a fast one, as on the
  * Sticky. A refresh keeps the panel busy for as long as the SSD1677's
- * waveform takes; the next panel update waits for it -- on the device
- * the LVGL task blocks in sticky_wait_idle(), here the main loop holds
- * LVGL back while demo_display_busy() (main_demo.cpp), and the keys
- * typed meanwhile queue up exactly as they do on the device. The page
- * animates each refresh (web/demo.js).
+ * waveform takes. A flush while the panel is busy does not start a
+ * refresh of its own: on the device the LVGL task waits in
+ * sticky_wait_idle() and then sends the frame as it is by then, so
+ * everything typed during a refresh appears in the next one. Here the
+ * flush only notes that a refresh is owed, and demo_display_poll()
+ * (main loop) starts it with the current frame once the panel is
+ * free. The page animates each refresh (web/demo.js).
  */
 
 #include <stdlib.h>
@@ -61,7 +63,7 @@ void display_set_partial_clip(int x, int y, int w, int h) { (void)x; (void)y; (v
 void display_deep_sleep_prepare(void) { demo_host_set_backlight(0); }
 void display_set_backlight(int percent) { demo_host_set_backlight(percent); }
 const char *display_controller_name(void) { return "ST7796 (simulated)"; }
-bool demo_display_busy(void) { return false; }
+void demo_display_poll(void) { }
 void demo_display_epd_init(int w, int h) { (void)w; (void)h; }
 
 #else
@@ -84,6 +86,7 @@ static int s_cx0 = -1, s_cy0 = -1, s_cx1 = -1, s_cy1 = -1; /* clip */
 static bool s_needs_full = true;
 static bool s_asleep;
 static double s_busy_until;
+static bool s_pending;     /* a flush came while the panel was busy */
 
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
@@ -98,7 +101,7 @@ void demo_display_epd_init(int w, int h)
     memset(s_shown, 1, (size_t)w * h);
 }
 
-bool demo_display_busy(void)
+static bool panel_busy(void)
 {
     return emscripten_get_now() < s_busy_until;
 }
@@ -168,13 +171,22 @@ void display_set_partial_clip(int x, int y, int w, int h)
 static void panel_refresh(bool full)
 {
     /* A refresh still running holds the next one back, as
-     * sticky_wait_idle() does on the device. */
-    double now = emscripten_get_now();
-    double start = s_busy_until > now ? s_busy_until : now;
+     * sticky_wait_idle() does on the device; the frame is taken when
+     * the panel is free (demo_display_poll()). */
+    if (panel_busy()) {
+        s_pending = true;
+        return;
+    }
+    s_pending = false;
     int dur = (full ? EPD_FULL_MS : EPD_FAST_MS) + EPD_SPI_MS;
-    s_busy_until = start + dur;
+    s_busy_until = emscripten_get_now() + dur;
     memcpy(s_shown, s_fb, (size_t)s_w * s_h);
-    demo_host_epd_refresh(s_shown, s_w, s_h, full, (int)(start - now), dur);
+    demo_host_epd_refresh(s_shown, s_w, s_h, full, 0, dur);
+}
+
+void demo_display_poll(void)
+{
+    if (s_pending && !s_asleep && !panel_busy()) panel_refresh(false);
 }
 
 void display_flush(void)

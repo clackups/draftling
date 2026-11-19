@@ -39,7 +39,6 @@ static const char *TAG = "Draftling";
 #define SEED_MARKER "/persist/seeded"
 
 extern "C" void demo_lvgl_port_present(void);
-extern "C" bool demo_lvgl_port_blocked(void);
 
 static void copy_tree(const char *from, const char *to)
 {
@@ -103,12 +102,9 @@ static void pre_sleep_demo(void)
 
 static void main_loop(void)
 {
-    /* E-paper: while the panel is still busy with the last refresh and
-     * there is something new to draw, the device's LVGL task sits in
-     * the backend's flush; keys typed meanwhile wait in the key queue. */
-    if (demo_lvgl_port_blocked()) return;
     lv_timer_handler();
     demo_lvgl_port_present();
+    demo_display_poll();   /* e-paper: a refresh owed while it was busy */
 }
 
 int main(void)

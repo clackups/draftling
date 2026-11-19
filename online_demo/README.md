@@ -150,10 +150,12 @@ with the whole frame: the first refresh after start-up is a full one
 (about 1.5 s), every later one a fast differential one (about 0.4 s,
 the SSD1677 waveform the Sticky backend measures), plus the SPI
 transfer. While a refresh runs the panel is busy; the device's LVGL
-task blocks in `sticky_wait_idle()` before the next one, and the demo's
-main loop likewise holds LVGL back while the panel is busy and there
-is something new to draw. Keys typed meanwhile wait in the editor's key
-queue and are handled together afterwards, as on the device. The page
+task waits in `sticky_wait_idle()` and then sends the frame as it is
+by then, so everything typed during a refresh appears together in the
+next one. The demo does the same: a flush during a refresh only notes
+that one is owed, and the main loop starts it with the current frame
+once the panel is free (refreshes never queue up behind each other).
+The page
 shows each refresh as the panel does: changing pixels pass through grey
 during a fast refresh, the whole screen flashes during the full one,
 and a "refresh" mark lights under the screen while the panel is busy.

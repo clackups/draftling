@@ -255,11 +255,15 @@
      * pixel is not a screen pixel. Each panel pixel gets a whole number
      * of screen pixels, so none is doubled or dropped (a fractional
      * nearest-neighbour zoom made the text grainy and lost strokes).
-     * Only a window too small for 1:1 shrinks the panel, smoothly. */
+     * When rounding down would cost more than a quarter of the size
+     * (1.9x -> 1x) the fractional zoom stays: the LCD's pixel fonts
+     * take that fine, while the e-paper's fine hi-res text is scaled
+     * smoothly below 2x. A window too small for 1:1 shrinks the
+     * panel, smoothly. */
     const dpr = window.devicePixelRatio || 1;
     let dz = Math.min(avail / physW, maxH / physH, 3) * dpr;
-    const crisp = dz >= 1;
-    if (crisp) dz = Math.floor(dz);
+    if (dz >= 1 && Math.floor(dz) / dz >= 0.75) dz = Math.floor(dz);
+    const crisp = Number.isInteger(dz) || (dz >= 1 && (!epaper || dz >= 2));
     canvas.style.imageRendering = crisp ? "pixelated" : "auto";
     canvas.style.width = (physW * dz / dpr) + "px";
     canvas.style.height = (physH * dz / dpr) + "px";

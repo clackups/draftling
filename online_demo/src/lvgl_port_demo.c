@@ -153,15 +153,6 @@ void demo_lvgl_port_present(void)
     s_dx2 = s_dy2 = -1;
 }
 
-/* E-paper: true while LVGL has something to draw and the panel is
- * still busy with the previous refresh. On the device the LVGL task
- * blocks in the backend's flush then; here the main loop does not run
- * LVGL until the panel is free. */
-bool demo_lvgl_port_blocked(void)
-{
-    return PORT_EPD && s_disp && s_disp->inv_p > 0 && demo_display_busy();
-}
-
 /* Everything runs on the browser's main thread: nothing to lock. */
 bool draftling_lvgl_port_lock(int timeout_ms)
 {

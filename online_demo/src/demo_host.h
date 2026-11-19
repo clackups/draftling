@@ -37,7 +37,8 @@ void demo_host_storage_dirty(void);
 
 /* display_demo.c: the simulated e-paper panel (no-ops on LCD boards). */
 void demo_display_epd_init(int w, int h);
-bool demo_display_busy(void);
+/* Start a refresh owed since the panel was busy (call every frame). */
+void demo_display_poll(void);
 
 /* Stop running the firmware for good: used by esp_restart() and deep
  * sleep, which never return on the device. */
