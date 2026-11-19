@@ -39,6 +39,11 @@
           <div class="glass" id="glass">
             <canvas id="screen" width="480" height="320" tabindex="0"
                     aria-label="Draftling screen. Click here, then type."></canvas>
+            <!-- Phones and tablets: the focused text field brings up the
+                 on-screen keyboard; demo.js turns its input into keys. -->
+            <textarea id="kbd-proxy" class="kbd-proxy" tabindex="-1" rows="1"
+                      autocapitalize="off" autocomplete="off" autocorrect="off"
+                      spellcheck="false" aria-label="Keyboard input for the Draftling screen"></textarea>
             <div class="overlay" id="overlay" hidden>
               <p id="overlay-text"></p>
             </div>
@@ -62,6 +67,14 @@
       <button type="button" data-key="Ctrl+KeyW">Ctrl+W <span>WiFi</span></button>
       <button type="button" data-key="Ctrl+KeyT">Ctrl+T <span>Timer</span></button>
       <button type="button" data-key="Ctrl+Tab">Ctrl+Tab <span>Pane</span></button>
+      <span class="touch-keys">
+        <button type="button" data-key="Tab">Tab</button>
+        <button type="button" data-key="ArrowLeft" aria-label="Left">&larr;</button>
+        <button type="button" data-key="ArrowUp" aria-label="Up">&uarr;</button>
+        <button type="button" data-key="ArrowDown" aria-label="Down">&darr;</button>
+        <button type="button" data-key="ArrowRight" aria-label="Right">&rarr;</button>
+        <button type="button" data-key="Ctrl+KeyS">Ctrl+S <span>Save</span></button>
+      </span>
     </div>
   </section>
 
@@ -89,6 +102,10 @@
         <kbd>Ctrl</kbd>+<kbd>W</kbd>, <kbd>Ctrl</kbd>+<kbd>T</kbd>,
         <kbd>Ctrl</kbd>+<kbd>Tab</kbd>): use the buttons under the screen.</li>
       <li><kbd>F10</kbd> lists every shortcut, <kbd>F1</kbd> opens the menu.</li>
+      <li>On a phone or tablet, tap the screen to bring up the keyboard; the
+        arrow keys and a few more are under the screen. The phone keyboard
+        types as a US keyboard: switch to the firmware's own layouts with
+        <kbd>Ctrl</kbd>+<kbd>L</kbd>.</li>
       <li><strong>Reset demo</strong> deletes all of the demo's documents and
         settings in this browser and starts a fresh demo.</li>
     </ul>

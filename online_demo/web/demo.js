@@ -435,6 +435,12 @@
 
   function modifierByte(e) {
     let m = mods;
+    /* On-screen keyboards report Shift etc. without a key event of its
+     * own. */
+    if (e.shiftKey && !(m & (MOD.ShiftLeft | MOD.ShiftRight))) m |= MOD.ShiftLeft;
+    if (e.ctrlKey && !(m & (MOD.ControlLeft | MOD.ControlRight))) m |= MOD.ControlLeft;
+    if (e.altKey && !(m & (MOD.AltLeft | MOD.AltRight))) m |= MOD.AltLeft;
+    if (e.metaKey && !(m & (MOD.MetaLeft | MOD.MetaRight))) m |= MOD.MetaLeft;
     /* Keep the byte honest when a modifier changed outside the page. */
     if (!e.shiftKey) m &= ~(MOD.ShiftLeft | MOD.ShiftRight);
     if (!e.ctrlKey) m &= ~(MOD.ControlLeft | MOD.ControlRight);
@@ -500,17 +506,135 @@
   canvas.addEventListener("blur", () => setActive(false));
   window.addEventListener("blur", releaseAll);
 
-  /* On-page buttons for the shortcuts browsers keep for themselves. */
+  /* ---- on-screen keyboard (phones and tablets) ---------------------- */
+
+  /* A canvas never brings up the on-screen keyboard, a text field does:
+   * on touch devices a tap on the screen focuses an invisible textarea.
+   * On-screen keyboards mostly send no usable key events (key
+   * "Unidentified"), and their predictive text rewrites words, so what
+   * they type is read back from the field: the difference to the last
+   * value becomes Backspaces and the US-keyboard keys of the new
+   * characters. A hardware keyboard still goes through keydown above,
+   * which keeps the text out of the field. */
+  const proxy = document.getElementById("kbd-proxy");
+  let touchMode = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+  /* Spaces before the caret, so Backspace on an empty field still
+   * deletes (and predictive text sees a word boundary). */
+  const PAD = " ".repeat(16);
+  let proxyLast = PAD;
+  let composing = false;
+
+  function setTouchMode(on) {
+    touchMode = on;
+    document.body.classList.toggle("touch", on);
+    focusHint.textContent = on ? "Tap the screen to bring up the keyboard."
+                               : "Click the screen, then type.";
+  }
+
+  function proxyReset() {
+    proxy.value = PAD;
+    proxyLast = PAD;
+    proxy.setSelectionRange(PAD.length, PAD.length);
+  }
+
+  /* The screen gets the keys: the canvas, or on touch devices the
+   * textarea (re-focused, so a dismissed keyboard comes back). */
+  function focusScreen() {
+    if (!touchMode) { canvas.focus(); return; }
+    if (document.activeElement === proxy) proxy.blur();
+    proxyReset();
+    proxy.focus({ preventScroll: true });
+  }
+
+  /* US keyboard: character -> [HID usage, shift]. */
+  const US_KEYS = {};
+  (function () {
+    for (let i = 0; i < 26; i++) {
+      US_KEYS[String.fromCharCode(97 + i)] = [0x04 + i, false];
+      US_KEYS[String.fromCharCode(65 + i)] = [0x04 + i, true];
+    }
+    const rows = [
+      ["1234567890", "!@#$%^&*()", 0x1e],
+    ];
+    for (const [plain, shifted, first] of rows) {
+      for (let i = 0; i < plain.length; i++) {
+        US_KEYS[plain[i]] = [first + i, false];
+        US_KEYS[shifted[i]] = [first + i, true];
+      }
+    }
+    const pairs = [
+      ["-", "_", 0x2d], ["=", "+", 0x2e], ["[", "{", 0x2f], ["]", "}", 0x30],
+      ["\\", "|", 0x31], [";", ":", 0x33], ["'", "\"", 0x34], ["`", "~", 0x35],
+      [",", "<", 0x36], [".", ">", 0x37], ["/", "?", 0x38],
+    ];
+    for (const [plain, shifted, code] of pairs) {
+      US_KEYS[plain] = [code, false];
+      US_KEYS[shifted] = [code, true];
+    }
+    US_KEYS[" "] = [0x2c, false];
+    US_KEYS["\n"] = [0x28, false];
+    US_KEYS["\t"] = [0x2b, false];
+    /* Typographic characters phone keyboards put in by themselves. */
+    const alias = {
+      "\u2018": "'", "\u2019": "'", "\u201c": "\"", "\u201d": "\"",
+      "\u2013": "-", "\u2014": "-", "\u00a0": " ",
+    };
+    for (const [from, to] of Object.entries(alias)) US_KEYS[from] = US_KEYS[to];
+  })();
+
+  let warnedNonAscii = false;
+  function tapKey(code, modifier) {
+    sendKey(code, modifier, true);
+    sendKey(code, modifier, false);
+  }
+  function typeText(text) {
+    for (const ch of text.replace(/\u2026/g, "...")) {
+      const k = US_KEYS[ch];
+      if (k) { tapKey(k[0], k[1] ? MOD.ShiftLeft : 0); continue; }
+      if (!warnedNonAscii) {
+        warnedNonAscii = true;
+        setStatus("The phone keyboard types as a US keyboard. For other scripts, " +
+                  "switch the firmware's layout with Ctrl+L and type the Latin keys.");
+      }
+    }
+  }
+
+  function proxyInput() {
+    const now = proxy.value;
+    let i = 0;
+    while (i < proxyLast.length && i < now.length && proxyLast[i] === now[i]) i++;
+    for (let n = proxyLast.length - i; n > 0; n--) tapKey(HID.Backspace, 0);
+    typeText(now.slice(i));
+    proxyLast = now;
+    /* Keep the field short and the pad intact, but never in the middle
+     * of a word the keyboard is still composing. */
+    if (!composing) proxyReset();
+  }
+
+  proxy.addEventListener("input", proxyInput);
+  proxy.addEventListener("compositionstart", () => { composing = true; });
+  proxy.addEventListener("compositionend", () => {
+    composing = false;
+    /* Some browsers fire input after compositionend, some before. */
+    setTimeout(() => { if (!composing && proxy.value !== PAD) proxyInput(); }, 0);
+  });
+  proxy.addEventListener("focus", () => setActive(true));
+  proxy.addEventListener("blur", () => setActive(false));
+  setTouchMode(touchMode);
+
+  /* On-page buttons for the shortcuts browsers keep for themselves (and
+   * the keys a phone keyboard lacks). They leave the focus where it is,
+   * so a phone keyboard stays up. */
   for (const btn of document.querySelectorAll(".keys button")) {
-    btn.addEventListener("mousedown", (e) => e.preventDefault());   /* keep focus on the screen */
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") e.preventDefault(); });
     btn.addEventListener("click", () => {
       const parts = btn.dataset.key.split("+");
       const code = HID[parts.pop()];
       let m = 0;
       for (const p of parts) if (p === "Ctrl") m |= MOD.ControlLeft;
-      sendKey(code, m, true);
-      sendKey(code, m, false);
-      canvas.focus();
+      tapKey(code, m);
+      if (!active) focusScreen();
     });
   }
 
@@ -537,7 +661,7 @@
         if (!btn.classList.contains("down")) return;
         btn.classList.remove("down");
         press(false);
-        canvas.focus();
+        if (!active) focusScreen();
       };
       btn.addEventListener("pointerup", up);
       btn.addEventListener("pointercancel", up);
@@ -558,7 +682,8 @@
   let pointerDown = false;
   canvas.addEventListener("pointerdown", (e) => {
     if (!running || halted || e.button > 0) return;
-    canvas.focus();
+    if (e.pointerType === "mouse") canvas.focus();
+    else if (!touchMode) setTouchMode(true);
     pointerDown = true;
     canvas.setPointerCapture(e.pointerId);
     const [x, y] = pointerPos(e);
@@ -573,6 +698,9 @@
   const pointerUp = (e) => {
     if (!pointerDown) return;
     pointerDown = false;
+    /* A finger or pen: bring up the on-screen keyboard. Done on release,
+     * which iOS counts as a user gesture that may open it. */
+    if (e.pointerType !== "mouse" && e.type === "pointerup") focusScreen();
     const [x, y] = pointerPos(e);
     Module._demo_pointer(x, y, 0);
   };
@@ -627,7 +755,7 @@
         ? "Running " + board.name + " with the " + variant.pack +
           " language pack. Your documents are kept in this browser."
         : "Running, but this browser does not allow storage: changes are lost on reload.");
-      canvas.focus();
+      if (!touchMode) canvas.focus();
     },
     print: (text) => console.log(text),
     printErr: (text) => console.warn(text),

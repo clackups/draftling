@@ -173,8 +173,17 @@ firmware opens them).
 
 ### Limits
 
-Phones and tablets need a hardware keyboard (a canvas does not bring up
-the on-screen keyboard). Browsers keep some shortcuts for themselves
+On phones and tablets a tap on the screen focuses an invisible
+textarea, which brings up the on-screen keyboard. Its input is read
+back from the field (on-screen keyboards send no usable key events,
+and predictive text rewrites whole words): the change since the last
+value becomes Backspaces plus the US-keyboard keys of the new
+characters. Characters a US keyboard cannot type are skipped; the
+firmware's own layouts and input methods (Ctrl+L) cover other
+scripts. Arrow keys, Tab and Ctrl+S get buttons under the screen
+there. A hardware keyboard on a tablet works as on a computer.
+
+Browsers keep some shortcuts for themselves
 (Ctrl+N, Ctrl+W, Ctrl+T, Ctrl+Tab), which the buttons under the screen
 send instead.
 
