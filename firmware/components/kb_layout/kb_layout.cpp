@@ -29,36 +29,39 @@ static kb_layout_id_t s_layout = (kb_layout_id_t)0;
 
 /* Default "Active language layouts" set: US when compiled in, plus the
  * main layouts of a pack (VI, KO, JA, ZH; TA99 and HI-IN), else the first
- * compiled-in layout so the set is never empty. */
-static uint32_t default_active_mask(void)
+ * compiled-in layout so the set is never empty. The "all" pack, which
+ * has every one of them, starts with US only. */
+static uint64_t default_active_mask(void)
 {
-    uint32_t mask = 0;
+    uint64_t mask = 0;
+#if !defined(CONFIG_DRAFTLING_LANG_PACK_ALL)
 #ifdef CONFIG_KB_LAYOUT_ENABLE_VI
-    mask |= (1u << KB_LAYOUT_VI);
+    mask |= (1ull << KB_LAYOUT_VI);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
-    mask |= (1u << KB_LAYOUT_KO);
+    mask |= (1ull << KB_LAYOUT_KO);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_JA
-    mask |= (1u << KB_LAYOUT_JA);
+    mask |= (1ull << KB_LAYOUT_JA);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_ZH
-    mask |= (1u << KB_LAYOUT_ZH);
+    mask |= (1ull << KB_LAYOUT_ZH);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TA99
-    mask |= (1u << KB_LAYOUT_TA99);
+    mask |= (1ull << KB_LAYOUT_TA99);
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_HI_IN
-    mask |= (1u << KB_LAYOUT_HI_IN);
+    mask |= (1ull << KB_LAYOUT_HI_IN);
 #endif
+#endif /* !CONFIG_DRAFTLING_LANG_PACK_ALL */
 #ifdef CONFIG_KB_LAYOUT_ENABLE_US
-    mask |= (1u << KB_LAYOUT_US);
+    mask |= (1ull << KB_LAYOUT_US);
 #endif
-    if (mask == 0) mask = 1u;
+    if (mask == 0) mask = 1ull;
     return mask;
 }
 
-static uint32_t s_active_mask = default_active_mask();
+static uint64_t s_active_mask = default_active_mask();
 
 /* HID keycodes for letter/number/symbol keys: 0x04..0x38 (53 keys) */
 #define KC_A     0x04
@@ -3823,7 +3826,7 @@ CHECK_TABLE(BN_NJ_NORMAL); CHECK_TABLE(BN_NJ_SHIFT);
 #endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
-static_assert(KB_LAYOUT_COUNT <= 32, "too many layouts for the active mask");
+static_assert(KB_LAYOUT_COUNT <= 64, "too many layouts for the active mask");
 
 /* In kb_layout_id_t order (C++ needs designators in order). */
 static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
@@ -4047,7 +4050,7 @@ extern "C" kb_layout_id_t kb_layout_next(void)
     kb_layout_id_t next = s_layout;
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
         next = (kb_layout_id_t)((next + 1) % KB_LAYOUT_COUNT);
-        if (s_active_mask & (1u << next)) {
+        if (s_active_mask & (1ull << next)) {
             s_layout = next;
             break;
         }
@@ -4058,14 +4061,14 @@ extern "C" kb_layout_id_t kb_layout_next(void)
 extern "C" bool kb_layout_is_active(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return false;
-    return (s_active_mask & (1u << layout)) != 0;
+    return (s_active_mask & (1ull << layout)) != 0;
 }
 
 extern "C" int kb_layout_active_count(void)
 {
     int count = 0;
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
-        if (s_active_mask & (1u << i)) count++;
+        if (s_active_mask & (1ull << i)) count++;
     }
     return count;
 }
@@ -4073,7 +4076,7 @@ extern "C" int kb_layout_active_count(void)
 extern "C" bool kb_layout_set_active(kb_layout_id_t layout, bool active)
 {
     if (layout >= KB_LAYOUT_COUNT) return false;
-    uint32_t bit = 1u << layout;
+    uint64_t bit = 1ull << layout;
 
     if (active) {
         s_active_mask |= bit;
@@ -4093,20 +4096,20 @@ extern "C" bool kb_layout_set_active(kb_layout_id_t layout, bool active)
     return true;
 }
 
-extern "C" uint32_t kb_layout_get_active_mask(void)
+extern "C" uint64_t kb_layout_get_active_mask(void)
 {
     return s_active_mask;
 }
 
-extern "C" void kb_layout_set_active_mask(uint32_t mask)
+extern "C" void kb_layout_set_active_mask(uint64_t mask)
 {
-    mask &= (1u << KB_LAYOUT_COUNT) - 1;
+    mask &= KB_LAYOUT_COUNT >= 64 ? ~0ull : (1ull << KB_LAYOUT_COUNT) - 1;
     if (mask == 0) mask = default_active_mask();
     s_active_mask = mask;
 
-    if (!(s_active_mask & (1u << s_layout))) {
+    if (!(s_active_mask & (1ull << s_layout))) {
         for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
-            if (s_active_mask & (1u << i)) {
+            if (s_active_mask & (1ull << i)) {
                 s_layout = (kb_layout_id_t)i;
                 break;
             }

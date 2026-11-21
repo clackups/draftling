@@ -1,0 +1,80 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Draftling
+Source: https://github.com/clackups/draftling
+
+Files: *
+Copyright: Draftling contributors
+License: MIT
+
+Files: firmware/components/fonts/lowres_* firmware/components/fonts/hires_*
+Copyright: Greybeard (flowchartsman/greybeard), a port of UW ttyp0;
+ Hack (source-foundry/Hack); Noto Sans Mono
+License: MIT and Bitstream-Vera and OFL-1.1
+Comment: The bitmap fonts generated from these typefaces (see
+ firmware/components/fonts and AGENTS.md "Font Creation Process").
+
+Files: firmware/components/fonts/cjk/*
+Copyright: Fusion Pixel Font (TakWolf); GNU Unifont
+License: OFL-1.1
+Comment: See firmware/components/fonts/cjk/LICENSE.txt.
+
+Files: firmware/components/fonts/tamil/* firmware/components/fonts/deva/*
+ firmware/components/fonts/beng/*
+Copyright: Google LLC (Noto Sans Tamil, Devanagari, Bengali)
+License: OFL-1.1
+
+Files: firmware/components/harfbuzz/*
+Copyright: HarfBuzz contributors
+License: MIT-old-style
+Comment: See firmware/components/harfbuzz/src/COPYING.
+
+Files: firmware/components/ime/dict/*
+Copyright: Google Inc. (Mozc dictionary); The Android Open Source Project
+ (PinyinIME dictionary)
+License: BSD-3-Clause and Apache-2.0
+Comment: See firmware/components/ime/dict/LICENSE.txt.
+
+Files: statically linked libraries
+Copyright: LVGL contributors (LVGL, MIT); Rich Geldreich (miniz, public
+ domain / Unlicense); Wayland contributors (libwayland-client, MIT);
+ libffi contributors (MIT); X.Org Foundation and contributors (libxcb,
+ libXau, libXdmcp, MIT); The OpenSSL Project Authors (OpenSSL,
+ Apache-2.0)
+License: MIT and Apache-2.0
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the
+ "Software"), to deal in the Software without restriction, including
+ without limitation the rights to use, copy, modify, merge, publish,
+ distribute, sublicense, and/or sell copies of the Software, and to
+ permit persons to whom the Software is furnished to do so, subject to
+ the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included
+ in all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+License: OFL-1.1
+ The SIL Open Font License 1.1, see
+ https://openfontlicense.org/open-font-license-official-text/
+
+License: Apache-2.0
+ On Debian systems the full text is in
+ /usr/share/common-licenses/Apache-2.0.
+
+License: BSD-3-Clause
+ See firmware/components/ime/dict/LICENSE.txt in the source.
+
+License: Bitstream-Vera
+ See https://github.com/source-foundry/Hack/blob/master/LICENSE.md
+
+License: MIT-old-style
+ See firmware/components/harfbuzz/src/COPYING in the source.

@@ -138,6 +138,14 @@ static const char *TAG = "EditorUI";
  * turn does not matter here). display_orientation_is_portrait() is
  * frozen for the session (see display_orientation.h), so SCR_W / SCR_H
  * stay constant until the next restart, exactly like the margins. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+/* A window that can be resized (the Linux application): the LVGL
+ * display has the current canvas size (already divided by the 2x
+ * scale), which the LVGL port changes before editor_ui_relayout().
+ * No margins, orientation or base rotation apply. */
+#define SCR_W        ((int)lv_display_get_horizontal_resolution(NULL))
+#define SCR_H        ((int)lv_display_get_vertical_resolution(NULL))
+#else
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
 static inline bool scr_axes_swapped(void) { return !display_orientation_is_portrait(); }
 #else
@@ -154,6 +162,17 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
     ? (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()) \
     : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())) \
     / display_scale_factor())
+#endif
+/* Split panes top / bottom instead of left / right: on a portrait
+ * screen, so the split follows the long axis. */
+static inline bool split_top_bottom(void)
+{
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+    return SCR_H > SCR_W;
+#else
+    return display_orientation_is_portrait();
+#endif
+}
 /* Width the editor and file browser screens lay out in: the screen
  * minus the strip on the right edge that holds the Ctrl+T writing
  * timer's progress line while a timer runs (s_ptimer_strip, 0
@@ -725,6 +744,9 @@ static void save_name_suggest_to_nvs(void)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
 #elif defined(CONFIG_DRAFTLING_LANG_PACK_INDIC)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_in"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_ALL)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_all"
+#define NVS_ACTIVE_LAYOUTS_U64 1   /* more than 32 layouts */
 #else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
 #endif
@@ -733,10 +755,19 @@ static void load_active_layouts_from_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+#if defined(NVS_ACTIVE_LAYOUTS_U64)
+        uint64_t v = 0;
+        if (nvs_get_u64(h, NVS_KEY_ACTIVE_LAYOUTS, &v) == ESP_OK) {
+            kb_layout_set_active_mask(v);
+        }
+#else
+        /* The other packs have at most 32 layouts: the key keeps the
+         * 32-bit value it always had. */
         uint32_t v = 0;
         if (nvs_get_u32(h, NVS_KEY_ACTIVE_LAYOUTS, &v) == ESP_OK) {
             kb_layout_set_active_mask(v);
         }
+#endif
         nvs_close(h);
     }
 }
@@ -745,7 +776,11 @@ static void save_active_layouts_to_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u32(h, NVS_KEY_ACTIVE_LAYOUTS, kb_layout_get_active_mask());
+#if defined(NVS_ACTIVE_LAYOUTS_U64)
+        nvs_set_u64(h, NVS_KEY_ACTIVE_LAYOUTS, kb_layout_get_active_mask());
+#else
+        nvs_set_u32(h, NVS_KEY_ACTIVE_LAYOUTS, (uint32_t)kb_layout_get_active_mask());
+#endif
         nvs_commit(h);
         nvs_close(h);
     }
@@ -2144,7 +2179,7 @@ static void recalc_pane_geometry(void)
         return;
     }
 
-    if (display_orientation_is_portrait()) {
+    if (split_top_bottom()) {
         /* Top / bottom split: vary y + height, full width. */
         int total = EDITOR_H - 1;     /* 1 px reserved for the divider */
         int top_h;
@@ -2196,7 +2231,7 @@ static void layout_panes(void)
     }
     if (s_pane_divider) {
         if (s_pane_count > 1) {
-            if (display_orientation_is_portrait()) {
+            if (split_top_bottom()) {
                 /* Horizontal rule between the top and bottom panes. */
                 lv_obj_set_pos(s_pane_divider, 0, s_panes[0].y + s_panes[0].h);
                 lv_obj_set_size(s_pane_divider, CONTENT_W, 1);
@@ -5881,13 +5916,19 @@ static void refresh_settings_items(void)
                  COLOR_THEMES[s_theme_idx].name);
         settings_add(SET_ITEM_THEME, buf);
 #endif
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         /* Display orientation -- landscape (default) or portrait (the
          * whole UI turned another 90 degrees). Frozen for the session
-         * like the margins, so it only takes effect on a restart. */
+         * like the margins, so it only takes effect on a restart. A
+         * resizable window has neither (nor margins, below): its shape
+         * is the window's. */
         snprintf(buf, sizeof(buf), "Orientation: %s (restart to apply)",
                  s_pending_portrait ? "Portrait" : "Landscape");
         settings_add(SET_ITEM_ORIENTATION, buf);
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+        /* (no Rotate 180) */
+#elif defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
         /* Runtime 180-degree display flip, applied at once */
         snprintf(buf, sizeof(buf), "Rotate 180: %s",
                  s_rotate180 ? "on" : "off");
@@ -5911,7 +5952,9 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
                  s_pending_scale2x ? "on" : "off");
         settings_add(SET_ITEM_SCALE2X, buf);
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         settings_add(SET_ITEM_MARGINS_MENU, "Screen margins...");
+#endif
         break;
 
     case SET_LVL_MARGINS:
@@ -8289,8 +8332,13 @@ static void build_hwinfo_text(std::string &out, int cols)
 #else
     help_row(out, cols, kc, "Touch", "none");
 #endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+    snprintf(buf, sizeof(buf), "%d x %d", (int)SCR_W * display_scale_factor(),
+             (int)SCR_H * display_scale_factor());
+#else
     snprintf(buf, sizeof(buf), "%d x %d", CONFIG_DRAFTLING_DISPLAY_WIDTH,
              CONFIG_DRAFTLING_DISPLAY_HEIGHT);
+#endif
     help_row(out, cols, kc, "Resolution", buf);
     snprintf(buf, sizeof(buf), "%d x %d%s", (int)SCR_W, (int)SCR_H,
              display_scale_factor() > 1 ? " (2x scale)" : "");
@@ -8334,8 +8382,12 @@ static void build_hwinfo_text(std::string &out, int cols)
 #else
         const char *bus = "SPI";
 #endif
-        snprintf(buf, sizeof(buf), "%s, %d MHz", bus, card->real_freq_khz / 1000);
-        help_row(out, cols, kc, "Interface", buf);
+        /* No bus clock: not a card (the Linux application's data
+         * folder), so no interface row. */
+        if (card->real_freq_khz > 0) {
+            snprintf(buf, sizeof(buf), "%s, %d MHz", bus, card->real_freq_khz / 1000);
+            help_row(out, cols, kc, "Interface", buf);
+        }
     }
 
     help_heading(out, "Keyboard");
@@ -14342,6 +14394,51 @@ static void rebuild_screens_for_theme(void)
     }
     update_title_bar();
     update_wifi_icons();
+}
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+/* The window was resized: the LVGL port may change the canvas size
+ * only while nothing transient is on screen, since the relayout
+ * rebuilds every screen like a theme change (rebuild_screens_for_theme(),
+ * which closes overlays, pickers and pop-ups). Until then the port
+ * keeps the old size and asks again. */
+extern "C" bool editor_ui_can_relayout(void)
+{
+    if (!s_scr) return false;   /* before editor_ui_init() */
+    if (s_restart_confirm_open || s_fmt_step != FMT_STEP_NONE ||
+        s_factory_reset_confirm || s_theme_picker_open ||
+        s_layouts_picker_open || s_save_open || s_xfer_open ||
+        s_setup_busy || s_wifi_scan_picker_open ||
+        s_wifi_scan_in_progress || s_wifi_pw_open || s_dbx_open ||
+        s_msg_open || s_search_open || s_exit_open || s_newfmt_open ||
+        s_del_open || s_help_open || s_pt_open || s_sugg_open ||
+        s_inpane_browser_open || s_drag_active) {
+        return false;
+    }
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    if (s_usbmsc_picker_open) return false;
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
+    if (s_kermit_picker_open) return false;
+#endif
+    if (s_passkey_panel && !lv_obj_has_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN))
+        return false;
+    return true;
+}
+
+/* Lay every screen out again for the LVGL display's new size (SCR_W /
+ * SCR_H read it). Call with the LVGL lock held, after
+ * lv_display_set_resolution(), and only when editor_ui_can_relayout()
+ * said yes. The documents, the browsed project and the settings stay;
+ * the F1 menu comes back at its top level. */
+extern "C" void editor_ui_relayout(void)
+{
+    if (!s_scr) return;
+    rebuild_screens_for_theme();
+#ifdef DRAFTLING_HAS_IME
+    ime_set_status_cells(status_avail_width() / char_width_for_font(FONT_11));
+#endif
 }
 #endif
 

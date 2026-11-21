@@ -53,6 +53,18 @@ choice DRAFTLING_LANG_PACK
             Devanagari and Bengali text is shaped on the device with
             HarfBuzz. Too large for boards with 4 MB of flash.
 
+    config DRAFTLING_LANG_PACK_ALL
+        bool "All languages (every layout and input method; Linux only)"
+        depends on IDF_TARGET_LINUX
+        help
+            Every keyboard layout, input method and font of the other
+            packs in one program: the European layouts, Vietnamese,
+            Korean, Japanese, Chinese and the Indic scripts. The CJK
+            fonts are the three sets merged (DRAFTLING_CJK_FONT_SET
+            "all", built by linux/tools/merge_cjk_fonts.py). Only for
+            the Linux application: the image does not fit a device's
+            flash.
+
 endchoice
 
 config DRAFTLING_LANG_PACK_NAME
@@ -63,6 +75,7 @@ config DRAFTLING_LANG_PACK_NAME
     default "japanese" if DRAFTLING_LANG_PACK_JAPANESE
     default "chinese" if DRAFTLING_LANG_PACK_CHINESE
     default "indic" if DRAFTLING_LANG_PACK_INDIC
+    default "all" if DRAFTLING_LANG_PACK_ALL
 
 config KB_LAYOUT_ENABLE_US
     bool "US-English (QWERTY)"
@@ -72,24 +85,28 @@ config KB_LAYOUT_ENABLE_US
 
 config KB_LAYOUT_ENABLE_UA
     bool "Ukrainian (Cyrillic)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Ukrainian Cyrillic keyboard layout.
 
 config KB_LAYOUT_ENABLE_DE
     bool "German (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the German QWERTZ keyboard layout with umlauts.
 
 config KB_LAYOUT_ENABLE_FR
     bool "French (AZERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the French AZERTY keyboard layout with accents.
 
 config KB_LAYOUT_ENABLE_HE
     bool "Hebrew (Israeli standard)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Hebrew (Israeli standard SI 1452) keyboard layout.
@@ -100,6 +117,7 @@ config KB_LAYOUT_ENABLE_HE
 
 config KB_LAYOUT_ENABLE_DE_CH
     bool "Swiss German (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Swiss German QWERTZ keyboard layout (umlauts on
@@ -108,6 +126,7 @@ config KB_LAYOUT_ENABLE_DE_CH
 
 config KB_LAYOUT_ENABLE_FR_CH
     bool "Swiss French (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Swiss French QWERTZ keyboard layout (e-acute /
@@ -116,6 +135,7 @@ config KB_LAYOUT_ENABLE_FR_CH
 
 config KB_LAYOUT_ENABLE_IT
     bool "Italian (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Italian QWERTY keyboard layout with accented
@@ -123,6 +143,7 @@ config KB_LAYOUT_ENABLE_IT
 
 config KB_LAYOUT_ENABLE_PT
     bool "Portuguese (Portugal, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Portuguese (Portugal) QWERTY keyboard layout with
@@ -130,6 +151,7 @@ config KB_LAYOUT_ENABLE_PT
 
 config KB_LAYOUT_ENABLE_ES
     bool "Spanish (Spain, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Spanish (Spain) QWERTY keyboard layout with n-tilde
@@ -137,6 +159,7 @@ config KB_LAYOUT_ENABLE_ES
 
 config KB_LAYOUT_ENABLE_GB
     bool "United Kingdom (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the United Kingdom QWERTY keyboard layout (pound sign
@@ -144,6 +167,7 @@ config KB_LAYOUT_ENABLE_GB
 
 config KB_LAYOUT_ENABLE_SE_FI
     bool "Swedish / Finnish (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Swedish / Finnish QWERTY keyboard layout (a-ring, a / o-umlaut;
@@ -152,6 +176,7 @@ config KB_LAYOUT_ENABLE_SE_FI
 
 config KB_LAYOUT_ENABLE_NO
     bool "Norwegian (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Norwegian QWERTY keyboard layout (a-ring, ae, o-slash; accent
@@ -160,6 +185,7 @@ config KB_LAYOUT_ENABLE_NO
 
 config KB_LAYOUT_ENABLE_DK
     bool "Danish (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Danish QWERTY keyboard layout (a-ring, ae, o-slash; accent
@@ -168,6 +194,7 @@ config KB_LAYOUT_ENABLE_DK
 
 config KB_LAYOUT_ENABLE_PL
     bool "Polish (programmers, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Polish programmers layout: US QWERTY with the Polish letters
@@ -176,6 +203,7 @@ config KB_LAYOUT_ENABLE_PL
 
 config KB_LAYOUT_ENABLE_CZ
     bool "Czech (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Czech QWERTZ keyboard layout (accented letters on the number
@@ -184,6 +212,7 @@ config KB_LAYOUT_ENABLE_CZ
 
 config KB_LAYOUT_ENABLE_SK
     bool "Slovak (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Slovak QWERTZ keyboard layout (accented letters on the number
@@ -192,6 +221,7 @@ config KB_LAYOUT_ENABLE_SK
 
 config KB_LAYOUT_ENABLE_HU
     bool "Hungarian (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Hungarian QWERTZ keyboard layout (every Hungarian letter on its
@@ -200,6 +230,7 @@ config KB_LAYOUT_ENABLE_HU
 
 config KB_LAYOUT_ENABLE_RO
     bool "Romanian (standard, QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Romanian standard QWERTY keyboard layout (s / t with comma
@@ -208,6 +239,7 @@ config KB_LAYOUT_ENABLE_RO
 
 config KB_LAYOUT_ENABLE_HR
     bool "Croatian / Slovenian (QWERTZ)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Croatian / Slovenian QWERTZ keyboard layout (s / c / z-caron,
@@ -216,6 +248,7 @@ config KB_LAYOUT_ENABLE_HR
 
 config KB_LAYOUT_ENABLE_TR
     bool "Turkish Q (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the Turkish Q keyboard layout (dotless i, g-breve, s-cedilla). Pulls in the Latin Extended-A font
@@ -223,6 +256,7 @@ config KB_LAYOUT_ENABLE_TR
 
 config KB_LAYOUT_ENABLE_FR_CA
     bool "Canadian French, traditional (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable the traditional Canadian French QWERTY keyboard layout
@@ -232,6 +266,7 @@ config KB_LAYOUT_ENABLE_FR_CA
 
 config KB_LAYOUT_ENABLE_CRH
     bool "Crimean Tatar, Latin (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Enable Ave Team's Crimean Tatar Roman keyboard layout
@@ -243,6 +278,7 @@ config KB_LAYOUT_ENABLE_CRH
 
 config KB_LAYOUT_ENABLE_CRH_B
     bool "Crimean Tatar, Latin, variant B (QWERTY)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_DEFAULT
     help
         Variant B of the Crimean Tatar Roman layout: the I key types
@@ -251,6 +287,7 @@ config KB_LAYOUT_ENABLE_CRH_B
 
 config KB_LAYOUT_ENABLE_VI
     bool "Vietnamese (Telex input)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_VIETNAMESE
     help
         Enable Vietnamese typing with the Telex input method on a
@@ -261,6 +298,7 @@ config KB_LAYOUT_ENABLE_VI
 
 config KB_LAYOUT_ENABLE_KO
     bool "Korean (2-set Hangul)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_KOREAN
     help
         Enable the Korean Dubeolsik (2-set) layout. Jamo are composed
@@ -269,6 +307,7 @@ config KB_LAYOUT_ENABLE_KO
 
 config KB_LAYOUT_ENABLE_JA
     bool "Japanese (romaji, kana-kanji conversion)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_JAPANESE
     help
         Enable Japanese input: romaji typed on a US-English keyboard
@@ -278,6 +317,7 @@ config KB_LAYOUT_ENABLE_JA
 
 config KB_LAYOUT_ENABLE_ZH
     bool "Chinese (pinyin)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_CHINESE
     help
         Enable Simplified Chinese input with full pinyin on a
@@ -287,6 +327,7 @@ config KB_LAYOUT_ENABLE_ZH
 
 config KB_LAYOUT_ENABLE_TA99
     bool "Tamil 99"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil 99 layout, the Government of Tamil Nadu
@@ -297,6 +338,7 @@ config KB_LAYOUT_ENABLE_TA99
 
 config KB_LAYOUT_ENABLE_TA_TW
     bool "Tamil Typewriter"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil Typewriter layout of the Tamil Nadu
@@ -307,6 +349,7 @@ config KB_LAYOUT_ENABLE_TA_TW
 
 config KB_LAYOUT_ENABLE_TA_IN
     bool "Tamil InScript"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Tamil InScript layout, the Government of India
@@ -317,6 +360,7 @@ config KB_LAYOUT_ENABLE_TA_IN
 
 config KB_LAYOUT_ENABLE_TA_TV
     bool "Tamil Taravinyas"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Taravinyas Tamil input engine
@@ -330,6 +374,7 @@ config DRAFTLING_HAS_TAMIL
 
 config KB_LAYOUT_ENABLE_HI_IN
     bool "Hindi InScript (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Devanagari InScript layout, the Government of India
@@ -342,6 +387,7 @@ config KB_LAYOUT_ENABLE_HI_IN
 
 config KB_LAYOUT_ENABLE_MR_IN
     bool "Marathi InScript (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Marathi Enhanced InScript layout (m17n
@@ -351,6 +397,7 @@ config KB_LAYOUT_ENABLE_MR_IN
 
 config KB_LAYOUT_ENABLE_NE_TR
     bool "Nepali Traditional (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Nepali Traditional layout (m17n "ne-trad"), the
@@ -359,6 +406,7 @@ config KB_LAYOUT_ENABLE_NE_TR
 
 config KB_LAYOUT_ENABLE_NE_RO
     bool "Nepali Romanized (Devanagari)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Nepali Romanized layout (m17n "ne-rom"): Devanagari
@@ -371,6 +419,7 @@ config DRAFTLING_HAS_DEVANAGARI
 
 config KB_LAYOUT_ENABLE_BN_IN
     bool "Bengali InScript"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Bengali InScript layout, the Government of India
@@ -382,6 +431,7 @@ config KB_LAYOUT_ENABLE_BN_IN
 
 config KB_LAYOUT_ENABLE_BN_PR
     bool "Bengali Probhat"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the Probhat layout (m17n "bn-probhat", XKB "bd(probhat)"):
@@ -391,6 +441,7 @@ config KB_LAYOUT_ENABLE_BN_PR
 
 config KB_LAYOUT_ENABLE_BN_NJ
     bool "Bengali National (Jatiya)"
+    default y if DRAFTLING_LANG_PACK_ALL
     default y if DRAFTLING_LANG_PACK_INDIC
     help
         Enable the National (Jatiya) layout, the standard keyboard of
@@ -433,9 +484,13 @@ config DRAFTLING_HAS_CJK
 # Which CJK font set is compiled in (components/fonts/cjk/<set>/): the
 # glyph repertoire and regional glyph style of one language. With more
 # than one CJK layout enabled by hand, the first of ja, zh, ko wins.
+# "all" (the Linux-only "all" pack) is the three merged: kana from ja,
+# bopomofo from zh, Hangul from ko, Han characters in the Japanese
+# style where ja has them, else the Chinese one.
 config DRAFTLING_CJK_FONT_SET
     string
     depends on DRAFTLING_HAS_CJK
+    default "all" if DRAFTLING_LANG_PACK_ALL
     default "ja" if KB_LAYOUT_ENABLE_JA
     default "zh" if KB_LAYOUT_ENABLE_ZH
     default "ko"
