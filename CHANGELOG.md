@@ -26,6 +26,13 @@ in the git log.
   with `make` in `linux/` (also as a Debian package); see
   `linux/README.md`.
 
+### Changed
+
+- **No Bluetooth menu without Bluetooth**: on the MicroJournal Rev 5,
+  which takes a USB keyboard and has Bluetooth switched off, F1 ->
+  Connectivity no longer offers a Bluetooth sub-menu that could not do
+  anything.
+
 ## [1.0.30] - 2026-11-19
 
 ### Added

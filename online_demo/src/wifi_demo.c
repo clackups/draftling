@@ -181,6 +181,7 @@ esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_results, int *o
         snprintf(results[n].ssid, sizeof(results[n].ssid), "%s", s_nets[i].ssid);
         results[n].rssi = s_nets[i].rssi;
         results[n].open = s_nets[i].open;
+        results[n].known = false;
         n++;
     }
     *out_count = n;

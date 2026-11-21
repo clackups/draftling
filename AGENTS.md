@@ -1235,7 +1235,8 @@ Sync...                   Synchronize: <project> / Connect a Draftbox
                           repository... / Sync via browser: <project>...
 Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
                           Choose network...)
-                          Bluetooth... (Status, Scan for keyboard)
+                          Bluetooth... (Status, Scan for keyboard; not
+                          with CONFIG_DRAFTLING_NO_BLUETOOTH)
 System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
 Sleep now

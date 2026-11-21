@@ -26,6 +26,9 @@ typedef struct {
     char ssid[33];
     int8_t rssi;
     bool open; /* true = no password required (WIFI_AUTH_OPEN) */
+    bool known; /* the system already has this network's password (the
+                 * Linux program: a NetworkManager profile); the UI
+                 * connects without asking for it */
 } wifi_scan_result_t;
 
 #define WIFI_SCAN_MAX_RESULTS 24

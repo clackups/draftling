@@ -1265,6 +1265,9 @@ static bool      s_wifi_pw_open     = false;
 static char      s_wifi_pw_ssid[33] = "";     /* SSID this password is for */
 static char      s_wifi_pw_buf[65]  = "";     /* matches wifi_config_t.sta.password size */
 static int       s_wifi_pw_pos      = 0;      /* byte cursor into s_wifi_pw_buf */
+/* A network whose saved password (wifi_scan_result_t::known) was
+ * refused: the next pick of it asks for the password. */
+static char      s_wifi_known_refused[33] = "";
 
 /* ---- "Connect a Draftbox repository" prompt ----
  * F1 menu row MENU_ITEM_DRAFTBOX. A two-step single-line prompt on the
@@ -5561,7 +5564,12 @@ static void refresh_menu_items(void)
 
     case MENU_LVL_CONN:
         menu_add(MENU_ITEM_WIFI_MENU, "WiFi...");
+#if !defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
+        /* Without a BLE keyboard host (keyboards connected natively:
+         * USB, the Linux program's own keyboard) there is nothing to
+         * show or scan for. */
         menu_add(MENU_ITEM_BLE_MENU, "Bluetooth...");
+#endif
         menu_add(MENU_ITEM_BACK, "Back (Esc)");
         break;
 
@@ -7142,9 +7150,12 @@ static void refresh_wifi_scan_picker_items(void)
             lv_list_add_btn(s_menu_list, NULL, "No networks found");
         }
         for (int i = 0; i < s_wifi_scan_count; i++) {
+            /* [saved]: the system has the password, picking the network
+             * connects without asking (see wifi_scan_picker_activate()). */
+            const wifi_scan_result_t *ap = &s_wifi_scan_results[i];
+            bool saved = ap->known && strcmp(ap->ssid, s_wifi_known_refused) != 0;
             snprintf(buf, sizeof(buf), "%s%.32s",
-                     s_wifi_scan_results[i].open ? "" : "[locked] ",
-                     s_wifi_scan_results[i].ssid);
+                     saved ? "[saved] " : ap->open ? "" : "[locked] ", ap->ssid);
             lv_list_add_btn(s_menu_list, NULL, buf);
         }
         lv_list_add_btn(s_menu_list, NULL, "Rescan");
@@ -7202,11 +7213,16 @@ static void wifi_scan_picker_activate(int idx)
     if (idx < 0 || idx >= s_wifi_scan_count) return; /* also covers the "No networks found" row */
 
     const wifi_scan_result_t *ap = &s_wifi_scan_results[idx];
-    if (ap->open) {
+    /* A network the system already has the password for (the Linux
+     * program: a NetworkManager profile) connects without asking,
+     * unless that password was just refused. */
+    bool known = ap->known && strcmp(ap->ssid, s_wifi_known_refused) != 0;
+    if (ap->open || known) {
         s_wifi_scan_picker_open = false;
         close_menu();
         wifi_connect_picked_async(ap->ssid, "");
     } else {
+        if (strcmp(ap->ssid, s_wifi_known_refused) == 0) s_wifi_known_refused[0] = '\0';
         show_wifi_password_prompt(ap->ssid);
     }
 }
@@ -12957,12 +12973,30 @@ static void wifi_picked_busy_apply(void *)
     editor_ui_set_status("WiFi: busy, try again");
 }
 
+/* Runs on the LVGL task (lv_async_call); arg is a strdup()ed SSID. */
+static void wifi_known_refused_apply(void *arg)
+{
+    char *ssid = (char *)arg;
+    strlcpy(s_wifi_known_refused, ssid, sizeof(s_wifi_known_refused));
+    free(ssid);
+}
+
 static void wifi_connect_picked_task(void *arg)
 {
     wifi_connect_args_t *args = (wifi_connect_args_t *)arg;
     esp_err_t ret = wifi_manager_connect_to(args->ssid, args->password, true);
     if (ret == ESP_OK) {
         wifi_manager_save_to_file(args->ssid, args->password);
+    } else if (ret != ESP_ERR_INVALID_STATE && !args->password[0] &&
+               wifi_manager_last_failure_was_auth()) {
+        /* A saved password (or none) was refused: ask next time. */
+        char *ssid = strdup(args->ssid);
+        if (ssid && draftling_lvgl_port_lock(-1)) {
+            lv_async_call(wifi_known_refused_apply, ssid);
+            draftling_lvgl_port_unlock();
+        } else {
+            free(ssid);
+        }
     } else if (ret == ESP_ERR_INVALID_STATE) {
         if (draftling_lvgl_port_lock(-1)) {
             lv_async_call(wifi_picked_busy_apply, NULL);

@@ -72,10 +72,15 @@ user documentation in `docs/`), with these differences:
   its CA certificates for TLS). "WiFi connected" means the computer has
   a network connection; the status names the WiFi network or the
   active connection. With NetworkManager running, F1 -> Connectivity ->
-  WiFi scans and connects through `nmcli` (the password is an argument
-  of `nmcli`, visible in the process list while it runs), and Ctrl+W
-  connects to the network in `wifi.cfg` or the one saved before.
-  Without NetworkManager the WiFi commands report that the system
+  WiFi scans and connects through `nmcli`, and Ctrl+W
+  connects to the network in `wifi.cfg` or the one saved before. A
+  network NetworkManager already has a profile for is connected with
+  that profile (`nmcli connection up`); "Choose network..." marks it
+  `[saved]` and does not ask for its password, unless NetworkManager
+  refused the saved one the last time. A typed password goes to `nmcli connection up` in a file only
+  the user can read; for a new network it is an
+  argument of `nmcli device wifi connect`, visible in the process list
+  while it runs. Without NetworkManager the WiFi commands report that the system
   manages the network.
 - **Screenshot.** `kill -USR1 <pid>` writes the current screen to
   `screenshot.ppm` in the settings folder (for bug reports).

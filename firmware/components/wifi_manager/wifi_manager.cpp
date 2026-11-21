@@ -543,6 +543,7 @@ extern "C" esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_resu
         results[n].ssid[sizeof(results[n].ssid) - 1] = '\0';
         results[n].rssi = records[i].rssi;
         results[n].open = (records[i].authmode == WIFI_AUTH_OPEN);
+        results[n].known = false;
         n++;
     }
     free(records);

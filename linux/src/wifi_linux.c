@@ -488,6 +488,106 @@ static bool nm_any_wifi_device(char *dev, size_t n)
     return false;
 }
 
+/* Call cb for each of NetworkManager's saved WiFi profiles: its UUID,
+ * last-used time and SSID. Two nmcli calls, the WiFi profiles and then
+ * their SSIDs and timestamps. */
+typedef void (*nm_profile_cb)(const char *uuid, long long ts, const char *ssid, void *ctx);
+
+static void nm_for_each_profile(nm_profile_cb cb, void *ctx)
+{
+    enum { MAX_PROFILES = 128 };
+    char *list = (char *)malloc(32768);
+    if (!list) return;
+    char *largv[] = { "nmcli", "-t", "-f", "UUID,TYPE", "connection", "show", NULL };
+    if (run(largv, list, 32768, false, 5) != 0) {
+        free(list);
+        return;
+    }
+    char *argv[8 + 2 * MAX_PROFILES];
+    int n = 0;
+    argv[n++] = "nmcli";
+    argv[n++] = "-t";
+    argv[n++] = "-f";
+    argv[n++] = "connection.uuid,connection.timestamp,802-11-wireless.ssid";
+    argv[n++] = "connection";
+    argv[n++] = "show";
+    int first = n;
+    for (char *sp_ = NULL, *line = strtok_r(list, "\n", &sp_); line && n < first + 2 * MAX_PROFILES;
+         line = strtok_r(NULL, "\n", &sp_)) {
+        char *f[2];
+        if (split_terse(line, f, 2) != 2 || strcmp(f[1], "802-11-wireless") != 0) continue;
+        argv[n++] = "uuid";
+        argv[n++] = f[0];
+    }
+    argv[n] = NULL;
+    if (n > first) {
+        size_t out_sz = 256 * (size_t)(n - first) + 256;
+        char *out = (char *)malloc(out_sz);
+        if (out && run(argv, out, out_sz, false, 10) == 0) {
+            /* Blocks of "field:value" lines, one block per profile. */
+            char cur[64] = "";
+            long long ts = 0;
+            for (char *sp_ = NULL, *line = strtok_r(out, "\n", &sp_); line;
+                 line = strtok_r(NULL, "\n", &sp_)) {
+                char *f[2];
+                if (split_terse(line, f, 2) != 2) continue;
+                if (strcmp(f[0], "connection.uuid") == 0) {
+                    snprintf(cur, sizeof(cur), "%s", f[1]);
+                    ts = 0;
+                } else if (strcmp(f[0], "connection.timestamp") == 0) {
+                    ts = atoll(f[1]);
+                } else if (strcmp(f[0], "802-11-wireless.ssid") == 0 && cur[0]) {
+                    cb(cur, ts, f[1], ctx);
+                    cur[0] = '\0';
+                }
+            }
+        }
+        free(out);
+    }
+    free(list);
+}
+
+typedef struct {
+    const char *ssid;
+    char *uuid;
+    size_t uuid_sz;
+    long long best;
+} profile_find_t;
+
+static void profile_find_cb(const char *uuid, long long ts, const char *ssid, void *ctx)
+{
+    profile_find_t *pf = (profile_find_t *)ctx;
+    if (strcmp(ssid, pf->ssid) != 0 || ts <= pf->best) return;
+    pf->best = ts;
+    snprintf(pf->uuid, pf->uuid_sz, "%s", uuid);
+}
+
+/* NetworkManager's saved WiFi profile for ssid (the most recently used
+ * one when there are several): its UUID in uuid. */
+static bool nm_saved_profile(const char *ssid, char *uuid, size_t uuid_sz)
+{
+    profile_find_t pf = { ssid, uuid, uuid_sz, -1 };
+    nm_for_each_profile(profile_find_cb, &pf);
+    return pf.best >= 0;
+}
+
+/* Write the password for "nmcli connection up ... passwd-file" into a
+ * new file readable only by us; its name goes into path. */
+static bool write_passwd_file(const char *password, char *path, size_t path_sz)
+{
+    const char *dir = getenv("XDG_RUNTIME_DIR");
+    if (!dir || !dir[0]) dir = "/tmp";
+    snprintf(path, path_sz, "%s/draftling-wifi-XXXXXX", dir);
+    int fd = mkstemp(path);   /* mode 0600 */
+    if (fd < 0) return false;
+    char buf[160];
+    int len = snprintf(buf, sizeof(buf), "802-11-wireless-security.psk:%s\n", password);
+    bool ok = len > 0 && (size_t)len < sizeof(buf) && write(fd, buf, (size_t)len) == len;
+    close(fd);
+    if (!ok) unlink(path);
+    return ok;
+}
+
 /* Connect to ssid (with password), or, with ssid NULL, connect the
  * WiFi device to whichever saved network NetworkManager picks.
  * Blocking, like the device's (the editor calls it from a worker). */
@@ -498,6 +598,12 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
     bool nm = s_nm;
     s_auth_failed = false;
     s_busy = true;
+    /* As on the device, the network being connected to is the one the
+     * status names from now on ("Connecting to <SSID>"). */
+    if (ssid) {
+        snprintf(s_ssid, sizeof(s_ssid), "%s", ssid);
+        s_ip[0] = '\0';
+    }
     pthread_mutex_unlock(&s_mu);
 
     if (!nm) nm = nm_running();
@@ -515,16 +621,33 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
     set_state(WIFI_STATE_CONNECTING);
     char wait_s[8];
     snprintf(wait_s, sizeof(wait_s), "%d", CONNECT_TIMEOUT_S);
-    /* The password is an argument of nmcli: other users of this
-     * computer could see it in the process list while nmcli runs. */
     char *argv[12];
     char dev[32] = "";
+    char uuid[64] = "";
+    char pw_path[256] = "";
     int n = 0;
     argv[n++] = "nmcli";
     argv[n++] = "--wait";
     argv[n++] = wait_s;
-    argv[n++] = "device";
-    if (ssid) {
+    if (ssid && nm_saved_profile(ssid, uuid, sizeof(uuid))) {
+        /* NetworkManager already has a profile for this network: bring
+         * that up, handing it the password through a file. "device wifi
+         * connect ... password" would rewrite the profile's security
+         * settings with the password alone, which NetworkManager
+         * refuses ("key-mgmt: property is missing"). */
+        argv[n++] = "connection";
+        argv[n++] = "up";
+        argv[n++] = "uuid";
+        argv[n++] = uuid;
+        if (password && password[0] && write_passwd_file(password, pw_path, sizeof(pw_path))) {
+            argv[n++] = "passwd-file";
+            argv[n++] = pw_path;
+        }
+    } else if (ssid) {
+        /* A new network. The password is an argument of nmcli: other
+         * users of this computer could see it in the process list
+         * while nmcli runs. */
+        argv[n++] = "device";
         argv[n++] = "wifi";
         argv[n++] = "connect";
         argv[n++] = (char *)ssid;
@@ -543,17 +666,22 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
             pthread_mutex_unlock(&s_op_mu);
             return ESP_FAIL;
         }
+        argv[n++] = "device";
         argv[n++] = "connect";
         argv[n++] = dev;
     }
     argv[n] = NULL;
     char out[2048];
     int rc = run(argv, out, sizeof(out), true, CONNECT_TIMEOUT_S + 5);
+    if (pw_path[0]) unlink(pw_path);
     bool ok = rc == 0;
     if (!ok) {
         ESP_LOGW(TAG, "nmcli: %s", out[0] ? out : "failed");
+        /* Only a refused or invalid key counts as a wrong password, not
+         * every error that names the security settings. */
         bool auth = strstr(out, "Secrets were required") || strstr(out, "secrets") ||
-                    strstr(out, "password") || strstr(out, "802-11-wireless-security");
+                    strstr(out, "password") || strstr(out, "wireless-security.psk") ||
+                    strstr(out, "wireless-security.wep-key");
         pthread_mutex_lock(&s_mu);
         s_auth_failed = auth;
         pthread_mutex_unlock(&s_mu);
@@ -568,11 +696,19 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
     bool up = ok && p.wifi_up;
     if (up && ssid && !p.ssid[0]) snprintf(p.ssid, sizeof(p.ssid), "%s", ssid);
     apply_probe(&p, false);
+    if (!up && ssid) {
+        /* The error names the network that failed, not the one the
+         * computer is (still) connected to. */
+        pthread_mutex_lock(&s_mu);
+        snprintf(s_ssid, sizeof(s_ssid), "%s", ssid);
+        pthread_mutex_unlock(&s_mu);
+    }
     set_state(up ? WIFI_STATE_CONNECTED : WIFI_STATE_ERROR);
     if (!up) {
         /* The error is reported; settle on what is true now. */
         pthread_mutex_lock(&s_mu);
         s_state = p.wifi_up ? WIFI_STATE_CONNECTED : WIFI_STATE_DISCONNECTED;
+        snprintf(s_ssid, sizeof(s_ssid), "%s", p.ssid);
         pthread_mutex_unlock(&s_mu);
     }
     pthread_mutex_unlock(&s_op_mu);
@@ -673,6 +809,20 @@ static int cmp_rssi(const void *a, const void *b)
     return ((const wifi_scan_result_t *)b)->rssi - ((const wifi_scan_result_t *)a)->rssi;
 }
 
+typedef struct {
+    wifi_scan_result_t *results;
+    int n;
+} scan_known_t;
+
+static void scan_known_cb(const char *uuid, long long ts, const char *ssid, void *ctx)
+{
+    (void)uuid;
+    (void)ts;
+    scan_known_t *sk = (scan_known_t *)ctx;
+    for (int i = 0; i < sk->n; i++)
+        if (strcmp(sk->results[i].ssid, ssid) == 0) sk->results[i].known = true;
+}
+
 esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_results, int *out_count)
 {
     *out_count = 0;
@@ -708,8 +858,13 @@ esp_err_t wifi_manager_scan(wifi_scan_result_t *results, int max_results, int *o
         snprintf(results[n].ssid, sizeof(results[n].ssid), "%s", f[0]);
         results[n].rssi = (int8_t)rssi;
         results[n].open = open;
+        results[n].known = false;
         n++;
     }
+    /* Networks NetworkManager has a profile for connect without
+     * asking for the password again. */
+    scan_known_t sk = { results, n };
+    nm_for_each_profile(scan_known_cb, &sk);
     qsort(results, (size_t)n, sizeof(results[0]), cmp_rssi);
     *out_count = n;
     pthread_mutex_unlock(&s_op_mu);
