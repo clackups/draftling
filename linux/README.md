@@ -37,7 +37,8 @@ user documentation in `docs/`), with these differences:
   connected to a device; the layout is chosen in Draftling (Ctrl+L,
   F1 -> Settings -> Keyboard -> Active layouts), not by the desktop.
   The computer's key repeat is ignored (the editor repeats keys
-  itself). The Bluetooth menu shows the computer keyboard as connected.
+  itself). There is no Bluetooth menu: the computer's own keyboard is
+  used.
 - **Mouse.** The left button acts as a touch (tap, double-tap selects a
   word, drag selects); the wheel moves the cursor three lines per notch.
 - **Window.** It can be resized; the editor lays its screens out again
@@ -86,6 +87,80 @@ user documentation in `docs/`), with these differences:
   manages the network.
 - **Screenshot.** `kill -USR1 <pid>` writes the current screen to
   `screenshot.ppm` in the settings folder (for bug reports).
+
+## A minimal Draftling computer
+
+To make a computer (a laptop, a single-board computer with a screen)
+a dedicated Draftling writing machine, no desktop is needed: Weston,
+the reference Wayland compositor, in its kiosk shell runs Draftling
+full screen with nothing else around it.
+
+1. Install Debian (13 "trixie" or later: the package needs glibc
+   2.38) from the netinst image. On the "Software selection" page,
+   untick "Debian desktop environment" and every desktop; keep
+   "standard system utilities" (and "SSH server" if you want to reach
+   the machine over the network).
+2. Log in on the console and install Weston, NetworkManager and the
+   Draftling package for the machine (`dpkg --print-architecture`
+   names it; the packages are on https://flasher.draftling.art/,
+   board "Linux computer"):
+
+   ```
+   sudo apt install weston network-manager ./draftling_<version>_arm64.deb
+   ```
+
+   NetworkManager leaves alone an interface listed in
+   `/etc/network/interfaces`. If the installer set the WiFi up there,
+   remove its lines (keep `lo`) and reboot, so that Draftling's WiFi
+   menu can control it.
+3. Create `~/.config/weston.ini`:
+
+   ```
+   [core]
+   shell=kiosk
+   # Draftling has its own standby (F1 -> Settings -> System); do not
+   # let Weston blank the screen as well.
+   idle-time=0
+
+   [autolaunch]
+   path=/usr/bin/draftling
+   # Leave Weston when Draftling quits (F1 -> Quit Draftling).
+   watch=true
+   ```
+
+   The kiosk shell shows every window full screen, without
+   decorations or a panel. If the screen shows the text too small,
+   use Draftling's F1 -> Settings -> Display -> 2x scale, or Weston's
+   per-output `scale=2` (an `[output]` section with the output's
+   `name=`, see `man weston.ini`).
+4. Run `weston` on the console to try it. To start it on every boot,
+   log the user in automatically on the first console
+   (`sudo systemctl edit getty@tty1`, then add)
+
+   ```
+   [Service]
+   ExecStart=
+   ExecStart=-/sbin/agetty --autologin <user> --noclear %I $TERM
+   ```
+
+   and start Weston from the login, at the end of `~/.profile`:
+
+   ```
+   if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = /dev/tty1 ]; then
+       exec weston
+   fi
+   ```
+
+   Quitting Draftling then ends the login, and the console logs in
+   and starts it again; the other consoles (Ctrl+Alt+F2) are still
+   there for maintenance.
+
+Weston is started from a console login, so systemd-logind gives it the
+screen and input devices, and Draftling can set the backlight through
+logind as well. Cage, another kiosk compositor, runs Draftling too,
+but it always shows the mouse cursor in the middle of the screen, on
+top of the text; it is not recommended. Weston's kiosk shell works
+best.
 
 ## Build requirements
 
