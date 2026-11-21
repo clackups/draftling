@@ -251,7 +251,18 @@ $(PROG): $(OBJS) $(LVGL_LIB)
 	@$(CXX) $(LDFLAGS) $(OBJS) $(LDLIBS) -o $@
 
 # Every object waits for the generated headers.
-GEN_HDRS := $(SDKCONFIG) $(WL_HDRS)
+# The compile flags, kept in a file that changes only when they do: every
+# object depends on it, so a new version (DRAFTLING_VERSION, from
+# PROJECT_VER), OPT= or another flag change rebuilds the objects. The
+# objects have no other way to notice a flag change.
+FLAGS_STAMP := $(PDIR)/compile-flags
+FLAGS_NOW   := $(CC) $(CXX) $(CFLAGS) $(CXXFLAGS) $(HB_FLAGS)
+ifneq ($(file <$(FLAGS_STAMP)),$(FLAGS_NOW))
+$(shell mkdir -p $(PDIR))
+$(file >$(FLAGS_STAMP),$(FLAGS_NOW))
+endif
+
+GEN_HDRS := $(SDKCONFIG) $(WL_HDRS) $(FLAGS_STAMP)
 
 # One run writes all three (a grouped target, GNU make 4.3+).
 $(foreach n,10 12 16,$(PDIR)/cjk-all/cjk$(n).bin) &: tools/merge_cjk_fonts.py $(wildcard $(F)/cjk/*/cjk*.bin)
