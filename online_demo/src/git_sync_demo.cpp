@@ -254,7 +254,7 @@ esp_err_t git_sync_start(const char *project_dir, git_sync_direction_t direction
         notify(GIT_SYNC_ERROR, "Git sync is not configured (git.cfg)");
         return ESP_ERR_INVALID_STATE;
     }
-    if (!wifi_manager_is_connected()) {
+    if (!wifi_manager_network_up()) {
         notify(GIT_SYNC_ERROR, "WiFi is not connected");
         return ESP_ERR_INVALID_STATE;
     }

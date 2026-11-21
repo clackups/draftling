@@ -1,0 +1,6 @@
+# Linux application: the Kconfig defaults of the "board", as
+# firmware/sdkconfig.defaults.<board> is for a device. The language
+# pack's firmware/sdkconfig.defaults.lang_<pack> is applied on top
+# (see draftling.mk).
+CONFIG_IDF_TARGET="linux"
+CONFIG_DRAFTLING_MODEL_LINUX=y

@@ -6,6 +6,26 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Draftling for Linux**: the editor as a native program for Linux
+  computers, built from the same code as the firmware. It runs in a
+  Wayland or X11 window (which can be resized), with the computer's
+  own keyboard (the
+  layout is chosen in Draftling) and mouse, keeps the documents in
+  `~/.local/share/draftling` (or a folder given with `--data-dir`),
+  synchronises projects with Git over the computer's network, and
+  connects to WiFi through NetworkManager. Ctrl+P and the inactivity
+  timeout save and turn the window black until the next key or click;
+  F1 -> "Quit Draftling" ends the program. Ctrl+B and F1 -> Settings
+  -> Display -> Backlight set the screen's backlight where the computer
+  lets a program do so (laptops, many single-board computer displays),
+  and otherwise dim the window. The program has every
+  language (all keyboard layouts, input methods and fonts of the
+  language packs); single-pack programs can be built too. It is built
+  with `make` in `linux/` (also as a Debian package); see
+  `linux/README.md`.
+
 ## [1.0.30] - 2026-11-19
 
 ### Added

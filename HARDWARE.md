@@ -13,6 +13,11 @@ keyboard, syncs over Wi-Fi, stores documents on a MicroSD card, and its
 BOOT button wakes it from sleep (hold it 2 s to forget the paired
 keyboards).
 
+The same editor also runs on Linux computers, as a native program in a
+Wayland or X11 window; it is built with
+`make` in `linux/` rather than with a preset (see
+[linux/README.md](linux/README.md)).
+
 Features used in the table:
 
 - **Light**: the backlight or front-light can be dimmed from

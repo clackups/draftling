@@ -166,6 +166,7 @@ esp_err_t wifi_manager_disconnect(void)
 
 wifi_state_t wifi_manager_get_state(void) { return s_state; }
 bool wifi_manager_is_connected(void) { return s_state == WIFI_STATE_CONNECTED; }
+bool wifi_manager_network_up(void) { return wifi_manager_is_connected(); }
 void wifi_manager_set_callback(wifi_state_callback_t cb) { s_callback = cb; }
 const char *wifi_manager_get_ip(void) { return s_ip; }
 const char *wifi_manager_get_ssid(void) { return s_ssid; }

@@ -865,7 +865,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
 
 static void run_sync(git_sync_direction_t dir)
 {
-    if (!wifi_manager_is_connected()) {
+    if (!wifi_manager_network_up()) {
         set_error("WiFi not connected");
         return;
     }
@@ -1082,7 +1082,7 @@ static esp_err_t draftbox_connect(const char *dir, const char *site, const char 
     }
     pw[8] = '\0';
 
-    if (!wifi_manager_is_connected()) {
+    if (!wifi_manager_network_up()) {
         snprintf(msg, msg_len, "connect WiFi first");
         return ESP_ERR_INVALID_STATE;
     }

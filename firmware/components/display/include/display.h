@@ -337,6 +337,16 @@ typedef struct {
 void display_set_backlight(int percent);
 
 /*
+ * The backlight level the hardware has now, in percent, for a backend
+ * whose backlight has a setting of its own that should stay until the
+ * user changes it (the Linux program on a screen with a backlight
+ * control); -1 otherwise. The editor uses it in place of its default
+ * when no level was saved. Optional: the editor carries a weak
+ * definition returning -1.
+ */
+int display_get_backlight(void);
+
+/*
  * Toggle a full visual inversion of the panel: pixels that would
  * normally render "active" (drawn / ink) show the background instead,
  * and vice versa. The underlying framebuffer content (as written by

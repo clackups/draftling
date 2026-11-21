@@ -138,6 +138,14 @@ static const char *TAG = "EditorUI";
  * turn does not matter here). display_orientation_is_portrait() is
  * frozen for the session (see display_orientation.h), so SCR_W / SCR_H
  * stay constant until the next restart, exactly like the margins. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+/* A window that can be resized (the Linux application): the LVGL
+ * display has the current canvas size (already divided by the 2x
+ * scale), which the LVGL port changes before editor_ui_relayout().
+ * No margins, orientation or base rotation apply. */
+#define SCR_W        ((int)lv_display_get_horizontal_resolution(NULL))
+#define SCR_H        ((int)lv_display_get_vertical_resolution(NULL))
+#else
 #if CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 90 || CONFIG_DRAFTLING_DISPLAY_ROTATE_ANGLE == 270
 static inline bool scr_axes_swapped(void) { return !display_orientation_is_portrait(); }
 #else
@@ -154,6 +162,17 @@ static inline bool scr_axes_swapped(void) { return display_orientation_is_portra
     ? (CONFIG_DRAFTLING_DISPLAY_WIDTH  - display_margin_left() - display_margin_right()) \
     : (CONFIG_DRAFTLING_DISPLAY_HEIGHT - display_margin_top()  - display_margin_bottom())) \
     / display_scale_factor())
+#endif
+/* Split panes top / bottom instead of left / right: on a portrait
+ * screen, so the split follows the long axis. */
+static inline bool split_top_bottom(void)
+{
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+    return SCR_H > SCR_W;
+#else
+    return display_orientation_is_portrait();
+#endif
+}
 /* Width the editor and file browser screens lay out in: the screen
  * minus the strip on the right edge that holds the Ctrl+T writing
  * timer's progress line while a timer runs (s_ptimer_strip, 0
@@ -525,23 +544,38 @@ static const int BACKLIGHT_OPTIONS[] = {
     ((int)(sizeof(BACKLIGHT_OPTIONS) / sizeof(BACKLIGHT_OPTIONS[0])))
 
 #define NVS_KEY_BACKLIGHT "backlight"
-/* Default to 50 % when available, else the lowest still-allowed
- * step (set per board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT). */
-#if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= 50
-static int s_backlight_pct = 50;
+/* Default CONFIG_DRAFTLING_BACKLIGHT_DEFAULT_PCT (50 % on most
+ * boards), but never below the lowest still-allowed step (set per
+ * board via CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT). */
+#if CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT <= CONFIG_DRAFTLING_BACKLIGHT_DEFAULT_PCT
+static int s_backlight_pct = CONFIG_DRAFTLING_BACKLIGHT_DEFAULT_PCT;
 #else
 static int s_backlight_pct = CONFIG_DRAFTLING_BACKLIGHT_MIN_PCT;
 #endif
 
+/* Backends with no level of their own to report (every device). The
+ * Linux program's display backend overrides it. */
+extern "C" __attribute__((weak)) int display_get_backlight(void)
+{
+    return -1;
+}
+
 static void load_backlight_from_nvs(void)
 {
     nvs_handle_t h;
+    bool saved = false;
     if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
         uint8_t v = 0;
         if (nvs_get_u8(h, NVS_KEY_BACKLIGHT, &v) == ESP_OK && v <= 100) {
             s_backlight_pct = v;
+            saved = true;
         }
         nvs_close(h);
+    }
+    /* Never set: keep the level the hardware has now, if it says. */
+    if (!saved) {
+        int cur = display_get_backlight();
+        if (cur >= 0 && cur <= 100) s_backlight_pct = cur;
     }
     /* Clamp a stale NVS value (e.g. one persisted before the min was
      * raised) to the lowest still-allowed option. */
@@ -565,12 +599,14 @@ static int find_backlight_option(int pct)
     for (int i = 0; i < BACKLIGHT_OPTION_COUNT; i++) {
         if (BACKLIGHT_OPTIONS[i] == pct) return i;
     }
-    /* Unknown value: prefer 50 % if it is still in the cycle,
-     * otherwise the first option. */
+    /* A level between the steps (the hardware's own, see
+     * load_backlight_from_nvs()): the step below it, so the next
+     * step up is the one above it. */
+    int best = 0;
     for (int i = 0; i < BACKLIGHT_OPTION_COUNT; i++) {
-        if (BACKLIGHT_OPTIONS[i] == 50) return i;
+        if (BACKLIGHT_OPTIONS[i] < pct) best = i;
     }
-    return 0;
+    return best;
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
 
@@ -725,6 +761,9 @@ static void save_name_suggest_to_nvs(void)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_zh"
 #elif defined(CONFIG_DRAFTLING_LANG_PACK_INDIC)
 #define NVS_KEY_ACTIVE_LAYOUTS "actlay_in"
+#elif defined(CONFIG_DRAFTLING_LANG_PACK_ALL)
+#define NVS_KEY_ACTIVE_LAYOUTS "actlay_all"
+#define NVS_ACTIVE_LAYOUTS_U64 1   /* more than 32 layouts */
 #else
 #define NVS_KEY_ACTIVE_LAYOUTS "actlayouts"
 #endif
@@ -733,10 +772,19 @@ static void load_active_layouts_from_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+#if defined(NVS_ACTIVE_LAYOUTS_U64)
+        uint64_t v = 0;
+        if (nvs_get_u64(h, NVS_KEY_ACTIVE_LAYOUTS, &v) == ESP_OK) {
+            kb_layout_set_active_mask(v);
+        }
+#else
+        /* The other packs have at most 32 layouts: the key keeps the
+         * 32-bit value it always had. */
         uint32_t v = 0;
         if (nvs_get_u32(h, NVS_KEY_ACTIVE_LAYOUTS, &v) == ESP_OK) {
             kb_layout_set_active_mask(v);
         }
+#endif
         nvs_close(h);
     }
 }
@@ -745,7 +793,11 @@ static void save_active_layouts_to_nvs(void)
 {
     nvs_handle_t h;
     if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
-        nvs_set_u32(h, NVS_KEY_ACTIVE_LAYOUTS, kb_layout_get_active_mask());
+#if defined(NVS_ACTIVE_LAYOUTS_U64)
+        nvs_set_u64(h, NVS_KEY_ACTIVE_LAYOUTS, kb_layout_get_active_mask());
+#else
+        nvs_set_u32(h, NVS_KEY_ACTIVE_LAYOUTS, (uint32_t)kb_layout_get_active_mask());
+#endif
         nvs_commit(h);
         nvs_close(h);
     }
@@ -941,6 +993,7 @@ enum menu_item_t {
     MENU_ITEM_CONN_MENU,
     MENU_ITEM_SYSTEM_MENU,
     MENU_ITEM_SLEEP,
+    MENU_ITEM_QUIT,          /* CONFIG_DRAFTLING_HAS_QUIT */
     MENU_ITEM_HELP,
     MENU_ITEM_CLOSE,         /* the top level's counterpart of "Back" */
     /* Sync */
@@ -1293,6 +1346,7 @@ static int       s_search_match_end   = -1;
 typedef enum {
     EXIT_PURPOSE_BROWSER,   /* Esc: leave the editor for the file browser */
     EXIT_PURPOSE_SLEEP,     /* Ctrl+P / "Sleep now": enter deep sleep */
+    EXIT_PURPOSE_QUIT,      /* "Quit Draftling" (CONFIG_DRAFTLING_HAS_QUIT) */
 } exit_purpose_t;
 
 static lv_obj_t *s_exit_panel    = NULL;
@@ -1318,6 +1372,14 @@ static const char *const SLEEP_OPT_LABELS[EXIT_OPT_COUNT] = {
     "Sleep without saving",
     "Cancel (keep editing)",
 };
+
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+static const char *const QUIT_OPT_LABELS[EXIT_OPT_COUNT] = {
+    "Save and quit",
+    "Quit without saving",
+    "Cancel (keep editing)",
+};
+#endif
 
 /* ---- New-document format picker ----
  * Ctrl+N (and N in the file browser) asks which format the new
@@ -2144,7 +2206,7 @@ static void recalc_pane_geometry(void)
         return;
     }
 
-    if (display_orientation_is_portrait()) {
+    if (split_top_bottom()) {
         /* Top / bottom split: vary y + height, full width. */
         int total = EDITOR_H - 1;     /* 1 px reserved for the divider */
         int top_h;
@@ -2196,7 +2258,7 @@ static void layout_panes(void)
     }
     if (s_pane_divider) {
         if (s_pane_count > 1) {
-            if (display_orientation_is_portrait()) {
+            if (split_top_bottom()) {
                 /* Horizontal rule between the top and bottom panes. */
                 lv_obj_set_pos(s_pane_divider, 0, s_panes[0].y + s_panes[0].h);
                 lv_obj_set_size(s_pane_divider, CONTENT_W, 1);
@@ -4110,6 +4172,9 @@ static void settings_activate_item(int idx);
 /* Defined with the exit/sleep overlay code further down; the F1 menu's
  * "Sleep now" item (menu_activate_item) needs it before that point. */
 static void show_sleep_prompt(void);
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+static void show_leave_prompt(exit_purpose_t purpose);
+#endif
 static void show_help(help_origin_t origin);
 static void show_hwinfo(help_origin_t origin);
 
@@ -5300,6 +5365,7 @@ static char menu_item_hotkey(menu_item_t id)
     case MENU_ITEM_CONN_MENU:   return 'c';  /* "Connectivity..." */
     case MENU_ITEM_SYSTEM_MENU: return 't';  /* "System & Storage..." */
     case MENU_ITEM_HELP:        return 'h';  /* "Help (F10)" */
+    case MENU_ITEM_QUIT:        return 'q';  /* "Quit Draftling" */
     case MENU_ITEM_GIT_SYNC:    return 's';  /* "Synchronize: ..." */
     case MENU_ITEM_DRAFTBOX:    return 'c';  /* "Connect a Draftbox repository..." */
     case MENU_ITEM_KERMIT:      return 'b';  /* "Sync via browser..." */
@@ -5455,6 +5521,9 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_CONN_MENU, "Connectivity...");
         menu_add(MENU_ITEM_SYSTEM_MENU, "System & Storage...");
         menu_add(MENU_ITEM_SLEEP, "Sleep now");
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+        menu_add(MENU_ITEM_QUIT, "Quit Draftling");
+#endif
         menu_add(MENU_ITEM_HELP, "Help (F10)");
         menu_add(MENU_ITEM_CLOSE, "Close menu (Esc / F1)");
         break;
@@ -5881,13 +5950,19 @@ static void refresh_settings_items(void)
                  COLOR_THEMES[s_theme_idx].name);
         settings_add(SET_ITEM_THEME, buf);
 #endif
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         /* Display orientation -- landscape (default) or portrait (the
          * whole UI turned another 90 degrees). Frozen for the session
-         * like the margins, so it only takes effect on a restart. */
+         * like the margins, so it only takes effect on a restart. A
+         * resizable window has neither (nor margins, below): its shape
+         * is the window's. */
         snprintf(buf, sizeof(buf), "Orientation: %s (restart to apply)",
                  s_pending_portrait ? "Portrait" : "Landscape");
         settings_add(SET_ITEM_ORIENTATION, buf);
-#if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+        /* (no Rotate 180) */
+#elif defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
         /* Runtime 180-degree display flip, applied at once */
         snprintf(buf, sizeof(buf), "Rotate 180: %s",
                  s_rotate180 ? "on" : "off");
@@ -5911,7 +5986,9 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
                  s_pending_scale2x ? "on" : "off");
         settings_add(SET_ITEM_SCALE2X, buf);
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         settings_add(SET_ITEM_MARGINS_MENU, "Screen margins...");
+#endif
         break;
 
     case SET_LVL_MARGINS:
@@ -7667,7 +7744,7 @@ static void sync_project(const char *p, bool connect_wifi)
         editor_ui_set_status(sbuf);
         return;
     }
-    if (!wifi_manager_is_connected()) {
+    if (!wifi_manager_network_up()) {
         if (!connect_wifi) {
             editor_ui_set_status("Git: connect WiFi first (F1)");
             return;
@@ -7817,7 +7894,7 @@ static void menu_activate_item(int row)
             editor_ui_set_status(busy);
             break;
         }
-        if (wifi_manager_is_connected()) {
+        if (wifi_manager_network_up()) {
             show_dbx_prompt(false);
         } else {
             /* Connect first, the same way as Ctrl+W, unless an attempt
@@ -7879,6 +7956,19 @@ static void menu_activate_item(int row)
             standby_enter_sleep();
         }
         break;
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+    case MENU_ITEM_QUIT:
+        /* As "Sleep now": ask about unsaved changes in the editor;
+         * otherwise quit (the pre-sleep hook saves every titled
+         * document). */
+        close_menu();
+        if (s_editor_screen_active && editor_is_modified()) {
+            show_leave_prompt(EXIT_PURPOSE_QUIT);
+        } else {
+            standby_quit();
+        }
+        break;
+#endif
     default:
         break;
     }
@@ -8289,8 +8379,13 @@ static void build_hwinfo_text(std::string &out, int cols)
 #else
     help_row(out, cols, kc, "Touch", "none");
 #endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+    snprintf(buf, sizeof(buf), "%d x %d", (int)SCR_W * display_scale_factor(),
+             (int)SCR_H * display_scale_factor());
+#else
     snprintf(buf, sizeof(buf), "%d x %d", CONFIG_DRAFTLING_DISPLAY_WIDTH,
              CONFIG_DRAFTLING_DISPLAY_HEIGHT);
+#endif
     help_row(out, cols, kc, "Resolution", buf);
     snprintf(buf, sizeof(buf), "%d x %d%s", (int)SCR_W, (int)SCR_H,
              display_scale_factor() > 1 ? " (2x scale)" : "");
@@ -8334,8 +8429,12 @@ static void build_hwinfo_text(std::string &out, int cols)
 #else
         const char *bus = "SPI";
 #endif
-        snprintf(buf, sizeof(buf), "%s, %d MHz", bus, card->real_freq_khz / 1000);
-        help_row(out, cols, kc, "Interface", buf);
+        /* No bus clock: not a card (the Linux application's data
+         * folder), so no interface row. */
+        if (card->real_freq_khz > 0) {
+            snprintf(buf, sizeof(buf), "%s, %d MHz", bus, card->real_freq_khz / 1000);
+            help_row(out, cols, kc, "Interface", buf);
+        }
     }
 
     help_heading(out, "Keyboard");
@@ -10136,15 +10235,19 @@ static void show_leave_prompt(exit_purpose_t purpose)
     s_exit_purpose = purpose;
     const char *const *labels =
         (purpose == EXIT_PURPOSE_SLEEP) ? SLEEP_OPT_LABELS : EXIT_OPT_LABELS;
+    const char *hdr = (purpose == EXIT_PURPOSE_SLEEP)
+                          ? "Unsaved changes -- sleep anyway?"
+                          : "Unsaved changes (Up/Down + Enter):";
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+    if (purpose == EXIT_PURPOSE_QUIT) {
+        labels = QUIT_OPT_LABELS;
+        hdr = "Unsaved changes -- quit anyway?";
+    }
+#endif
     for (int i = 0; i < EXIT_OPT_COUNT; i++) {
         if (s_exit_opt_lbl[i]) lv_label_set_text(s_exit_opt_lbl[i], labels[i]);
     }
-    if (s_exit_hdr_lbl) {
-        lv_label_set_text(s_exit_hdr_lbl,
-                          (purpose == EXIT_PURPOSE_SLEEP)
-                              ? "Unsaved changes -- sleep anyway?"
-                              : "Unsaved changes (Up/Down + Enter):");
-    }
+    if (s_exit_hdr_lbl) lv_label_set_text(s_exit_hdr_lbl, hdr);
     s_exit_open = true;
     s_exit_sel  = EXIT_OPT_SAVE;
     lv_obj_remove_flag(s_exit_panel, LV_OBJ_FLAG_HIDDEN);
@@ -10158,6 +10261,12 @@ static void show_sleep_prompt(void) { show_leave_prompt(EXIT_PURPOSE_SLEEP); }
  * (saved, or reloaded from disk by the discard path). */
 static void leave_prompt_proceed(exit_purpose_t purpose)
 {
+#if defined(CONFIG_DRAFTLING_HAS_QUIT)
+    if (purpose == EXIT_PURPOSE_QUIT) {
+        standby_quit();
+        return;
+    }
+#endif
     if (purpose == EXIT_PURPOSE_SLEEP) {
         standby_enter_sleep();
         /* Only reached on CONFIG_DRAFTLING_STANDBY_DISPLAY_OFF boards --
@@ -10194,7 +10303,7 @@ static void exit_prompt_activate(void)
         return;
     case EXIT_OPT_DISCARD:
         close_exit_prompt();
-        if (purpose == EXIT_PURPOSE_SLEEP) {
+        if (purpose == EXIT_PURPOSE_SLEEP || purpose == EXIT_PURPOSE_QUIT) {
             /* Really drop the edits: reload every modified document from
              * disk so the standby pre-sleep auto-save has nothing to
              * write. (The Esc/browser path keeps the in-memory edits --
@@ -14342,6 +14451,51 @@ static void rebuild_screens_for_theme(void)
     }
     update_title_bar();
     update_wifi_icons();
+}
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+/* The window was resized: the LVGL port may change the canvas size
+ * only while nothing transient is on screen, since the relayout
+ * rebuilds every screen like a theme change (rebuild_screens_for_theme(),
+ * which closes overlays, pickers and pop-ups). Until then the port
+ * keeps the old size and asks again. */
+extern "C" bool editor_ui_can_relayout(void)
+{
+    if (!s_scr) return false;   /* before editor_ui_init() */
+    if (s_restart_confirm_open || s_fmt_step != FMT_STEP_NONE ||
+        s_factory_reset_confirm || s_theme_picker_open ||
+        s_layouts_picker_open || s_save_open || s_xfer_open ||
+        s_setup_busy || s_wifi_scan_picker_open ||
+        s_wifi_scan_in_progress || s_wifi_pw_open || s_dbx_open ||
+        s_msg_open || s_search_open || s_exit_open || s_newfmt_open ||
+        s_del_open || s_help_open || s_pt_open || s_sugg_open ||
+        s_inpane_browser_open || s_drag_active) {
+        return false;
+    }
+#if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
+    if (s_usbmsc_picker_open) return false;
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_KERMIT)
+    if (s_kermit_picker_open) return false;
+#endif
+    if (s_passkey_panel && !lv_obj_has_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN))
+        return false;
+    return true;
+}
+
+/* Lay every screen out again for the LVGL display's new size (SCR_W /
+ * SCR_H read it). Call with the LVGL lock held, after
+ * lv_display_set_resolution(), and only when editor_ui_can_relayout()
+ * said yes. The documents, the browsed project and the settings stay;
+ * the F1 menu comes back at its top level. */
+extern "C" void editor_ui_relayout(void)
+{
+    if (!s_scr) return;
+    rebuild_screens_for_theme();
+#ifdef DRAFTLING_HAS_IME
+    ime_set_status_cells(status_avail_width() / char_width_for_font(FONT_11));
+#endif
 }
 #endif
 
