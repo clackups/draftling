@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.31] - 2026-11-21
+
 ### Added
 
 - **Draftling for Linux**: the editor as a native program for Linux
