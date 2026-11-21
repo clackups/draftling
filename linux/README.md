@@ -80,7 +80,9 @@ user documentation in `docs/`), with these differences:
   refused the saved one the last time. A typed password goes to `nmcli connection up` in a file only
   the user can read; for a new network it is an
   argument of `nmcli device wifi connect`, visible in the process list
-  while it runs. Without NetworkManager the WiFi commands report that the system
+  while it runs. The profile that creates has autoconnect switched off
+  (`connection.autoconnect no`), so the computer joins that network
+  only when asked. Without NetworkManager the WiFi commands report that the system
   manages the network.
 - **Screenshot.** `kill -USR1 <pid>` writes the current screen to
   `screenshot.ppm` in the settings folder (for bug reports).

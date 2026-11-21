@@ -625,6 +625,7 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
     char dev[32] = "";
     char uuid[64] = "";
     char pw_path[256] = "";
+    bool added = false;        /* nmcli creates a new profile */
     int n = 0;
     argv[n++] = "nmcli";
     argv[n++] = "--wait";
@@ -647,6 +648,7 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
         /* A new network. The password is an argument of nmcli: other
          * users of this computer could see it in the process list
          * while nmcli runs. */
+        added = true;
         argv[n++] = "device";
         argv[n++] = "wifi";
         argv[n++] = "connect";
@@ -685,6 +687,16 @@ static esp_err_t nm_connect(const char *ssid, const char *password, bool save)
         pthread_mutex_lock(&s_mu);
         s_auth_failed = auth;
         pthread_mutex_unlock(&s_mu);
+    }
+    if (ok && added && nm_saved_profile(ssid, uuid, sizeof(uuid))) {
+        /* The profile nmcli just made: the computer should not join
+         * this network on its own -- Draftling connected it on request,
+         * and the user may not want it outside Draftling. */
+        char *mod[] = { "nmcli", "connection", "modify", "uuid", uuid,
+                        "connection.autoconnect", "no", NULL };
+        char mout[512];
+        if (run(mod, mout, sizeof(mout), true, 10) != 0)
+            ESP_LOGW(TAG, "Could not switch autoconnect off: %s", mout[0] ? mout : "nmcli failed");
     }
     if (ok && save && ssid) save_to_nvs(ssid, password ? password : "");
 
