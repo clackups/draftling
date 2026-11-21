@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -38,6 +40,14 @@ void editor_ui_set_board_name(const char *name);
  * and "esp-hosted 3.1.0"). Without a call the section is left out. The
  * strings must stay valid for the life of the program. */
 void editor_ui_set_coprocessor(const char *chip, const char *firmware);
+
+/* Boards with CONFIG_DRAFTLING_DISPLAY_RESIZABLE (a window): after the
+ * window changed size, the LVGL port asks editor_ui_can_relayout()
+ * (false while a dialog, picker or pop-up is open -- ask again later),
+ * then sets the LVGL display's new resolution and calls
+ * editor_ui_relayout(), both with the LVGL lock held. */
+bool editor_ui_can_relayout(void);
+void editor_ui_relayout(void);
 
 #ifdef __cplusplus
 }

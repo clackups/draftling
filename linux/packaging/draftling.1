@@ -1,0 +1,71 @@
+.TH DRAFTLING 1 "" "draftling @VERSION@" "User Commands"
+.SH NAME
+draftling \- distraction-free Markdown, Fountain and plain-text editor
+.SH SYNOPSIS
+.B draftling
+[\fIOPTION\fR]...
+.SH DESCRIPTION
+.B draftling
+is the editor of the Draftling writing devices as a Linux program. It
+runs in a Wayland or X11 window, or full screen on the Linux
+framebuffer console, and is used with the keyboard: F1 opens the menu,
+F10 the help. Documents are kept in projects (folders) in the data
+folder; each project can be synchronised with a Git repository
+(Ctrl+G), configured in the project's \fBgit.cfg\fR file or with a
+Draftbox password.
+.PP
+The keyboard layout is chosen in Draftling (Ctrl+L, F1 \-> Settings \->
+Keyboard), not by the desktop: keys are read as physical keys of a US
+keyboard. Programs named \fBdraftling-\fIpack\fR are the same editor
+with another language pack (keyboard layouts, input methods and fonts).
+.SH OPTIONS
+.TP
+\fB\-d\fR, \fB\-\-data\-dir\fR \fIDIR\fR
+Documents folder, the device's SD card. Default
+\fI$XDG_DATA_HOME/draftling\fR (\fI~/.local/share/draftling\fR).
+.TP
+\fB\-c\fR, \fB\-\-config\-dir\fR \fIDIR\fR
+Settings folder. Default \fI$XDG_CONFIG_HOME/draftling\fR
+(\fI~/.config/draftling\fR). Only one Draftling runs per settings folder.
+.TP
+\fB\-o\fR, \fB\-\-io\fR \fINAME\fR
+Display and input to use: \fBwayland\fR, \fBx11\fR or \fBfbdev\fR (as
+far as compiled in; \fB\-\-version\fR lists them). Without it, the
+first of them that works is used, in that order.
+.TP
+\fB\-f\fR, \fB\-\-fbdev\fR \fIDEVICE\fR
+Framebuffer device for \fB\-\-io fbdev\fR (default \fI/dev/fb0\fR).
+.TP
+\fB\-g\fR, \fB\-\-geometry\fR \fIW\fBx\fIH\fR
+Initial window size.
+.TP
+\fB\-v\fR, \fB\-\-verbose\fR
+More messages on standard error; twice for debugging messages.
+.TP
+\fB\-q\fR, \fB\-\-quiet\fR
+Errors only.
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Show the version, the language pack and the I/O backends, and exit.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show the options and exit.
+.SH FRAMEBUFFER CONSOLE
+With \fB\-\-io fbdev\fR the user needs write access to the framebuffer
+(the \fBvideo\fR group) and read access to \fI/dev/input/event*\fR (the
+\fBinput\fR group). Started on a virtual console, Draftling switches
+the console's keyboard off while it runs, so typing does not reach the
+shell; switching consoles is not possible meanwhile.
+.SH FILES
+.TP
+.I ~/.local/share/draftling/
+Projects, documents, \fIwifi.cfg\fR.
+.TP
+.I ~/.config/draftling/settings.nvs
+Settings (font size, theme, layouts, ...).
+.SH SIGNALS
+SIGTERM, SIGINT and SIGHUP save every open document and end the
+program; so does closing the window. SIGUSR1 writes the current
+screen to \fIscreenshot.ppm\fR in the settings folder.
+.SH SEE ALSO
+https://draftling.art/, https://github.com/clackups/draftling

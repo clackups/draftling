@@ -1,0 +1,4 @@
+# Build output and fetched sources (see Makefile); binaries and
+# packages are not kept in git.
+build/
+dist/

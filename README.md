@@ -15,6 +15,11 @@ runs the real editor firmware, compiled to WebAssembly, on a simulated
 color LCD or e-paper device, with every language pack (see
 [online_demo/](online_demo/)).
 
+On a computer, Draftling also runs as a native Linux program: in a
+Wayland or X11 window or on the framebuffer console, with the
+computer's keyboard, a local folder for the documents and the same Git
+sync (see [linux/](linux/README.md)).
+
 Seeed reTerminal Sticky running Draftling firmware:
 ![Sticky on a MagSafe stand](images/Seeed_reTerminal_Sticky_01.jpg)
 
@@ -611,6 +616,9 @@ enclosure.
 See [HARDWARE.md](HARDWARE.md) for the full list of supported
 hardware. See [BUILDING.md](BUILDING.md) for firmware compilation
 instructions.
+
+The Linux program is built with `make` in `linux/`, which can also
+produce a Debian package; see [linux/README.md](linux/README.md).
 
 
 ## Use of LLM
