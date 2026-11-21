@@ -575,6 +575,7 @@ extern "C" esp_err_t wifi_manager_save_to_file(const char *ssid, const char *pas
 extern "C" wifi_state_t wifi_manager_get_state(void) { return s_state; }
 extern "C" bool wifi_manager_last_failure_was_auth(void) { return s_auth_failed; }
 extern "C" bool wifi_manager_is_connected(void) { return s_state == WIFI_STATE_CONNECTED; }
+extern "C" bool wifi_manager_network_up(void) { return wifi_manager_is_connected(); }
 extern "C" void wifi_manager_set_callback(wifi_state_callback_t cb) { s_callback = cb; }
 extern "C" const char *wifi_manager_get_ip(void) { return s_ip_str; }
 extern "C" const char *wifi_manager_get_ssid(void) { return s_ssid; }

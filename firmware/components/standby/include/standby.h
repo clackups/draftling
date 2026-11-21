@@ -62,6 +62,11 @@ void standby_set_idle_inhibit(bool inhibit);
  */
 void standby_enter_sleep(void);
 
+/* Boards with CONFIG_DRAFTLING_HAS_QUIT (the Linux application) only:
+ * run the pre-sleep hook (saves every document) and end the program.
+ * Does not return. The F1 menu's "Quit Draftling" calls it. */
+void standby_quit(void);
+
 #ifdef __cplusplus
 }
 #endif

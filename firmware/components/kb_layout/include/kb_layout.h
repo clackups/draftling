@@ -248,13 +248,14 @@ int kb_layout_active_count(void);
  * switches immediately to the next active layout. */
 bool kb_layout_set_active(kb_layout_id_t layout, bool active);
 
-/* Bitmask of the active set (bit N = layout id N), for persistence. */
-uint32_t kb_layout_get_active_mask(void);
+/* Bitmask of the active set (bit N = layout id N), for persistence.
+ * 64 bits: the "all" language pack (Linux) has more than 32 layouts. */
+uint64_t kb_layout_get_active_mask(void);
 
 /* Restores an active-set bitmask (e.g. loaded from NVS). Bits for
  * layouts that are not compiled in are ignored. If the result would
  * be empty, falls back to the built-in default set. */
-void kb_layout_set_active_mask(uint32_t mask);
+void kb_layout_set_active_mask(uint64_t mask);
 
 #ifdef __cplusplus
 }

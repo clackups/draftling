@@ -1,0 +1,42 @@
+# Kconfig root of the Linux build (tools/gen_sdkconfig.py).
+#
+# The firmware's own Kconfig.projbuild files are evaluated as ESP-IDF
+# would, with linux/sdkconfig.defaults (the DRAFTLING_MODEL_LINUX
+# "board") and the language pack's defaults applied, so the program
+# gets its CONFIG_DRAFTLING_* / CONFIG_KB_LAYOUT_* values from the same
+# rules as every device. The few ESP-IDF / LVGL symbols those files
+# depend on are declared here; IDF_TARGET_LINUX is ESP-IDF's own name
+# for its Linux host target.
+
+mainmenu "Draftling for Linux"
+
+config IDF_TARGET
+    string
+    default "linux"
+
+config IDF_TARGET_LINUX
+    bool
+    default y
+
+config IDF_TARGET_ESP32S3
+    bool
+
+config IDF_TARGET_ESP32P4
+    bool
+
+config IDF_TARGET_ESP32C5
+    bool
+
+config IDF_TARGET_ESP32C61
+    bool
+
+config SOC_PARLIO_LCD_SUPPORTED
+    bool
+
+config LV_USE_BIDI
+    bool
+    default y
+
+source "$(DRAFTLING_FIRMWARE)/main/Kconfig.projbuild"
+source "$(DRAFTLING_FIRMWARE)/components/kb_layout/Kconfig.projbuild"
+source "$(DRAFTLING_FIRMWARE)/components/editor/Kconfig.projbuild"

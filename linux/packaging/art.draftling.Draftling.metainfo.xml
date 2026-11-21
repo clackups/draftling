@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>art.draftling.Draftling</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Draftling</name>
+  <summary>Distraction-free Markdown and Fountain editor with Git sync</summary>
+  <description>
+    <p>
+      Draftling is the editor of the Draftling writing devices as a
+      program for Linux: a full-screen, keyboard-driven editor for
+      Markdown, Fountain screenplays and plain text, organised in
+      projects, with a built-in Git client that synchronises each
+      project with a repository on any Git hosting service.
+    </p>
+  </description>
+  <launchable type="desktop-id">draftling.desktop</launchable>
+  <url type="homepage">https://draftling.art/</url>
+  <url type="vcs-browser">https://github.com/clackups/draftling</url>
+  <provides>
+    <binary>draftling</binary>
+  </provides>
+</component>

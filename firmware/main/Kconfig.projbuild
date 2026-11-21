@@ -466,6 +466,18 @@ config DRAFTLING_MODEL_ONEPAGE_C61
         CrossPoint port (github.com/MoveCall/crosspoint-onepage).
         Tested on physical hardware.
 
+config DRAFTLING_MODEL_LINUX
+    bool "Linux (native application, linux/)"
+    depends on IDF_TARGET_LINUX
+    help
+        The editor as a native Linux application, built by the
+        Makefile in linux/ (not by idf.py): a Wayland or X11 window
+        with the computer's own keyboard, a folder on the local file system in place of the
+        SD card (~/.local/share/draftling by default), the host's IP
+        network for Git sync and NetworkManager for WiFi. The window
+        can be resized (DRAFTLING_DISPLAY_RESIZABLE); the screen size
+        below is only the initial window size. See linux/README.md.
+
 endchoice
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -493,6 +505,22 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
+    default y if DRAFTLING_MODEL_LINUX
+    default n
+
+# DRAFTLING_DISPLAY_RESIZABLE is set when the screen is a window whose
+# size can change while the editor runs (the Linux application). The
+# editor then takes its screen size from the LVGL display instead of
+# DRAFTLING_DISPLAY_WIDTH / HEIGHT, splits panes along the window's
+# long axis, leaves out the Settings rows that only make sense for a
+# fixed panel (orientation, rotate 180, screen margins) and lays its
+# screens out again when the LVGL port reports a new size
+# (editor_ui_relayout()). The relayout rebuilds the screens like a
+# color-theme change, so it needs DRAFTLING_DISPLAY_COLOR.
+config DRAFTLING_DISPLAY_RESIZABLE
+    bool
+    depends on DRAFTLING_DISPLAY_COLOR
+    default y if DRAFTLING_MODEL_LINUX
     default n
 
 # DRAFTLING_DISPLAY_TRANSFLECTIVE is set automatically when the
@@ -944,7 +972,21 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # M5Stack PaperMono: front-light PWM on the M5PM1's GPIO3 (PWM0),
     # set over I2C by the display backend.
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # Linux: the computer screen's backlight (/sys/class/backlight)
+    # when it can be set, otherwise the window's pixels are dimmed.
+    default y if DRAFTLING_MODEL_LINUX
     default n
+
+# Backlight brightness on a fresh install (no saved setting), in
+# percent; raised to DRAFTLING_BACKLIGHT_MIN_PCT if lower. A backend
+# that reports the hardware's current level (display_get_backlight(),
+# the Linux program with a screen backlight) keeps that level instead.
+config DRAFTLING_BACKLIGHT_DEFAULT_PCT
+    int
+    depends on DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    # Linux: a full-brightness window until the user dims it.
+    default 100 if DRAFTLING_MODEL_LINUX
+    default 50
 
 # Backlight LEDC PWM frequency of the RGB backend (direct-GPIO
 # backlight boards). Prompted so it can be tuned per unit: the Elecrow
@@ -1100,6 +1142,9 @@ config DRAFTLING_HAS_BATTERY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     # OnePage Reader: cell voltage through a 1:2 divider on GPIO5.
     default y if DRAFTLING_MODEL_ONEPAGE_C61
+    # Linux: the laptop battery from /sys/class/power_supply (hidden
+    # when the computer has none).
+    default y if DRAFTLING_MODEL_LINUX
     default n
 
 # Selects the M5Stack M5PM1 power-management backend in
@@ -1238,6 +1283,8 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 config DRAFTLING_NO_BLUETOOTH
     bool
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    # Linux: the computer's own keyboard, no BLE stack.
+    default y if DRAFTLING_MODEL_LINUX
     default n
 
 config DRAFTLING_HAS_USB_HOST
@@ -1498,6 +1545,8 @@ config DRAFTLING_WAKEUP_GPIO
     # OnePage Reader: Power button on GPIO2 (active-low, an LP IO, so
     # it can wake the ESP32-C61 through EXT1; the chip has no EXT0).
     default 2  if DRAFTLING_MODEL_ONEPAGE_C61
+    # Linux: no wake button.
+    default -1 if DRAFTLING_MODEL_LINUX
     default 0
 
 # DRAFTLING_WAKEUP_EXT1: arm DRAFTLING_WAKEUP_GPIO through EXT1
@@ -1610,6 +1659,9 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_GUITION_JC4827W543C
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # Linux: the mouse (or a touchscreen) on the Wayland / X11 window
+    # drives the LVGL pointer.
+    default y if DRAFTLING_MODEL_LINUX
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -1826,6 +1878,8 @@ config DRAFTLING_TOUCH_DEBUG_LOG
 # sleep + wake-on-touch.
 config DRAFTLING_STANDBY_DISPLAY_OFF
     bool "Standby: turn display off (keep MCU running) instead of deep sleep"
+    # Linux: sleep blanks the window; a key or click turns it on again.
+    default y if DRAFTLING_MODEL_LINUX
     default n
     help
         On standby, blank the display and put the panel into its
@@ -1838,6 +1892,15 @@ config DRAFTLING_STANDBY_DISPLAY_OFF
         GPIO). It draws more power than deep sleep -- prefer
         DRAFTLING_STANDBY_WAKE_ON_TOUCH if you have a touch
         controller wired to an RTC GPIO.
+
+# DRAFTLING_HAS_QUIT: the program can end (the Linux application). The
+# F1 menu gets "Quit Draftling", which asks about unsaved changes like
+# "Sleep now" does and then calls standby_quit(). A device has nothing
+# to quit to, so it never sets this.
+config DRAFTLING_HAS_QUIT
+    bool
+    default y if DRAFTLING_MODEL_LINUX
+    default n
 
 config DRAFTLING_STANDBY_WAKE_ON_TOUCH
     bool "Standby: wake from deep sleep on touchscreen tap"
@@ -1897,6 +1960,8 @@ config DRAFTLING_DISPLAY_WIDTH
     # NiceMCU-C5E-DEV_2.8IPS: native 240x320 portrait panel, rendered
     # landscape by the display backend (MADCTL MV).
     default 320 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
+    # Linux: the initial window size; the window can be resized.
+    default 1024 if DRAFTLING_MODEL_LINUX
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -1932,6 +1997,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default 480 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default 240 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
+    default 640 if DRAFTLING_MODEL_LINUX
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -2019,6 +2085,8 @@ config DRAFTLING_DISPLAY_HIDPI
     # Waveshare ESP32-S3-ePaper-3.97 above (~235 DPI).
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # Linux: computer screens get the Hack fonts only.
+    default y if DRAFTLING_MODEL_LINUX
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
@@ -2055,6 +2123,7 @@ config DRAFTLING_NO_KEYBOARD_SLEEP_SEC
     int "Deep-sleep timeout when no keyboard connects (s)"
     range 0 3600
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default 0 if DRAFTLING_MODEL_LINUX
     default 180
     help
         If no Bluetooth keyboard connects within this many seconds

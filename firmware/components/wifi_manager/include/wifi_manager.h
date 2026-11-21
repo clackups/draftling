@@ -39,6 +39,12 @@ esp_err_t wifi_manager_connect_to(const char *ssid, const char *password, bool s
 esp_err_t wifi_manager_disconnect(void);
 wifi_state_t wifi_manager_get_state(void);
 bool wifi_manager_is_connected(void);
+
+/* The network can be reached (Git sync, Draftbox). On a device that is
+ * the WiFi connection, wifi_manager_is_connected(); the Linux program
+ * may also be online through a cable while its WiFi is off, and then
+ * reports WiFi disconnected but the network up. */
+bool wifi_manager_network_up(void);
 void wifi_manager_set_callback(wifi_state_callback_t callback);
 const char *wifi_manager_get_ip(void);
 const char *wifi_manager_get_ssid(void);

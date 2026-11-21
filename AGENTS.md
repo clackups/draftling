@@ -7,8 +7,9 @@ document -- `main/...`, `components/...`, `CMakeLists.txt`,
 `build/<board>` -- is relative to `firmware/` unless stated otherwise.
 The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
 (separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
-`online_demo/` (the WebAssembly demo, see "Online demo" below), and the
-top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
+`online_demo/` (the WebAssembly demo, see "Online demo" below),
+`linux/` (the native Linux program, see "Linux application" below), and
+the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
 
 ## Git Author
 
@@ -242,6 +243,76 @@ selection there too, and check that `make` in `online_demo/` still
 builds. The build output (`build/`, `dist/`, the `.wasm`) is not
 committed.
 
+## Linux application
+
+`linux/` builds the editor firmware as a native Linux program with GNU
+make; `linux/README.md` has the build requirements, options, packaging
+and design notes. It works like the online demo -- the firmware's own
+`components/editor`, `kb_layout`, `fonts`, `ime`, `harfbuzz`,
+`sd_card/sd_card.cpp`, `display/display_{margins,orientation,flip,
+scale}.cpp` and, unlike the demo, the real `components/git_sync`
+compiled unchanged against LVGL 9.6.0, with ESP-IDF headers stood in
+for by `linux/shim/include/` and the hardware by `linux/src/` -- but
+it is a hardware model of its own: `DRAFTLING_MODEL_LINUX` (depends on
+ESP-IDF's `IDF_TARGET_LINUX`, declared by `linux/tools/Kconfig.linux`;
+`main/boards/linux.h`), selected by `linux/sdkconfig.defaults`, which
+sets the derived flags (COLOR, HIDPI, TOUCHSCREEN for the mouse,
+HAS_BATTERY for `/sys/class/power_supply`, NO_BLUETOOTH, no wake GPIO)
+and `DRAFTLING_DISPLAY_RESIZABLE`. With that flag `editor_ui.cpp`
+takes `SCR_W` / `SCR_H` from the LVGL display, splits panes along the
+window's long axis (`split_top_bottom()`), leaves out the orientation,
+rotate-180 and margin rows, and offers `editor_ui_can_relayout()` /
+`editor_ui_relayout()` (a `rebuild_screens_for_theme()`): the LVGL port
+(`linux/src/lvgl_port_linux.c`) changes the LVGL resolution only when
+the former says yes (no dialog, picker or pop-up open) and calls the
+latter. Real POSIX threads run the editor's tasks
+(`linux/src/freertos_linux.c`); the main thread holds the recursive
+LVGL lock while it runs `lv_timer_handler()`. I/O backends (Wayland,
+X11 / XCB) are chosen at build time (`IO=`) and at run time (Wayland,
+then X11, or `--io`); everything but libc is linked
+statically (libwayland-client is built from source). The data folder
+is the process's current directory and the SD card layer is mounted at
+`.`, since the firmware's path buffers are sized for `/sdcard`. Git
+sync and Draftbox run over `linux/src/http_client_linux.c`
+(`esp_http_client` on sockets + OpenSSL); WiFi state and
+NetworkManager control are `nmcli` calls (`linux/src/wifi_linux.c`).
+Standby is `DRAFTLING_STANDBY_DISPLAY_OFF` there: Ctrl+P, "Sleep now"
+and the inactivity timeout (`linux/src/standby_linux.c`) run the
+pre-sleep hook and blank the window (`display_sleep()`), and
+`standby_enter_sleep()` returns; the next input wakes it
+(`linux_standby_wake()`, the waking input is swallowed).
+`DRAFTLING_HAS_QUIT` adds F1 -> "Quit Draftling" (`MENU_ITEM_QUIT`,
+letter `Q`; with unsaved changes the leave prompt with
+`EXIT_PURPOSE_QUIT`), which calls `standby_quit()`.
+`make` builds the Linux-only `all` language pack
+(`DRAFTLING_LANG_PACK_ALL`, see "Language packs") with every I/O
+backend as `build/bin/draftling`; other packs (`PACKS=`) become
+`draftling-<pack>` (`MAIN_PACK` names the one called `draftling`).
+`ARCH=<Debian architecture>` (`linux/arch.mk`, included by every
+makefile there) cross-builds with the `<triplet>-` toolchain into
+`build/<arch>/`, with `PKG_CONFIG_LIBDIR` set to the target's
+multiarch folder and a generated meson cross file for libwayland;
+`make deb ARCH=arm64` gives an arm64 package.
+"WiFi connected" (`wifi_manager_is_connected()`) means the computer's
+WiFi device; Backlight (`DRAFTLING_DISPLAY_HAS_BACKLIGHT`, default level
+`DRAFTLING_BACKLIGHT_DEFAULT_PCT` = 100): `display_linux.c` sets the
+screen's `/sys/class/backlight` device (`--backlight NAME|none`,
+otherwise the best by type) through its `brightness` file or, failing
+that, logind's `Session.SetBrightness` via `busctl`, checked at start
+by writing the current level (`linux_backlight_init()`); it reports
+that level through `display_get_backlight()` (weak `-1` default in
+`editor_ui.cpp`), which the editor keeps while no level is saved.
+Without one, `linux_port_set_dim()` makes `lvgl_port_linux.c` present
+a dimmed copy of the frame.
+`wifi_manager_network_up()` (any default route on Linux,
+the same as WiFi on a device) is what Git sync, Draftbox and the
+Ctrl+G / Draftbox "connect first" checks ask. When the editor or
+the Git client starts using a new ESP-IDF / FreeRTOS call or component
+API, or a font / input-method / git_sync source or data file is added,
+add the stand-in or the `draftling.mk` selection there too, and check
+that `make` in `linux/` still builds. The build output (`build/`,
+`dist/`) is not committed.
+
 ## Repository Layout
 
 Paths below are relative to `firmware/` (see the note at the top of
@@ -276,7 +347,8 @@ sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             per CMakePresets.json preset (e.g.
                             sdkconfig.defaults.waveshare_rlcd42)
 sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
-                            korean, japanese, chinese, indic), appended by
+                            korean, japanese, chinese, indic; all, Linux
+                            only), appended by
                             idf.py --lang-pack
 idf_ext.py                  idf.py extension: --lang-pack option /
                             DRAFTLING_LANG_PACK variable (see
@@ -1167,6 +1239,7 @@ Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
 System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
 Sleep now
+Quit Draftling            (only with CONFIG_DRAFTLING_HAS_QUIT)
 Help (F10)
 Close menu (Esc / F1)
 ```
@@ -2127,7 +2200,8 @@ inactivity timer.
 
 Public API: `standby_init()`, `standby_reset_timer()`,
 `standby_set_timeout()`, `standby_set_pre_sleep_cb()`,
-`standby_set_inhibit()`, `standby_enter_sleep()`.
+`standby_set_inhibit()`, `standby_enter_sleep()`, `standby_quit()`
+(only on `CONFIG_DRAFTLING_HAS_QUIT` builds: the Linux program).
 
 ### components/power/
 
@@ -2265,7 +2339,9 @@ at the start of every new connection attempt.
 Public API: `wifi_manager_init()`, `wifi_manager_connect()`,
 `wifi_manager_disconnect()`, `wifi_manager_is_connected()`,
 `wifi_manager_get_ip()`, `wifi_manager_get_ssid()`,
-`wifi_manager_has_global_ipv6()`,
+`wifi_manager_has_global_ipv6()`, `wifi_manager_network_up()` (the
+network can be reached: on a device the WiFi connection; the Linux
+program also counts a cable),
 `wifi_manager_get_configured()` (SSID + password Ctrl+W would use),
 `wifi_manager_forget()` (disconnect and erase the `wifi` NVS namespace
 plus the WiFi driver's own saved station config: `esp_wifi_restore()`
@@ -2555,7 +2631,8 @@ FR-CA, CRH, CRH-B),
 `vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
 ZH) and `indic` (US, HI-IN, MR-IN, NE-TR, NE-RO, BN-IN, BN-PR, BN-NJ,
-TA99, TA-TW, TA-IN, TA-TV). Each is a separate image; the board preset picks the hardware and
+TA99, TA-TW, TA-IN, TA-TV), plus `all` (every one of them; the Linux
+program only, see "Linux application"). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
 **Build mechanism.** `firmware/idf_ext.py` is a project idf.py
@@ -3061,6 +3138,12 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   static TX buffers, allocations above 4 KB go to PSRAM and the SPI
   master ISR runs from flash (esp_wifi_init() ran out of memory with
   BLE up). Tested on physical hardware. *Requires ESP32-C61.*
+- **DRAFTLING_MODEL_LINUX** -- the native Linux program built in
+  `linux/` (see "Linux application"), not by idf.py. Color, HIDPI
+  (Hack fonts only), touch = the window's mouse, battery from
+  `/sys/class/power_supply`, no Bluetooth, no wake GPIO, and
+  `DRAFTLING_DISPLAY_RESIZABLE`: the 1024x640 below is only the
+  initial window size. *Requires IDF_TARGET_LINUX.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
@@ -3069,13 +3152,13 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
-  480 (Guition JC4827W543C).
+  480 (Guition JC4827W543C), 1024 (Linux, initial window).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79",
-  Guition JC4827W543C).
+  Guition JC4827W543C), 640 (Linux, initial window).
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -3282,12 +3365,14 @@ in C / C++ code:
 | DRAFTLING_RGB_BOARD_UEDX80480043 | Switches `display_rgb.cpp` to the VIEWE UEDX80480043E-WB timings (Sunton 8048S043C pin map, 16 MHz) and stops the panel and latches the backlight off before deep sleep | VIEWE UEDX80480043E-WB |
 | DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
+| DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux |
+| DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
-| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |
+| DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_CW2017          | Selects the CW2017 fuel-gauge backend (`battery_init_cw2017(shared_i2c_bus)`); no charger IC on the bus, so charging state always reads unknown | Xteink X4 Pro / X4 Classic |
@@ -3355,9 +3440,10 @@ backends now always run their 1:1 (SCALE == 1) path.
 
 This file defines the **DRAFTLING Language Pack and Keyboard Layouts**
 menu: the `DRAFTLING_LANG_PACK` choice (`_DEFAULT`, `_VIETNAMESE`,
-`_KOREAN`, `_JAPANESE`, `_CHINESE`; its name is the string
-`DRAFTLING_LANG_PACK_NAME`) and one `bool` per layout, whose default
-follows the pack:
+`_KOREAN`, `_JAPANESE`, `_CHINESE`, `_INDIC`, and the Linux-only
+`_ALL`; its name is the string `DRAFTLING_LANG_PACK_NAME`) and one
+`bool` per layout, whose default follows the pack (every layout is
+`y` in the `all` pack):
 
 | Symbol | Layout | Default |
 |--------|--------|---------|
@@ -3425,8 +3511,20 @@ Which of the *compiled-in* layouts actually get cycled through at
 runtime is a separate, user-facing "Active layouts" setting (F1 ->
 Settings -> Keyboard), independent of this Kconfig menu -- see the `kb_layout`
 component writeup above. Its NVS key differs per pack (`actlayouts`,
-`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_in`), because the bit
-order follows the compiled-in layouts.
+`actlay_vi`, `actlay_ko`, `actlay_ja`, `actlay_zh`, `actlay_in`, `actlay_all`), because the bit
+order follows the compiled-in layouts. The mask is 64 bits
+(`kb_layout_get_active_mask()`); the packs with at most 32 layouts keep
+storing it as a `u32`, only `actlay_all` is a `u64`.
+
+**The `all` pack** (`DRAFTLING_LANG_PACK_ALL`, `depends on
+IDF_TARGET_LINUX`, `sdkconfig.defaults.lang_all`, not in
+`idf_ext.py`'s `LANG_PACKS`): every layout, input method and font of
+the other packs, about 40 layouts, for the Linux program only -- too
+large for a device's flash. Its default active set is US only.
+`DRAFTLING_CJK_FONT_SET` is `"all"`: `linux/tools/merge_cjk_fonts.py`
+merges the ja, zh and ko blobs at build time (kana from ja, bopomofo
+from zh, Hangul from ko, other code points from ja, then zh, then ko),
+so there is no committed `cjk/all/`.
 
 ## Building
 
