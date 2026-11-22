@@ -70,6 +70,11 @@ extern const linux_io_backend_t linux_io_wayland;
 extern const linux_io_backend_t linux_io_x11;
 #endif
 
+/* True while the backend --io names is being opened: a backend that
+ * finds no display then says so as a warning, not only with -v (when
+ * trying each in turn, a missing display is the normal case). */
+extern bool linux_io_explicit;
+
 /* Set by the port from the backend in use (repeats_keys). */
 extern bool linux_io_repeats_keys;
 

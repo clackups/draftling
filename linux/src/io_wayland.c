@@ -385,7 +385,10 @@ static bool wl_open(int *w, int *h)
 {
     s_dpy = wl_display_connect(NULL);
     if (!s_dpy) {
-        ESP_LOGI(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
+        if (linux_io_explicit)
+            ESP_LOGW(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
+        else
+            ESP_LOGI(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
         return false;
     }
     s_reg = wl_display_get_registry(s_dpy);

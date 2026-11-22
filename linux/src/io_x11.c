@@ -62,7 +62,10 @@ static bool x11_open(int *w, int *h)
     int screen_no = 0;
     s_conn = xcb_connect(NULL, &screen_no);
     if (!s_conn || xcb_connection_has_error(s_conn)) {
-        ESP_LOGI(TAG, "No X display (DISPLAY not set or not reachable)");
+        if (linux_io_explicit)
+            ESP_LOGW(TAG, "No X display (DISPLAY not set or not reachable)");
+        else
+            ESP_LOGI(TAG, "No X display (DISPLAY not set or not reachable)");
         if (s_conn) xcb_disconnect(s_conn);
         s_conn = NULL;
         return false;

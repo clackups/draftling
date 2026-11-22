@@ -414,8 +414,13 @@ longer than the native one). Installing and running a bundle:
 ```bash
 flatpak install --user dist/draftling_<version>_x86_64.flatpak
 flatpak run art.draftling.Draftling          # or from the desktop's menu
-flatpak run art.draftling.Draftling --io x11 # options as above
+flatpak run art.draftling.Draftling -v       # options as above
 ```
+
+`--socket=fallback-x11` gives the app an X display only when the
+session has no Wayland, so on a Wayland desktop `--io x11` needs the
+X11 socket for that run: `flatpak run --socket=x11
+art.draftling.Draftling --io x11`.
 
 ## How it works
 
