@@ -8207,7 +8207,7 @@ static void help_common_rows(std::string &out, int cols, int kc)
     help_row(out, cols, kc, "Ctrl+R", "Full screen refresh (clears ghosting)");
 #endif
     help_row(out, cols, kc, "Ctrl+Q", "Same as Esc, for keyboards without one");
-    help_row(out, cols, kc, "Ctrl+T", "Writing timer: 15, 25 or 50 minutes, shown as a line on the right edge");
+    help_row(out, cols, kc, "Ctrl+T", "Writing timer (15, 25, 50 min) or word goal, shown as a line on the right edge");
 }
 
 static void build_help_text(std::string &out, help_origin_t origin, int cols)
@@ -9674,39 +9674,67 @@ static void handle_newfmt_prompt_key(const kb_event_t *ev)
     }
 }
 
-/* ---- Writing timer (Ctrl+T) ----
+/* ---- Writing timer and word goal (Ctrl+T) ----
  *
  * Ctrl+T in the editor or either file browser asks for an interval
- * (15 / 25 / 50 minutes; the last one picked is remembered in NVS,
- * 25 on a fresh install) and starts a timer. While it runs, a line on
- * the right edge of the screen grows from the top and reaches the
- * bottom when the time is up; the editor and file browser screens
- * shrink by its width (s_ptimer_strip, CONTENT_W) so the line never
- * covers them. The line lives on lv_layer_top(), so it shows on every
- * screen. When the time is up the line blinks for PTIMER_BLINK_MS,
- * then the strip is given back. Idle sleep (the inactivity and
- * no-keyboard timers) is held off while a timer runs; Ctrl+P and the
- * power buttons still put the device to sleep, which ends the timer. */
+ * (15 / 25 / 50 minutes) or a word goal (a number of words the user
+ * types in, 1000 on a fresh install). The last choice -- the interval,
+ * the goal figure and which of the two -- is remembered in NVS and
+ * preselected next time. While a timer or a goal runs, a line on the
+ * right edge of the screen grows from the top and reaches the bottom
+ * when the time is up or the goal is reached; the editor and file
+ * browser screens shrink by its width (s_ptimer_strip, CONTENT_W) so
+ * the line never covers them. The line lives on lv_layer_top(), so it
+ * shows on every screen. At the end the line blinks for
+ * PTIMER_BLINK_MS, then the strip is given back. Idle sleep (the
+ * inactivity and no-keyboard timers) is held off meanwhile; Ctrl+P and
+ * the power buttons still put the device to sleep, which ends it.
+ *
+ * Word goal progress is the net number of words added to the open
+ * documents since the goal was set (wg_scan()): each document's word
+ * count (the Alt+I definition, counts_feed()) is taken when the goal
+ * starts or the document is first seen, and the difference to its
+ * current count is the progress; a document that is closed or
+ * replaced as a whole (editor_doc_epoch() changes: open, reload after
+ * a sync) keeps the words it contributed. Documents are recounted from
+ * the tick timer once typing pauses (WGOAL_PAUSE_MS), and every
+ * WGOAL_BUSY_MS during continuous typing on documents up to
+ * WGOAL_BUSY_MAX_LEN bytes. */
 #define NVS_KEY_PTIMER   "ptimer"
+#define NVS_KEY_PTKIND   "ptkind"
+#define NVS_KEY_WGOAL    "wgoal"
 #define PTIMER_OPT_COUNT 3
 static const uint8_t PTIMER_OPTIONS[PTIMER_OPT_COUNT] = { 15, 25, 50 };
-#define PTIMER_ROW_STOP  PTIMER_OPT_COUNT   /* "Stop the timer" row */
-#define PTIMER_ROW_MAX   (PTIMER_OPT_COUNT + 1)
+#define PTIMER_ROW_WORDS PTIMER_OPT_COUNT        /* "Word goal" row */
+#define PTIMER_ROW_STOP  (PTIMER_OPT_COUNT + 1)  /* "Stop ..." row */
+#define PTIMER_ROW_MAX   (PTIMER_OPT_COUNT + 2)
 #define PTIMER_BLINK_MS  5000
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
 /* Every change of the line is a panel refresh: grow it in steps of
- * 30 s and blink slowly. */
+ * 30 s (2 % of a word goal) and blink slowly. */
 #define PTIMER_STEP_MS   30000
+#define WGOAL_STEPS      50
 #define PTIMER_BLINK_PERIOD_MS 1000
 #else
 #define PTIMER_STEP_MS   0
+#define WGOAL_STEPS      0
 #define PTIMER_BLINK_PERIOD_MS 500
 #endif
 #define PTIMER_TICK_MS   1000
+#define WGOAL_DEFAULT    1000
+#define WGOAL_MAX        999999
+#define WGOAL_DIGITS     6
+#define WGOAL_PAUSE_MS   2000
+#define WGOAL_BUSY_MS    15000
+#define WGOAL_BUSY_MAX_LEN (512u * 1024u)
+#define WGOAL_TRACK_MAX  4
 
 typedef enum { PTIMER_IDLE, PTIMER_RUNNING, PTIMER_BLINKING } ptimer_state_t;
+typedef enum { PT_KIND_TIMER = 0, PT_KIND_WORDS = 1 } pt_kind_t;
 
 static ptimer_state_t s_pt_state    = PTIMER_IDLE;
+static pt_kind_t      s_pt_kind     = PT_KIND_TIMER;  /* what runs */
+static pt_kind_t      s_pt_last_kind = PT_KIND_TIMER; /* last picked */
 static uint8_t        s_pt_minutes  = 25;     /* last interval picked */
 static uint32_t       s_pt_start_ms = 0;      /* lv_tick_get() at start */
 static uint32_t       s_pt_total_ms = 0;
@@ -9716,13 +9744,28 @@ static lv_obj_t      *s_pt_bar      = NULL;   /* the line, on lv_layer_top() */
 static int            s_pt_bar_h    = -1;     /* height last drawn */
 static bool           s_pt_bar_on   = true;   /* blink phase */
 
-/* Interval picker overlay (moved onto the active screen when shown). */
+/* Word goal */
+static uint32_t s_wg_goal   = WGOAL_DEFAULT;  /* last goal picked */
+static uint32_t s_wg_target = 0;              /* goal of the running one */
+static int64_t  s_wg_frozen = 0;   /* net words of documents no longer open */
+typedef struct {
+    const editor_doc_t *doc;       /* NULL = free entry */
+    uint32_t epoch;
+    uint32_t gen_counted, gen_seen;
+    uint32_t seen_ms, count_ms;
+    uint32_t base, last;           /* words at start / at the last count */
+} wg_track_t;
+static wg_track_t s_wg_track[WGOAL_TRACK_MAX];
+
+/* Picker overlay (moved onto the active screen when shown). */
 static lv_obj_t *s_pt_panel = NULL;
 static lv_obj_t *s_pt_hdr_lbl = NULL;
-static lv_obj_t *s_pt_opt_lbl[PTIMER_ROW_MAX] = { NULL, NULL, NULL, NULL };
+static lv_obj_t *s_pt_opt_lbl[PTIMER_ROW_MAX] = { NULL };
 static bool      s_pt_open = false;
 static int       s_pt_sel  = 1;
-static int       s_pt_rows = PTIMER_OPT_COUNT;
+static int       s_pt_rows = PTIMER_OPT_COUNT + 1;
+static char      s_wg_buf[WGOAL_DIGITS + 1] = "";   /* goal being typed */
+static bool      s_wg_fresh = true;  /* the next digit replaces the figure */
 
 static void load_ptimer_from_nvs(void)
 {
@@ -9733,6 +9776,11 @@ static void load_ptimer_from_nvs(void)
             for (int i = 0; i < PTIMER_OPT_COUNT; i++)
                 if (PTIMER_OPTIONS[i] == v) s_pt_minutes = v;
         }
+        if (nvs_get_u8(h, NVS_KEY_PTKIND, &v) == ESP_OK)
+            s_pt_last_kind = (v == PT_KIND_WORDS) ? PT_KIND_WORDS : PT_KIND_TIMER;
+        uint32_t g = 0;
+        if (nvs_get_u32(h, NVS_KEY_WGOAL, &g) == ESP_OK && g >= 1 && g <= WGOAL_MAX)
+            s_wg_goal = g;
         nvs_close(h);
     }
 }
@@ -9742,6 +9790,8 @@ static void save_ptimer_to_nvs(void)
     nvs_handle_t h;
     if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
         nvs_set_u8(h, NVS_KEY_PTIMER, s_pt_minutes);
+        nvs_set_u8(h, NVS_KEY_PTKIND, (uint8_t)s_pt_last_kind);
+        nvs_set_u32(h, NVS_KEY_WGOAL, s_wg_goal);
         nvs_commit(h);
         nvs_close(h);
     }
@@ -9816,6 +9866,105 @@ static void ptimer_relayout(void)
     update_title_bar();
 }
 
+/* ---- Word goal progress ---- */
+
+static uint32_t wg_count_words(const editor_doc_t *d)
+{
+    const char *a, *b;
+    size_t al, bl;
+    editor_doc_text_parts(d, &a, &al, &b, &bl);
+    text_counts_t tc;
+    counts_init(&tc);
+    counts_feed(&tc, a, al);
+    counts_feed(&tc, b, bl);
+    counts_finish(&tc);
+    return tc.words;
+}
+
+typedef struct {
+    bool seen[WGOAL_TRACK_MAX];
+    bool force;
+} wg_scan_ctx_t;
+
+static void wg_scan_doc(editor_doc_t *d, void *vctx)
+{
+    wg_scan_ctx_t *ctx = (wg_scan_ctx_t *)vctx;
+    uint32_t epoch = editor_doc_epoch(d);
+    uint32_t gen = editor_doc_generation(d);
+    uint32_t now = lv_tick_get();
+    for (int i = 0; i < WGOAL_TRACK_MAX; i++) {
+        wg_track_t *t = &s_wg_track[i];
+        if (t->doc != d || t->epoch != epoch) continue;
+        ctx->seen[i] = true;
+        if (gen == t->gen_counted) return;
+        bool count = ctx->force;
+        if (!count) {
+            if (gen != t->gen_seen) {          /* still typing */
+                t->gen_seen = gen;
+                t->seen_ms = now;
+            } else if ((uint32_t)(now - t->seen_ms) >= WGOAL_PAUSE_MS) {
+                count = true;                  /* typing paused */
+            }
+            if (!count && (uint32_t)(now - t->count_ms) >= WGOAL_BUSY_MS) {
+                const char *a, *b;
+                size_t al, bl;
+                count = editor_doc_text_parts(d, &a, &al, &b, &bl) <= WGOAL_BUSY_MAX_LEN;
+            }
+        }
+        if (count) {
+            t->last = wg_count_words(d);
+            t->gen_counted = t->gen_seen = gen;
+            t->count_ms = t->seen_ms = now;
+        }
+        return;
+    }
+    /* Not tracked yet (opened, or replaced as a whole, since the goal
+     * started): its current words are the baseline. */
+    for (int i = 0; i < WGOAL_TRACK_MAX; i++) {
+        wg_track_t *t = &s_wg_track[i];
+        if (t->doc || ctx->seen[i]) continue;
+        t->doc = d;
+        t->epoch = epoch;
+        t->base = t->last = wg_count_words(d);
+        t->gen_counted = t->gen_seen = gen;
+        t->count_ms = t->seen_ms = now;
+        ctx->seen[i] = true;
+        return;
+    }
+}
+
+/* Bring the per-document counts up to date (force: recount every
+ * changed document now) and drop the documents no longer open,
+ * keeping their words in s_wg_frozen. */
+static void wg_scan(bool force)
+{
+    wg_scan_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.force = force;
+    editor_doc_foreach(wg_scan_doc, &ctx);
+    for (int i = 0; i < WGOAL_TRACK_MAX; i++) {
+        wg_track_t *t = &s_wg_track[i];
+        if (!t->doc || ctx.seen[i]) continue;
+        s_wg_frozen += (int64_t)t->last - (int64_t)t->base;
+        t->doc = NULL;
+    }
+}
+
+static uint32_t wg_progress(void)
+{
+    int64_t p = s_wg_frozen;
+    for (int i = 0; i < WGOAL_TRACK_MAX; i++)
+        if (s_wg_track[i].doc)
+            p += (int64_t)s_wg_track[i].last - (int64_t)s_wg_track[i].base;
+    return p > 0 ? (uint32_t)p : 0;
+}
+
+static void wg_reset(void)
+{
+    memset(s_wg_track, 0, sizeof(s_wg_track));
+    s_wg_frozen = 0;
+}
+
 /* Position and size the line for the current state. */
 static void ptimer_update_bar(void)
 {
@@ -9826,13 +9975,22 @@ static void ptimer_update_bar(void)
         return;
     }
     int h = SCR_H;
-    if (s_pt_state == PTIMER_RUNNING) {
+    if (s_pt_state == PTIMER_RUNNING && s_pt_kind == PT_KIND_TIMER) {
         uint32_t el = lv_tick_elaps(s_pt_start_ms);
         if (el > s_pt_total_ms) el = s_pt_total_ms;
 #if PTIMER_STEP_MS > 0
         if (el < s_pt_total_ms) el -= el % PTIMER_STEP_MS;
 #endif
         h = (int)((int64_t)SCR_H * el / s_pt_total_ms);
+    } else if (s_pt_state == PTIMER_RUNNING) {
+        uint32_t p = wg_progress();
+        if (p > s_wg_target) p = s_wg_target;
+#if WGOAL_STEPS > 0
+        if (p < s_wg_target)
+            p = (uint32_t)((uint64_t)p * WGOAL_STEPS / s_wg_target *
+                           s_wg_target / WGOAL_STEPS);
+#endif
+        h = (int)((int64_t)SCR_H * p / s_wg_target);
     }
     bool show = (s_pt_state == PTIMER_RUNNING) ? true : s_pt_bar_on;
     bool hidden = lv_obj_has_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
@@ -9864,9 +10022,9 @@ static void ptimer_build_bar(void)
     ptimer_update_bar();
 }
 
-/* End the timer (after blinking, or "Stop the timer"): hide the line,
- * give the strip back to the editor and file browser, allow idle
- * sleep again. */
+/* End the timer or word goal (after blinking, or "Stop ..."): hide
+ * the line, give the strip back to the editor and file browser, allow
+ * idle sleep again. */
 static void ptimer_stop(void)
 {
     if (s_pt_state == PTIMER_IDLE) return;
@@ -9875,6 +10033,7 @@ static void ptimer_stop(void)
         lv_timer_delete(s_pt_timer);
         s_pt_timer = NULL;
     }
+    wg_reset();
     standby_set_idle_inhibit(false);
     if (s_pt_bar) lv_obj_add_flag(s_pt_bar, LV_OBJ_FLAG_HIDDEN);
     s_pt_bar_h = -1;
@@ -9883,15 +10042,31 @@ static void ptimer_stop(void)
     ptimer_flush_now();
 }
 
+static void ptimer_begin_blink(void)
+{
+    s_pt_state = PTIMER_BLINKING;
+    s_pt_blink_start_ms = lv_tick_get();
+    s_pt_bar_on = true;
+    lv_timer_set_period(s_pt_timer, PTIMER_BLINK_PERIOD_MS);
+}
+
 static void ptimer_timer_cb(lv_timer_t *t)
 {
     (void)t;
     if (s_pt_state == PTIMER_RUNNING) {
-        if (lv_tick_elaps(s_pt_start_ms) >= s_pt_total_ms) {
-            s_pt_state = PTIMER_BLINKING;
-            s_pt_blink_start_ms = lv_tick_get();
-            s_pt_bar_on = true;
-            lv_timer_set_period(s_pt_timer, PTIMER_BLINK_PERIOD_MS);
+        if (s_pt_kind == PT_KIND_TIMER) {
+            if (lv_tick_elaps(s_pt_start_ms) >= s_pt_total_ms)
+                ptimer_begin_blink();
+        } else {
+            wg_scan(false);
+            uint32_t p = wg_progress();
+            if (p >= s_wg_target) {
+                char msg[48];
+                snprintf(msg, sizeof(msg), "Word goal reached: %u words",
+                         (unsigned)p);
+                editor_ui_set_status(msg);
+                ptimer_begin_blink();
+            }
         }
         ptimer_update_bar();
         return;
@@ -9906,14 +10081,23 @@ static void ptimer_timer_cb(lv_timer_t *t)
     }
 }
 
-static void ptimer_start(uint8_t minutes)
+/* Start (or restart) a timer of value minutes, or a word goal of value
+ * words. Replaces whichever of the two was running. */
+static void ptimer_start(pt_kind_t kind, uint32_t value)
 {
     bool had_strip = (s_ptimer_strip > 0);
     s_pt_state    = PTIMER_RUNNING;
+    s_pt_kind     = kind;
     s_pt_start_ms = lv_tick_get();
-    s_pt_total_ms = (uint32_t)minutes * 60u * 1000u;
     s_pt_bar_on   = true;
     s_pt_bar_h    = -1;
+    wg_reset();
+    if (kind == PT_KIND_TIMER) {
+        s_pt_total_ms = value * 60u * 1000u;
+    } else {
+        s_wg_target = value;
+        wg_scan(true);            /* the baselines */
+    }
     if (s_pt_timer) lv_timer_set_period(s_pt_timer, PTIMER_TICK_MS);
     else            s_pt_timer = lv_timer_create(ptimer_timer_cb, PTIMER_TICK_MS, NULL);
     standby_set_idle_inhibit(true);
@@ -9921,8 +10105,11 @@ static void ptimer_start(uint8_t minutes)
         s_ptimer_strip = ptimer_strip_width();
         ptimer_relayout();
     }
-    char msg[40];
-    snprintf(msg, sizeof(msg), "Timer: %u minutes", (unsigned)minutes);
+    char msg[48];
+    if (kind == PT_KIND_TIMER)
+        snprintf(msg, sizeof(msg), "Timer: %u minutes", (unsigned)value);
+    else
+        snprintf(msg, sizeof(msg), "Word goal: %u words", (unsigned)value);
     editor_ui_set_status(msg);
     ptimer_update_bar();
 }
@@ -9930,6 +10117,13 @@ static void ptimer_start(uint8_t minutes)
 static void refresh_ptimer_prompt(void)
 {
     if (!s_pt_panel) return;
+    if (s_pt_opt_lbl[PTIMER_ROW_WORDS]) {
+        bool editing = (s_pt_sel == PTIMER_ROW_WORDS);
+        lv_label_set_text_fmt(s_pt_opt_lbl[PTIMER_ROW_WORDS],
+                              editing ? "Word goal: %s_ words"
+                                      : "Word goal: %s words",
+                              s_wg_buf);
+    }
     for (int i = 0; i < PTIMER_ROW_MAX; i++) {
         if (!s_pt_opt_lbl[i]) continue;
         if (i >= s_pt_rows) {
@@ -9948,21 +10142,32 @@ static void show_ptimer_prompt(void)
 {
     if (!s_pt_panel) return;
     s_pt_open = true;
-    s_pt_rows = (s_pt_state == PTIMER_IDLE) ? PTIMER_OPT_COUNT : PTIMER_ROW_MAX;
+    s_pt_rows = (s_pt_state == PTIMER_IDLE) ? PTIMER_ROW_STOP : PTIMER_ROW_MAX;
     s_pt_sel = 1;
     for (int i = 0; i < PTIMER_OPT_COUNT; i++)
         if (PTIMER_OPTIONS[i] == s_pt_minutes) s_pt_sel = i;
+    if (s_pt_last_kind == PT_KIND_WORDS) s_pt_sel = PTIMER_ROW_WORDS;
+    snprintf(s_wg_buf, sizeof(s_wg_buf), "%u", (unsigned)s_wg_goal);
+    s_wg_fresh = true;
 
     char hdr[64];
-    if (s_pt_state == PTIMER_RUNNING) {
+    if (s_pt_state == PTIMER_RUNNING && s_pt_kind == PT_KIND_TIMER) {
         uint32_t el = lv_tick_elaps(s_pt_start_ms);
         uint32_t left = (el < s_pt_total_ms) ? s_pt_total_ms - el : 0;
         snprintf(hdr, sizeof(hdr), "Timer: %u min left (Enter/Esc):",
                  (unsigned)((left + 59999) / 60000));
+    } else if (s_pt_state == PTIMER_RUNNING) {
+        wg_scan(true);
+        snprintf(hdr, sizeof(hdr), "Words: %u of %u (Enter/Esc):",
+                 (unsigned)wg_progress(), (unsigned)s_wg_target);
     } else {
-        snprintf(hdr, sizeof(hdr), "Start a timer (Enter/Esc):");
+        snprintf(hdr, sizeof(hdr), "Timer or word goal (Enter/Esc):");
     }
     lv_label_set_text(s_pt_hdr_lbl, hdr);
+    if (s_pt_opt_lbl[PTIMER_ROW_STOP])
+        lv_label_set_text(s_pt_opt_lbl[PTIMER_ROW_STOP],
+                          s_pt_kind == PT_KIND_WORDS ? "Stop the word goal"
+                                                     : "Stop the timer");
 
     int panel_h = overlay_row_y() + s_pt_rows * overlay_row_pitch() + 2 * OVERLAY_PAD;
     lv_obj_set_size(s_pt_panel, CONTENT_W - 20, panel_h);
@@ -9982,26 +10187,84 @@ static void close_ptimer_prompt(void)
 static void ptimer_prompt_activate(void)
 {
     int sel = s_pt_sel;
+    if (sel == PTIMER_ROW_WORDS) {
+        unsigned long v = strtoul(s_wg_buf, NULL, 10);
+        if (v < 1 || v > WGOAL_MAX) {
+            editor_ui_set_status("Word goal: type a number of words");
+            return;                    /* keep the prompt open */
+        }
+        close_ptimer_prompt();
+        s_wg_goal = (uint32_t)v;
+        s_pt_last_kind = PT_KIND_WORDS;
+        save_ptimer_to_nvs();
+        ptimer_start(PT_KIND_WORDS, s_wg_goal);
+        return;
+    }
     close_ptimer_prompt();
     if (sel == PTIMER_ROW_STOP) {
+        bool words = (s_pt_kind == PT_KIND_WORDS);
         ptimer_stop();
-        editor_ui_set_status("Timer stopped");
+        editor_ui_set_status(words ? "Word goal stopped" : "Timer stopped");
         return;
     }
     s_pt_minutes = PTIMER_OPTIONS[sel];
+    s_pt_last_kind = PT_KIND_TIMER;
     save_ptimer_to_nvs();
-    ptimer_start(s_pt_minutes);
+    ptimer_start(PT_KIND_TIMER, s_pt_minutes);
+}
+
+/* The digit a key types, from its HID usage (layout independent: the
+ * number row and the keypad), or 0. */
+static char ptimer_key_digit(const kb_event_t *ev)
+{
+    if (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL | KB_MOD_LALT |
+                        KB_MOD_RALT | KB_MOD_LGUI | KB_MOD_RGUI))
+        return 0;
+    uint8_t k = ev->keycode;
+    if (k >= 0x1E && k <= 0x26) return (char)('1' + (k - 0x1E));
+    if (k == 0x27) return '0';
+    if (k >= 0x59 && k <= 0x61) return (char)('1' + (k - 0x59));
+    if (k == 0x62) return '0';
+    return 0;
 }
 
 static void handle_ptimer_prompt_key(const kb_event_t *ev)
 {
+    char digit = ptimer_key_digit(ev);
+    if (digit) {
+        /* Typing a number edits the word goal, from any row. */
+        if (s_pt_sel != PTIMER_ROW_WORDS) {
+            s_pt_sel = PTIMER_ROW_WORDS;
+            s_wg_fresh = true;
+        }
+        if (s_wg_fresh) s_wg_buf[0] = '\0';
+        s_wg_fresh = false;
+        size_t n = strlen(s_wg_buf);
+        if (n == 1 && s_wg_buf[0] == '0') n = 0;   /* no leading zero */
+        if (n < WGOAL_DIGITS) {
+            s_wg_buf[n] = digit;
+            s_wg_buf[n + 1] = '\0';
+        }
+        refresh_ptimer_prompt();
+        return;
+    }
     switch (ev->keycode) {
+    case KB_KEY_BACKSPACE:
+        if (s_pt_sel == PTIMER_ROW_WORDS) {
+            size_t n = strlen(s_wg_buf);
+            if (n) s_wg_buf[n - 1] = '\0';
+            s_wg_fresh = false;
+            refresh_ptimer_prompt();
+        }
+        return;
     case KB_KEY_UP:
         s_pt_sel = (s_pt_sel + s_pt_rows - 1) % s_pt_rows;
+        s_wg_fresh = true;
         refresh_ptimer_prompt();
         return;
     case KB_KEY_DOWN:
         s_pt_sel = (s_pt_sel + 1) % s_pt_rows;
+        s_wg_fresh = true;
         refresh_ptimer_prompt();
         return;
     case KB_KEY_ENTER:
@@ -11443,7 +11706,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
             show_newfmt_prompt(NEWDOC_EDITOR);
             return;
         case 't':
-            /* Ctrl+T: start / stop the writing timer. */
+            /* Ctrl+T: start / stop the writing timer or word goal. */
             show_ptimer_prompt();
             return;
         case 'o':
@@ -12085,7 +12348,7 @@ static void handle_browser_key(const kb_event_t *ev)
             return;
         }
         if (ck == 't') {
-            /* Ctrl+T: start / stop the writing timer. */
+            /* Ctrl+T: start / stop the writing timer or word goal. */
             show_ptimer_prompt();
             return;
         }
@@ -14107,11 +14370,12 @@ static void build_screens(void)
             lv_obj_set_style_text_color(s_pt_opt_lbl[i], theme_fg(), 0);
             lv_obj_set_width(s_pt_opt_lbl[i], SCR_W - 20 - 12 - 8);
             lv_obj_set_style_pad_hor(s_pt_opt_lbl[i], 2, 0);
+            /* The word-goal and stop rows are labelled when shown. */
             if (i < PTIMER_OPT_COUNT)
                 lv_label_set_text_fmt(s_pt_opt_lbl[i], "%u minutes",
                                       (unsigned)PTIMER_OPTIONS[i]);
             else
-                lv_label_set_text(s_pt_opt_lbl[i], "Stop the timer");
+                lv_label_set_text(s_pt_opt_lbl[i], "");
             lv_obj_set_pos(s_pt_opt_lbl[i], 0,
                            overlay_row_y() + i * overlay_row_pitch());
         }

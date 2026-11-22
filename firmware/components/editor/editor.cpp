@@ -56,6 +56,11 @@ struct editor_doc_s {
     /* Lowest byte offset changed since editor_change_mark_reset(i);
      * SIZE_MAX = unchanged. Lets the UI keep per-pane caches. */
     size_t change_mark[EDITOR_CHANGE_MARKS];
+    /* epoch: changes whenever the whole text is replaced (open, new,
+     * close, discard, reload); gen: bumped by every change. See
+     * editor_doc_epoch() / editor_doc_generation(). */
+    uint32_t epoch;
+    uint32_t gen;
 };
 
 /* Maximum number of simultaneously open documents. Two is enough for the
@@ -122,8 +127,12 @@ static int count_nl(const char *p, size_t n)
 
 /* The whole document was replaced (open, new, close, discard): drop
  * every cache and recount the newlines. */
+static uint32_t s_epoch_counter = 0;
+
 static void doc_invalidate_caches(editor_doc_t *d)
 {
+    d->epoch = ++s_epoch_counter;
+    d->gen++;
     d->line_cache_num    = -1;
     d->line_cache_offset = 0;
     for (int i = 0; i < EDITOR_CHANGE_MARKS; i++) d->change_mark[i] = 0;
@@ -153,6 +162,7 @@ static void content_changed(size_t pos)
     for (int i = 0; i < EDITOR_CHANGE_MARKS; i++) {
         if (s_active->change_mark[i] > pos) s_active->change_mark[i] = pos;
     }
+    s_active->gen++;
     s_modified = true;
 }
 
@@ -1119,6 +1129,32 @@ extern "C" size_t editor_change_mark_get(int slot)
 {
     if (slot < 0 || slot >= EDITOR_CHANGE_MARKS) return 0;
     return s_active->change_mark[slot];
+}
+
+extern "C" uint32_t editor_doc_epoch(const editor_doc_t *doc)
+{
+    return doc ? doc->epoch : 0;
+}
+
+extern "C" uint32_t editor_doc_generation(const editor_doc_t *doc)
+{
+    return doc ? doc->gen : 0;
+}
+
+extern "C" size_t editor_doc_text_parts(const editor_doc_t *doc,
+                                        const char **a, size_t *a_len,
+                                        const char **b, size_t *b_len)
+{
+    if (!doc || !doc->buf) {
+        *a = *b = "";
+        *a_len = *b_len = 0;
+        return 0;
+    }
+    *a = doc->buf;
+    *a_len = doc->gap_start;
+    *b = doc->buf + doc->gap_end;
+    *b_len = doc->buf_size - doc->gap_end;
+    return *a_len + *b_len;
 }
 
 extern "C" int editor_get_scroll_line(void) { return s_scroll_line; }

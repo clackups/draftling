@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <esp_err.h>
 #include <sdkconfig.h>
@@ -192,6 +193,19 @@ void editor_change_mark_reset(int slot);
 size_t editor_change_mark_get(int slot);
 int editor_get_scroll_line(void);
 void editor_set_scroll_line(int line);
+
+/* Change tracking for a whole document, without making it active.
+ * editor_doc_epoch() changes whenever the text is replaced as a whole
+ * (open, new, close, discard, reload); editor_doc_generation() changes
+ * with every edit as well. Used by the Ctrl+T word goal. */
+uint32_t editor_doc_epoch(const editor_doc_t *doc);
+uint32_t editor_doc_generation(const editor_doc_t *doc);
+/* The text of doc as the two halves of its gap buffer (before and after
+ * the cursor), without moving the gap. Valid until the next edit of
+ * doc. Returns the total length. */
+size_t editor_doc_text_parts(const editor_doc_t *doc,
+                             const char **a, size_t *a_len,
+                             const char **b, size_t *b_len);
 
 /* Raw selection-anchor accessors (logical byte offset; < 0 = none).
  * Used by the split-screen UI to save / restore a per-pane selection. */

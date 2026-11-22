@@ -6,6 +6,20 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Word count goal**: the Ctrl+T dialog now offers a word goal next
+  to the 15, 25 and 50 minute timers. Pick "Word goal" and type the
+  number of words you want to write (1000 the first time); your last
+  choice, and the figure, are offered again next time. The line on the
+  right edge of the screen grows as you write and reaches the bottom
+  when the goal is reached, then blinks and goes away. The words you
+  add to any open document count; deleted words count against the goal.
+  The count catches up a couple of seconds after you stop typing. As
+  with the timer, the device does not go to sleep on its own until the
+  goal is reached or you stop it (Ctrl+T, "Stop the word goal");
+  Ctrl+P still puts it to sleep.
+
 ## [1.0.31] - 2026-11-21
 
 ### Added

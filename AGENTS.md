@@ -1291,21 +1291,35 @@ Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
 
-**Writing timer.** `Ctrl+T` in the editor or either file browser
-opens the interval picker (`s_pt_panel`, `show_ptimer_prompt()` /
-`handle_ptimer_prompt_key()`): 15 / 25 / 50 minutes, the last pick
-preselected (NVS `ptimer`, default 25), plus "Stop the timer" while one
-runs. `ptimer_start()` sets `s_ptimer_strip` (2 px, 4 px with
+**Writing timer and word goal.** `Ctrl+T` in the editor or either
+file browser opens the picker (`s_pt_panel`, `show_ptimer_prompt()` /
+`handle_ptimer_prompt_key()`): 15 / 25 / 50 minutes, or "Word goal: N
+words" (`PTIMER_ROW_WORDS`; digit keys, matched by HID usage so they
+work on every layout, edit the figure from any row, the first one
+replacing it; Backspace deletes), plus "Stop the timer" / "Stop the
+word goal" while one runs. The last pick is preselected (NVS `ptimer`
+= minutes, default 25; `wgoal` = goal, u32, default 1000; `ptkind` =
+which of the two). Only one runs at a time (`s_pt_kind`).
+`ptimer_start()` sets `s_ptimer_strip` (2 px, 4 px with
 `CONFIG_DRAFTLING_DISPLAY_HIDPI`, divided by the 2x scale), and the
 editor and browser screens lay out in `CONTENT_W` (`SCR_W` minus the
 strip); `ptimer_relayout()` re-applies it to the bars, the file list
 and the panes. The line (`s_pt_bar`) is on `lv_layer_top()`, so it
 shows on every screen; `ptimer_timer_cb()` grows it from the top (on
-e-paper in 30 s steps, each followed by `lv_refr_now()` with the
-typing clip reset), blinks it for 5 s when the time is up, then
-`ptimer_stop()` gives the strip back. `standby_set_idle_inhibit()` is
-held while it runs. Code that sizes editor or browser widgets must use
-`CONTENT_W`, not `SCR_W`.
+e-paper in 30 s / 2 % steps, each followed by `lv_refr_now()` with the
+typing clip reset), blinks it for 5 s when the time is up or the goal
+is reached, then `ptimer_stop()` gives the strip back.
+`standby_set_idle_inhibit()` is held while it runs. Word goal progress
+(`wg_scan()`, `wg_progress()`) is the net number of words added to the
+open documents since the start: each document (keyed by
+`editor_doc_t *` and `editor_doc_epoch()`, which changes when the text
+is replaced as a whole) gets a baseline word count when first seen,
+the Alt+I definition (`counts_feed()` over `editor_doc_text_parts()`,
+without moving the gap); a document closed or replaced keeps its words
+in `s_wg_frozen`. A document whose `editor_doc_generation()` changed
+is recounted from the 1 s tick once typing pauses for 2 s, and every
+15 s during continuous typing on documents up to 512 KB. Code that
+sizes editor or browser widgets must use `CONTENT_W`, not `SCR_W`.
 
 **Hide status bars while typing** (`s_hide_bars`, NVS `hidebars`, on
 by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):
@@ -2191,7 +2205,7 @@ blanking the display during bring-up is more disruptive than helpful.
 `standby_set_idle_inhibit(true)` only stops the inactivity and
 no-keyboard timers from putting the device to sleep;
 `standby_enter_sleep()` still works (Ctrl+P, power buttons). The
-editor sets it while the Ctrl+T writing timer runs.
+editor sets it while the Ctrl+T writing timer or word goal runs.
 
 `standby_set_inhibit(true)` keeps the device awake (the editor sets it
 for the duration of a "Sync via browser" session): the timers then do
