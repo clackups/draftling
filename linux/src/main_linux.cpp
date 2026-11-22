@@ -229,22 +229,37 @@ static void usage(FILE *f)
         "Usage: draftling [OPTION]...\n"
         "Distraction-free Markdown, Fountain and plain-text editor.\n"
         "\n"
+#if defined(CONFIG_DRAFTLING_LINUX_FLATPAK)
+        "  -d, --data-dir DIR   documents folder (default: $XDG_DATA_HOME/draftling, i.e.\n"
+        "                       ~/.var/app/art.draftling.Draftling/data/draftling)\n"
+        "  -c, --config-dir DIR settings folder (default: $XDG_CONFIG_HOME/draftling, i.e.\n"
+        "                       ~/.var/app/art.draftling.Draftling/config/draftling)\n"
+#else
         "  -d, --data-dir DIR   documents folder (default: $XDG_DATA_HOME/draftling,\n"
         "                       i.e. ~/.local/share/draftling)\n"
         "  -c, --config-dir DIR settings folder (default: $XDG_CONFIG_HOME/draftling,\n"
         "                       i.e. ~/.config/draftling)\n"
+#endif
         "  -o, --io NAME        display and input to use; this build has:%s\n"
         "                       (default: the first of them that works)\n"
         "  -g, --geometry WxH   initial window size\n"
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
         "  -b, --backlight NAME screen backlight to set: a device in\n"
         "                       /sys/class/backlight, or 'none' to dim the window\n"
         "                       (default: the screen's, if it can be set)\n"
+#endif
         "  -v, --verbose        more messages on standard error (twice: debug)\n"
         "  -q, --quiet          errors only\n"
         "  -V, --version        show the version and exit\n"
         "  -h, --help           show this help and exit\n",
         io_list());
 }
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#define OPTSTRING "d:c:o:g:b:vqVh"
+#else
+#define OPTSTRING "d:c:o:g:vqVh"
+#endif
 
 int main(int argc, char **argv)
 {
@@ -259,7 +274,9 @@ int main(int argc, char **argv)
         { "config-dir", required_argument, nullptr, 'c' },
         { "io",         required_argument, nullptr, 'o' },
         { "geometry",   required_argument, nullptr, 'g' },
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
         { "backlight",  required_argument, nullptr, 'b' },
+#endif
         { "verbose",    no_argument,       nullptr, 'v' },
         { "quiet",      no_argument,       nullptr, 'q' },
         { "version",    no_argument,       nullptr, 'V' },
@@ -268,12 +285,14 @@ int main(int argc, char **argv)
     };
     const char *data_arg = nullptr, *config_arg = nullptr, *io = nullptr;
     int c;
-    while ((c = getopt_long(argc, argv, "d:c:o:g:b:vqVh", opts, nullptr)) != -1) {
+    while ((c = getopt_long(argc, argv, OPTSTRING, opts, nullptr)) != -1) {
         switch (c) {
         case 'd': data_arg = optarg; break;
         case 'c': config_arg = optarg; break;
         case 'o': io = optarg; break;
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
         case 'b': linux_backlight_name = optarg; break;
+#endif
         case 'g':
             if (sscanf(optarg, "%dx%d", &linux_window_w, &linux_window_h) != 2 ||
                 linux_window_w < 100 || linux_window_h < 100 ||
@@ -328,8 +347,13 @@ int main(int argc, char **argv)
     linux_port_initial_size(&w, &h);
     draftling_lvgl_port_init(w, h, 0, DISPLAY_SCALE);
 
+    /* Neither in the Flatpak: its sandbox can read neither. */
+#if defined(CONFIG_DRAFTLING_HAS_BATTERY)
     battery_init(BATT_ADC_PIN, BATT_EN_PIN, BATT_DIVIDER);
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
     linux_backlight_init();
+#endif
 
     /* Before the editor (unlike main.cpp): the network is usually up
      * already, and the editor draws the WiFi icon from

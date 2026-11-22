@@ -221,6 +221,7 @@ make run ARGS="-v"                # build and run
 make install PREFIX=/usr/local    # also DESTDIR=... for staging
 make deb                          # dist/draftling_<version>_<arch>.deb
 make deb ARCH=arm64               # cross-built: dist/draftling_<version>_arm64.deb
+make flatpak                      # dist/draftling_<version>_{x86_64,aarch64}.flatpak
 make clean                        # build output (keeps fetched sources)
 make distclean                    # everything not in git
 ```
@@ -247,7 +248,7 @@ requirements.
 
 | File | Builds |
 |------|--------|
-| `Makefile` | fetches the dependencies, runs the files below, `install`, `deb`, `check-host` |
+| `Makefile` | fetches the dependencies, runs the files below, `install`, `deb`, `flatpak`, `check-host` |
 | `arch.mk` | the target architecture (`ARCH`): toolchain, `pkg-config` folder, output folder |
 | `lvgl.mk` | LVGL as one static library shared by every pack |
 | `wayland.mk` | libwayland-client as a static library (meson) |
@@ -353,6 +354,68 @@ with the packs in `PACKS` (by default just `draftling`, the `all`
 pack), e.g. `make deb PACKS="all default"`.
 Other formats (RPM, Arch, BSD ports) would add a script next to
 `packaging/deb/`.
+
+### Flatpak
+
+`make flatpak` builds one single-file bundle per architecture,
+`dist/draftling_<version>_x86_64.flatpak` and `..._aarch64.flatpak`
+(`FLATPAK_ARCHES="x86_64"` for just one), from the manifest
+`packaging/flatpak/art.draftling.Draftling.yml`, run by
+`packaging/flatpak/build-flatpak.sh`. Flathub's runtimes exist for
+x86_64 and aarch64 only, so there is no 32-bit Arm (armhf) Flatpak;
+armhf keeps the Debian package.
+
+The bundle holds the `all` pack with both I/O backends, built in the
+Freedesktop SDK 25.08 with `FLATPAK=1`:
+
+- `sdkconfig.defaults.flatpak` (`DRAFTLING_LINUX_FLATPAK`) drops what
+  the sandbox cannot do: no backlight setting (no Ctrl+B, no
+  `--backlight`), no battery indicator, and no WiFi control.
+  The network is the computer's (`DRAFTLING_NETWORK_HOST_MANAGED`,
+  `src/wifi_host.c` in place of `src/wifi_linux.c`): Draftling takes
+  it as always up, so Git sync and Draftbox just try it, and there is no
+  WiFi menu, F1 -> Connectivity, Ctrl+W, WiFi icon or WiFi step in
+  "Format SD card".
+- `LINK=dynamic`: the runtime's shared OpenSSL, XCB and
+  libwayland-client instead of static archives (the SDK has none), and
+  the SDK's wayland-scanner and wayland-protocols.
+- Documents and settings are in the app's own folders,
+  `~/.var/app/art.draftling.Draftling/data/draftling` and
+  `~/.var/app/art.draftling.Draftling/config/draftling` (the program's
+  usual `$XDG_DATA_HOME` / `$XDG_CONFIG_HOME` folders, which Flatpak
+  points there), so the app has no access to the home folder.
+- Permissions: `--socket=wayland`, `--socket=fallback-x11` (X11 only
+  when the session has no Wayland) with `--share=ipc`, and
+  `--share=network`.
+
+The manifest builds this checkout's sources (`linux/`,
+`firmware/main`, `firmware/components`); the LVGL, Kconfiglib and
+miniz downloads of the Makefile are pinned in it, since flatpak-builder
+builds without network access. Change them together with the versions
+in the `Makefile`. `make FLATPAK=1` builds the same program in
+`build/flatpak/bin/` (run it inside the SDK: `flatpak run
+--filesystem=$PWD/.. --command=make org.freedesktop.Sdk//25.08 -C
+$PWD FLATPAK=1`).
+
+Requirements (Ubuntu / Debian), on top of `flatpak` and the Flathub
+remote:
+
+```bash
+sudo apt install flatpak-builder qemu-user-binfmt
+flatpak install --user -y flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
+flatpak install --user -y --arch=aarch64 flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
+```
+
+The SDK and runtime are also installed by the build when missing.
+`qemu-user-binfmt` runs the other architecture's build under
+emulation (the aarch64 build on an x86_64 computer takes a good while
+longer than the native one). Installing and running a bundle:
+
+```bash
+flatpak install --user dist/draftling_<version>_x86_64.flatpak
+flatpak run art.draftling.Draftling          # or from the desktop's menu
+flatpak run art.draftling.Draftling --io x11 # options as above
+```
 
 ## How it works
 

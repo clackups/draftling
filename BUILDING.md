@@ -1,8 +1,8 @@
 # Draftling: building the firmware
 
 This page covers the ESP32 firmware. The native Linux program is built
-with `make` in `linux/` (with its own requirements, a Debian package
-target and an "all languages" pack); see
+with `make` in `linux/` (with its own requirements, Debian package and
+Flatpak targets and an "all languages" pack); see
 [linux/README.md](linux/README.md).
 
 ### Configuring enabled keyboard layouts

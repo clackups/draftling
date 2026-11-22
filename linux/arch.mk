@@ -55,6 +55,20 @@ export PKG_CONFIG_LIBDIR := /usr/lib/$(TRIPLET)/pkgconfig:/usr/share/pkgconfig
 export PKG_CONFIG_PATH :=
 endif
 
+# FLATPAK=1: the Flatpak's program (sdkconfig.defaults.flatpak: no
+# backlight, battery or WiFi control), linked against the runtime's
+# shared libraries (LINK=dynamic); output in <out>/flatpak/.
+# LINK=dynamic alone links the system's shared OpenSSL, XCB and
+# libwayland-client instead of static archives.
+ifeq ($(FLATPAK),1)
+LINK ?= dynamic
+OUT := $(OUT)/flatpak
+endif
+LINK ?= static
+ifeq ($(filter static dynamic,$(LINK)),)
+$(error Unknown LINK '$(LINK)' (known: static dynamic))
+endif
+
 # Large files (64-bit off_t, so readdir() works on file systems with
 # 64-bit inode numbers) and 64-bit time_t, as the distributions' 32-bit
 # libraries are built; no change on 64-bit targets.

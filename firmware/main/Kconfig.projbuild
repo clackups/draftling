@@ -480,6 +480,30 @@ config DRAFTLING_MODEL_LINUX
 
 endchoice
 
+# The Linux program packaged as a Flatpak (linux/packaging/flatpak/, selected by
+# linux/sdkconfig.defaults.flatpak). Inside the sandbox it cannot set
+# the screen backlight or read the battery, and the network belongs to
+# the host: no backlight or battery indicator, and no WiFi control
+# (DRAFTLING_NETWORK_HOST_MANAGED).
+config DRAFTLING_LINUX_FLATPAK
+    bool "Linux: Flatpak build (no backlight, battery or WiFi control)"
+    depends on DRAFTLING_MODEL_LINUX
+    default n
+    help
+        Build the Linux program for the Flatpak sandbox: documents and
+        settings in the app's own folders, the host's network
+        connection taken as always up, no backlight setting and no
+        battery indicator.
+
+# DRAFTLING_NETWORK_HOST_MANAGED: the network connection is the host's
+# business. The editor has no WiFi menu, Ctrl+W or WiFi step in
+# "Format SD card", and wifi_manager_network_up() is always true, so
+# Git sync and Draftbox just try the network.
+config DRAFTLING_NETWORK_HOST_MANAGED
+    bool
+    default y if DRAFTLING_LINUX_FLATPAK
+    default n
+
 # ---- Derived: display category (driven by hardware-model choice) ----
 #
 # DRAFTLING_DISPLAY_COLOR is set automatically when the selected board
@@ -974,7 +998,8 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     # Linux: the computer screen's backlight (/sys/class/backlight)
     # when it can be set, otherwise the window's pixels are dimmed.
-    default y if DRAFTLING_MODEL_LINUX
+    # Not in the Flatpak, whose sandbox cannot set either.
+    default y if DRAFTLING_MODEL_LINUX && !DRAFTLING_LINUX_FLATPAK
     default n
 
 # Backlight brightness on a fresh install (no saved setting), in
@@ -1143,8 +1168,8 @@ config DRAFTLING_HAS_BATTERY
     # OnePage Reader: cell voltage through a 1:2 divider on GPIO5.
     default y if DRAFTLING_MODEL_ONEPAGE_C61
     # Linux: the laptop battery from /sys/class/power_supply (hidden
-    # when the computer has none).
-    default y if DRAFTLING_MODEL_LINUX
+    # when the computer has none). Not in the Flatpak.
+    default y if DRAFTLING_MODEL_LINUX && !DRAFTLING_LINUX_FLATPAK
     default n
 
 # Selects the M5Stack M5PM1 power-management backend in

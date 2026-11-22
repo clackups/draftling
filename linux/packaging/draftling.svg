@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Draftling application icon: a page of text with a cursor. MIT, see LICENSE. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect x="8" y="8" width="112" height="112" rx="22" fill="#2f3b45"/>
+  <path d="M34 22 H80 L98 40 V106 H34 Z" fill="#f4f1e8"/>
+  <path d="M80 22 V40 H98 Z" fill="#cfc8b6"/>
+  <g fill="#2f3b45">
+    <rect x="44" y="34" width="26" height="6" rx="2"/>
+    <rect x="44" y="50" width="44" height="4" rx="2"/>
+    <rect x="44" y="60" width="38" height="4" rx="2"/>
+    <rect x="44" y="70" width="44" height="4" rx="2"/>
+    <rect x="44" y="80" width="22" height="4" rx="2"/>
+  </g>
+  <rect x="69" y="77" width="4" height="12" fill="#d9822b"/>
+</svg>

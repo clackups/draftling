@@ -13,6 +13,11 @@
 #   make deb                    Debian package in dist/ (packaging/deb/)
 #   make deb ARCH=arm64         cross-build for another architecture
 #                               (arch.mk; output in build/<arch>/)
+#   make flatpak                Flatpak bundles in dist/ for x86_64
+#                               and aarch64 (packaging/flatpak/;
+#                               FLATPAK_ARCHES="x86_64" for one)
+#   make FLATPAK=1              the Flatpak's program, built here
+#                               (inside the Freedesktop SDK)
 #   make clean / distclean
 #
 # The host needs a C / C++ compiler, GNU make, git, curl, python3, and
@@ -69,11 +74,15 @@ LVGL_CFLAGS := $(OPT) $(ABI_FLAGS) -MMD -MP -DLV_CONF_INCLUDE_SIMPLE -Ishim -I$(
 export OPT
 
 DEPS := $(LVGL_STAMP) $(KCONFIGLIB) $(MINIZ)
+# LINK=dynamic takes libwayland-client, wayland-scanner and
+# wayland-protocols from the system (pkg-config).
 ifneq ($(filter wayland,$(IO)),)
+ifeq ($(LINK),static)
 DEPS += $(WAYLAND_LIB) $(WAYLAND_PROTOCOLS)
 endif
+endif
 
-.PHONY: all deps lvgl programs run install uninstall deb clean distclean check-host
+.PHONY: all deps lvgl programs run install uninstall deb flatpak clean distclean check-host
 
 all: programs
 
@@ -111,13 +120,13 @@ $(WAYLAND_PROTOCOLS):
 # LVGL does not depend on the language pack: one library for all.
 lvgl: deps
 	@$(MAKE) --no-print-directory -f lvgl.mk LVGL_DIR=$(LVGL_DIR) \
-		LVGL_LIB=$(LVGL_LIB) LVGL_CFLAGS='$(LVGL_CFLAGS)' ARCH=$(ARCH)
+		LVGL_LIB=$(LVGL_LIB) LVGL_CFLAGS='$(LVGL_CFLAGS)' ARCH=$(ARCH) FLATPAK=$(FLATPAK)
 
 programs: $(addprefix program-,$(PACKS))
 
 program-%: lvgl
 	@$(MAKE) --no-print-directory -f draftling.mk PACK=$* IO='$(IO)' MAIN_PACK=$(MAIN_PACK) \
-		ARCH=$(ARCH)
+		ARCH=$(ARCH) FLATPAK=$(FLATPAK) LINK=$(LINK)
 
 prog = $(OUT)/bin/draftling$(if $(filter $(MAIN_PACK),$(1)),,-$(1))
 
@@ -131,9 +140,10 @@ SHAREDIR := $(DESTDIR)$(PREFIX)/share
 
 install: programs
 	install -d $(BINDIR) $(SHAREDIR)/applications $(SHAREDIR)/man/man1 \
-		$(SHAREDIR)/doc/draftling $(SHAREDIR)/metainfo
+		$(SHAREDIR)/doc/draftling $(SHAREDIR)/metainfo $(SHAREDIR)/icons/hicolor/scalable/apps
 	$(foreach p,$(PACKS),install -m 0755 $(call prog,$(p)) $(BINDIR)/;)
 	install -m 0644 packaging/draftling.desktop $(SHAREDIR)/applications/
+	install -m 0644 packaging/draftling.svg $(SHAREDIR)/icons/hicolor/scalable/apps/
 	install -m 0644 packaging/art.draftling.Draftling.metainfo.xml $(SHAREDIR)/metainfo/
 	sed 's/@VERSION@/$(VERSION)/' packaging/draftling.1 | gzip -9n > $(SHAREDIR)/man/man1/draftling.1.gz
 	chmod 0644 $(SHAREDIR)/man/man1/draftling.1.gz
@@ -144,12 +154,19 @@ uninstall:
 	rm -f $(BINDIR)/draftling $(BINDIR)/draftling-* \
 		$(SHAREDIR)/applications/draftling.desktop \
 		$(SHAREDIR)/metainfo/art.draftling.Draftling.metainfo.xml \
+		$(SHAREDIR)/icons/hicolor/scalable/apps/draftling.svg \
 		$(SHAREDIR)/man/man1/draftling.1.gz
 	rm -rf $(SHAREDIR)/doc/draftling
 
 deb: programs
 	MAIN_PACK=$(MAIN_PACK) ARCH=$(ARCH) OUT=$(OUT) STRIP=$(STRIP) OBJDUMP=$(OBJDUMP) \
 		packaging/deb/build-deb.sh "$(VERSION)" "$(PACKS)" "$(DIST)"
+
+# Flatpak bundles: built by flatpak-builder in the Freedesktop SDK from
+# this checkout, one per architecture (not from the programs above).
+FLATPAK_ARCHES ?= x86_64 aarch64
+flatpak:
+	packaging/flatpak/build-flatpak.sh "$(VERSION)" "$(FLATPAK_ARCHES)" "$(DIST)"
 
 # Report which build requirements the host lacks (README.md).
 check-host:
