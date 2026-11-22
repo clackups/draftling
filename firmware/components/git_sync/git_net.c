@@ -477,7 +477,7 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
                 int rssi = esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;
                 ESP_LOGE(TAG, "push: connection lost after %ld of %ld pack bytes, "
                          "%lld ms, RSSI %d dBm, free PSRAM %u, internal %u",
-                         sent, pack_size, (esp_timer_get_time() - t0) / 1000, rssi,
+                         sent, pack_size, (long long)((esp_timer_get_time() - t0) / 1000), rssi,
                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
                 ret = ESP_ERR_TIMEOUT;
@@ -486,12 +486,12 @@ esp_err_t git_http_push(const git_remote *r, const char *refname,
             sent += (long)rd;
             if (sent >= next_log) {
                 ESP_LOGI(TAG, "push: %ld / %ld bytes, %lld ms", sent, pack_size,
-                         (esp_timer_get_time() - t0) / 1000);
+                         (long long)((esp_timer_get_time() - t0) / 1000));
                 next_log += 64 * 1024;
             }
         }
         ESP_LOGI(TAG, "push: all %ld bytes sent in %lld ms, waiting for the server",
-                 sent, (esp_timer_get_time() - t0) / 1000);
+                 sent, (long long)((esp_timer_get_time() - t0) / 1000));
     }
 
     if (esp_http_client_fetch_headers(c) < 0) {

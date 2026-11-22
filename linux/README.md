@@ -177,6 +177,17 @@ newer one (built on Ubuntu 22.04: glibc 2.34 or later).
 | meson, ninja, expat, libffi | `meson ninja-build libexpat1-dev libffi-dev` | the Wayland backend (libwayland-client and wayland-scanner are built from source, the library as a static one; the scanner needs expat) |
 | XCB headers and static libraries | `libxcb1-dev libxcb-xkb-dev libxau-dev libxdmcp-dev` | the X11 backend |
 
+All of them in one command (Debian 12 and later, Ubuntu 22.04 and
+later; `libjitterentropy3-dev` is added only where it is packaged, and
+`zlib1g-dev libzstd-dev` do no harm where OpenSSL does not need them):
+
+```bash
+sudo apt install build-essential git curl python3 pkgconf \
+    libssl-dev zlib1g-dev libzstd-dev meson ninja-build libexpat1-dev \
+    libffi-dev libxcb1-dev libxcb-xkb-dev libxau-dev libxdmcp-dev \
+    $(apt-cache show libjitterentropy3-dev >/dev/null 2>&1 && echo libjitterentropy3-dev)
+```
+
 `make check-host` lists what is missing (for the backends in `IO`).
 Which static archives OpenSSL needs differs between distributions: the
 build takes the list from `pkg-config --static --libs libssl
