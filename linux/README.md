@@ -170,7 +170,7 @@ A Linux host with:
 |------|--------------------------|------------|
 | C and C++ compiler, make | `build-essential` | everything |
 | git, curl, python3, pkg-config | `git curl python3 pkgconf` | fetching the pinned sources, Kconfig, the build |
-| OpenSSL headers and static libraries | `libssl-dev`, and what its static link needs: `libjitterentropy3-dev zlib1g-dev libzstd-dev` (Ubuntu 26.04) | Git sync / Draftbox (TLS, SHA-1) |
+| OpenSSL headers and static libraries | `libssl-dev`, and what its static link needs there: nothing more on Ubuntu 22.04 / Debian 12 (OpenSSL 3.0), `libjitterentropy3-dev zlib1g-dev libzstd-dev` on Ubuntu 26.04 | Git sync / Draftbox (TLS, SHA-1) |
 | meson, ninja, wayland-scanner, libffi | `meson ninja-build libwayland-bin libffi-dev` | the Wayland backend (libwayland-client is built from source as a static library) |
 | XCB headers and static libraries | `libxcb1-dev libxcb-xkb-dev libxau-dev libxdmcp-dev` | the X11 backend |
 
@@ -263,7 +263,9 @@ whose arm64 packages come from `ports.ubuntu.com`: limit the existing
 sources to amd64 (`Architectures: amd64` in
 `/etc/apt/sources.list.d/ubuntu.sources`), add a sources file for
 `http://ports.ubuntu.com/ubuntu-ports/` with `Architectures: arm64`,
-then
+then (on Ubuntu 22.04 the sources are in `/etc/apt/sources.list`: add
+`[arch=amd64]` after each `deb`, and put the ports lines, with
+`[arch=arm64]`, in a file of their own under `/etc/apt/sources.list.d/`)
 
 ```bash
 sudo dpkg --add-architecture arm64 && sudo apt update
@@ -281,6 +283,9 @@ sudo apt install gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf binutils-arm-li
   libssl-dev:armhf libjitterentropy3-dev:armhf zlib1g-dev:armhf libzstd-dev:armhf \
   libffi-dev:armhf libxcb1-dev:armhf libxcb-xkb-dev:armhf libxau-dev:armhf libxdmcp-dev:armhf
 ```
+
+(`libjitterentropy3-dev`, `zlib1g-dev` and `libzstd-dev` only where
+OpenSSL's static link needs them, as above.)
 
 32-bit targets are built with 64-bit file offsets and `time_t`
 (`ABI_FLAGS` in `arch.mk`), as the distributions build their 32-bit

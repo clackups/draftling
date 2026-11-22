@@ -65,7 +65,9 @@ need_cmd python3 python3
 need_cmd pkg-config pkgconf
 
 need_pc libssl "libssl-dev$SFX"
-need_static "libssl libcrypto" "libssl-dev$SFX, libjitterentropy3-dev$SFX, zlib1g-dev$SFX, libzstd-dev$SFX"
+# What OpenSSL's static link needs differs: nothing more with OpenSSL
+# 3.0 (Ubuntu 22.04, Debian 12), these three on newer releases.
+need_static "libssl libcrypto" "libssl-dev$SFX (and, where pkg-config --static --libs libssl libcrypto lists them, libjitterentropy3-dev$SFX zlib1g-dev$SFX libzstd-dev$SFX)"
 
 case " $IO " in *" wayland "*)
     need_cmd meson meson
