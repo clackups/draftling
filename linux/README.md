@@ -275,14 +275,30 @@ with a generated meson cross file. Every make target takes it:
 `CROSS_COMPILE=<prefix>` overrides the toolchain prefix.
 
 The host needs the cross compiler and the target's static libraries,
-from the Debian / Ubuntu multiarch packages. For arm64 on Ubuntu,
-whose arm64 packages come from `ports.ubuntu.com`: limit the existing
-sources to amd64 (`Architectures: amd64` in
-`/etc/apt/sources.list.d/ubuntu.sources`), add a sources file for
-`http://ports.ubuntu.com/ubuntu-ports/` with `Architectures: arm64`,
-then (on Ubuntu 22.04 the sources are in `/etc/apt/sources.list`: add
-`[arch=amd64]` after each `deb`, and put the ports lines, with
-`[arch=arm64]`, in a file of their own under `/etc/apt/sources.list.d/`)
+from the Debian / Ubuntu multiarch packages; `make check-host
+ARCH=<arch>` lists what is missing. On Ubuntu the arm64 packages come
+from `ports.ubuntu.com`, and `archive.ubuntu.com` carries only amd64
+(and i386), so every apt source must name its architectures:
+otherwise `apt update` fails with `404 Not Found` on
+`.../binary-arm64/Packages` from the archive and
+`.../binary-amd64/Packages` from ports, and no `:arm64` package can be
+installed.
+
+- Ubuntu 24.04 and later (deb822 sources): add `Architectures: amd64`
+  to `/etc/apt/sources.list.d/ubuntu.sources`, and a sources file for
+  `http://ports.ubuntu.com/ubuntu-ports/` with `Architectures: arm64`.
+- Ubuntu 22.04 (`/etc/apt/sources.list`): put `[arch=amd64]` after
+  each `deb` there, and the ports lines in a file of their own,
+  e.g. `/etc/apt/sources.list.d/arm.list`:
+
+  ```
+  deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse
+  deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse
+  deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-backports main restricted universe multiverse
+  deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse
+  ```
+
+Then
 
 ```bash
 sudo dpkg --add-architecture arm64 && sudo apt update
@@ -290,6 +306,9 @@ sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-li
   libssl-dev:arm64 libjitterentropy3-dev:arm64 zlib1g-dev:arm64 libzstd-dev:arm64 \
   libffi-dev:arm64 libxcb1-dev:arm64 libxcb-xkb-dev:arm64 libxau-dev:arm64 libxdmcp-dev:arm64
 ```
+
+(Ubuntu 22.04 has no `libjitterentropy3-dev`, and its OpenSSL 3.0
+does not need it: leave it out there.)
 
 For armhf (32-bit Arm, ARMv7 with hardware floating point) the same
 with `armhf`: `Architectures: arm64 armhf` in the ports sources file,
@@ -311,7 +330,15 @@ run `make clean ARCH=<arch>` after such a change.
 
 The host's own meson, ninja and python3 are used as they are, and
 wayland-scanner is built for the host (with the host's `cc` and its
-`libexpat1-dev`, not the target's). (Debian needs no extra sources:
+`libexpat1-dev`, not the target's). `wayland.mk` handles two
+differences of old meson versions (Ubuntu 22.04: 0.61): the cross
+file's pkg-config entry is called `pkgconfig` before meson 1.3 (with
+the newer `pkg-config` name 0.61 finds no pkg-config for the target
+and stops at libffi, "Pkg-config binary for machine 1 not found"),
+and build-machine dependencies such as wayland-scanner are looked up
+with `PKG_CONFIG_PATH_FOR_BUILD`, not `PKG_CONFIG_PATH`. When the
+meson or ninja step of libwayland fails, make prints the end of its
+log (`build/<arch>/wayland-build-setup.log`, `-ninja.log`). (Debian needs no extra sources:
 its mirrors carry every architecture.)
 
 ## Packaging
