@@ -30,8 +30,8 @@ const char *git_repo_gitdir(void)  { return s_gitdir; }
 static int mkdir_p(const char *path)
 {
     char tmp[320];
-    size_t n = strlcpy(tmp, path, sizeof(tmp));
-    if (n >= sizeof(tmp)) return -1;
+    int n = snprintf(tmp, sizeof(tmp), "%s", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp)) return -1;
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
@@ -97,7 +97,7 @@ static esp_err_t write_whole_file(const char *path, const void *data, size_t len
 
 esp_err_t git_repo_open(const char *workdir)
 {
-    strlcpy(s_workdir, workdir, sizeof(s_workdir));
+    snprintf(s_workdir, sizeof(s_workdir), "%s", workdir);
     size_t n = strlen(s_workdir);
     while (n > 1 && s_workdir[n - 1] == '/') s_workdir[--n] = '\0';
     snprintf(s_gitdir, sizeof(s_gitdir), "%s/.git", s_workdir);
@@ -485,7 +485,7 @@ static esp_err_t ref_read_depth(const char *name, git_oid *out, int depth)
 
     if (b.len > 5 && memcmp(b.data, "ref: ", 5) == 0) {
         char target[128];
-        strlcpy(target, (char *)b.data + 5, sizeof(target));
+        snprintf(target, sizeof(target), "%s", (char *)b.data + 5);
         git_buf_free(&b);
         return ref_read_depth(target, out, depth + 1);
     }
@@ -673,7 +673,7 @@ bool git_tree_set(git_tree *t, uint32_t mode, const char *name, const git_oid *o
     git_tree_entry *e = &t->entries[t->count++];
     memset(e, 0, sizeof(*e));
     e->mode = mode;
-    strlcpy(e->name, name, sizeof(e->name));
+    snprintf(e->name, sizeof(e->name), "%s", name);
     e->oid = *oid;
     return true;
 }
@@ -711,7 +711,7 @@ esp_err_t git_tree_subtree_oid(const git_oid *root, const char *prefix, git_oid 
     if (!prefix || !*prefix) { *out = *root; return ESP_OK; }
 
     char buf[256];
-    strlcpy(buf, prefix, sizeof(buf));
+    snprintf(buf, sizeof(buf), "%s", prefix);
     git_oid cur = *root;
 
     char *save = NULL;
@@ -765,7 +765,7 @@ esp_err_t git_tree_splice_subtree(const git_oid *root, const char *prefix,
     if (!prefix || !*prefix) { *out_root = *sub; return ESP_OK; }
 
     char buf[256];
-    strlcpy(buf, prefix, sizeof(buf));
+    snprintf(buf, sizeof(buf), "%s", prefix);
     char *toks[16];
     int ntok = 0;
     char *save = NULL;

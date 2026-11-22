@@ -75,7 +75,10 @@ extern "C" project_name_t *project_list(int *out_count)
     /* sd_card_list_dir() sorts case-insensitively by name. */
     for (int i = 0; out && i < count; i++) {
         if (!e[i].is_dir || project_name_problem(e[i].name)) continue;
-        strlcpy(out[n++], e[i].name, sizeof(project_name_t));
+        /* project_name_problem() limits the length: always fits */
+        if (snprintf(out[n], sizeof(project_name_t), "%s", e[i].name)
+                < (int)sizeof(project_name_t))
+            n++;
     }
     sd_card_free_list(e);
     if (n == 0) { free(out); out = NULL; }
@@ -145,7 +148,10 @@ extern "C" int project_root_doc_names(project_file_name_t *names, int max)
     int n = 0;
     for (int i = 0; i < count; i++) {
         if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
-        if (names && n < max) strlcpy(names[n], e[i].name, sizeof(project_file_name_t));
+        /* only shown in a pop-up: a long name is cut short */
+        if (names && n < max)
+            snprintf(names[n], sizeof(project_file_name_t), "%.*s",
+                     (int)sizeof(project_file_name_t) - 1, e[i].name);
         n++;
     }
     sd_card_free_list(e);
@@ -158,7 +164,7 @@ extern "C" bool project_free_file_name(const char *dir, const char *name,
     char path[400];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
     if (!sd_card_file_exists(path)) {
-        strlcpy(out, name, out_sz);
+        snprintf(out, out_sz, "%s", name);
         return strlen(name) < out_sz;
     }
     const char *dot = strrchr(name, '.');

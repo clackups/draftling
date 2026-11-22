@@ -175,7 +175,8 @@ PKG_INC    += $(shell pkg-config --cflags libssl libcrypto)
 PKG_STATIC += $(call static_of,$(OPENSSL_LIBS))
 
 # Wayland: libwayland-client built by wayland.mk, protocol code from
-# wayland-protocols, generated with wayland-scanner.
+# wayland-protocols, generated with the wayland-scanner wayland.mk
+# builds.
 ifneq ($(filter wayland,$(IO)),)
 WL_INST  := $(OUT)/wayland-inst
 WL_PROTO := $(BUILD)/wayland-protocols
@@ -185,7 +186,7 @@ WL_XML_xdg-decoration := $(WL_PROTO)/unstable/xdg-decoration/xdg-decoration-unst
 WL_PROTOS := xdg-shell xdg-decoration
 WL_HDRS := $(foreach p,$(WL_PROTOS),$(WL_GEN)/$(p)-client-protocol.h)
 WL_SRCS := $(foreach p,$(WL_PROTOS),$(WL_GEN)/$(p)-protocol.c)
-WAYLAND_SCANNER ?= wayland-scanner
+WAYLAND_SCANNER ?= $(BUILD)/wayland-scanner-inst/bin/wayland-scanner
 PKG_INC += -I$(WL_INST)/include -I$(WL_GEN)
 FFI_LIBS := $(shell pkg-config --static --libs libffi 2>/dev/null || echo -lffi)
 PKG_STATIC += $(WL_INST)/lib/libwayland-client.a $(call static_of,$(FFI_LIBS))

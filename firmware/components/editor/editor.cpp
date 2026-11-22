@@ -779,7 +779,7 @@ extern "C" esp_err_t editor_rename_dir(const char *old_dir, const char *new_dir)
         editor_doc_t *d = &s_docs[i];
         if (!d->in_use || !path_in_dir(d->path, old_dir)) continue;
         char tail[sizeof(d->path)];
-        strlcpy(tail, d->path + ol, sizeof(tail));
+        snprintf(tail, sizeof(tail), "%s", d->path + ol);
         snprintf(d->path, sizeof(d->path), "%s%s", new_dir, tail);
     }
     ESP_LOGI(TAG, "Renamed folder: %s -> %s", old_dir, new_dir);

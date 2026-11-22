@@ -333,8 +333,8 @@ extern "C" bool wifi_manager_get_configured(char *ssid, size_t ssid_sz,
     if (!ssid || ssid_sz == 0 || !pass || pass_sz == 0) return false;
     char s[33] = "", p[65] = "";
     bool ok = load_configured(s, sizeof(s), p, sizeof(p), false);
-    strlcpy(ssid, ok ? s : "", ssid_sz);
-    strlcpy(pass, ok ? p : "", pass_sz);
+    snprintf(ssid, ssid_sz, "%s", ok ? s : "");
+    snprintf(pass, pass_sz, "%s", ok ? p : "");
     memset(p, 0, sizeof(p));
     return ok;
 }

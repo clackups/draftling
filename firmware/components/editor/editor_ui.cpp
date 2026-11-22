@@ -4623,7 +4623,7 @@ static bool browser_at_root(void) { return s_cur_project[0] == '\0'; }
  * ... when that one exists. */
 static void default_project_name(char *out, size_t n)
 {
-    strlcpy(out, PROJECT_DEFAULT_NAME, n);
+    snprintf(out, n, "%s", PROJECT_DEFAULT_NAME);
     for (int i = 2; i < 100 && project_exists(out); i++)
         snprintf(out, n, "%s%d", PROJECT_DEFAULT_NAME, i);
 }
@@ -4656,18 +4656,16 @@ static bool context_project(char *out, size_t n)
     if (s_editor_screen_active && !s_inpane_browser_open) {
         if (doc_project(s_panes[s_focus].doc, out, n)) return true;
     } else if (!browser_at_root()) {
-        strlcpy(out, s_cur_project, n);
+        snprintf(out, n, "%s", s_cur_project);
         return true;
     } else {
         const sd_card_file_entry_t *e = browser_selected_entry();
-        if (e && e->is_dir) {
-            strlcpy(out, e->name, n);
-            return true;
-        }
+        if (e && e->is_dir)
+            return snprintf(out, n, "%s", e->name) < (int)n;
         return false;
     }
     if (s_last_project[0] && project_exists(s_last_project)) {
-        strlcpy(out, s_last_project, n);
+        snprintf(out, n, "%s", s_last_project);
         return true;
     }
     return false;
@@ -4677,8 +4675,8 @@ static bool context_project(char *out, size_t n)
 static bool new_doc_dir(char *out, size_t n)
 {
     project_name_t p;
-    if (!browser_at_root() && project_exists(s_cur_project)) strlcpy(p, s_cur_project, sizeof(p));
-    else if (s_last_project[0] && project_exists(s_last_project)) strlcpy(p, s_last_project, sizeof(p));
+    if (!browser_at_root() && project_exists(s_cur_project)) snprintf(p, sizeof(p), "%s", s_cur_project);
+    else if (s_last_project[0] && project_exists(s_last_project)) snprintf(p, sizeof(p), "%s", s_last_project);
     else return false;
     project_dir(p, out, n);
     return true;
@@ -4753,8 +4751,8 @@ static void refresh_file_list(const char *select_name = NULL)
         if (cur_btn) {
             int cur_idx = (int)(intptr_t)lv_obj_get_user_data(cur_btn);
             if (cur_idx >= 0 && cur_idx < s_browser_count) {
-                strlcpy(remembered_name, s_browser_entries[cur_idx].name,
-                        sizeof(remembered_name));
+                snprintf(remembered_name, sizeof(remembered_name), "%s",
+                         s_browser_entries[cur_idx].name);
             }
         }
     }
@@ -4762,7 +4760,7 @@ static void refresh_file_list(const char *select_name = NULL)
     /* A project that went away (renamed or deleted elsewhere) drops
      * the browser back to the list of projects. */
     if (!browser_at_root() && !project_exists(s_cur_project)) {
-        strlcpy(remembered_name, s_cur_project, sizeof(remembered_name));
+        snprintf(remembered_name, sizeof(remembered_name), "%s", s_cur_project);
         s_cur_project[0] = '\0';
     }
 
@@ -4770,7 +4768,7 @@ static void refresh_file_list(const char *select_name = NULL)
     s_browser_entries = NULL;
     s_browser_count = 0;
     char dir[64];
-    if (browser_at_root()) strlcpy(dir, sd_card_get_mount_point(), sizeof(dir));
+    if (browser_at_root()) snprintf(dir, sizeof(dir), "%s", sd_card_get_mount_point());
     else project_dir(s_cur_project, dir, sizeof(dir));
     if (sd_card_list_dir(dir, &s_browser_entries, &s_browser_count) != ESP_OK) {
         s_browser_entries = NULL;
@@ -4867,8 +4865,8 @@ static void show_name_prompt(save_mode_t mode, const char *hdr, const char *init
  * selected file) highlighted. */
 static void browser_enter_project(const char *name, const char *select = NULL)
 {
-    strlcpy(s_cur_project, name, sizeof(s_cur_project));
-    strlcpy(s_last_project, name, sizeof(s_last_project));
+    snprintf(s_cur_project, sizeof(s_cur_project), "%s", name);
+    snprintf(s_last_project, sizeof(s_last_project), "%s", name);
     projects_set_last(name);
     char last[256] = "";
     if (!select) {
@@ -4894,7 +4892,7 @@ static void browser_go_up(void)
     if (browser_at_root()) return;
     browser_remember_selection();
     project_name_t old;
-    strlcpy(old, s_cur_project, sizeof(old));
+    snprintf(old, sizeof(old), "%s", s_cur_project);
     s_cur_project[0] = '\0';
     refresh_file_list(old);
     restore_default_status();
@@ -4971,7 +4969,7 @@ extern "C" void editor_ui_show_file_browser(void)
         s_browser_started = true;
         projects_get_last(s_last_project, sizeof(s_last_project));
         if (s_last_project[0] && project_exists(s_last_project)) {
-            strlcpy(s_cur_project, s_last_project, sizeof(s_cur_project));
+            snprintf(s_cur_project, sizeof(s_cur_project), "%s", s_last_project);
             project_get_last_file(s_cur_project, select, sizeof(select));
         } else {
             s_last_project[0] = '\0';
@@ -5013,9 +5011,9 @@ extern "C" void editor_ui_show_file_browser(void)
         const char *ap = editor_get_file_path();
         project_name_t dp;
         if (ap && project_of_path(ap, dp, sizeof(dp))) {
-            strlcpy(s_cur_project, dp, sizeof(s_cur_project));
-            strlcpy(s_last_project, dp, sizeof(s_last_project));
-            strlcpy(select, strrchr(ap, '/') + 1, sizeof(select));
+            snprintf(s_cur_project, sizeof(s_cur_project), "%s", dp);
+            snprintf(s_last_project, sizeof(s_last_project), "%s", dp);
+            snprintf(select, sizeof(select), "%s", strrchr(ap, '/') + 1);
             project_set_last_file(dp, select);
         }
     }
@@ -5134,7 +5132,7 @@ static void editor_default_status(char *buf, size_t n)
     };
     project_name_t p = "";
     if (!doc_project(s_panes[s_focus].doc, p, sizeof(p)) && s_last_project[0])
-        strlcpy(p, s_last_project, sizeof(p));
+        snprintf(p, sizeof(p), "%s", s_last_project);
     char prefix[PROJECT_NAME_MAX + 4] = "";
     if (p[0]) snprintf(prefix, sizeof(prefix), "%s | ", p);
     fit_status_text(buf, n, prefix, hints, 4);
@@ -7090,8 +7088,8 @@ static void handle_dbx_prompt_key(const kb_event_t *ev)
             if (strlen(s_dbx_otp) != 8) return; /* keep editing */
             char site[sizeof(s_dbx_site)];
             char otp[sizeof(s_dbx_otp)];
-            strlcpy(site, dbx_site(), sizeof(site));
-            strlcpy(otp, s_dbx_otp, sizeof(otp));
+            snprintf(site, sizeof(site), "%s", dbx_site());
+            snprintf(otp, sizeof(otp), "%s", s_dbx_otp);
             close_dbx_prompt();
             /* The menu stays open underneath; the pop-up shows the
              * progress and then the result. */
@@ -7680,8 +7678,8 @@ static void fmt_start(void)
         return;
     }
     a->keep_wifi = s_fmt_keep_wifi;
-    strlcpy(a->ssid, s_fmt_ssid, sizeof(a->ssid));
-    strlcpy(a->pass, s_fmt_pass, sizeof(a->pass));
+    snprintf(a->ssid, sizeof(a->ssid), "%s", s_fmt_ssid);
+    snprintf(a->pass, sizeof(a->pass), "%s", s_fmt_pass);
     close_fmt_picker();
 
     /* The files are about to disappear: drop unsaved edits so no
@@ -7765,7 +7763,7 @@ static void sync_project(const char *p, bool connect_wifi)
             editor_ui_set_status("Git: connect WiFi first (F1)");
             return;
         }
-        strlcpy(s_sync_after_wifi, p, sizeof(s_sync_after_wifi));
+        snprintf(s_sync_after_wifi, sizeof(s_sync_after_wifi), "%s", p);
         /* An attempt already running reports to wifi_state_cb() too. */
         if (wifi_manager_get_state() != WIFI_STATE_CONNECTING) {
             editor_ui_set_status("WiFi: connecting...");
@@ -7792,7 +7790,7 @@ static void sync_wifi_done(bool connected)
 {
     if (!s_sync_after_wifi[0]) return;
     project_name_t p;
-    strlcpy(p, s_sync_after_wifi, sizeof(p));
+    snprintf(p, sizeof(p), "%s", s_sync_after_wifi);
     s_sync_after_wifi[0] = '\0';
     if (!connected) return;
     if (const char *busy = sd_handed_off_msg()) {
@@ -9004,7 +9002,7 @@ static void show_save_prompt(void)
 static void show_name_prompt(save_mode_t mode, const char *hdr, const char *initial)
 {
     if (!s_save_panel) return;
-    strlcpy(s_save_buf, initial ? initial : "", sizeof(s_save_buf));
+    snprintf(s_save_buf, sizeof(s_save_buf), "%s", initial ? initial : "");
     s_save_pos = (int)strlen(s_save_buf);
     s_save_open = true;
     s_save_mode = mode;
@@ -9031,7 +9029,7 @@ static void show_rename_prompt(void)
     const sd_card_file_entry_t *e = browser_selected_entry();
     if (!e) return;
     if (browser_at_root()) {
-        strlcpy(s_rename_src, e->name, sizeof(s_rename_src));
+        snprintf(s_rename_src, sizeof(s_rename_src), "%s", e->name);
         show_name_prompt(SAVE_MODE_PROJECT_RENAME, "Rename project to (Enter/Esc):", e->name);
         return;
     }
@@ -9217,10 +9215,10 @@ static void xfer_set_projects(const char *first, const char *exclude)
     s_xfer_projects = (project_name_t *)malloc((size_t)(n + 1) * sizeof(project_name_t));
     s_xfer_nprojects = 0;
     if (s_xfer_projects) {
-        if (first) strlcpy(s_xfer_projects[s_xfer_nprojects++], first, sizeof(project_name_t));
+        if (first) snprintf(s_xfer_projects[s_xfer_nprojects++], sizeof(project_name_t), "%s", first);
         for (int i = 0; i < n; i++) {
             if (exclude && strcmp(all[i], exclude) == 0) continue;
-            strlcpy(s_xfer_projects[s_xfer_nprojects++], all[i], sizeof(project_name_t));
+            snprintf(s_xfer_projects[s_xfer_nprojects++], sizeof(project_name_t), "%s", all[i]);
         }
     }
     free(all);
@@ -9256,8 +9254,8 @@ static void show_xfer_picker(bool copy)
     }
     s_xfer_copy = copy;
     s_xfer_from_inpane = s_inpane_browser_open;
-    strlcpy(s_xfer_src_project, s_cur_project, sizeof(s_xfer_src_project));
-    strlcpy(s_xfer_src_name, e->name, sizeof(s_xfer_src_name));
+    snprintf(s_xfer_src_project, sizeof(s_xfer_src_project), "%s", s_cur_project);
+    snprintf(s_xfer_src_name, sizeof(s_xfer_src_name), "%s", e->name);
     browser_remember_selection();
 
     xfer_set_projects(copy ? s_cur_project : NULL, s_cur_project);
@@ -9273,7 +9271,7 @@ static void xfer_picker_activate(int idx)
 {
     bool is_new = (idx >= s_xfer_nprojects);
     project_name_t dst = "";
-    if (!is_new) strlcpy(dst, s_xfer_projects[idx], sizeof(dst));
+    if (!is_new) snprintf(dst, sizeof(dst), "%s", s_xfer_projects[idx]);
     if (s_xfer_migrate) {
         s_xfer_migrate = false;
         s_setup_busy = true;
@@ -9299,7 +9297,7 @@ static void xfer_picker_activate(int idx)
         show_name_prompt(SAVE_MODE_XFER_PROJECT, hdr, def);
         return;
     }
-    strlcpy(s_xfer_dst_project, dst, sizeof(s_xfer_dst_project));
+    snprintf(s_xfer_dst_project, sizeof(s_xfer_dst_project), "%s", dst);
     char ddir[64], free_name[256];
     project_dir(dst, ddir, sizeof(ddir));
     if (!project_free_file_name(ddir, s_xfer_src_name, free_name, sizeof(free_name))) {
@@ -9383,7 +9381,7 @@ static bool project_name_ok_or_status(const char *name)
 static void project_prompt_confirm(void)
 {
     char name[sizeof(s_save_buf)];
-    strlcpy(name, s_save_buf, sizeof(name));
+    snprintf(name, sizeof(name), "%s", s_save_buf);
     char msg[128];
 
     switch (s_save_mode) {
@@ -9442,10 +9440,10 @@ static void project_prompt_confirm(void)
             return;
         }
         close_save_prompt();
-        if (strcmp(s_last_project, old) == 0) {
-            strlcpy(s_last_project, name, sizeof(s_last_project));
+        if (strcmp(s_last_project, old) == 0 &&
+            snprintf(s_last_project, sizeof(s_last_project), "%s", name)
+                < (int)sizeof(s_last_project))
             projects_set_last(name);
-        }
         refresh_file_list(name);
         name_prompt_return();
         snprintf(msg, sizeof(msg), "Renamed project to %.32s", name);
@@ -9518,15 +9516,16 @@ static void save_prompt_confirm(void)
         return;
     }
     char path[512];
-    strlcpy(path, s_rename_src, sizeof(path));
-    strlcat(path, "/", sizeof(path));
-    strlcat(path, s_save_buf, sizeof(path));
+    if (snprintf(path, sizeof(path), "%s/%s", s_rename_src, s_save_buf) >= (int)sizeof(path)) {
+        editor_ui_set_status("Name too long");
+        return;
+    }
     esp_err_t err = editor_save_file_as(path);
     close_save_prompt();
     if (err == ESP_OK) {
         project_name_t pr;
         if (project_of_path(path, pr, sizeof(pr))) {
-            strlcpy(s_last_project, pr, sizeof(s_last_project));
+            snprintf(s_last_project, sizeof(s_last_project), "%s", pr);
             project_set_last_file(pr, s_save_buf);
         }
         char msg[80];
@@ -10095,7 +10094,7 @@ static void show_project_delete_prompt(const char *name)
         }
     }
     s_del_is_project = true;
-    strlcpy(s_del_path, dir, sizeof(s_del_path));
+    snprintf(s_del_path, sizeof(s_del_path), "%s", dir);
     remember_neighbour_row();
     char hdr[96];
     if (st.files > 0)
@@ -10161,7 +10160,10 @@ static void delete_prompt_activate(void)
     char msg[80];
     if (s_del_is_project) {
         project_name_t pname;
-        strlcpy(pname, name, sizeof(pname));
+        if (snprintf(pname, sizeof(pname), "%s", name) >= (int)sizeof(pname)) {
+            editor_ui_set_status("Project name too long");
+            return;
+        }
         if (editor_dir_has_open_doc(s_del_path)) {
             editor_ui_set_status("A file of this project is open -- close it first");
             return;
@@ -11925,8 +11927,9 @@ static void browser_activate_item(int row)
         /* The list of projects: open the project. */
         if (browser_at_root()) {
             project_name_t name;
-            strlcpy(name, s_browser_entries[idx].name, sizeof(name));
-            browser_enter_project(name);
+            if (snprintf(name, sizeof(name), "%s", s_browser_entries[idx].name)
+                    < (int)sizeof(name))
+                browser_enter_project(name);
         }
         return;
     }
@@ -11937,7 +11940,7 @@ static void browser_activate_item(int row)
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", dir, s_browser_entries[idx].name);
     project_set_last_file(s_cur_project, s_browser_entries[idx].name);
-    strlcpy(s_last_project, s_cur_project, sizeof(s_last_project));
+    snprintf(s_last_project, sizeof(s_last_project), "%s", s_cur_project);
 
     if (s_pane_count <= 1) {
         editor_init();
@@ -12977,7 +12980,7 @@ static void wifi_picked_busy_apply(void *)
 static void wifi_known_refused_apply(void *arg)
 {
     char *ssid = (char *)arg;
-    strlcpy(s_wifi_known_refused, ssid, sizeof(s_wifi_known_refused));
+    snprintf(s_wifi_known_refused, sizeof(s_wifi_known_refused), "%s", ssid);
     free(ssid);
 }
 
@@ -13046,7 +13049,7 @@ static void draftbox_connect_task(void *arg)
     esp_err_t ret = git_sync_draftbox_connect(args->dir, args->site, args->otp,
                                               msg, sizeof(msg));
     project_name_t project;
-    strlcpy(project, args->project, sizeof(project));
+    snprintf(project, sizeof(project), "%s", args->project);
     memset(args, 0, sizeof(*args));
     free(args);
 
@@ -13078,8 +13081,8 @@ static void draftbox_connect_async(const char *site, const char *otp)
         show_msg_popup("Draftbox", "Could not connect: out of memory.", false);
         return;
     }
-    strlcpy(args->site, site, sizeof(args->site));
-    strlcpy(args->otp, otp, sizeof(args->otp));
+    snprintf(args->site, sizeof(args->site), "%s", site);
+    snprintf(args->otp, sizeof(args->otp), "%s", otp);
     if (!context_project(args->project, sizeof(args->project))) {
         free(args);
         show_msg_popup("Draftbox", "Could not connect: select a project first.", false);

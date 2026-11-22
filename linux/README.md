@@ -95,11 +95,11 @@ a dedicated Draftling writing machine, no desktop is needed: Weston,
 the reference Wayland compositor, in its kiosk shell runs Draftling
 full screen with nothing else around it.
 
-1. Install Debian (13 "trixie" or later: the package needs glibc
-   2.38) from the netinst image. On the "Software selection" page,
-   untick "Debian desktop environment" and every desktop; keep
-   "standard system utilities" (and "SSH server" if you want to reach
-   the machine over the network).
+1. Install Debian (12 "bookworm" or later: the package, built on
+   Ubuntu 22.04, needs glibc 2.34) from the netinst image. On the
+   "Software selection" page, untick "Debian desktop environment"
+   and every desktop; keep "standard system utilities" (and "SSH
+   server" if you want to reach the machine over the network).
 2. Log in on the console and install Weston, NetworkManager and the
    Draftling package for the machine (`dpkg --print-architecture`
    names it; the packages are on https://flasher.draftling.art/,
@@ -164,14 +164,17 @@ best.
 
 ## Build requirements
 
-A Linux host with:
+A Linux host with the packages below; tested on Ubuntu 22.04 (gcc 11,
+meson 0.61, glibc 2.35) and Ubuntu 26.04. Build on the oldest system
+the program should run on: it needs the glibc it was built with or a
+newer one (built on Ubuntu 22.04: glibc 2.34 or later).
 
 | What | Debian / Ubuntu packages | Needed for |
 |------|--------------------------|------------|
 | C and C++ compiler, make | `build-essential` | everything |
 | git, curl, python3, pkg-config | `git curl python3 pkgconf` | fetching the pinned sources, Kconfig, the build |
 | OpenSSL headers and static libraries | `libssl-dev`, and what its static link needs there: nothing more on Ubuntu 22.04 / Debian 12 (OpenSSL 3.0), `libjitterentropy3-dev zlib1g-dev libzstd-dev` on Ubuntu 26.04 | Git sync / Draftbox (TLS, SHA-1) |
-| meson, ninja, wayland-scanner, libffi | `meson ninja-build libwayland-bin libffi-dev` | the Wayland backend (libwayland-client is built from source as a static library) |
+| meson, ninja, expat, libffi | `meson ninja-build libexpat1-dev libffi-dev` | the Wayland backend (libwayland-client and wayland-scanner are built from source, the library as a static one; the scanner needs expat) |
 | XCB headers and static libraries | `libxcb1-dev libxcb-xkb-dev libxau-dev libxdmcp-dev` | the X11 backend |
 
 `make check-host` lists what is missing (for the backends in `IO`).
@@ -179,13 +182,16 @@ Which static archives OpenSSL needs differs between distributions: the
 build takes the list from `pkg-config --static --libs libssl
 libcrypto`. On Fedora the corresponding packages are `gcc gcc-c++ make
 git curl python3 pkgconf openssl-devel openssl-static meson ninja-build
-wayland-devel libffi-devel libxcb-devel` (static archives are split out
+expat-devel libffi-devel libxcb-devel` (static archives are split out
 differently there; `make check-host` names what is missing).
 
 The Makefile fetches the rest itself, at pinned versions, into
 `build/`: LVGL `v9.6.0`, kconfiglib `v14.1.0` (one Python file),
 miniz `v114` (the ESP32 ROM's zlib), libwayland `1.24.0` and
-wayland-protocols `1.47`.
+wayland-protocols `1.47`. wayland-scanner is built from the libwayland
+source too (`build/wayland-scanner-inst/`), since libwayland's build
+wants a scanner of exactly its own version, which a distribution's need
+not be (Ubuntu 22.04 has 1.20).
 
 Everything but the C library is linked statically -- LVGL, libwayland
 and libffi, XCB and its libraries, OpenSSL, libstdc++ and libgcc -- so
@@ -292,9 +298,10 @@ OpenSSL's static link needs them, as above.)
 libraries. Changing compiler flags does not rebuild existing objects:
 run `make clean ARCH=<arch>` after such a change.
 
-The host's own meson, ninja, wayland-scanner and python3 are used as
-they are. (Debian needs no extra sources: its mirrors carry every
-architecture.)
+The host's own meson, ninja and python3 are used as they are, and
+wayland-scanner is built for the host (with the host's `cc` and its
+`libexpat1-dev`, not the target's). (Debian needs no extra sources:
+its mirrors carry every architecture.)
 
 ## Packaging
 

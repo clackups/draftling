@@ -91,7 +91,7 @@ static volatile git_sync_direction_t s_req_dir = GIT_SYNC_BOTH;
 
 static void set_error(const char *msg)
 {
-    strlcpy(s_last_error, msg, sizeof(s_last_error));
+    snprintf(s_last_error, sizeof(s_last_error), "%.*s", (int)sizeof(s_last_error) - 1, msg);
     s_state = GIT_SYNC_ERROR;
     if (s_callback) s_callback(GIT_SYNC_ERROR, msg);
 }
@@ -121,7 +121,7 @@ static void remote_host_of(const char *url, char *out, size_t osz)
         const char *colon = (const char *)memchr(p, ':', n);
         if (colon) n = (size_t)(colon - p);
     }
-    if (n == 0) { strlcpy(out, "server", osz); return; }
+    if (n == 0) { snprintf(out, osz, "%s", "server"); return; }
     if (n >= osz) n = osz - 1;
     memcpy(out, p, n);
     out[n] = '\0';
@@ -139,7 +139,7 @@ static void repo_name_of(const char *url, char *out, size_t osz)
     size_t n = strcspn(p, "?#");
     while (n && p[n - 1] == '/') n--;
     if (n >= 4 && strncmp(p + n - 4, ".git", 4) == 0) n -= 4;
-    if (n == 0) { strlcpy(out, "(server root)", osz); return; }
+    if (n == 0) { snprintf(out, osz, "%s", "(server root)"); return; }
     if (n >= osz) n = osz - 1;
     memcpy(out, p, n);
     out[n] = '\0';
@@ -246,12 +246,14 @@ static bool synced_entry(const git_tree_entry *e)
     return type == 0100000 && is_doc(e->name) && fat_name_ok(e->name);
 }
 
-/* "<dir>/<name>" without tripping -Wformat-truncation. */
+/* "<dir>/<name>"; empty when it does not fit, so that no file of a
+ * shortened name is touched. */
 static void joinp(char *out, size_t osz, const char *dir, const char *name)
 {
-    strlcpy(out, dir, osz);
-    strlcat(out, "/", osz);
-    strlcat(out, name, osz);
+    if (snprintf(out, osz, "%s/%s", dir, name) >= (int)osz) {
+        ESP_LOGE(TAG, "path too long: %s/%s", dir, name);
+        out[0] = '\0';
+    }
 }
 
 /* Whether the working dir holds any document. */
@@ -483,12 +485,16 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
     memset(&remote, 0, sizeof(remote));
     {
         char url[400];
-        strlcpy(url, s_cfg.repo_url, sizeof(url));
+        snprintf(url, sizeof(url), "%s", s_cfg.repo_url);
         size_t n = strlen(url);
         while (n > 1 && url[n - 1] == '/') url[--n] = '\0';
         if (n < 4 || strcmp(url + n - 4, ".git") != 0)
-            strlcat(url, ".git", sizeof(url));
-        strlcpy(remote.base_url, url, sizeof(remote.base_url));
+            snprintf(url + n, sizeof(url) - n, ".git");
+        if (snprintf(remote.base_url, sizeof(remote.base_url), "%s", url)
+                >= (int)sizeof(remote.base_url)) {
+            set_error("Repository URL too long");
+            return ESP_FAIL;
+        }
 
         if (s_cfg.token[0]) {
             const char *user = s_cfg.username[0] ? s_cfg.username : "x-access-token";
@@ -501,7 +507,7 @@ static esp_err_t do_sync(git_sync_direction_t dir, sync_stats *st)
                                       (const unsigned char *)raw, (size_t)rl) == 0) {
                 b64[bl] = '\0';
                 memcpy(remote.auth_basic, "Basic ", 6);
-                strlcpy(remote.auth_basic + 6, (char *)b64, sizeof(remote.auth_basic) - 6);
+                snprintf(remote.auth_basic + 6, sizeof(remote.auth_basic) - 6, "%s", (char *)b64);
             }
         }
     }
@@ -935,8 +941,8 @@ static void trim(char *s)
 static void parse_config(git_cfg_t *c, const char *data, const char *dir)
 {
     memset(c, 0, sizeof(*c));
-    strlcpy(c->branch, "main", sizeof(c->branch));
-    strlcpy(c->local_path, dir, sizeof(c->local_path));
+    snprintf(c->branch, sizeof(c->branch), "%s", "main");
+    snprintf(c->local_path, sizeof(c->local_path), "%s", dir);
 
     const char *p = data;
     while (*p) {
@@ -956,14 +962,14 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         trim(key);
         trim(val);
 
-        if (!strcmp(key, "repo_url"))          strlcpy(c->repo_url, val, sizeof(c->repo_url));
-        else if (!strcmp(key, "branch"))       strlcpy(c->branch, val, sizeof(c->branch));
-        else if (!strcmp(key, "token"))        strlcpy(c->token, val, sizeof(c->token));
-        else if (!strcmp(key, "username"))     strlcpy(c->username, val, sizeof(c->username));
-        else if (!strcmp(key, "author_name"))  strlcpy(c->author_name, val, sizeof(c->author_name));
-        else if (!strcmp(key, "author_email")) strlcpy(c->author_email, val, sizeof(c->author_email));
+        if (!strcmp(key, "repo_url"))          snprintf(c->repo_url, sizeof(c->repo_url), "%s", val);
+        else if (!strcmp(key, "branch"))       snprintf(c->branch, sizeof(c->branch), "%s", val);
+        else if (!strcmp(key, "token"))        snprintf(c->token, sizeof(c->token), "%s", val);
+        else if (!strcmp(key, "username"))     snprintf(c->username, sizeof(c->username), "%s", val);
+        else if (!strcmp(key, "author_name"))  snprintf(c->author_name, sizeof(c->author_name), "%s", val);
+        else if (!strcmp(key, "author_email")) snprintf(c->author_email, sizeof(c->author_email), "%s", val);
         else if (!strcmp(key, "path")) {
-            strlcpy(c->remote_path, val, sizeof(c->remote_path));
+            snprintf(c->remote_path, sizeof(c->remote_path), "%s", val);
             /* normalise: no leading '/', exactly one trailing '/' */
             char *q = c->remote_path;
             while (*q == '/') memmove(q, q + 1, strlen(q));
@@ -976,7 +982,7 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         }
     }
 
-    if (c->branch[0] == '\0') strlcpy(c->branch, "main", sizeof(c->branch));
+    if (c->branch[0] == '\0') snprintf(c->branch, sizeof(c->branch), "%s", "main");
     /* The branch name becomes a path under .git/refs: refuse one that
      * is not a valid name (and would reach elsewhere). */
     c->bad_branch = !git_branch_name_ok(c->branch);
@@ -1046,7 +1052,7 @@ static bool normalise_site(const char *in, char *out, size_t out_sz)
     while (*in == ' ' || *in == '\t') in++;
     if (!strncasecmp(in, "https://", 8)) in += 8;
     else if (!strncasecmp(in, "http://", 7)) in += 7;
-    strlcpy(out, in, out_sz);
+    snprintf(out, out_sz, "%s", in);
     size_t n = strlen(out);
     while (n && (out[n - 1] == '/' || out[n - 1] == ' ' || out[n - 1] == '\t'))
         out[--n] = '\0';
@@ -1435,7 +1441,7 @@ extern "C" bool git_sync_get_remote(const char *project_dir, char *host, size_t 
     if (ok) {
         remote_host_of(c->repo_url, host, host_sz);
         repo_name_of(c->repo_url, repo, repo_sz);
-        strlcpy(branch, c->branch, branch_sz);
+        snprintf(branch, branch_sz, "%s", c->branch);
     }
     memset(c, 0, sizeof(*c));
     free(c);

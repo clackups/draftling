@@ -28,6 +28,14 @@ need_pc() {    # pkg-config module, package
     fi
 }
 
+need_native_pc() {    # pkg-config module of this host (also when cross-building), package
+    if ! env -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_PATH pkg-config --exists "$1" 2>/dev/null; then
+        echo "missing: pkg-config module $1 of this host (package $2)"
+        missing=1
+        pkgs="$pkgs $2"
+    fi
+}
+
 # Every static archive the module's --static link line names.
 need_static() {   # pkg-config module(s), package hint
     for lib in $(pkg-config --static --libs-only-l $1 2>/dev/null); do
@@ -72,7 +80,8 @@ need_static "libssl libcrypto" "libssl-dev$SFX (and, where pkg-config --static -
 case " $IO " in *" wayland "*)
     need_cmd meson meson
     need_cmd ninja ninja-build
-    need_cmd wayland-scanner libwayland-bin
+    # wayland.mk builds wayland-scanner for this host
+    need_native_pc expat libexpat1-dev
     need_pc libffi "libffi-dev$SFX"
     need_static libffi "libffi-dev$SFX"
     ;;

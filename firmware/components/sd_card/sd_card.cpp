@@ -674,7 +674,7 @@ extern "C" esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **o
             cap = nc;
         }
         sd_card_file_entry_t *e = &v[n];
-        strlcpy(e->name, ent->d_name, sizeof(e->name));
+        snprintf(e->name, sizeof(e->name), "%s", ent->d_name);
         e->is_dir = (ent->d_type == DT_DIR);
 
         char full[512];

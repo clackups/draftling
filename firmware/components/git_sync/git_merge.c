@@ -652,7 +652,7 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
         for (int i = 0; i < all[s]->count; i++) {
             const char *nm = all[s]->entries[i].name;
             if (name_seen(names, nn, nm)) continue;
-            strlcpy(names[nn], nm, sizeof(names[nn]));
+            snprintf(names[nn], sizeof(names[nn]), "%s", nm);
 
             const git_tree_entry *be = git_tree_get(&base, nm);
             const git_tree_entry *oe = git_tree_get(&ours, nm);
@@ -662,7 +662,7 @@ esp_err_t git_merge_trees_flat(const git_oid *base_oid,
             git_oid to = te ? te->oid : (git_oid){0};
 
             git_merge_path_result *r = &res[nn];
-            strlcpy(r->name, nm, sizeof(r->name));
+            snprintf(r->name, sizeof(r->name), "%s", nm);
             r->conflict = false;
             /* Entries other than plain files (folders, symlinks,
              * submodules) cannot be line-merged. */
