@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.32] - 2026-11-22
+
 ### Added
 
 - **Word count goal**: the Ctrl+T dialog now offers a word goal next

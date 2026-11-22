@@ -3628,6 +3628,15 @@ pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
 `freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
 also get one image per non-default pack, listed in the release's
 `languagePacks` array in `manifest.json`.
+The flasher's `linux` entry (`"kind": "download"`) carries the Debian
+packages of the Linux program (`make deb` / `make deb ARCH=arm64` in
+`linux/`, `firmware/<tag>/draftling_<version>_<arch>.deb`). They are
+built only on an Ubuntu 22.04 machine, so the packages run on the
+oldest glibc the program supports; a release published from here does
+NOT rebuild or update them: leave the `linux` entry's `releases`
+untouched (it keeps pointing at the tag of its last packages), and keep
+that tag's `firmware/<tag>/` directory in the flasher while the entry
+references it.
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
