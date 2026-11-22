@@ -3736,20 +3736,42 @@ tree referenced in steps 1-4.
      `draftling-seeed_reterminal_sticky-otadata.bin` for those three
      boards).
    - In `manifest.json`, each board has its own `releases` array
-     (newest first). For each board this release covers, prepend a new
-     entry with its `tag`, flash mode/freq/size, and `parts[].path`
-     pointing at `firmware/vX.Y.Z/...`. Leave other boards' `releases`
+     (newest first). By default the flasher keeps only the latest
+     version: for each board this release covers, replace its
+     release entry with one for the new `tag` (flash mode/freq/size,
+     and `parts[].path` pointing at `firmware/vX.Y.Z/...`). Keep an
+     older entry only when asked to (e.g. a one-off build next to the
+     regular release). Leave boards this release does not cover
      untouched -- they keep pointing at whatever tag they last shipped
-     under. `xteink_x4_pro`, `xteink_x4_classic` and
-     `seeed_reterminal_sticky` each have a fourth `parts` entry:
+     under -- and likewise the `linux` entry and the Tab5's
+     `c6-upgrade-<V>` release (see above). `xteink_x4_pro`,
+     `xteink_x4_classic` and `seeed_reterminal_sticky` each have a
+     fourth `parts` entry:
      `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
      "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
-   - Commit and push to `draftling-flasher`'s `main` -- GitHub Pages
-     redeploys automatically; no separate deploy step.
-   - A `firmware/<tag>/` directory (in `draftling-flasher`) can be
-     deleted once no board's `releases` references it any more
-     (check every board, not just the ones just updated).
+   - Delete every file under `firmware/` that no `manifest.json` entry
+     references any more (check every board, not just the ones just
+     updated; e.g. keep the `.deb` files of the tag the `linux` entry
+     points at, delete that tag's board images), and empty
+     `firmware/<tag>/` directories.
+   - Always squash the flasher's history into a single commit: GitHub
+     Pages fails to publish the site once the repository grows too big
+     with old binaries. Back up the old history first, then replace it
+     with one orphan commit and force-push:
+     ```bash
+     cd ../draftling-flasher
+     git bundle create ../draftling-flasher-history-$(date +%F).bundle --all
+     git checkout --orphan squashed
+     git add -A
+     git commit -m "Draftling web flasher" --author="clackups <clackups@gmail.com>"
+     git branch -D main
+     git branch -m main
+     git push --force origin main
+     ```
+     GitHub Pages redeploys automatically; no separate deploy step.
+     Check afterwards that the Pages build succeeded
+     (`gh run list -R clackups/draftling-flasher`).
 
 Note: the `gh` CLI here is authenticated with a fine-grained PAT that
 can create tags, releases, and release assets, but is *not* authorized
