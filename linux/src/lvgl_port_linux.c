@@ -467,10 +467,11 @@ bool linux_port_open_io(const char *name)
             fprintf(stderr, "draftling: cannot use %s (see the message above)\n", name);
 #if defined(CONFIG_DRAFTLING_LINUX_FLATPAK)
             /* --socket=fallback-x11: no X display while there is a
-             * Wayland one. */
+             * Wayland one, even with --socket=x11 added. */
             if (strcmp(name, "x11") == 0)
                 fprintf(stderr, "draftling: the Flatpak reaches X11 only without Wayland; "
-                        "to use it anyway: flatpak run --socket=x11 art.draftling.Draftling --io x11\n");
+                        "to use it anyway: flatpak run --nosocket=fallback-x11 "
+                        "--socket=x11 art.draftling.Draftling --io x11\n");
 #endif
             return false;
         }

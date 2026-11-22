@@ -418,8 +418,9 @@ flatpak run art.draftling.Draftling -v       # options as above
 ```
 
 `--socket=fallback-x11` gives the app an X display only when the
-session has no Wayland, so on a Wayland desktop `--io x11` needs the
-X11 socket for that run: `flatpak run --socket=x11
+session has no Wayland -- even when `--socket=x11` is added -- so on a
+Wayland desktop `--io x11` needs the fallback turned off for that run:
+`flatpak run --nosocket=fallback-x11 --socket=x11
 art.draftling.Draftling --io x11`.
 
 ## How it works
