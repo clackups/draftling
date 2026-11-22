@@ -3652,15 +3652,21 @@ pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
 `freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
 also get one image per non-default pack, listed in the release's
 `languagePacks` array in `manifest.json`.
-The flasher's `linux` entry (`"kind": "download"`) carries the Debian
-packages of the Linux program (`make deb` / `make deb ARCH=arm64` in
-`linux/`, `firmware/<tag>/draftling_<version>_<arch>.deb`). They are
-built only on an Ubuntu 22.04 machine, so the packages run on the
-oldest glibc the program supports; a release published from here does
-NOT rebuild or update them: leave the `linux` entry's `releases`
-untouched (it keeps pointing at the tag of its last packages), and keep
-that tag's `firmware/<tag>/` directory in the flasher while the entry
-references it.
+The Linux program is not in `manifest.json`: the flasher's own page
+`linux.html` (static, linked from the header of `index.html`) has the
+download links and install instructions, with a version for each kind
+of package. The Debian packages (`make deb` / `make deb ARCH=arm64` /
+`make deb ARCH=armhf` in `linux/`,
+`firmware/<tag>/draftling_<version>_<arch>.deb`) are built only on an
+Ubuntu 22.04 machine, so the packages run on the oldest glibc the
+program supports; a release published from here does NOT rebuild or
+update them: leave their links in `linux.html` untouched (they keep
+pointing at the tag of their last packages), and keep those files in
+the flasher. The Flatpak bundles (`make flatpak` in `linux/`,
+`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`) take
+their glibc from the Flatpak runtime, so they can be built on any
+machine: a release rebuilds them, copies them to `firmware/vX.Y.Z/`
+and updates their links, file names and version in `linux.html`.
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
@@ -3767,17 +3773,17 @@ tree referenced in steps 1-4.
      older entry only when asked to (e.g. a one-off build next to the
      regular release). Leave boards this release does not cover
      untouched -- they keep pointing at whatever tag they last shipped
-     under -- and likewise the `linux` entry and the Tab5's
+     under -- and likewise the Tab5's
      `c6-upgrade-<V>` release (see above). `xteink_x4_pro`,
      `xteink_x4_classic` and `seeed_reterminal_sticky` each have a
      fourth `parts` entry:
      `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
      "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
-   - Delete every file under `firmware/` that no `manifest.json` entry
-     references any more (check every board, not just the ones just
-     updated; e.g. keep the `.deb` files of the tag the `linux` entry
-     points at, delete that tag's board images), and empty
+   - Delete every file under `firmware/` that neither a `manifest.json`
+     entry nor `linux.html` references any more (check every board, not
+     just the ones just updated; e.g. keep the `.deb` files `linux.html`
+     links to, delete that tag's board images), and empty
      `firmware/<tag>/` directories.
    - Before changing anything in the flasher, bring the clone up to
      date (`git pull --ff-only origin main`; if the history was
