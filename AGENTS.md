@@ -3755,19 +3755,26 @@ tree referenced in steps 1-4.
      updated; e.g. keep the `.deb` files of the tag the `linux` entry
      points at, delete that tag's board images), and empty
      `firmware/<tag>/` directories.
+   - Before changing anything in the flasher, bring the clone up to
+     date (`git pull --ff-only origin main`; if the history was
+     squashed elsewhere: `git fetch origin && git reset --hard
+     origin/main` after checking nothing local is lost): the Debian
+     packages and site changes are pushed from other machines, and the
+     force-push below would silently drop them.
    - Always squash the flasher's history into a single commit: GitHub
      Pages fails to publish the site once the repository grows too big
      with old binaries. Back up the old history first, then replace it
      with one orphan commit and force-push:
      ```bash
      cd ../draftling-flasher
+     git fetch origin   # the push below must replace exactly this tip
      git bundle create ../draftling-flasher-history-$(date +%F).bundle --all
      git checkout --orphan squashed
      git add -A
      git commit -m "Draftling web flasher" --author="clackups <clackups@gmail.com>"
      git branch -D main
      git branch -m main
-     git push --force origin main
+     git push --force-with-lease=main:origin/main origin main
      ```
      GitHub Pages redeploys automatically; no separate deploy step.
      Check afterwards that the Pages build succeeded
