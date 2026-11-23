@@ -329,6 +329,15 @@ static const ime_engine_t *engine_for(kb_ime_t kind)
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
     case KB_IME_BENGALI_NJ: return &ime_bengali_nj_engine;
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_RTS
+    case KB_IME_TELUGU_RTS: return &ime_telugu_rts_engine;
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_PO
+    case KB_IME_TELUGU_POTHANA: return &ime_telugu_pothana_engine;
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_AP
+    case KB_IME_TELUGU_APPLE: return &ime_telugu_apple_engine;
+#endif
     default:            return NULL;
     }
 }

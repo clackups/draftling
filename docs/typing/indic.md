@@ -1,6 +1,6 @@
 # Typing guide: Indic pack (Devanagari, Bengali, Telugu and Tamil)
 
-Layouts: US plus four Devanagari, three Bengali, two Telugu and four
+Layouts: US plus four Devanagari, three Bengali, five Telugu and four
 Tamil ones.
 US, HI-IN and TA99 are active from the start; turn the others on in F1 -> Settings ->
 Keyboard -> Active layouts. **Ctrl+L** or **Win+Space** switches
@@ -17,6 +17,9 @@ between the active layouts.
 | BN-NJ | Bengali National (Jatiya, the Bangladesh standard) | typists used to the Bijoy key positions |
 | TE-IN | Telugu InScript (Government of India standard) | users of the Indian InScript layouts |
 | TE-SA | Telugu Sarala | fast Telugu typing, the frequent letters on the home row |
+| TE-RT | Telugu RTS (phonetic) | typing Telugu words in Latin letters |
+| TE-PO | Telugu Pothana | one key per letter, mostly by sound |
+| TE-AP | Telugu Apple | typists used to Apple's Telugu keyboard |
 | TA99 | Tamil 99 (Government of Tamil Nadu standard) | most Tamil typists |
 | TA-TW | Tamil Typewriter | trained typewriter typists |
 | TA-IN | Tamil InScript (Government of India standard) | users of the Indian InScript layouts |
@@ -151,7 +154,9 @@ Examples: `f h Q V h` = bangla, `h m d` = ami, `j g d` = ka i (koi),
 
 ## Telugu
 
-Both are plain layouts, typed in the order the letters are spoken --
+InScript and Sarala are plain layouts; RTS, Pothana and Apple type on
+the US keyboard through an input method. All are typed in the order
+the letters are spoken --
 consonant, then its vowel sign -- and the editor draws the syllable,
 with the vowel sign joined to the consonant and the second consonant
 of a conjunct below the first (the vattu). Join two consonants with
@@ -209,6 +214,79 @@ AltGr + digit types the Telugu ones.
 
 Examples: `t q l u g u` = telugu, `n m w f t e` = namaste, Shift+`F`
 `m f m` = amma.
+
+### TE-RT: RTS (phonetic)
+
+Type each word in Latin letters, the Rice Transliteration Standard
+(RTS) used on Telugu websites and mailing lists; it is shown in Telugu
+as you type, and the Latin letters stay in the status bar until the
+word ends. Backspace removes the last Latin letter while the word is
+open. A consonant shows its virama until a vowel follows.
+
+| Keys | Letters |
+|------|---------|
+| `a aa i ee u oo R e ea ai o oe au` | a aa i ii u uu ri e ee ai o oo au (also `A I U E O`, `ii uu ae oa ou`) |
+| `k kh g gh ~m` | ka kha ga gha nga |
+| `c C j jh ~n` | ca cha ja jha nya |
+| `T Th D Dh N` | Ta Tha Da Dha Na |
+| `t th d dh n` | ta tha da dha na |
+| `p ph b bh m` | pa pha ba bha ma |
+| `y r l v S sh s h L ~r` | ya ra la va sha ssa sa ha lla rra |
+| `x` or `ksh`, `jn` | ksha, jnya |
+| `M` / `@M` / `@h` | anusvara / candrabindu / visarga |
+| `n&` / `m&` | n / m that stays a letter before a consonant |
+| `^` | virama + zero-width non-joiner (the explicit half form) |
+| `0`-`9` / `\|` / `\|\|` | Telugu digits / danda / double danda |
+| Shift + Space | zero-width non-joiner |
+
+`n` or `m` before another consonant (except `r` and `y`) is written
+as the anusvara, and so is `m` at the end of a word: `sundaram` =
+sundaram with both anusvaras. Examples: `telugu`, `namaskaaram`,
+`kRshNa`, `andhra`, `jnaanam`.
+
+### TE-PO: Pothana
+
+One key per letter, consonants with their inherent a; a vowel key
+right after a consonant types the vowel sign, anywhere else the
+independent vowel. `a` after a consonant ends the syllable, so the
+next vowel stands alone.
+
+| Keys | Letters |
+|------|---------|
+| `a A i I u U q Q e E Y o O [` | a aa i ii u uu ri rri e ee ai o oo au (sign or letter) |
+| `h` / `f` / Shift+`F` / `]` | virama / anusvara / candrabindu / visarga |
+| `k` Shift+`K` `g` Shift+`G` Shift+`M` | ka kha ga gha nga |
+| `c` Shift+`C` `j` Shift+`J` Shift+`V` | ca cha ja jha nya |
+| `t` Shift+`T` `z` Shift+`Z` Shift+`N` | Ta Tha Da Dha Na |
+| `w` Shift+`W` `d` Shift+`D` `n` | ta tha da dha na |
+| `p` Shift+`P` `b` Shift+`B` `m` | pa pha ba bha ma |
+| `y` `r` `l` `v` Shift+`S` `x` `s` Shift+`H` | ya ra la va sha ssa sa ha |
+| Shift+`L` / Shift+`R` / Shift+`X` | lla / rra / ksha |
+| AltGr + digit / AltGr + `[ ] ; ' ...` | Telugu digits / the US punctuation of the key |
+
+Examples: `w e l u g u` = telugu, `k h k` = kka, `k A` = kaa.
+
+### TE-AP: Apple
+
+The key positions of Apple's Telugu keyboard. A vowel key after a
+consonant types its sign; `q` after a consonant ends the syllable.
+For a conjunct the vowel may come before the halant, as on Apple's
+keyboard: `j o h j` and `j h j o` both give k-virama-k-ee.
+
+| Keys | Letters |
+|------|---------|
+| `q e r w i p W E u o [ t y ]` | a aa i ii u uu ri rri e ee ai o oo au (sign or letter) |
+| `h` / `g` / Shift+`\|` / `\` | halant / anusvara / candrabindu / visarga |
+| `j` Shift+`J` `x` Shift+`X` Shift+`R` | ka kha ga gha nga |
+| `m` Shift+`M` `/` Shift+`/` Shift+`T` | ca cha ja jha nya |
+| `z` Shift+`Z` `c` Shift+`C` Shift+`L` | Ta Tha Da Dha Na |
+| `s` Shift+`S` `d` Shift+`D` `l` | ta tha da dha na |
+| `;` Shift+`;` `v` Shift+`V` `b` | pa pha ba bha ma |
+| `n` `k` `a` `f` Shift+`F` Shift+`'` `'` Shift+`B` | ya ra la va sha ssa sa ha |
+| Shift+`A` / Shift+`K` / Shift+`Y` / Shift+`U` | lla / rra / ksha / sri |
+| AltGr + digit / AltGr + `[ ] ; ' ...` | Telugu digits / the US punctuation of the key |
+
+Example: `s u a i x i` = telugu.
 
 ## Tamil
 

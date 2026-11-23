@@ -144,6 +144,15 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
     KB_LAYOUT_TE_SA,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_RTS
+    KB_LAYOUT_TE_RTS,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_PO
+    KB_LAYOUT_TE_PO,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_AP
+    KB_LAYOUT_TE_AP,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 
@@ -151,7 +160,7 @@ typedef enum {
  * produce keystrokes that the editor hands to the `ime` component,
  * which composes them into the final text (Vietnamese tone marks,
  * Hangul syllables, kana / kanji, hanzi, Tamil syllables, Bengali
- * independent vowels). */
+ * independent vowels, Telugu transliteration and vowel signs). */
 typedef enum {
     KB_IME_NONE = 0,
     KB_IME_TELEX,      /* Vietnamese Telex */
@@ -162,6 +171,9 @@ typedef enum {
     KB_IME_TAMIL_TW,   /* Tamil Typewriter (visual-order glyph keys) */
     KB_IME_TARAVINYAS, /* Tamil Taravinyas (place + manner of articulation) */
     KB_IME_BENGALI_NJ, /* Bengali National (Jatiya): automatic vowel forming */
+    KB_IME_TELUGU_RTS, /* Telugu RTS: Latin words transliterated as typed */
+    KB_IME_TELUGU_POTHANA, /* Telugu Pothana: one key per letter */
+    KB_IME_TELUGU_APPLE,   /* Telugu Apple: one key per letter */
 } kb_ime_t;
 
 /* Input method of the active layout (KB_IME_NONE for plain layouts). */

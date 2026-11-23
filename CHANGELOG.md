@@ -31,9 +31,12 @@ in the git log.
 - **Telugu in the Indic language pack**: the Indic firmware now also
   writes Telugu, shaped on the device like on a desktop: vowel signs
   joined to their consonant and conjuncts with the following
-  consonants drawn below the first. Two keyboard layouts: Telugu
-  InScript (the Government of India standard) and Sarala (the
-  frequent letters on the home row). Turn them on in F1 -> Settings ->
+  consonants drawn below the first. Five keyboard layouts: Telugu
+  InScript (the Government of India standard), Sarala (the frequent
+  letters on the home row), RTS (phonetic: type `telugu` or
+  `namaskaaram` in Latin letters and see it in Telugu as you type),
+  Pothana and Apple (one key per letter; a vowel key after a
+  consonant types its sign). Turn them on in F1 -> Settings ->
   Keyboard -> Active layouts. The letters come from Noto Sans Telugu.
   See docs/typing/indic.md.
 

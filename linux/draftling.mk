@@ -141,8 +141,9 @@ endif
 
 # Input methods, as components/ime/CMakeLists.txt selects them.
 I := $(COMPONENTS)/ime
+TELUGU_IME := $(CONFIG_KB_LAYOUT_ENABLE_TE_RTS)$(CONFIG_KB_LAYOUT_ENABLE_TE_PO)$(CONFIG_KB_LAYOUT_ENABLE_TE_AP)
 TAMIL_IME := $(CONFIG_KB_LAYOUT_ENABLE_TA99)$(CONFIG_KB_LAYOUT_ENABLE_TA_TW)$(CONFIG_KB_LAYOUT_ENABLE_TA_TV)
-HAS_IME := $(CONFIG_KB_LAYOUT_ENABLE_VI)$(CONFIG_KB_LAYOUT_ENABLE_KO)$(CONFIG_KB_LAYOUT_ENABLE_JA)$(CONFIG_KB_LAYOUT_ENABLE_ZH)$(TAMIL_IME)$(CONFIG_KB_LAYOUT_ENABLE_BN_NJ)
+HAS_IME := $(CONFIG_KB_LAYOUT_ENABLE_VI)$(CONFIG_KB_LAYOUT_ENABLE_KO)$(CONFIG_KB_LAYOUT_ENABLE_JA)$(CONFIG_KB_LAYOUT_ENABLE_ZH)$(TAMIL_IME)$(CONFIG_KB_LAYOUT_ENABLE_BN_NJ)$(TELUGU_IME)
 ifneq ($(HAS_IME),)
 FW_SRCS += $(foreach s,ime ime_builtin ime_telex ime_hangul ime_kana ime_pinyin,$(I)/$(s).c)
 ifneq ($(TAMIL_IME),)
@@ -150,6 +151,9 @@ FW_SRCS += $(foreach s,ime_tamil ime_tamil99 ime_tamil_tw ime_taravinyas,$(I)/$(
 endif
 ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
 FW_SRCS += $(I)/ime_bengali.c
+endif
+ifneq ($(TELUGU_IME),)
+FW_SRCS += $(I)/ime_telugu.c
 endif
 EMBED += $(if $(CONFIG_KB_LAYOUT_ENABLE_JA),$(I)/dict/ja.bin) \
 	$(if $(CONFIG_KB_LAYOUT_ENABLE_ZH),$(I)/dict/zh.bin)

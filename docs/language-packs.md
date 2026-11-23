@@ -11,7 +11,7 @@ methods and fonts of its languages:
 | Korean | US, KO |
 | Japanese | US, JA |
 | Chinese | US, ZH (Simplified Chinese) |
-| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), BN-IN (Bengali InScript), BN-PR (Bengali Probhat), BN-NJ (Bengali National / Jatiya), TE-IN (Telugu InScript), TE-SA (Telugu Sarala), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
+| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), BN-IN (Bengali InScript), BN-PR (Bengali Probhat), BN-NJ (Bengali National / Jatiya), TE-IN (Telugu InScript), TE-SA (Telugu Sarala), TE-RT (Telugu RTS), TE-PO (Telugu Pothana), TE-AP (Telugu Apple), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
 
 How to build an image for a pack is described in
 [BUILDING.md](../BUILDING.md#language-packs).
@@ -24,7 +24,8 @@ Brief typing guides, one per pack:
 have the full details.
 
 With an input method (VI, KO, JA, ZH, the Tamil layouts other than
-InScript, and the vowel keys of Bengali National), the text being typed is
+InScript, the vowel keys of Bengali National, and Telugu RTS, Pothana
+and Apple), the text being typed is
 composed right in the document, before the cursor. Candidates to pick
 from are listed in the status bar at the bottom. Moving the cursor, a
 Ctrl / Alt shortcut or switching the layout ends the composition and
@@ -196,7 +197,7 @@ The key tables are in the [typing guide](typing/indic.md).
 
 ### Telugu
 
-Two plain layouts, typed like Devanagari in the order a syllable is
+Five layouts, all typed like Devanagari in the order a syllable is
 spoken -- consonant, then its vowel sign -- with the virama between
 the consonants of a conjunct. The editor draws the syllable the way
 it is written: the vowel sign joined to its consonant, the following
@@ -219,9 +220,28 @@ consonants of a conjunct below the first (the vattu).
   /` and the backquote) is on AltGr; AltGr + `-` / `=` types the
   zero-width non-joiner / joiner.
 
-The key tables are in the [typing guide](typing/indic.md). The
-phonetic transliteration schemes (RTS / Lekhini, Apple, Pothana) are
-not included yet: they need an input method.
+- **TE-RT, RTS**: phonetic typing with the Rice Transliteration
+  Standard and its RIT supplement (as m17n "te-rts"), the Latin
+  spelling used on Telugu websites: each word is typed in Latin
+  letters (`telugu`, `namaskaaram`, `kRshNa`) and shown in Telugu as
+  it is typed, longest match first, so `k` becomes kha when `h`
+  follows. The Latin letters of the word are shown in the status bar,
+  and Backspace removes the last of them while the word is open. `n`
+  and `m` before another consonant (except `r` and `y`) and `m` at the
+  end of a word are written as the anusvara; `n&` / `m&` keep the
+  letter. Digits type Telugu digits, `|` the danda.
+- **TE-PO, Pothana**: T. Desikachari's layout (m17n "te-pothana"):
+  one key per letter, mostly by sound, consonants with their inherent
+  a (`k` ka, `h` virama); a vowel key right after a consonant types
+  the vowel sign, elsewhere the independent vowel.
+- **TE-AP, Apple**: the key positions of Apple's Telugu keyboard
+  (m17n "te-apple"), with the same vowel rule; a conjunct can be
+  typed with the vowel before the halant, as on a Mac (consonant,
+  vowel, halant, consonant). Pothana and Apple put the Telugu digits
+  and the punctuation their letters displace on AltGr.
+
+Shift + Space types the zero-width non-joiner in RTS, Pothana and
+Apple. The key tables are in the [typing guide](typing/indic.md).
 
 ### Tamil
 

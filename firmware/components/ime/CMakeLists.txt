@@ -1,7 +1,7 @@
 # Input methods of the Vietnamese, Korean, Japanese, Chinese and Indic
 # language packs (Vietnamese Telex, Korean Hangul, Japanese kana-kanji,
 # Chinese pinyin, Tamil 99 / Typewriter / Taravinyas, the Bengali
-# National (Jatiya) vowel forming). Built only when one of those
+# National (Jatiya) vowel forming, Telugu RTS / Pothana / Apple). Built only when one of those
 # layouts is enabled; otherwise an empty component, and the
 # editor requires it through idf_component_optional_requires().
 set(tamil_ime FALSE)
@@ -9,9 +9,14 @@ if(CONFIG_KB_LAYOUT_ENABLE_TA99 OR CONFIG_KB_LAYOUT_ENABLE_TA_TW OR
    CONFIG_KB_LAYOUT_ENABLE_TA_TV)
     set(tamil_ime TRUE)
 endif()
+set(telugu_ime FALSE)
+if(CONFIG_KB_LAYOUT_ENABLE_TE_RTS OR CONFIG_KB_LAYOUT_ENABLE_TE_PO OR
+   CONFIG_KB_LAYOUT_ENABLE_TE_AP)
+    set(telugu_ime TRUE)
+endif()
 if(NOT (CONFIG_KB_LAYOUT_ENABLE_VI OR CONFIG_KB_LAYOUT_ENABLE_KO OR
         CONFIG_KB_LAYOUT_ENABLE_JA OR CONFIG_KB_LAYOUT_ENABLE_ZH OR tamil_ime OR
-        CONFIG_KB_LAYOUT_ENABLE_BN_NJ))
+        CONFIG_KB_LAYOUT_ENABLE_BN_NJ OR telugu_ime))
     # REQUIRES here too: CONFIG_* is empty during the early pass that
     # builds the requirement graph, which takes this branch.
     idf_component_register(REQUIRES kb_layout)
@@ -32,6 +37,9 @@ if(tamil_ime)
 endif()
 if(CONFIG_KB_LAYOUT_ENABLE_BN_NJ)
     list(APPEND srcs "ime_bengali.c")
+endif()
+if(telugu_ime)
+    list(APPEND srcs "ime_telugu.c")
 endif()
 
 idf_component_register(

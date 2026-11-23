@@ -1,5 +1,5 @@
 #!/bin/bash
-# Host test of the Tamil and Bengali input methods: builds the ime component
+# Host test of the Tamil, Bengali and Telugu input methods: builds the ime component
 # natively (stub sdkconfig.h) and types key sequences into a fake
 # document.
 #
@@ -11,7 +11,13 @@ C=$(cd "$H/../.." && pwd)
 OUT=${OUT:-$H/out}
 mkdir -p "$OUT"
 gcc -Wall -Wextra -Werror -std=gnu11 -I"$H/stub" -I"$C/include" -I"$C" \
-    -I"$C/../kb_layout/include" "$H/test_tamil.c" "$C"/ime.c "$C"/ime_tamil.c \
+    -I"$C/../kb_layout/include" "$H/test_tamil.c" "$C"/ime.c "$C"/ime_telugu.c "$C"/ime_tamil.c \
     "$C"/ime_tamil99.c "$C"/ime_tamil_tw.c "$C"/ime_taravinyas.c "$C"/ime_bengali.c "$C"/ime_telex.c \
     "$C"/ime_hangul.c "$C"/ime_kana.c "$C"/ime_pinyin.c -o "$OUT/test_tamil"
+gcc -Wall -Wextra -Werror -std=gnu11 -I"$H/stub" -I"$C/include" -I"$C" \
+    -I"$C/../kb_layout/include" "$H/test_telugu.c" "$C"/ime.c "$C"/ime_telugu.c \
+    "$C"/ime_tamil.c "$C"/ime_tamil99.c "$C"/ime_tamil_tw.c "$C"/ime_taravinyas.c \
+    "$C"/ime_bengali.c "$C"/ime_telex.c "$C"/ime_hangul.c "$C"/ime_kana.c \
+    "$C"/ime_pinyin.c -o "$OUT/test_telugu"
 "$OUT/test_tamil"
+"$OUT/test_telugu"

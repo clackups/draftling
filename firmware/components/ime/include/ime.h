@@ -13,6 +13,10 @@
  *   KB_IME_TARAVINYAS  Tamil Taravinyas: place + manner of articulation
  *   KB_IME_BENGALI_NJ  Bengali National (Jatiya): a vowel key types the
  *                  independent vowel where no consonant comes before
+ *   KB_IME_TELUGU_RTS  Telugu RTS: Latin words transliterated as typed
+ *   KB_IME_TELUGU_POTHANA, KB_IME_TELUGU_APPLE  Telugu Pothana / Apple:
+ *                  one key per letter, a vowel key after a consonant
+ *                  types its sign
  *
  * The text being composed lives in the document itself, right before
  * the cursor; the input method edits it through the host callbacks

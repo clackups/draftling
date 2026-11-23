@@ -465,7 +465,7 @@ offers the packs available for each board; to build one yourself, see
 | Korean | US, Korean (2-set Hangul) | [Korean](docs/typing/korean.md) |
 | Japanese | US, Japanese (romaji to kana and kanji) | [Japanese](docs/typing/japanese.md) |
 | Chinese | US, Simplified Chinese (pinyin) | [Chinese](docs/typing/chinese.md) |
-| Indic | US; Devanagari: Hindi and Marathi InScript, Nepali Traditional and Romanized; Bengali: InScript, Probhat, National (Jatiya); Telugu: InScript, Sarala; Tamil: Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | [Indic](docs/typing/indic.md) |
+| Indic | US; Devanagari: Hindi and Marathi InScript, Nepali Traditional and Romanized; Bengali: InScript, Probhat, National (Jatiya); Telugu: InScript, Sarala, RTS (phonetic), Pothana, Apple; Tamil: Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | [Indic](docs/typing/indic.md) |
 
 All the layouts of a pack are built into its firmware, but at first
 only US-English and the pack's main layouts are active (US-English

@@ -8,8 +8,8 @@
  * Bengali and Telugu layouts. Vietnamese, Japanese, Chinese and the other
  * Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on the US
  * layout and are composed by an input method (components/ime/), and
- * so is the Bengali National (Jatiya) layout's automatic vowel
- * forming.
+ * so are the Bengali National (Jatiya) layout's automatic vowel
+ * forming and the Telugu RTS, Pothana and Apple layouts.
  *
  * Non-ASCII characters are encoded as UTF-8 byte sequences using
  * hex escapes to keep the source file ASCII-only.
@@ -2105,6 +2105,44 @@ static const key_entry_t TE_SA_EXTRA[] = {
 };
 #endif
 #endif /* Telugu */
+
+#if defined(CONFIG_KB_LAYOUT_ENABLE_TE_PO) || defined(CONFIG_KB_LAYOUT_ENABLE_TE_AP)
+/* Telugu Pothana and Apple type on the US layout through their input
+ * methods (components/ime/ime_telugu.c), whose letters take most of the
+ * punctuation keys. AltGr gives the Telugu digits and the US
+ * punctuation back; the input methods pass AltGr keys through. */
+static const key_entry_t TE_ONEKEY_EXTRA[] = {
+    { 0x1E, L_ALTGR, "\xE0\xB1\xA7" },  /* U+0C67 telugu digit one */
+    { 0x1F, L_ALTGR, "\xE0\xB1\xA8" },  /* U+0C68 telugu digit two */
+    { 0x20, L_ALTGR, "\xE0\xB1\xA9" },  /* U+0C69 telugu digit three */
+    { 0x21, L_ALTGR, "\xE0\xB1\xAA" },  /* U+0C6A telugu digit four */
+    { 0x22, L_ALTGR, "\xE0\xB1\xAB" },  /* U+0C6B telugu digit five */
+    { 0x23, L_ALTGR, "\xE0\xB1\xAC" },  /* U+0C6C telugu digit six */
+    { 0x24, L_ALTGR, "\xE0\xB1\xAD" },  /* U+0C6D telugu digit seven */
+    { 0x25, L_ALTGR, "\xE0\xB1\xAE" },  /* U+0C6E telugu digit eight */
+    { 0x26, L_ALTGR, "\xE0\xB1\xAF" },  /* U+0C6F telugu digit nine */
+    { 0x27, L_ALTGR, "\xE0\xB1\xA6" },  /* U+0C66 telugu digit zero */
+    { 0x2F, L_ALTGR, "[" },
+    { 0x2F, L_ALTGR_SHIFT, "{" },
+    { 0x30, L_ALTGR, "]" },
+    { 0x30, L_ALTGR_SHIFT, "}" },
+    { 0x31, L_ALTGR, "\\" },
+    { 0x31, L_ALTGR_SHIFT, "|" },
+    { 0x33, L_ALTGR, ";" },
+    { 0x33, L_ALTGR_SHIFT, ":" },
+    { 0x34, L_ALTGR, "'" },
+    { 0x34, L_ALTGR_SHIFT, "\"" },
+    { 0x35, L_ALTGR, "`" },
+    { 0x35, L_ALTGR_SHIFT, "~" },
+    { 0x36, L_ALTGR, "," },
+    { 0x36, L_ALTGR_SHIFT, "<" },
+    { 0x37, L_ALTGR, "." },
+    { 0x37, L_ALTGR_SHIFT, ">" },
+    { 0x38, L_ALTGR, "/" },
+    { 0x38, L_ALTGR_SHIFT, "?" },
+    { 0, 0, NULL },
+};
+#endif
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -4354,6 +4392,15 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
     [KB_LAYOUT_TE_SA] = { TE_SA_NORMAL, TE_SA_SHIFT, TE_SA_EXTRA, "TE-SA", "Telugu Sarala", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_RTS
+    [KB_LAYOUT_TE_RTS] = { US_NORMAL, US_SHIFT, NULL, "TE-RT", "Telugu RTS (phonetic)", KB_IME_TELUGU_RTS, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_PO
+    [KB_LAYOUT_TE_PO] = { US_NORMAL, US_SHIFT, TE_ONEKEY_EXTRA, "TE-PO", "Telugu Pothana", KB_IME_TELUGU_POTHANA, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_AP
+    [KB_LAYOUT_TE_AP] = { US_NORMAL, US_SHIFT, TE_ONEKEY_EXTRA, "TE-AP", "Telugu Apple", KB_IME_TELUGU_APPLE, true },
 #endif
 };
 

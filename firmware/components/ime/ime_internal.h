@@ -25,6 +25,7 @@ extern "C" {
 #define IME_KEY_PAGEDOWN  0x4E
 #define IME_KEY_KP_ENTER  0x58
 #define IME_MOD_SHIFT     0x22
+#define IME_MOD_RALT      0x40
 
 /* ---- Host access ---- */
 size_t ime_peek(char *buf, size_t max);
@@ -120,6 +121,9 @@ extern const ime_engine_t ime_tamil99_engine;
 extern const ime_engine_t ime_tamil_tw_engine;
 extern const ime_engine_t ime_taravinyas_engine;
 extern const ime_engine_t ime_bengali_nj_engine;
+extern const ime_engine_t ime_telugu_rts_engine;
+extern const ime_engine_t ime_telugu_pothana_engine;
+extern const ime_engine_t ime_telugu_apple_engine;
 
 extern ime_dict_t g_ja_dict;
 extern ime_dict_t g_zh_dict;
