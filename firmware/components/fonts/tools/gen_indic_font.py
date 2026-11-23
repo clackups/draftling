@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Generate the font data of the shaped Indic scripts of the Indic
-language pack: Devanagari and Bengali.
+language pack: Devanagari, Bengali and Telugu.
 
 Both are shaped on the device by HarfBuzz (components/harfbuzz) with
 the layout tables of the script's Noto Sans font; this script writes
 what that needs and the glyph bitmaps the shaped text is drawn with
-(<s> = deva / beng):
+(<s> = deva / beng / telu):
 
   <s>/<s>_layout.ttf        the font subset to the script's repertoire
                             (and the glyphs its GSUB reaches), without
@@ -16,17 +16,18 @@ what that needs and the glyph bitmaps the shaped text is drawn with
   <s>/<s>_tables.h          per-glyph advances, the nominal glyph and
                             cell count per code point
 
-Usage (needs uharfbuzz, freetype-py and fontTools; see deva/LICENSE.txt
-and beng/LICENSE.txt for the font releases used):
+Usage (needs uharfbuzz, freetype-py and fontTools; see deva/LICENSE.txt,
+beng/LICENSE.txt and telu/LICENSE.txt for the font releases used):
     gen_indic_font.py deva NotoSansDevanagari-Regular.ttf fonts_dir out_dir
     gen_indic_font.py beng NotoSansBengali-Regular.ttf fonts_dir out_dir
+    gen_indic_font.py telu NotoSansTelugu-Regular.ttf fonts_dir out_dir
 
 fonts_dir holds lowres_NN.c / hires_NN.c, whose line height (plus the
 tall-line extra of the Indic pack, gen_tamil_font.line_extra()),
 baseline and cell width each slot copies.
 
 Blob format (little endian):
-  magic ("DDEV" / "DBEN"), u8 version (1), u8 line_height, u8 base_line,
+  magic ("DDEV" / "DBEN" / "DTEL"), u8 version (1), u8 line_height, u8 base_line,
   u8 cell_w, u8 pixel size, u8 pad, u16 glyph count, then one 8-byte
   entry per glyph id: u32 bitmap offset (from the start of the bitmap
   area), u8 box_w, u8 box_h, i8 ofs_x, i8 ofs_y (LVGL glyph metrics:
@@ -123,7 +124,26 @@ BENG = Script(
     [cp for cp in range(0x0985, 0x0995) if cp not in (0x098D, 0x098E, 0x0991, 0x0992)] +
     list(range(0x09E6, 0x09F0)))
 
-SCRIPTS = {"deva": DEVA, "beng": BENG}
+# Telugu: the Telugu block, the Devanagari dandas, the joiners, the
+# dotted circle and the rupee sign. Conjuncts stack the following
+# consonants below the first one (vattu), so the sample has every
+# two-consonant conjunct with the vowel signs drawn above it. The rare
+# letters (llla, tsa, dza, rrra, the vocalic l / rr / ll signs) are left
+# out of the fitting sample.
+TELU_CONSONANTS = [cp for cp in range(0x0C15, 0x0C3A) if cp not in (0x0C29, 0x0C34)]
+TELU = Script(
+    "telu", b"DTEL", 0x0C00,
+    list(range(0x0C00, 0x0C80)) + DANDAS + [0x200C, 0x200D, 0x25CC, 0x20B9],
+    TELU_CONSONANTS,
+    [0x0C3E, 0x0C3F, 0x0C40, 0x0C41, 0x0C42, 0x0C43, 0x0C46, 0x0C47, 0x0C48,
+     0x0C4A, 0x0C4B, 0x0C4C],
+    ["", "\u0c02", "\u0c01"],                    # none, anusvara, candrabindu
+    ["", "\u0c3e", "\u0c3f", "\u0c47", "\u0c4a"],
+    "\u0c4d", "\u0c30",
+    [cp for cp in range(0x0C05, 0x0C15) if cp not in (0x0C0D, 0x0C11)] +
+    list(range(0x0C66, 0x0C70)))
+
+SCRIPTS = {"deva": DEVA, "beng": BENG, "telu": TELU}
 
 # Tables the device's HarfBuzz needs; outlines and hinting are only
 # used here, for the bitmaps.

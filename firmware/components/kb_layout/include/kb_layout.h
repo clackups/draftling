@@ -133,10 +133,16 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
     KB_LAYOUT_BN_NJ,
 #endif
-    /* Last, so the bits of the layouts above keep their positions in
-     * the "all" pack's persisted mask. */
+    /* New layouts go last, so the bits of the layouts above keep their
+     * positions in the persisted masks of the "all" and Indic packs. */
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BR
     KB_LAYOUT_BR,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_IN
+    KB_LAYOUT_TE_IN,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
+    KB_LAYOUT_TE_SA,
 #endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;

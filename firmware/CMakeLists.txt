@@ -64,7 +64,7 @@ if(DEFINED DRAFTLING_LANG_PACK AND NOT DRAFTLING_LANG_PACK STREQUAL CONFIG_DRAFT
         "Delete that sdkconfig (or the whole build directory) and build again.")
 endif()
 
-# The Indic language pack (Devanagari, Bengali and Tamil fonts,
+# The Indic language pack (Devanagari, Bengali, Telugu and Tamil fonts,
 # HarfBuzz) does not fit the app partition of a 4 MB flash
 # (partitions_4mb.csv, ~3.9 MB): refuse it there before compiling
 # anything, instead of failing at the end on the image size check.

@@ -4,8 +4,8 @@
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
  * Swiss French, Italian, Portuguese (Portugal and Brazil), Spanish, United Kingdom and the
- * other European layouts, and the Korean, Tamil InScript, Devanagari
- * and Bengali layouts. Vietnamese, Japanese, Chinese and the other
+ * other European layouts, and the Korean, Tamil InScript, Devanagari,
+ * Bengali and Telugu layouts. Vietnamese, Japanese, Chinese and the other
  * Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on the US
  * layout and are composed by an input method (components/ime/), and
  * so is the Bengali National (Jatiya) layout's automatic vowel
@@ -1782,6 +1782,329 @@ static const key_entry_t BN_NJ_EXTRA[] = {
 };
 #endif
 #endif /* Bengali */
+
+#if defined(CONFIG_KB_LAYOUT_ENABLE_TE_IN) || defined(CONFIG_KB_LAYOUT_ENABLE_TE_SA)
+/* ------------------------------------------------------------------ */
+/* Telugu: InScript and Sarala                                        */
+/* ------------------------------------------------------------------ */
+
+/* InScript: generated from the m17n-db input method "te-inscript2"
+ * (Enhanced InScript; keys typed on a US keyboard -> output, G- =
+ * AltGr), with the keys m17n leaves empty taken from XKB "in(tel)"
+ * (marked). Sarala: generated from XKB "in(tel-sarala)" (four levels:
+ * normal, Shift, AltGr, AltGr + Shift), plus the zero width joiners of
+ * m17n "te-sarala" on AltGr + - / AltGr + =. Text is typed in Unicode
+ * order (consonant, then vowel sign); HarfBuzz shapes it for display.
+ * Keys without an entry keep their US character, except letters,
+ * which type nothing. */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_IN
+static const char *const TE_IN_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xB1\x8B",  /* U+0C4B telugu vowel sign oo */
+    /* 05 'b' */ "\xE0\xB0\xB5",  /* U+0C35 telugu letter va */
+    /* 06 'c' */ "\xE0\xB0\xAE",  /* U+0C2E telugu letter ma */
+    /* 07 'd' */ "\xE0\xB1\x8D",  /* U+0C4D telugu sign virama */
+    /* 08 'e' */ "\xE0\xB0\xBE",  /* U+0C3E telugu vowel sign aa */
+    /* 09 'f' */ "\xE0\xB0\xBF",  /* U+0C3F telugu vowel sign i */
+    /* 0A 'g' */ "\xE0\xB1\x81",  /* U+0C41 telugu vowel sign u */
+    /* 0B 'h' */ "\xE0\xB0\xAA",  /* U+0C2A telugu letter pa */
+    /* 0C 'i' */ "\xE0\xB0\x97",  /* U+0C17 telugu letter ga */
+    /* 0D 'j' */ "\xE0\xB0\xB0",  /* U+0C30 telugu letter ra */
+    /* 0E 'k' */ "\xE0\xB0\x95",  /* U+0C15 telugu letter ka */
+    /* 0F 'l' */ "\xE0\xB0\xA4",  /* U+0C24 telugu letter ta */
+    /* 10 'm' */ "\xE0\xB0\xB8",  /* U+0C38 telugu letter sa */
+    /* 11 'n' */ "\xE0\xB0\xB2",  /* U+0C32 telugu letter la */
+    /* 12 'o' */ "\xE0\xB0\xA6",  /* U+0C26 telugu letter da */
+    /* 13 'p' */ "\xE0\xB0\x9C",  /* U+0C1C telugu letter ja */
+    /* 14 'q' */ "\xE0\xB1\x8C",  /* U+0C4C telugu vowel sign au */
+    /* 15 'r' */ "\xE0\xB1\x80",  /* U+0C40 telugu vowel sign ii */
+    /* 16 's' */ "\xE0\xB1\x87",  /* U+0C47 telugu vowel sign ee */
+    /* 17 't' */ "\xE0\xB1\x82",  /* U+0C42 telugu vowel sign uu */
+    /* 18 'u' */ "\xE0\xB0\xB9",  /* U+0C39 telugu letter ha */
+    /* 19 'v' */ "\xE0\xB0\xA8",  /* U+0C28 telugu letter na */
+    /* 1A 'w' */ "\xE0\xB1\x88",  /* U+0C48 telugu vowel sign ai */
+    /* 1B 'x' */ "\xE0\xB0\x82",  /* U+0C02 telugu sign anusvara */
+    /* 1C 'y' */ "\xE0\xB0\xAC",  /* U+0C2C telugu letter ba */
+    /* 1D 'z' */ "\xE0\xB1\x86",  /* U+0C46 telugu vowel sign e */
+    /* 1E '1' */ "\xE0\xB1\xA7",  /* U+0C67 telugu digit one */
+    /* 1F '2' */ "\xE0\xB1\xA8",  /* U+0C68 telugu digit two */
+    /* 20 '3' */ "\xE0\xB1\xA9",  /* U+0C69 telugu digit three */
+    /* 21 '4' */ "\xE0\xB1\xAA",  /* U+0C6A telugu digit four */
+    /* 22 '5' */ "\xE0\xB1\xAB",  /* U+0C6B telugu digit five */
+    /* 23 '6' */ "\xE0\xB1\xAC",  /* U+0C6C telugu digit six */
+    /* 24 '7' */ "\xE0\xB1\xAD",  /* U+0C6D telugu digit seven */
+    /* 25 '8' */ "\xE0\xB1\xAE",  /* U+0C6E telugu digit eight */
+    /* 26 '9' */ "\xE0\xB1\xAF",  /* U+0C6F telugu digit nine */
+    /* 27 '0' */ "\xE0\xB1\xA6",  /* U+0C66 telugu digit zero */
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "\xE0\xB1\x83",  /* U+0C43 telugu vowel sign vocalic r */
+    /* 2F '[' */ "\xE0\xB0\xA1",  /* U+0C21 telugu letter dda */
+    /* 30 ']' */ "\xE0\xB0\x9E",  /* U+0C1E telugu letter nya (XKB in(tel)) */
+    /* 31 '\\' */ "\\",
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xB0\x9A",  /* U+0C1A telugu letter ca */
+    /* 34 "'" */ "\xE0\xB0\x9F",  /* U+0C1F telugu letter tta */
+    /* 35 '`' */ "\xE0\xB1\x8A",  /* U+0C4A telugu vowel sign o */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "\xE0\xB0\xAF",  /* U+0C2F telugu letter ya */
+};
+
+static const char *const TE_IN_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xB0\x93",  /* U+0C13 telugu letter oo */
+    /* 05 'B' */ NULL,
+    /* 06 'C' */ "\xE0\xB0\xA3",  /* U+0C23 telugu letter nna */
+    /* 07 'D' */ "\xE0\xB0\x85",  /* U+0C05 telugu letter a */
+    /* 08 'E' */ "\xE0\xB0\x86",  /* U+0C06 telugu letter aa */
+    /* 09 'F' */ "\xE0\xB0\x87",  /* U+0C07 telugu letter i */
+    /* 0A 'G' */ "\xE0\xB0\x89",  /* U+0C09 telugu letter u */
+    /* 0B 'H' */ "\xE0\xB0\xAB",  /* U+0C2B telugu letter pha */
+    /* 0C 'I' */ "\xE0\xB0\x98",  /* U+0C18 telugu letter gha */
+    /* 0D 'J' */ "\xE0\xB0\xB1",  /* U+0C31 telugu letter rra */
+    /* 0E 'K' */ "\xE0\xB0\x96",  /* U+0C16 telugu letter kha */
+    /* 0F 'L' */ "\xE0\xB0\xA5",  /* U+0C25 telugu letter tha */
+    /* 10 'M' */ "\xE0\xB0\xB6",  /* U+0C36 telugu letter sha */
+    /* 11 'N' */ "\xE0\xB0\xB3",  /* U+0C33 telugu letter lla */
+    /* 12 'O' */ "\xE0\xB0\xA7",  /* U+0C27 telugu letter dha */
+    /* 13 'P' */ "\xE0\xB0\x9D",  /* U+0C1D telugu letter jha */
+    /* 14 'Q' */ "\xE0\xB0\x94",  /* U+0C14 telugu letter au */
+    /* 15 'R' */ "\xE0\xB0\x88",  /* U+0C08 telugu letter ii */
+    /* 16 'S' */ "\xE0\xB0\x8F",  /* U+0C0F telugu letter ee */
+    /* 17 'T' */ "\xE0\xB0\x8A",  /* U+0C0A telugu letter uu */
+    /* 18 'U' */ "\xE0\xB0\x99",  /* U+0C19 telugu letter nga */
+    /* 19 'V' */ NULL,
+    /* 1A 'W' */ "\xE0\xB0\x90",  /* U+0C10 telugu letter ai */
+    /* 1B 'X' */ "\xE0\xB0\x81",  /* U+0C01 telugu sign candrabindu */
+    /* 1C 'Y' */ "\xE0\xB0\xAD",  /* U+0C2D telugu letter bha */
+    /* 1D 'Z' */ "\xE0\xB0\x8E",  /* U+0C0E telugu letter e */
+    /* 1E '!' */ "!",
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "\xE0\xB1\x8D\xE0\xB0\xB0",  /* U+0C4D telugu sign virama U+0C30 telugu letter ra */
+    /* 21 '$' */ "$",
+    /* 22 '%' */ "\xE0\xB0\x9C\xE0\xB1\x8D\xE0\xB0\x9E",  /* U+0C1C telugu letter ja U+0C4D telugu sign virama U+0C1E telugu letter nya */
+    /* 23 '^' */ "\xE0\xB0\xA4\xE0\xB1\x8D\xE0\xB0\xB0",  /* U+0C24 telugu letter ta U+0C4D telugu sign virama U+0C30 telugu letter ra */
+    /* 24 '&' */ "\xE0\xB0\x95\xE0\xB1\x8D\xE0\xB0\xB7",  /* U+0C15 telugu letter ka U+0C4D telugu sign virama U+0C37 telugu letter ssa */
+    /* 25 '*' */ "\xE0\xB0\xB6\xE0\xB1\x8D\xE0\xB0\xB0",  /* U+0C36 telugu letter sha U+0C4D telugu sign virama U+0C30 telugu letter ra */
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "\xE0\xB0\x83",  /* U+0C03 telugu sign visarga */
+    /* 2E '+' */ "\xE0\xB0\x8B",  /* U+0C0B telugu letter vocalic r */
+    /* 2F '{' */ "\xE0\xB0\xA2",  /* U+0C22 telugu letter ddha */
+    /* 30 '}' */ "\xE0\xB0\x9E",  /* U+0C1E telugu letter nya */
+    /* 31 '|' */ "|",
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xB0\x9B",  /* U+0C1B telugu letter cha */
+    /* 34 '"' */ "\xE0\xB0\xA0",  /* U+0C20 telugu letter ttha */
+    /* 35 '~' */ "\xE0\xB0\x92",  /* U+0C12 telugu letter o */
+    /* 36 '<' */ "\xE0\xB0\xB7",  /* U+0C37 telugu letter ssa */
+    /* 37 '>' */ "\xE0\xA5\xA4",  /* U+0964 devanagari danda */
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t TE_IN_EXTRA[] = {
+    { 0x1E, L_ALTGR_SHIFT, "\xE0\xB1\xB9" },  /* U+0C79 telugu fraction digit one for odd powers of four */
+    { 0x1E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner */
+    { 0x1F, L_ALTGR_SHIFT, "\xE0\xB1\xBC" },  /* U+0C7C telugu fraction digit one for even powers of four */
+    { 0x1F, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner */
+    { 0x20, L_ALTGR_SHIFT, "\xE0\xB1\xBA" },  /* U+0C7A telugu fraction digit two for odd powers of four */
+    { 0x21, L_ALTGR_SHIFT, "\xE0\xB1\xBD" },  /* U+0C7D telugu fraction digit two for even powers of four */
+    { 0x21, L_ALTGR, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x22, L_ALTGR_SHIFT, "\xE0\xB1\xBB" },  /* U+0C7B telugu fraction digit three for odd powers of four */
+    { 0x23, L_ALTGR_SHIFT, "\xE0\xB1\xBE" },  /* U+0C7E telugu fraction digit three for even powers of four */
+    { 0x27, L_ALTGR_SHIFT, "\xE0\xB1\xB8" },  /* U+0C78 telugu fraction digit zero for odd powers of four */
+    { 0x2D, L_ALTGR, "\xE0\xB1\xBF" },  /* U+0C7F telugu sign tuumu */
+    { 0x2E, L_ALTGR_SHIFT, "\xE0\xB1\xA0" },  /* U+0C60 telugu letter vocalic rr */
+    { 0x2E, L_ALTGR, "\xE0\xB1\x84" },  /* U+0C44 telugu vowel sign vocalic rr */
+    { 0x15, L_ALTGR_SHIFT, "\xE0\xB1\xA3" },  /* U+0C63 telugu vowel sign vocalic ll */
+    { 0x15, L_ALTGR, "\xE0\xB1\xA1" },  /* U+0C61 telugu letter vocalic ll */
+    { 0x13, L_ALTGR, "\xE0\xB1\x99" },  /* U+0C59 telugu letter dza */
+    { 0x09, L_ALTGR_SHIFT, "\xE0\xB0\x8C" },  /* U+0C0C telugu letter vocalic l */
+    { 0x09, L_ALTGR, "\xE0\xB1\xA2" },  /* U+0C62 telugu vowel sign vocalic l */
+    { 0x33, L_ALTGR, "\xE0\xB1\x98" },  /* U+0C58 telugu letter tsa */
+    { 0x1D, L_ALTGR_SHIFT, "\xE0\xB1\x96" },  /* U+0C56 telugu ai length mark */
+    { 0x1D, L_ALTGR, "\xE0\xB1\x95" },  /* U+0C55 telugu length mark */
+    { 0x37, L_ALTGR_SHIFT, "\xE0\xB0\xBD" },  /* U+0C3D telugu sign avagraha */
+    { 0x37, L_ALTGR, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0, 0, NULL },
+};
+#endif
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
+static const char *const TE_SA_NORMAL[] = {
+    /* 04 'a' */ "\xE0\xB0\xAF",  /* U+0C2F telugu letter ya */
+    /* 05 'b' */ "\xE0\xB0\xAC",  /* U+0C2C telugu letter ba */
+    /* 06 'c' */ "\xE0\xB0\xA1",  /* U+0C21 telugu letter dda */
+    /* 07 'd' */ "\xE0\xB0\xA6",  /* U+0C26 telugu letter da */
+    /* 08 'e' */ "\xE0\xB1\x87",  /* U+0C47 telugu vowel sign ee */
+    /* 09 'f' */ "\xE0\xB1\x8D",  /* U+0C4D telugu sign virama */
+    /* 0A 'g' */ "\xE0\xB0\x97",  /* U+0C17 telugu letter ga */
+    /* 0B 'h' */ "\xE0\xB0\x9A",  /* U+0C1A telugu letter ca */
+    /* 0C 'i' */ "\xE0\xB0\xBF",  /* U+0C3F telugu vowel sign i */
+    /* 0D 'j' */ "\xE0\xB0\xBE",  /* U+0C3E telugu vowel sign aa */
+    /* 0E 'k' */ "\xE0\xB0\x95",  /* U+0C15 telugu letter ka */
+    /* 0F 'l' */ "\xE0\xB0\xB2",  /* U+0C32 telugu letter la */
+    /* 10 'm' */ "\xE0\xB0\xAE",  /* U+0C2E telugu letter ma */
+    /* 11 'n' */ "\xE0\xB0\xA8",  /* U+0C28 telugu letter na */
+    /* 12 'o' */ "\xE0\xB1\x8B",  /* U+0C4B telugu vowel sign oo */
+    /* 13 'p' */ "\xE0\xB0\xAA",  /* U+0C2A telugu letter pa */
+    /* 14 'q' */ "\xE0\xB1\x86",  /* U+0C46 telugu vowel sign e */
+    /* 15 'r' */ "\xE0\xB0\xB0",  /* U+0C30 telugu letter ra */
+    /* 16 's' */ "\xE0\xB0\x82",  /* U+0C02 telugu sign anusvara */
+    /* 17 't' */ "\xE0\xB0\xA4",  /* U+0C24 telugu letter ta */
+    /* 18 'u' */ "\xE0\xB1\x81",  /* U+0C41 telugu vowel sign u */
+    /* 19 'v' */ "\xE0\xB0\xB5",  /* U+0C35 telugu letter va */
+    /* 1A 'w' */ "\xE0\xB0\xB8",  /* U+0C38 telugu letter sa */
+    /* 1B 'x' */ "\xE0\xB1\x82",  /* U+0C42 telugu vowel sign uu */
+    /* 1C 'y' */ "\xE0\xB1\x80",  /* U+0C40 telugu vowel sign ii */
+    /* 1D 'z' */ "\xE0\xB1\x8A",  /* U+0C4A telugu vowel sign o */
+    /* 1E '1' */ "1",
+    /* 1F '2' */ "2",
+    /* 20 '3' */ "3",
+    /* 21 '4' */ "4",
+    /* 22 '5' */ "5",
+    /* 23 '6' */ "6",
+    /* 24 '7' */ "7",
+    /* 25 '8' */ "8",
+    /* 26 '9' */ "9",
+    /* 27 '0' */ "0",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '-' */ "-",
+    /* 2E '=' */ "=",
+    /* 2F '[' */ "\xE0\xB0\x9C",  /* U+0C1C telugu letter ja */
+    /* 30 ']' */ "\xE0\xB1\x88",  /* U+0C48 telugu vowel sign ai */
+    /* 31 '\\' */ "\xE0\xB1\x8C",  /* U+0C4C telugu vowel sign au */
+    /* 32  */ NULL,
+    /* 33 ';' */ "\xE0\xB0\x9F",  /* U+0C1F telugu letter tta */
+    /* 34 "'" */ "'",
+    /* 35 '`' */ "\xE0\xB1\x83",  /* U+0C43 telugu vowel sign vocalic r */
+    /* 36 ',' */ ",",
+    /* 37 '.' */ ".",
+    /* 38 '/' */ "\xE0\xB0\xB6",  /* U+0C36 telugu letter sha */
+};
+
+static const char *const TE_SA_SHIFT[] = {
+    /* 04 'A' */ "\xE0\xB0\xBD",  /* U+0C3D telugu sign avagraha */
+    /* 05 'B' */ "\xE0\xB0\xAD",  /* U+0C2D telugu letter bha */
+    /* 06 'C' */ "\xE0\xB0\xA2",  /* U+0C22 telugu letter ddha */
+    /* 07 'D' */ "\xE0\xB0\xA7",  /* U+0C27 telugu letter dha */
+    /* 08 'E' */ "\xE0\xB0\x8F",  /* U+0C0F telugu letter ee */
+    /* 09 'F' */ "\xE0\xB0\x85",  /* U+0C05 telugu letter a */
+    /* 0A 'G' */ "\xE0\xB0\x98",  /* U+0C18 telugu letter gha */
+    /* 0B 'H' */ "\xE0\xB0\x9B",  /* U+0C1B telugu letter cha */
+    /* 0C 'I' */ "\xE0\xB0\x87",  /* U+0C07 telugu letter i */
+    /* 0D 'J' */ "\xE0\xB0\x86",  /* U+0C06 telugu letter aa */
+    /* 0E 'K' */ "\xE0\xB0\x96",  /* U+0C16 telugu letter kha */
+    /* 0F 'L' */ "\xE0\xB0\xB3",  /* U+0C33 telugu letter lla */
+    /* 10 'M' */ "\xE0\xB0\x81",  /* U+0C01 telugu sign candrabindu */
+    /* 11 'N' */ "\xE0\xB0\xA3",  /* U+0C23 telugu letter nna */
+    /* 12 'O' */ "\xE0\xB0\x93",  /* U+0C13 telugu letter oo */
+    /* 13 'P' */ "\xE0\xB0\xAB",  /* U+0C2B telugu letter pha */
+    /* 14 'Q' */ "\xE0\xB0\x8E",  /* U+0C0E telugu letter e */
+    /* 15 'R' */ "\xE0\xB0\xB1",  /* U+0C31 telugu letter rra */
+    /* 16 'S' */ "\xE0\xB0\x83",  /* U+0C03 telugu sign visarga */
+    /* 17 'T' */ "\xE0\xB0\xA5",  /* U+0C25 telugu letter tha */
+    /* 18 'U' */ "\xE0\xB0\x89",  /* U+0C09 telugu letter u */
+    /* 19 'V' */ "\xE0\xB0\xB9",  /* U+0C39 telugu letter ha */
+    /* 1A 'W' */ "\xE0\xB0\xB7",  /* U+0C37 telugu letter ssa */
+    /* 1B 'X' */ "\xE0\xB0\x8A",  /* U+0C0A telugu letter uu */
+    /* 1C 'Y' */ "\xE0\xB0\x88",  /* U+0C08 telugu letter ii */
+    /* 1D 'Z' */ "\xE0\xB0\x92",  /* U+0C12 telugu letter o */
+    /* 1E '!' */ "!",
+    /* 1F '@' */ "@",
+    /* 20 '#' */ "#",
+    /* 21 '$' */ "$",
+    /* 22 '%' */ "%",
+    /* 23 '^' */ "^",
+    /* 24 '&' */ "&",
+    /* 25 '*' */ "*",
+    /* 26 '(' */ "(",
+    /* 27 ')' */ ")",
+    /* 28  */ NULL,
+    /* 29  */ NULL,
+    /* 2A  */ NULL,
+    /* 2B  */ NULL,
+    /* 2C ' ' */ " ",
+    /* 2D '_' */ "_",
+    /* 2E '+' */ "+",
+    /* 2F '{' */ "\xE0\xB0\x9D",  /* U+0C1D telugu letter jha */
+    /* 30 '}' */ "\xE0\xB0\x90",  /* U+0C10 telugu letter ai */
+    /* 31 '|' */ "\xE0\xB0\x94",  /* U+0C14 telugu letter au */
+    /* 32  */ NULL,
+    /* 33 ':' */ "\xE0\xB0\xA0",  /* U+0C20 telugu letter ttha */
+    /* 34 '"' */ "\"",
+    /* 35 '~' */ "\xE0\xB0\x8B",  /* U+0C0B telugu letter vocalic r */
+    /* 36 '<' */ "\xE0\xB0\x9E",  /* U+0C1E telugu letter nya */
+    /* 37 '>' */ "\xE0\xB0\x99",  /* U+0C19 telugu letter nga */
+    /* 38 '?' */ "?",
+};
+
+static const key_entry_t TE_SA_EXTRA[] = {
+    { 0x08, L_ALTGR, "\xE0\xB1\x84" },  /* U+0C44 telugu vowel sign vocalic rr */
+    { 0x0B, L_ALTGR, "\xE0\xB1\x98" },  /* U+0C58 telugu letter tsa */
+    { 0x0B, L_ALTGR_SHIFT, "\xE0\xB1\x99" },  /* U+0C59 telugu letter dza */
+    { 0x0E, L_ALTGR, "\xE0\xB1\xA2" },  /* U+0C62 telugu vowel sign vocalic l */
+    { 0x0E, L_ALTGR_SHIFT, "\xE0\xB1\xA3" },  /* U+0C63 telugu vowel sign vocalic ll */
+    { 0x0F, L_ALTGR, "\xE0\xB0\x8C" },  /* U+0C0C telugu letter vocalic l */
+    { 0x0F, L_ALTGR_SHIFT, "\xE0\xB1\xA1" },  /* U+0C61 telugu letter vocalic ll */
+    { 0x14, L_ALTGR, "\xE0\xB1\x84" },  /* U+0C44 telugu vowel sign vocalic rr */
+    { 0x14, L_ALTGR_SHIFT, "\xE0\xB0\xB4" },  /* U+0C34 telugu letter llla */
+    { 0x15, L_ALTGR, "\xE0\xB1\x84" },  /* U+0C44 telugu vowel sign vocalic rr */
+    { 0x15, L_ALTGR_SHIFT, "\xE0\xB1\xA0" },  /* U+0C60 telugu letter vocalic rr */
+    { 0x1A, L_ALTGR, "\xE0\xB1\x84" },  /* U+0C44 telugu vowel sign vocalic rr */
+    { 0x1E, L_ALTGR, "\xE0\xB1\xA7" },  /* U+0C67 telugu digit one */
+    { 0x1E, L_ALTGR_SHIFT, "\xE0\xB1\xB8" },  /* U+0C78 telugu fraction digit zero for odd powers of four */
+    { 0x1F, L_ALTGR, "\xE0\xB1\xA8" },  /* U+0C68 telugu digit two */
+    { 0x1F, L_ALTGR_SHIFT, "\xE0\xB1\xB9" },  /* U+0C79 telugu fraction digit one for odd powers of four */
+    { 0x20, L_ALTGR, "\xE0\xB1\xA9" },  /* U+0C69 telugu digit three */
+    { 0x20, L_ALTGR_SHIFT, "\xE0\xB1\xBA" },  /* U+0C7A telugu fraction digit two for odd powers of four */
+    { 0x21, L_ALTGR, "\xE0\xB1\xAA" },  /* U+0C6A telugu digit four */
+    { 0x21, L_ALTGR_SHIFT, "\xE0\xB1\xBB" },  /* U+0C7B telugu fraction digit three for odd powers of four */
+    { 0x22, L_ALTGR, "\xE0\xB1\xAB" },  /* U+0C6B telugu digit five */
+    { 0x22, L_ALTGR_SHIFT, "\xE0\xB1\xBC" },  /* U+0C7C telugu fraction digit one for even powers of four */
+    { 0x23, L_ALTGR, "\xE0\xB1\xAC" },  /* U+0C6C telugu digit six */
+    { 0x23, L_ALTGR_SHIFT, "\xE0\xB1\xBD" },  /* U+0C7D telugu fraction digit two for even powers of four */
+    { 0x24, L_ALTGR, "\xE0\xB1\xAD" },  /* U+0C6D telugu digit seven */
+    { 0x24, L_ALTGR_SHIFT, "\xE0\xB1\xBE" },  /* U+0C7E telugu fraction digit three for even powers of four */
+    { 0x25, L_ALTGR, "\xE0\xB1\xAE" },  /* U+0C6E telugu digit eight */
+    { 0x25, L_ALTGR_SHIFT, "\xE0\xB1\xBF" },  /* U+0C7F telugu sign tuumu */
+    { 0x26, L_ALTGR, "\xE0\xB1\xAF" },  /* U+0C6F telugu digit nine */
+    { 0x26, L_ALTGR_SHIFT, "\xE2\x82\xB9" },  /* U+20B9 indian rupee sign */
+    { 0x27, L_ALTGR, "\xE0\xB1\xA6" },  /* U+0C66 telugu digit zero */
+    { 0x27, L_ALTGR_SHIFT, "\xE0\xB1\x95" },  /* U+0C55 telugu length mark */
+    { 0x2D, L_ALTGR, "\xE2\x80\x8C" },  /* U+200C zero width non-joiner (m17n te-sarala) */
+    { 0x2D, L_ALTGR_SHIFT, "\xE0\xB1\x96" },  /* U+0C56 telugu ai length mark */
+    { 0x2E, L_ALTGR, "\xE2\x80\x8D" },  /* U+200D zero width joiner (m17n te-sarala) */
+    { 0x2F, L_ALTGR, "[" },
+    { 0x2F, L_ALTGR_SHIFT, "{" },
+    { 0x30, L_ALTGR, "]" },
+    { 0x30, L_ALTGR_SHIFT, "}" },
+    { 0x31, L_ALTGR, "\xE0\xA5\xA4" },  /* U+0964 devanagari danda */
+    { 0x31, L_ALTGR_SHIFT, "\xE0\xA5\xA5" },  /* U+0965 devanagari double danda */
+    { 0x33, L_ALTGR, ";" },
+    { 0x33, L_ALTGR_SHIFT, ":" },
+    { 0x35, L_ALTGR, "`" },
+    { 0x35, L_ALTGR_SHIFT, "~" },
+    { 0x36, L_ALTGR, "<" },
+    { 0x37, L_ALTGR, ">" },
+    { 0x38, L_ALTGR, "/" },
+    { 0, 0, NULL },
+};
+#endif
+#endif /* Telugu */
 
 #if defined(CONFIG_KB_LAYOUT_ENABLE_DE_CH) || defined(CONFIG_KB_LAYOUT_ENABLE_FR_CH)
 /* ------------------------------------------------------------------ */
@@ -3894,6 +4217,12 @@ CHECK_TABLE(BN_PR_NORMAL); CHECK_TABLE(BN_PR_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
 CHECK_TABLE(BN_NJ_NORMAL); CHECK_TABLE(BN_NJ_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_IN
+CHECK_TABLE(TE_IN_NORMAL); CHECK_TABLE(TE_IN_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
+CHECK_TABLE(TE_SA_NORMAL); CHECK_TABLE(TE_SA_SHIFT);
+#endif
 
 /* The active set is a 32-bit mask (persisted in NVS). */
 static_assert(KB_LAYOUT_COUNT <= 64, "too many layouts for the active mask");
@@ -4019,6 +4348,12 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BR
     [KB_LAYOUT_BR] = { BR_NORMAL, BR_SHIFT, BR_EXTRA, "BR", "Portuguese (Brazil, ABNT2)", KB_IME_NONE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_IN
+    [KB_LAYOUT_TE_IN] = { TE_IN_NORMAL, TE_IN_SHIFT, TE_IN_EXTRA, "TE-IN", "Telugu InScript", KB_IME_NONE, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_TE_SA
+    [KB_LAYOUT_TE_SA] = { TE_SA_NORMAL, TE_SA_SHIFT, TE_SA_EXTRA, "TE-SA", "Telugu Sarala", KB_IME_NONE, false },
 #endif
 };
 

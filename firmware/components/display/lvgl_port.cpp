@@ -414,7 +414,7 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg,
     ESP_ERROR_CHECK(esp_timer_create(&timer_args, &timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(timer, LVGL_TICK_PERIOD_MS * 1000));
 
-    /* The editor renders (and, with Devanagari or Bengali, shapes text
+    /* The editor renders (and, with Devanagari, Bengali or Telugu, shapes text
      * through HarfBuzz: about 1.3 KB of stack per call) in this task. */
 #ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
     const uint32_t lvgl_stack = 12 * 1024;

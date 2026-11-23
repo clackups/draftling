@@ -28,6 +28,14 @@ in the git log.
   c-cedilla on its own key, the acute / grave / tilde / circumflex /
   diaeresis accents, and the extra `/ ?` key left of the right Shift.
   Turn it on in F1 -> Settings -> Keyboard -> Active layouts.
+- **Telugu in the Indic language pack**: the Indic firmware now also
+  writes Telugu, shaped on the device like on a desktop: vowel signs
+  joined to their consonant and conjuncts with the following
+  consonants drawn below the first. Two keyboard layouts: Telugu
+  InScript (the Government of India standard) and Sarala (the
+  frequent letters on the home row). Turn them on in F1 -> Settings ->
+  Keyboard -> Active layouts. The letters come from Noto Sans Telugu.
+  See docs/typing/indic.md.
 
 ### Changed
 

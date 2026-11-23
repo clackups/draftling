@@ -82,7 +82,7 @@ variable:
 | `korean` | US-English, Korean (2-set Hangul) | 3.1 MB |
 | `japanese` | US-English, Japanese (romaji -> kana -> kanji) | 4.2 MB |
 | `chinese` | US-English, Simplified Chinese (pinyin) | 3.9 MB |
-| `indic` | US-English, Hindi and Marathi InScript, Nepali Traditional and Romanized (Devanagari), Bengali InScript, Probhat and National (Jatiya), Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | 3.3 MB |
+| `indic` | US-English, Hindi and Marathi InScript, Nepali Traditional and Romanized (Devanagari), Bengali InScript, Probhat and National (Jatiya), Telugu InScript and Sarala, Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | 3.6 MB |
 
 Every pack fits every board with 8 MB of flash or more. On the 4 MB-flash
 boards (Elecrow CrowPanel 5.0", Guition JC4827W543C) only the default,

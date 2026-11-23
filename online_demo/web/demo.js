@@ -77,8 +77,8 @@
            "Space or a digit.",
     },
     indic: {
-      option: "Indic -- Hindi, Marathi, Nepali, Bengali, Tamil",
-      tip: "Indic pack: Hindi, Marathi, Nepali, Bengali and Tamil layouts, shaped on the device " +
+      option: "Indic -- Hindi, Marathi, Nepali, Bengali, Telugu, Tamil",
+      tip: "Indic pack: Hindi, Marathi, Nepali, Bengali, Telugu and Tamil layouts, shaped on the device " +
            "with HarfBuzz. Tamil 99 and Hindi InScript are on: switch with Ctrl+L. Turn on the " +
            "others in F1 \u2192 Settings \u2192 Keyboard \u2192 Active layouts.",
     },

@@ -69,7 +69,7 @@ load the firmware quickly without having to compile it.
 - **Many languages**: 25 European, Canadian and Brazilian keyboard layouts in the
   default firmware, and separate firmware images (language packs) for
   Vietnamese, Korean, Japanese, Chinese and the Indic scripts
-  (Devanagari, Bengali and Tamil), with their input methods and fonts. See
+  (Devanagari, Bengali, Telugu and Tamil), with their input methods and fonts. See
   [Keyboard Layouts](#keyboard-layouts) below.
 
 - **Fountain screenplays**: `.fountain` files open in a screenplay
@@ -465,7 +465,7 @@ offers the packs available for each board; to build one yourself, see
 | Korean | US, Korean (2-set Hangul) | [Korean](docs/typing/korean.md) |
 | Japanese | US, Japanese (romaji to kana and kanji) | [Japanese](docs/typing/japanese.md) |
 | Chinese | US, Simplified Chinese (pinyin) | [Chinese](docs/typing/chinese.md) |
-| Indic | US; Devanagari: Hindi and Marathi InScript, Nepali Traditional and Romanized; Bengali: InScript, Probhat, National (Jatiya); Tamil: Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | [Indic](docs/typing/indic.md) |
+| Indic | US; Devanagari: Hindi and Marathi InScript, Nepali Traditional and Romanized; Bengali: InScript, Probhat, National (Jatiya); Telugu: InScript, Sarala; Tamil: Tamil 99, Tamil Typewriter, Tamil InScript, Taravinyas | [Indic](docs/typing/indic.md) |
 
 All the layouts of a pack are built into its firmware, but at first
 only US-English and the pack's main layouts are active (US-English
@@ -646,13 +646,14 @@ Draftling is built on the work of many others:
   Vera License) for the Latin and European scripts;
   [Noto Sans Mono](https://github.com/notofonts/latin-greek-cyrillic),
   [Noto Sans Devanagari](https://github.com/notofonts/devanagari),
-  [Noto Sans Bengali](https://github.com/notofonts/bengali) and
+  [Noto Sans Bengali](https://github.com/notofonts/bengali),
+  [Noto Sans Telugu](https://github.com/notofonts/telugu) and
   [Noto Sans Tamil](https://github.com/notofonts/tamil),
   [Fusion Pixel Font](https://github.com/TakWolf/fusion-pixel-font) and
   [GNU Unifont](https://unifoundry.com/unifont/) (SIL Open Font License
   1.1) for Vietnamese, the Indic scripts and CJK.
 - [HarfBuzz](https://github.com/harfbuzz/harfbuzz) (Old MIT license)
-  shapes Devanagari and Bengali on the device.
+  shapes Devanagari, Bengali and Telugu on the device.
 - The Japanese and Chinese input methods use dictionaries derived from
   [Mozc](https://github.com/google/mozc) (BSD 3-clause / IPAdic) and
   the Android Open Source Project's PinyinIME (Apache 2.0).

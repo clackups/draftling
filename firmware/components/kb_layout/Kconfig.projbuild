@@ -42,16 +42,17 @@ choice DRAFTLING_LANG_PACK
             pixel fonts in Simplified Chinese glyph style.
 
     config DRAFTLING_LANG_PACK_INDIC
-        bool "Indic (US, Devanagari, Bengali, Tamil)"
+        bool "Indic (US, Devanagari, Bengali, Telugu, Tamil)"
         help
             US-English plus the Devanagari script (Hindi and Marathi
             InScript, Nepali Traditional and Romanized layouts),
-            Bengali (InScript, Probhat and National (Jatiya) layouts)
-            and Tamil (Tamil 99, Tamil Typewriter, InScript and the
-            Taravinyas input engine), with glyphs from Noto Sans
-            Devanagari, Noto Sans Bengali and Noto Sans Tamil.
-            Devanagari and Bengali text is shaped on the device with
-            HarfBuzz. Too large for boards with 4 MB of flash.
+            Bengali (InScript, Probhat and National (Jatiya) layouts),
+            Telugu (InScript and Sarala layouts) and Tamil (Tamil 99,
+            Tamil Typewriter, InScript and the Taravinyas input engine),
+            with glyphs from Noto Sans Devanagari, Noto Sans Bengali,
+            Noto Sans Telugu and Noto Sans Tamil. Devanagari, Bengali
+            and Telugu text is shaped on the device with HarfBuzz. Too
+            large for boards with 4 MB of flash.
 
     config DRAFTLING_LANG_PACK_ALL
         bool "All languages (every layout and input method; Linux only)"
@@ -466,18 +467,46 @@ config DRAFTLING_HAS_BENGALI
     bool
     default y if KB_LAYOUT_ENABLE_BN_IN || KB_LAYOUT_ENABLE_BN_PR || KB_LAYOUT_ENABLE_BN_NJ
 
-# Devanagari and Bengali are shaped on the device by HarfBuzz
+config KB_LAYOUT_ENABLE_TE_IN
+    bool "Telugu InScript"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Telugu InScript layout, the Government of India
+        standard (Enhanced InScript, as m17n "te-inscript2" and XKB
+        "in(tel)"): vowel signs on the left hand (Shift: the vowels),
+        consonants on the right, Telugu digits on the number row and
+        the conjuncts ksha, tra, jnya, shra on Shift + digits. Pulls in
+        the Telugu fonts and HarfBuzz.
+
+config KB_LAYOUT_ENABLE_TE_SA
+    bool "Telugu Sarala"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_INDIC
+    help
+        Enable the Sarala layout (XKB "in(tel-sarala)", m17n
+        "te-sarala"), designed by Krishna Dhullipalla for fast Telugu
+        typing: the frequent letters on the home row, vowel signs with
+        their independent vowels on Shift, Latin digits on the number
+        row and the Telugu digits on AltGr. Pulls in the Telugu fonts
+        and HarfBuzz.
+
+config DRAFTLING_HAS_TELUGU
+    bool
+    default y if KB_LAYOUT_ENABLE_TE_IN || KB_LAYOUT_ENABLE_TE_SA
+
+# Devanagari, Bengali and Telugu are shaped on the device by HarfBuzz
 # (components/harfbuzz, components/fonts/indic_font.c).
 config DRAFTLING_HAS_INDIC_SHAPING
     bool
-    default y if DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI
+    default y if DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI || DRAFTLING_HAS_TELUGU
 
 # Indic scripts need much more room above and below the letter body
 # than Latin: with any of them, the fonts get taller lines
 # (components/fonts, TALL_LINE_EXTRA).
 config DRAFTLING_TALL_LINES
     bool
-    default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI
+    default y if DRAFTLING_HAS_TAMIL || DRAFTLING_HAS_DEVANAGARI || DRAFTLING_HAS_BENGALI || DRAFTLING_HAS_TELUGU
 
 # Latin Extended-A font subset (components/fonts/*_latina_NN.c): the
 # letters of the Central / Eastern European, Baltic, Turkish and

@@ -130,7 +130,8 @@ FW_SRCS += $(F)/tamil_font.c
 EMBED   += $(foreach n,$(SLOTS),$(F)/tamil/tamil_$(SET)_$(n).bin)
 endif
 
-INDIC_SCRIPTS := $(if $(CONFIG_DRAFTLING_HAS_DEVANAGARI),deva) $(if $(CONFIG_DRAFTLING_HAS_BENGALI),beng)
+INDIC_SCRIPTS := $(if $(CONFIG_DRAFTLING_HAS_DEVANAGARI),deva) $(if $(CONFIG_DRAFTLING_HAS_BENGALI),beng) \
+	$(if $(CONFIG_DRAFTLING_HAS_TELUGU),telu)
 ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
 FW_SRCS += $(F)/indic_font.c
 EMBED   += $(foreach s,$(INDIC_SCRIPTS),$(F)/$(s)/$(s)_layout.ttf \

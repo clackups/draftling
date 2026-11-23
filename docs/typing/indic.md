@@ -1,6 +1,7 @@
-# Typing guide: Indic pack (Devanagari, Bengali and Tamil)
+# Typing guide: Indic pack (Devanagari, Bengali, Telugu and Tamil)
 
-Layouts: US plus four Devanagari, three Bengali and four Tamil ones.
+Layouts: US plus four Devanagari, three Bengali, two Telugu and four
+Tamil ones.
 US, HI-IN and TA99 are active from the start; turn the others on in F1 -> Settings ->
 Keyboard -> Active layouts. **Ctrl+L** or **Win+Space** switches
 between the active layouts.
@@ -14,6 +15,8 @@ between the active layouts.
 | BN-IN | Bengali InScript (Government of India standard) | Bengali and Assamese, users of the Indian InScript layouts |
 | BN-PR | Bengali Probhat | letters on the keys of their Latin sound |
 | BN-NJ | Bengali National (Jatiya, the Bangladesh standard) | typists used to the Bijoy key positions |
+| TE-IN | Telugu InScript (Government of India standard) | users of the Indian InScript layouts |
+| TE-SA | Telugu Sarala | fast Telugu typing, the frequent letters on the home row |
 | TA99 | Tamil 99 (Government of Tamil Nadu standard) | most Tamil typists |
 | TA-TW | Tamil Typewriter | trained typewriter typists |
 | TA-IN | Tamil InScript (Government of India standard) | users of the Indian InScript layouts |
@@ -146,6 +149,67 @@ too, which is how a vowel letter follows a consonant.
 Examples: `f h Q V h` = bangla, `h m d` = ami, `j g d` = ka i (koi),
 `j g N` = ksha.
 
+## Telugu
+
+Both are plain layouts, typed in the order the letters are spoken --
+consonant, then its vowel sign -- and the editor draws the syllable,
+with the vowel sign joined to the consonant and the second consonant
+of a conjunct below the first (the vattu). Join two consonants with
+the virama between them: `m` `d` `l` on InScript gives s-virama-ta,
+drawn as sta.
+
+### TE-IN: InScript
+
+The same key positions as Hindi InScript: vowel signs on the left hand
+(with Shift: the vowels), consonants on the right; the number row
+types the Telugu digits.
+
+| Keys | Letters |
+|------|---------|
+| `e f r g t = z s w` `` ` `` `a q` | aa, i, ii, u, uu, ri, e, ee, ai, o, oo, au signs |
+| Shift + `D E F R G T + Z S W ~ A Q` | a aa i ii u uu ri e ee ai o oo au |
+| `d` / `x` / Shift+`X` / Shift+`-` | virama / anusvara / candrabindu / visarga |
+| `k` Shift+`K` `i` Shift+`I` Shift+`U` | ka kha ga gha nga |
+| `;` Shift+`;` `p` Shift+`P` `]` | ca cha ja jha nya |
+| `'` Shift+`'` `[` Shift+`[` Shift+`C` | Ta Tha Da Dha Na |
+| `l` Shift+`L` `o` Shift+`O` `v` | ta tha da dha na |
+| `h` Shift+`H` `y` Shift+`Y` `c` | pa pha ba bha ma |
+| `/` `j` `n` `b` Shift+`M` `<` `m` `u` | ya ra la va sha ssa sa ha |
+| Shift+`J` / Shift+`N` | rra / lla |
+| Shift + `.` / AltGr + `.` | danda / double danda |
+| Shift + `3 5 6 7 8` | ra-vattu, jnya, tra, ksha, shra |
+| AltGr + `;` / AltGr + `p` | tsa / dza |
+| AltGr + `1` / `2` | zero-width joiner / non-joiner |
+
+Examples: `l z n g i g` = telugu, `v c m d l s` = namaste, Shift+`D`
+`c d c` = amma.
+
+### TE-SA: Sarala
+
+Krishna Dhullipalla's layout for fast Telugu typing (XKB
+"Telugu (Sarala)"): the frequent letters on the home row, each vowel
+sign with its vowel on Shift. The number row keeps the Latin digits;
+AltGr + digit types the Telugu ones.
+
+| Keys | Letters |
+|------|---------|
+| `j i y u x` `` ` `` `q e ] z o \` | aa, i, ii, u, uu, ri, e, ee, ai, o, oo, au signs |
+| Shift + `F J I Y U X ~ Q E } Z O \|` | a aa i ii u uu ri e ee ai o oo au |
+| `f` / `s` / Shift+`M` / Shift+`S` | virama / anusvara / candrabindu / visarga |
+| `k` Shift+`K` `g` Shift+`G` Shift+`.` | ka kha ga gha nga |
+| `h` Shift+`H` `[` Shift+`[` Shift+`,` | ca cha ja jha nya |
+| `;` Shift+`;` `c` Shift+`C` Shift+`N` | Ta Tha Da Dha Na |
+| `t` Shift+`T` `d` Shift+`D` `n` | ta tha da dha na |
+| `p` Shift+`P` `b` Shift+`B` `m` | pa pha ba bha ma |
+| `a` `r` `l` `v` `/` Shift+`W` `w` Shift+`V` | ya ra la va sha ssa sa ha |
+| Shift+`R` / Shift+`L` / Shift+`A` | rra / lla / avagraha |
+| AltGr + `\` / AltGr + Shift+`\` | danda / double danda |
+| AltGr + `-` / `=` | zero-width non-joiner / joiner |
+| AltGr (+ Shift) + `[ ] ; , . /` and `` ` `` | the US punctuation of the key: `[ { ] } ; : < > / ` `` ` `` ``~`` |
+
+Examples: `t q l u g u` = telugu, `n m w f t e` = namaste, Shift+`F`
+`m f m` = amma.
+
 ## Tamil
 
 Letters are named here by transliteration: `Ta` / `Na` = retroflex t /
@@ -216,4 +280,4 @@ Example, starting in consonant mode: `r j` `e k` `v` `d j x` `v`
 - Left / Right step over a whole syllable or conjunct; Backspace
   removes the vowel sign first, then the consonant.
 - The search, file-name and WiFi fields take plain letters.
-- Full tables: [docs/language-packs.md](../language-packs.md#indic-devanagari-bengali-and-tamil).
+- Full tables: [docs/language-packs.md](../language-packs.md#indic-devanagari-bengali-telugu-and-tamil).

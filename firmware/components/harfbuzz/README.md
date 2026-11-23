@@ -1,8 +1,8 @@
 # HarfBuzz (vendored)
 
 The OpenType text shaper used by the Indic language pack to shape
-Devanagari and Bengali on the device: conjuncts, half forms, reph, the
-pre-base vowel signs and mark positioning come from the font's GSUB /
+Devanagari, Bengali and Telugu on the device: conjuncts, half forms,
+reph, below-base forms, the pre-base vowel signs and mark positioning come from the font's GSUB /
 GPOS tables (see `components/fonts/indic_font.c`).
 
 - Upstream: https://github.com/harfbuzz/harfbuzz, release 15.0.0

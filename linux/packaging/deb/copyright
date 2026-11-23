@@ -19,8 +19,8 @@ License: OFL-1.1
 Comment: See firmware/components/fonts/cjk/LICENSE.txt.
 
 Files: firmware/components/fonts/tamil/* firmware/components/fonts/deva/*
- firmware/components/fonts/beng/*
-Copyright: Google LLC (Noto Sans Tamil, Devanagari, Bengali)
+ firmware/components/fonts/beng/* firmware/components/fonts/telu/*
+Copyright: Google LLC (Noto Sans Tamil, Devanagari, Bengali, Telugu)
 License: OFL-1.1
 
 Files: firmware/components/harfbuzz/*

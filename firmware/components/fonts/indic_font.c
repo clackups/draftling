@@ -1,17 +1,17 @@
 /*
  * Font driver and shaper of the shaped Indic scripts (Devanagari,
- * Bengali) -- see include/indic_font.h.
+ * Bengali, Telugu) -- see include/indic_font.h.
  *
  * Blob format (written by tools/gen_indic_font.py, little endian):
- *   magic ("DDEV" / "DBEN"), u8 version (1), u8 line_height,
+ *   magic ("DDEV" / "DBEN" / "DTEL"), u8 version (1), u8 line_height,
  *   u8 base_line, u8 cell_w, u8 pixel size, u8 pad, u16 glyph count,
  *   one 8-byte entry per glyph id: u32 bitmap offset, u8 box_w,
  *   u8 box_h, i8 ofs_x, i8 ofs_y; then the bitmaps, 1 bpp, rows packed
  *   MSB-first.
  * One blob per script and font slot; the build embeds the low-res or
  * the hi-res set (CONFIG_DRAFTLING_DISPLAY_HIDPI). Glyph advances and
- * the nominal glyph of every code point are in deva/deva_tables.h and
- * beng/beng_tables.h.
+ * the nominal glyph of every code point are in deva/deva_tables.h,
+ * beng/beng_tables.h and telu/telu_tables.h.
  */
 
 #include <math.h>
@@ -44,10 +44,16 @@
 #else
 #define BENG_GLYPHS 0
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+#include "telu/telu_tables.h"
+#else
+#define TELU_GLYPHS 0
+#endif
 
-/* Global glyph ids: Devanagari first, then Bengali. */
+/* Global glyph ids: Devanagari first, then Bengali, then Telugu. */
 #define BENG_BASE    DEVA_GLYPHS
-#define TOTAL_GLYPHS (DEVA_GLYPHS + BENG_GLYPHS)
+#define TELU_BASE    (DEVA_GLYPHS + BENG_GLYPHS)
+#define TOTAL_GLYPHS (DEVA_GLYPHS + BENG_GLYPHS + TELU_GLYPHS)
 _Static_assert(TOTAL_GLYPHS <= 2048, "glyph ids do not fit the private-use encoding");
 
 /* ---- Embedded data (EMBED_FILES in CMakeLists.txt) ---- */
@@ -59,11 +65,15 @@ _Static_assert(TOTAL_GLYPHS <= 2048, "glyph ids do not fit the private-use encod
                       X(deva_hires_18) X(deva_hires_22) X(deva_hires_26) X(deva_hires_30)
 #define BENG_SLOTS(X) X(beng_hires_9) X(beng_hires_11) X(beng_hires_14) X(beng_hires_16) \
                       X(beng_hires_18) X(beng_hires_22) X(beng_hires_26) X(beng_hires_30)
+#define TELU_SLOTS(X) X(telu_hires_9) X(telu_hires_11) X(telu_hires_14) X(telu_hires_16) \
+                      X(telu_hires_18) X(telu_hires_22) X(telu_hires_26) X(telu_hires_30)
 #else
 #define DEVA_SLOTS(X) X(deva_lowres_11) X(deva_lowres_14) X(deva_lowres_16) X(deva_lowres_18) \
                       X(deva_lowres_22) X(deva_lowres_26) X(deva_lowres_30) X(deva_lowres_34)
 #define BENG_SLOTS(X) X(beng_lowres_11) X(beng_lowres_14) X(beng_lowres_16) X(beng_lowres_18) \
                       X(beng_lowres_22) X(beng_lowres_26) X(beng_lowres_30) X(beng_lowres_34)
+#define TELU_SLOTS(X) X(telu_lowres_11) X(telu_lowres_14) X(telu_lowres_16) X(telu_lowres_18) \
+                      X(telu_lowres_22) X(telu_lowres_26) X(telu_lowres_30) X(telu_lowres_34)
 #endif
 #define SLOT_COUNT 8
 
@@ -78,6 +88,12 @@ extern const uint8_t _binary_beng_layout_ttf_start[];
 extern const uint8_t _binary_beng_layout_ttf_end[];
 BENG_SLOTS(DECL)
 static const uint8_t *const s_beng_blobs[SLOT_COUNT] = { BENG_SLOTS(REF) };
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+extern const uint8_t _binary_telu_layout_ttf_start[];
+extern const uint8_t _binary_telu_layout_ttf_end[];
+TELU_SLOTS(DECL)
+static const uint8_t *const s_telu_blobs[SLOT_COUNT] = { TELU_SLOTS(REF) };
 #endif
 
 #define HEADER_SIZE 12
@@ -105,7 +121,7 @@ typedef struct {
     bool hb_failed;
 } script_t;
 
-enum { S_DEVA, S_BENG, S_COUNT };
+enum { S_DEVA, S_BENG, S_TELU, S_COUNT };
 
 static script_t s_scripts[S_COUNT];
 static bool s_scripts_ready;
@@ -128,6 +144,14 @@ static void scripts_init(void)
         (size_t)(_binary_beng_layout_ttf_end - _binary_beng_layout_ttf_start),
         s_beng_blobs, "DBEN", BENG_ADVANCE, BENG_GLYPHS, BENG_UPEM, BENG_BASE,
         HB_SCRIPT_BENGALI, NULL, false,
+    };
+#endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+    s_scripts[S_TELU] = (script_t){
+        _binary_telu_layout_ttf_start,
+        (size_t)(_binary_telu_layout_ttf_end - _binary_telu_layout_ttf_start),
+        s_telu_blobs, "DTEL", TELU_ADVANCE, TELU_GLYPHS, TELU_UPEM, TELU_BASE,
+        HB_SCRIPT_TELUGU, NULL, false,
     };
 #endif
 }
@@ -183,6 +207,9 @@ indic_script_t indic_script(uint32_t cp)
 #ifdef CONFIG_DRAFTLING_HAS_BENGALI
     if (cp >= 0x0980 && cp <= 0x09FF) return INDIC_BENG;
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+    if (cp >= 0x0C00 && cp <= 0x0C7F) return INDIC_TELU;
+#endif
     return INDIC_NONE;
 }
 
@@ -191,12 +218,14 @@ static bool is_consonant(uint32_t cp)
     return (cp >= 0x0915 && cp <= 0x0939) || (cp >= 0x0958 && cp <= 0x095F) ||
            (cp >= 0x0978 && cp <= 0x097F) ||
            (cp >= 0x0995 && cp <= 0x09B9) || (cp >= 0x09DC && cp <= 0x09DF) ||
-           cp == 0x09F0 || cp == 0x09F1;
+           cp == 0x09F0 || cp == 0x09F1 ||
+           (cp >= 0x0C15 && cp <= 0x0C39) || (cp >= 0x0C58 && cp <= 0x0C5A);
 }
 
 /* Combining characters: signs, vowel signs, nukta, virama, stress and
- * Vedic marks, the Bengali au length mark and sandhi mark; the
- * avagraha (U+093D, U+09BD) and khanda ta (U+09CE) are letters. */
+ * Vedic marks, the Bengali au length mark and sandhi mark, the Telugu
+ * length marks; the avagraha (U+093D, U+09BD, U+0C3D) and khanda ta
+ * (U+09CE) are letters. */
 static bool is_mark(uint32_t cp)
 {
     return (cp >= 0x0900 && cp <= 0x0903) || (cp >= 0x093A && cp <= 0x094F && cp != 0x093D) ||
@@ -205,14 +234,18 @@ static bool is_mark(uint32_t cp)
            (cp >= 0x0981 && cp <= 0x0983) || cp == 0x09BC ||
            (cp >= 0x09BE && cp <= 0x09C4) || cp == 0x09C7 || cp == 0x09C8 ||
            (cp >= 0x09CB && cp <= 0x09CD) || cp == 0x09D7 || cp == 0x09E2 ||
-           cp == 0x09E3 || cp == 0x09FE;
+           cp == 0x09E3 || cp == 0x09FE ||
+           (cp >= 0x0C00 && cp <= 0x0C04) || cp == 0x0C3C ||
+           (cp >= 0x0C3E && cp <= 0x0C56) || cp == 0x0C62 || cp == 0x0C63;
 }
 
 bool indic_mid_cluster(uint32_t prev, uint32_t next)
 {
     if (next == 0x200C || next == 0x200D) return indic_script(prev) != INDIC_NONE;
     if (is_mark(next)) return indic_script(prev) != INDIC_NONE;
-    if (is_consonant(next) && (prev == 0x094D || prev == 0x09CD || prev == 0x200D)) return true;
+    if (is_consonant(next) &&
+        (prev == 0x094D || prev == 0x09CD || prev == 0x0C4D || prev == 0x200D))
+        return true;
     return false;
 }
 
@@ -228,6 +261,9 @@ int indic_cp_cells(uint32_t cp)
 #ifdef CONFIG_DRAFTLING_HAS_BENGALI
     if (cp >= 0x0980 && cp <= 0x09FF) return BENG_CELLS[cp - 0x0980];
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+    if (cp >= 0x0C00 && cp <= 0x0C7F) return TELU_CELLS[cp - 0x0C00];
+#endif
     return -1;
 }
 
@@ -242,8 +278,10 @@ static script_t *hb_ready(indic_script_t which)
     switch (which) {
     case INDIC_DEVA: s = &s_scripts[S_DEVA]; break;
     case INDIC_BENG: s = &s_scripts[S_BENG]; break;
+    case INDIC_TELU: s = &s_scripts[S_TELU]; break;
     case INDIC_ANY:
-        s = s_scripts[S_DEVA].glyphs ? &s_scripts[S_DEVA] : &s_scripts[S_BENG];
+        s = s_scripts[S_DEVA].glyphs ? &s_scripts[S_DEVA] :
+            s_scripts[S_BENG].glyphs ? &s_scripts[S_BENG] : &s_scripts[S_TELU];
         break;
     default: return NULL;
     }
@@ -455,9 +493,18 @@ static uint32_t nominal_gid(uint32_t cp)
         uint32_t g = BENG_CMAP[cp - 0x0980];
         return g ? BENG_BASE + g : 0;
     }
-#ifndef CONFIG_DRAFTLING_HAS_DEVANAGARI
-    if (cp == 0x0964 || cp == 0x0965) return BENG_BASE + BENG_DANDA[cp - 0x0964];
 #endif
+#ifdef CONFIG_DRAFTLING_HAS_TELUGU
+    if (cp >= 0x0C00 && cp <= 0x0C7F) {
+        uint32_t g = TELU_CMAP[cp - 0x0C00];
+        return g ? TELU_BASE + g : 0;
+    }
+#endif
+    /* The dandas without Devanagari: from Bengali or Telugu. */
+#if !defined(CONFIG_DRAFTLING_HAS_DEVANAGARI) && defined(CONFIG_DRAFTLING_HAS_BENGALI)
+    if (cp == 0x0964 || cp == 0x0965) return BENG_BASE + BENG_DANDA[cp - 0x0964];
+#elif !defined(CONFIG_DRAFTLING_HAS_DEVANAGARI) && defined(CONFIG_DRAFTLING_HAS_TELUGU)
+    if (cp == 0x0964 || cp == 0x0965) return TELU_BASE + TELU_DANDA[cp - 0x0964];
 #endif
     (void)cp;
     return 0;

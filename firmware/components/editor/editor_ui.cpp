@@ -91,7 +91,7 @@
  */
 /* The Indic pack renders with copies of the fonts whose lines are
  * about 30 % taller (lowres.c / hires.c, tall_lines.h), so the Tamil,
- * Devanagari and Bengali letters can be drawn larger. */
+ * Devanagari, Bengali and Telugu letters can be drawn larger. */
 #ifdef CONFIG_DRAFTLING_TALL_LINES
 #define SLOT_FONT(f) ((const lv_font_t *)&f##_tall)
 #else
@@ -2850,10 +2850,10 @@ static void build_line_view(const editor_format_t *fmt, const char *lt, size_t l
         uint32_t cp = utf8_decode(lt, ll, &b);
         if (hide[start]) continue;
 #ifdef CONFIG_DRAFTLING_HAS_INDIC_SHAPING
-        /* A run of Devanagari or Bengali is shaped by HarfBuzz into the
+        /* A run of Devanagari, Bengali or Telugu is shaped by HarfBuzz into the
          * private-use code points of its glyphs (indic_font.h), each
          * mapped to the first byte of the characters it shows. A run is
-         * one script; the joiners and dandas go with either. */
+         * one script; the joiners and dandas go with any. */
         indic_script_t sc = indic_script(cp);
         if (sc != INDIC_NONE) {
             size_t end = b;
@@ -2993,8 +2993,8 @@ static uint32_t deco_draw_cp(uint32_t cp, uint32_t next)
 #endif
 }
 
-/* True when the cursor sits inside a Tamil, Devanagari or Bengali
- * syllable -- between a consonant and the vowel sign or other mark
+/* True when the cursor sits inside a Tamil, Devanagari, Bengali or
+ * Telugu syllable -- between a consonant and the vowel sign or other mark
  * drawn with it, inside a conjunct, or inside a k-ssa / sri ligature --
  * where it would be shown at the same spot as after it. Left / Right
  * step over such positions. */
@@ -10938,7 +10938,7 @@ struct typing_pre_state_t {
 };
 
 /* True for a line whose width the cell count does not give exactly:
- * Tamil, Devanagari and Bengali, whose glyphs are proportional. The
+ * Tamil, Devanagari, Bengali and Telugu, whose glyphs are proportional. The
  * typing fast path is not used on such lines (the whole line is
  * refreshed). */
 static bool line_has_proportional_text(const char *lt, size_t ll)
@@ -10946,11 +10946,11 @@ static bool line_has_proportional_text(const char *lt, size_t ll)
 #ifdef CONFIG_DRAFTLING_TALL_LINES
     /* Devanagari U+0900..U+097F is E0 A4 xx / E0 A5 xx in UTF-8,
      * Bengali U+0980..U+09FF E0 A6 xx / E0 A7 xx, Tamil U+0B80..U+0BFF
-     * E0 AE xx / E0 AF xx. */
+     * E0 AE xx / E0 AF xx, Telugu U+0C00..U+0C7F E0 B0 xx / E0 B1 xx. */
     for (size_t i = 0; i + 1 < ll; i++) {
         unsigned char c1 = (unsigned char)lt[i + 1];
         if ((unsigned char)lt[i] == 0xE0 &&
-            ((c1 >= 0xA4 && c1 <= 0xA7) || c1 == 0xAE || c1 == 0xAF))
+            ((c1 >= 0xA4 && c1 <= 0xA7) || (c1 >= 0xAE && c1 <= 0xB1)))
             return true;
     }
 #else

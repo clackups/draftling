@@ -1,18 +1,19 @@
 #pragma once
 
 /*
- * Shaped Indic scripts for LVGL (Indic language pack): Devanagari and
- * Bengali.
+ * Shaped Indic scripts for LVGL (Indic language pack): Devanagari,
+ * Bengali and Telugu.
  *
  * These scripts need real shaping -- conjuncts and half forms, the
  * reph, vowel signs drawn before the consonant cluster, marks placed
  * per base glyph -- so a run of their text is shaped by HarfBuzz
  * (components/harfbuzz) with the layout tables of the script's Noto
- * Sans font (deva/deva_layout.ttf, beng/beng_layout.ttf), and every
- * resulting glyph is turned into a private-use code point that this
- * font draws from pre-rendered 1 bpp bitmaps (tools/gen_indic_font.py,
- * deva/LICENSE.txt, beng/LICENSE.txt). Glyph ids are global: the
- * Devanagari glyphs first, then the Bengali ones.
+ * Sans font (deva/deva_layout.ttf, beng/beng_layout.ttf,
+ * telu/telu_layout.ttf), and every resulting glyph is turned into a
+ * private-use code point that this font draws from pre-rendered 1 bpp
+ * bitmaps (tools/gen_indic_font.py, deva/LICENSE.txt, beng/LICENSE.txt,
+ * telu/LICENSE.txt). Glyph ids are global: the Devanagari glyphs first,
+ * then the Bengali ones, then the Telugu ones (at most 2048 in all).
  *
  *   U+100000 + gid * 32 + d      a spacing glyph; its advance is the
  *                                font's plus (d - 16) * 20 font units
@@ -28,8 +29,8 @@
  * it shows (indic_shape()); text shown elsewhere (titles, file names)
  * is drawn unshaped from the nominal glyphs, which keeps it readable.
  *
- * Compiled only with CONFIG_DRAFTLING_HAS_INDIC_SHAPING (Devanagari or
- * Bengali layouts).
+ * Compiled only with CONFIG_DRAFTLING_HAS_INDIC_SHAPING (Devanagari,
+ * Bengali or Telugu layouts).
  */
 
 #include <stdbool.h>
@@ -51,6 +52,7 @@ typedef enum {
     INDIC_NONE = 0,
     INDIC_DEVA,     /* Devanagari */
     INDIC_BENG,     /* Bengali (and Assamese) */
+    INDIC_TELU,     /* Telugu */
     INDIC_ANY,      /* the joiners and dandas: part of a run of either */
 } indic_script_t;
 
@@ -62,7 +64,7 @@ lv_font_t *indic_font_create(int32_t line_height, int cell_w);
 
 /* Which run of shaped text the code point belongs in: INDIC_DEVA for
  * the Devanagari and Devanagari Extended blocks, INDIC_BENG for the
- * Bengali block, INDIC_ANY for the zero-width (non-)joiner and the
+ * Bengali block, INDIC_TELU for the Telugu block, INDIC_ANY for the zero-width (non-)joiner and the
  * dandas, INDIC_NONE otherwise or when the script is not compiled in.
  * A run is one script plus INDIC_ANY characters. */
 indic_script_t indic_script(uint32_t cp);
@@ -76,7 +78,7 @@ typedef struct {
 } indic_glyph_t;
 
 /* Shape the UTF-8 run s[0..len) of script (INDIC_ANY: a run of only
- * joiners / dandas, shaped as Devanagari when compiled in). Writes up
+ * joiners / dandas, shaped as the first script compiled in). Writes up
  * to max glyphs to out and returns their number (0 when shaping is
  * unavailable or out is too small). */
 size_t indic_shape(indic_script_t script, const char *s, size_t len,

@@ -21,7 +21,7 @@
  *        --> hires_latinx_NN   --> hires_NN_lx_next (router)   [Vietnamese / CJK]
  *        --> CJK runtime font (cjk_font.c)                  [Korean / Japanese / Chinese]
  *        --> Tamil runtime font (tamil_font.c)              [Tamil]
- *        --> Indic runtime font (indic_font.c)              [Devanagari / Bengali]
+ *        --> Indic runtime font (indic_font.c)              [Devanagari / Bengali / Telugu]
  *        --> hires_cyrillic_NN                                [Ukrainian]
  *
  * Subsets that are not compiled in are skipped; the Cyrillic subset is
@@ -187,7 +187,7 @@ extern const lv_font_t hires_latinx_30;
 #ifdef CONFIG_DRAFTLING_TALL_LINES
 /* Copies of the base fonts with taller lines (TALL_LINE_EXTRA), made
  * by hires_init(): the Indic pack renders with them so that the
- * Tamil, Devanagari and Bengali letters, which need much more room
+ * Tamil, Devanagari, Bengali and Telugu letters, which need much more room
  * above and below their body than Latin letters, can be drawn larger. */
 lv_font_t hires_9_tall;
 lv_font_t hires_11_tall;

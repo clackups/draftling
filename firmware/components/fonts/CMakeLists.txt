@@ -85,7 +85,8 @@ if(CONFIG_DRAFTLING_HAS_TAMIL)
     endif()
 endif()
 
-# Devanagari and Bengali (see deva/LICENSE.txt, beng/LICENSE.txt):
+# Devanagari, Bengali and Telugu (see deva/LICENSE.txt,
+# beng/LICENSE.txt, telu/LICENSE.txt):
 # shaped by HarfBuzz with the layout tables in <script>_layout.ttf,
 # drawn by indic_font.c from the glyph bitmaps of the font set the
 # board renders with.
@@ -95,6 +96,9 @@ if(CONFIG_DRAFTLING_HAS_DEVANAGARI)
 endif()
 if(CONFIG_DRAFTLING_HAS_BENGALI)
     list(APPEND indic_scripts beng)
+endif()
+if(CONFIG_DRAFTLING_HAS_TELUGU)
+    list(APPEND indic_scripts telu)
 endif()
 if(CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
     list(APPEND srcs "indic_font.c")
@@ -173,7 +177,7 @@ idf_component_register(
 )
 
 # Kconfig-conditional requirement: HarfBuzz is an empty component
-# unless Devanagari or Bengali is enabled.
+# unless Devanagari, Bengali or Telugu is enabled.
 if(CONFIG_DRAFTLING_HAS_INDIC_SHAPING)
     idf_component_optional_requires(PRIVATE harfbuzz)
 endif()

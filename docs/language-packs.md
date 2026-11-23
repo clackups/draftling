@@ -11,7 +11,7 @@ methods and fonts of its languages:
 | Korean | US, KO |
 | Japanese | US, JA |
 | Chinese | US, ZH (Simplified Chinese) |
-| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), BN-IN (Bengali InScript), BN-PR (Bengali Probhat), BN-NJ (Bengali National / Jatiya), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
+| Indic | US, HI-IN (Hindi InScript), MR-IN (Marathi InScript), NE-TR (Nepali Traditional), NE-RO (Nepali Romanized), BN-IN (Bengali InScript), BN-PR (Bengali Probhat), BN-NJ (Bengali National / Jatiya), TE-IN (Telugu InScript), TE-SA (Telugu Sarala), TA99 (Tamil 99), TA-TW (Tamil Typewriter), TA-IN (Tamil InScript), TA-TV (Taravinyas) |
 
 How to build an image for a pack is described in
 [BUILDING.md](../BUILDING.md#language-packs).
@@ -20,7 +20,7 @@ Brief typing guides, one per pack:
 [default](typing/default.md) (European and Canadian layouts),
 [Vietnamese](typing/vietnamese.md), [Korean](typing/korean.md),
 [Japanese](typing/japanese.md), [Chinese](typing/chinese.md),
-[Indic](typing/indic.md) (Devanagari, Bengali and Tamil). The sections below
+[Indic](typing/indic.md) (Devanagari, Bengali, Telugu and Tamil). The sections below
 have the full details.
 
 With an input method (VI, KO, JA, ZH, the Tamil layouts other than
@@ -34,7 +34,7 @@ letters.
 
 Use a US-English (QWERTY) keyboard for all of them. Korean keyboards
 type the jamo printed on a US keyboard's keys in the Dubeolsik layout,
-Devanagari, Bengali and Tamil keyboards the letters of their layout.
+Devanagari, Bengali, Telugu and Tamil keyboards the letters of their layout.
 
 ## Vietnamese (VI): Telex
 
@@ -123,11 +123,11 @@ composition, `,` `.` `?` `!` `:` `;` and `\` type full-width Chinese
 punctuation. The dictionary comes from the Android Open Source
 Project's PinyinIME (about 65,000 words).
 
-## Indic: Devanagari, Bengali and Tamil
+## Indic: Devanagari, Bengali, Telugu and Tamil
 
 The Indic pack has Devanagari (Hindi, Marathi, Nepali, Sanskrit and the
 other languages written in it), Bengali (Bengali / Bangla and
-Assamese) and Tamil. US, Hindi InScript and Tamil 99 are active at
+Assamese), Telugu and Tamil. US, Hindi InScript and Tamil 99 are active at
 first; turn the others on in F1 -> Settings -> Keyboard -> Active
 layouts.
 
@@ -193,6 +193,35 @@ syllable the way it is written.
   AltGr + Shift + `F`.
 
 The key tables are in the [typing guide](typing/indic.md).
+
+### Telugu
+
+Two plain layouts, typed like Devanagari in the order a syllable is
+spoken -- consonant, then its vowel sign -- with the virama between
+the consonants of a conjunct. The editor draws the syllable the way
+it is written: the vowel sign joined to its consonant, the following
+consonants of a conjunct below the first (the vattu).
+
+- **TE-IN, Telugu InScript**: the Government of India standard,
+  Enhanced InScript as in the m17n "te-inscript2" input method, with
+  the same key positions as Hindi InScript: vowel signs on the left
+  hand (short e and o on `z` and `` ` ``), the vowels with Shift,
+  consonants on the right, the Telugu digits on the number row, and
+  on Shift + 3, 5 .. 8 the ra-vattu, jnya, tra, ksha and shra. AltGr
+  types the rarer letters (tsa, dza, vocalic l and ll, the length
+  marks, the Telugu fractions) and AltGr + 1 / 2 the zero-width
+  joiner / non-joiner.
+- **TE-SA, Sarala**: Krishna Dhullipalla's layout for fast Telugu
+  typing, as XKB "in(tel-sarala)": the frequent letters on the home
+  row, each vowel sign with its independent vowel on Shift, `f`
+  virama, Latin digits on the number row and the Telugu digits on
+  AltGr + digit. The punctuation whose keys type letters (`[ ] ; , .
+  /` and the backquote) is on AltGr; AltGr + `-` / `=` types the
+  zero-width non-joiner / joiner.
+
+The key tables are in the [typing guide](typing/indic.md). The
+phonetic transliteration schemes (RTS / Lekhini, Apple, Pothana) are
+not included yet: they need an input method.
 
 ### Tamil
 
@@ -302,19 +331,21 @@ type as usual.
 ### Indic text on the screen
 
 Devanagari comes from Noto Sans Devanagari, Bengali from Noto Sans
-Bengali, Tamil from Noto Sans Tamil, all drawn in black and white. They need much more room above
+Bengali, Telugu from Noto Sans Telugu, Tamil from Noto Sans Tamil, all
+drawn in black and white. They need much more room above
 and below the letters than Latin text, so the Indic firmware spaces
 all lines about 30 % further apart than the other firmware images and
 draws the Indic letters to fill that height; the Latin letters keep
 their size. The letters of a word join up with the fonts' own spacing
 (they are not squeezed into the monospace grid of the Latin text).
 
-Devanagari and Bengali are shaped on the device with HarfBuzz, the
-text shaper of desktop systems, from the fonts' own rules: conjuncts
-and half forms, the reph, ra- and ya-phala, the vowel signs before or
-around their consonant cluster and the marks above and below are
-drawn as in a desktop editor. File names, titles and the status bar
-show Devanagari and Bengali letter by letter, unshaped. A few rare
+Devanagari, Bengali and Telugu are shaped on the device with
+HarfBuzz, the text shaper of desktop systems, from the fonts' own
+rules: conjuncts and half forms, the reph, ra- and ya-phala, the
+Telugu vattu forms, the vowel signs before or around their consonant
+cluster and the marks above and below are drawn as in a desktop
+editor. File names, titles and the status bar show Devanagari,
+Bengali and Telugu letter by letter, unshaped. A few rare
 stacks (vocalic rr / l signs, some deep conjuncts) may stick out of
 the line by a pixel or two.
 
@@ -338,12 +369,13 @@ plus every character of their dictionaries.
 Vietnamese letters, curly quotes and dashes come from Greybeard, or on
 high-density screens from Noto Sans Mono.
 
-Devanagari, Bengali and Tamil letters come from Noto Sans Devanagari,
-Noto Sans Bengali and Noto Sans Tamil (see "Indic text on the screen"
+Devanagari, Bengali, Telugu and Tamil letters come from Noto Sans
+Devanagari, Noto Sans Bengali, Noto Sans Telugu and Noto Sans Tamil (see "Indic text on the screen"
 above).
 
 Font and dictionary licenses: `firmware/components/fonts/cjk/LICENSE.txt`,
 `firmware/components/fonts/deva/LICENSE.txt`,
 `firmware/components/fonts/beng/LICENSE.txt`,
+`firmware/components/fonts/telu/LICENSE.txt`,
 `firmware/components/fonts/tamil/LICENSE.txt` and
 `firmware/components/ime/dict/LICENSE.txt`.

@@ -392,11 +392,12 @@ components/                 Reusable IDF components
   fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
                             Vietnamese subsets, CJK pixel-font driver,
                             Tamil cluster-glyph driver, Devanagari /
-                            Bengali glyph driver + HarfBuzz shaping)
+                            Bengali / Telugu glyph driver + HarfBuzz
+                            shaping)
   git_sync/                 Native Git client (smart HTTP) + local history
   harfbuzz/                 HarfBuzz 15.0.0 text shaper (vendored, only
                             the files the HB_TINY build uses), for
-                            Devanagari and Bengali
+                            Devanagari, Bengali and Telugu
   io_expander/              CH422G (Waveshare Touch-LCD-7) and M5IOE1
                             (M5Stack PaperMono) I2C IO-expander drivers
   ime/                      Input methods: Vietnamese Telex, Korean
@@ -1872,7 +1873,11 @@ Romanized (`NE-TR`, `NE-RO`: m17n `ne-trad` / `ne-rom`), the Bengali
 InScript, Probhat and National / Jatiya (`BN-IN`, `BN-PR`, `BN-NJ`:
 m17n `bn-inscript2` with the keys it leaves empty from XKB
 `in(ben_inscript)`, `bn-probhat`, `bn-national-jatiya`; BN-NJ's vowel
-keys go through an input method, see `components/ime/`) and
+keys go through an input method, see `components/ime/`), the Telugu
+InScript and Sarala (`TE-IN`, `TE-SA`: m17n `te-inscript2` with the
+keys it leaves empty from XKB `in(tel)`; XKB `in(tel-sarala)` with
+m17n `te-sarala`'s joiners on AltGr + - / =; both after `BR` at the
+end of `kb_layout_id_t`) and
 the US-based Vietnamese, Japanese, Chinese and Tamil 99 / Tamil
 Typewriter / Taravinyas (`TA99`, `TA-TW`, `TA-TV`) layouts.
 
@@ -2678,7 +2683,7 @@ FR-CA, CRH, CRH-B, BR),
 `vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
 ZH) and `indic` (US, HI-IN, MR-IN, NE-TR, NE-RO, BN-IN, BN-PR, BN-NJ,
-TA99, TA-TW, TA-IN, TA-TV), plus `all` (every one of them; the Linux
+TE-IN, TE-SA, TA99, TA-TW, TA-IN, TA-TV), plus `all` (every one of them; the Linux
 program only, see "Linux application"). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
@@ -2709,7 +2714,7 @@ layouts in `editor_ui.cpp` (`NVS_KEY_ACTIVE_LAYOUTS`).
 
 Image sizes on the Waveshare RLCD-4.2 (default pack 2.3 MB): vietnamese
 2.3 MB, korean 3.1 MB, japanese 4.2 MB, chinese 3.9 MB (3.8 MB on the
-Xteink X4 Pro), indic 3.3 MB (measured on the Freenove FNK0104A; 4.2 MB
+Xteink X4 Pro), indic 3.6 MB (measured on the Freenove FNK0104A; 4.8 MB
 on the hi-res Seeed reTerminal Sticky; too large for the 3.88 MB app
 partition of the 4 MB-flash boards, which the build refuses). All fit
 the 7.5 MB app partition of the 8 MB CrowPanel and the 8.1 MB OTA
@@ -2719,7 +2724,7 @@ slots.
 base -> `_ext` router -> Hebrew -> `_he_next` router -> Latin
 Extended-A (`*_latina_NN`) -> `_la_next` router -> Latin extension
 (`*_latinx_NN`) -> `_lx_next` router -> CJK runtime font -> Tamil
-runtime font -> Indic (Devanagari / Bengali) runtime font -> Cyrillic (generated without
+runtime font -> Indic (Devanagari / Bengali / Telugu) runtime font -> Cyrillic (generated without
 a fallback, so always last). Missing subsets are
 skipped (`slot_chain_t` table).
 
@@ -2781,7 +2786,7 @@ line height (raised a pixel or two off the Latin baseline where the
 descenders need it). That line is about 30 % taller than the base
 font's: Tamil syllables need roughly twice their body height for loops
 and hooks, and in a Greybeard-height line the body of the 14 / 16 px
-sizes was 5-7 px tall. With Tamil, Devanagari or Bengali compiled in
+sizes was 5-7 px tall. With Tamil, Devanagari, Bengali or Telugu compiled in
 (`DRAFTLING_TALL_LINES`), `lowres_init()` / `hires_init()` make mutable
 copies of the base fonts (`<font>_NN_tall`, `TALL_LINE_EXTRA()` more
 line height, `TALL_BASE_EXTRA()` of it below the baseline, see
@@ -2816,27 +2821,30 @@ and its mark. Blobs are matched to a slot by
 line height and cell width, and only the family the board renders with
 is embedded.
 
-**Devanagari and Bengali fonts and shaping**
+**Devanagari, Bengali and Telugu fonts and shaping**
 (`components/fonts/indic_font.c`, `include/indic_font.h`,
 `deva/deva_layout.ttf`, `deva/deva_{lowres,hires}_NN.bin`,
-`deva/deva_tables.h`, the same under `beng/`, licenses in
-`deva/LICENSE.txt` / `beng/LICENSE.txt`; HarfBuzz in
+`deva/deva_tables.h`, the same under `beng/` and `telu/`, licenses in
+`deva/LICENSE.txt` / `beng/LICENSE.txt` / `telu/LICENSE.txt`; HarfBuzz in
 `components/harfbuzz/`; compiled with `DRAFTLING_HAS_INDIC_SHAPING`).
 These scripts need real shaping -- conjuncts and half forms, reph, ra-
-and ya-phala, vowel signs before or around their cluster, per-base
+and ya-phala, Telugu below-base (vattu) forms, vowel signs before or
+around their cluster, per-base
 mark positions, about 170 GSUB lookups in Noto Sans Devanagari -- so
 the editor shapes them on the device: `build_line_view()` hands each
-run of one script (`indic_script()`: Devanagari, Bengali, or the
-joiners and dandas, which go with either) to `indic_shape()`, which
+run of one script (`indic_script()`: Devanagari, Bengali, Telugu, or
+the joiners and dandas, which go with any) to `indic_shape()`, which
 runs HarfBuzz (`HB_TINY`, a few ms per line, the first call ~200 ms
 for the shape plan; results of runs up to 512 bytes are kept in a
 64-entry cache keyed by script and text) on the script's
 `<s>_layout.ttf` -- the font subset to the script's repertoire and its
 GSUB closure with outlines and hinting removed (cmap, GDEF, GSUB,
-GPOS, head, hhea, hmtx, maxp; 78 KB Devanagari, 37 KB Bengali) -- and
+GPOS, head, hhea, hmtx, maxp; 78 KB Devanagari, 37 KB Bengali, 28 KB
+Telugu) -- and
 turns every output glyph into private-use code points that
 `indic_font.c` draws from 1 bpp bitmaps by global glyph id (the
-Devanagari glyphs first, then the Bengali ones; at most 2048): a
+Devanagari glyphs first, then the Bengali ones, then the Telugu ones;
+671 + 384 + 731, at most 2048): a
 spacing glyph is U+100000 + gid * 32 + advance correction (HarfBuzz's
 kerning, 20-unit steps); a mark at the pen is U+FC000 + gid; a mark
 with an offset is two code points, U+F8000 | dx << 6 | dy (8- /
@@ -2846,19 +2854,21 @@ U+F0000..U+F7FFF belong to the Tamil font. Each code maps (d2r) to
 HarfBuzz's cluster, which never decreases. `cursor_mid_cluster()`
 steps over positions inside a syllable (`indic_mid_cluster()`),
 `indic_cp_cells()` gives an upper bound in cells, and the e-paper
-typing fast path is off on Devanagari and Bengali lines. Text outside
-the editor (titles, file names) is drawn unshaped from the nominal
-glyphs (`DEVA_CMAP`, `BENG_CMAP`). `tools/gen_indic_font.py deva|beng`
+typing fast path is off on Devanagari, Bengali and Telugu lines. Text
+outside the editor (titles, file names) is drawn unshaped from the
+nominal glyphs (`DEVA_CMAP`, `BENG_CMAP`, `TELU_CMAP`; the dandas from
+the first script compiled in). `tools/gen_indic_font.py deva|beng|telu`
 writes the data (byte-identical Devanagari output to the former
 `gen_deva_font.py`): the pixel size per slot fits the tall line for
 all but 0.2 % of a synthetic set of syllables (every consonant with
 every vowel sign, modifier and reph, all two-consonant conjuncts with
-the below-base signs; the rare vocalic rr / l signs are left out),
+the below-base signs -- for Telugu, the vowel signs above the stack;
+the rare vocalic rr / l signs are left out),
 with the same hinting thresholds as the Tamil fonts. HarfBuzz uses
 about 1.3 KB of stack per call, so the LVGL task gets 12 KB instead
-of 8 KB with Devanagari or Bengali (`lvgl_port.cpp`). Host test:
+of 8 KB with any of them (`lvgl_port.cpp`). Host test:
 `components/fonts/test/host/run.sh` (builds indic_font.c and HarfBuzz
-natively, shapes and draws Devanagari and Bengali sample lines into a
+natively, shapes and draws Devanagari, Bengali and Telugu sample lines into a
 PGM image, checks every glyph, the cache and the character classes);
 run it after changing the shaping code or data.
 
@@ -2870,7 +2880,7 @@ Win combinations and F-keys call `ime_finish()` first. Width estimates
 (`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
 e-paper typing fast path) count CJK characters as two cells
 (`cp_is_wide()`, same ranges as `cjk_is_wide()`), Tamil by
-`tamil_cp_cells()` and Devanagari / Bengali by `indic_cp_cells()`
+`tamil_cp_cells()` and Devanagari / Bengali / Telugu by `indic_cp_cells()`
 (`cp_cells()`,
 which needs the code points around). The small text
 fields (search, file names, WiFi) are not wired to the input methods.
@@ -3536,6 +3546,8 @@ menu: the `DRAFTLING_LANG_PACK` choice (`_DEFAULT`, `_VIETNAMESE`,
 | KB_LAYOUT_ENABLE_BN_IN | Bengali InScript | y in the indic pack |
 | KB_LAYOUT_ENABLE_BN_PR | Bengali Probhat | y in the indic pack |
 | KB_LAYOUT_ENABLE_BN_NJ | Bengali National (Jatiya) | y in the indic pack |
+| KB_LAYOUT_ENABLE_TE_IN | Telugu InScript | y in the indic pack |
+| KB_LAYOUT_ENABLE_TE_SA | Telugu Sarala | y in the indic pack |
 
 Derived: `DRAFTLING_HAS_LATIN_EXT_A` (PL, CZ, SK, HU, RO, HR, TR,
 CRH or CRH-B enabled) compiles the Latin Extended-A font subset;
@@ -3545,8 +3557,9 @@ of JA, ZH, KO) picks the font set under `components/fonts/cjk/`;
 `DRAFTLING_HAS_TAMIL` (any Tamil layout) compiles the Tamil fonts;
 `DRAFTLING_HAS_DEVANAGARI` (any Devanagari layout) the Devanagari
 fonts, `DRAFTLING_HAS_BENGALI` (any Bengali layout) the Bengali fonts,
-`DRAFTLING_HAS_INDIC_SHAPING` (either of the two) `indic_font.c` and
-HarfBuzz; `DRAFTLING_TALL_LINES` (Tamil, Devanagari or Bengali) the
+`DRAFTLING_HAS_TELUGU` (any Telugu layout) the Telugu fonts,
+`DRAFTLING_HAS_INDIC_SHAPING` (any of the three) `indic_font.c` and
+HarfBuzz; `DRAFTLING_TALL_LINES` (Tamil, Devanagari, Bengali or Telugu) the
 taller lines.
 
 Disabling unused layouts saves flash space because the translation
