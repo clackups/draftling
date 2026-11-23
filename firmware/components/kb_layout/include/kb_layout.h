@@ -133,6 +133,11 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
     KB_LAYOUT_BN_NJ,
 #endif
+    /* Last, so the bits of the layouts above keep their positions in
+     * the "all" pack's persisted mask. */
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BR
+    KB_LAYOUT_BR,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 

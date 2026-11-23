@@ -1854,7 +1854,9 @@ Translates HID keycodes and modifier flags into UTF-8 character strings
 for the active keyboard layout. Supports US-English (QWERTY), Ukrainian
 (Cyrillic), German (QWERTZ), French (AZERTY), Hebrew (SI 1452, RTL
 via LVGL's bidi engine), Swiss German / Swiss French (QWERTZ), Italian,
-Portuguese (Portugal), Spanish (Spain), United Kingdom, Swedish /
+Portuguese (Portugal), Portuguese (Brazil, ABNT2: `BR`, as XKB
+`br(abnt2)`; its extra key left of Right Shift is HID 0x87), Spanish
+(Spain), United Kingdom, Swedish /
 Finnish, Norwegian, Danish, Polish (programmers), Czech, Slovak,
 Hungarian, Romanian (standard), Croatian / Slovenian, Turkish Q,
 Canadian French (traditional), Crimean Tatar Latin (`CRH`, Ave Team's
@@ -1895,7 +1897,8 @@ types a letter on some of them); the file browser, which has no text
 entry, still accepts either Alt. The ISO key left of Enter is 0x32 in the HID spec
 but 0x31 on many keyboards, so ISO layouts put it on both. New layout
 ids go after HE in `kb_layout_id_t`, so the bits of the existing
-layouts in the persisted active-layout mask do not move.
+layouts in the persisted active-layout mask do not move; new ones now
+go at the very end (as `BR`), which also keeps the `all` pack's bits.
 
 Dead keys: a table entry starting with `\x01` (`DK_GRAVE`, `DK_ACUTE`,
 `DK_CIRC`, `DK_TILDE`, `DK_DIAER`, `DK_CEDIL`, `DK_CARON`, `DK_BREVE`,
@@ -2671,7 +2674,7 @@ since HIDPI's base font sizes top out at 20 px.
 A language pack is the set of layouts, input methods and font subsets
 of one firmware image: `default` (US, UA, DE, FR, HE, DE-CH, FR-CH,
 IT, PT, ES, GB, SE/FI, NO, DK, PL, CZ, SK, HU, RO, HR/SI, TR,
-FR-CA, CRH, CRH-B),
+FR-CA, CRH, CRH-B, BR),
 `vietnamese`
 (US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
 ZH) and `indic` (US, HI-IN, MR-IN, NE-TR, NE-RO, BN-IN, BN-PR, BN-NJ,
@@ -3502,6 +3505,7 @@ menu: the `DRAFTLING_LANG_PACK` choice (`_DEFAULT`, `_VIETNAMESE`,
 | KB_LAYOUT_ENABLE_FR_CH | Swiss French (QWERTZ) | y in the default pack |
 | KB_LAYOUT_ENABLE_IT | Italian (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_PT | Portuguese, Portugal (QWERTY) | y in the default pack |
+| KB_LAYOUT_ENABLE_BR | Portuguese, Brazil (ABNT2) | y in the default pack |
 | KB_LAYOUT_ENABLE_ES | Spanish, Spain (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_GB | United Kingdom (QWERTY) | y in the default pack |
 | KB_LAYOUT_ENABLE_SE_FI | Swedish / Finnish (QWERTY) | y in the default pack |

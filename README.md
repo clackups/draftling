@@ -66,7 +66,7 @@ load the firmware quickly without having to compile it.
 - **Works with any Bluetooth Low Energy (BLE) keyboard**. M5Stack Tab5
   and MicroJournal Rev 5.0 / 5.1 also support a wired USB keyboard.
 
-- **Many languages**: 24 European and Canadian keyboard layouts in the
+- **Many languages**: 25 European, Canadian and Brazilian keyboard layouts in the
   default firmware, and separate firmware images (language packs) for
   Vietnamese, Korean, Japanese, Chinese and the Indic scripts
   (Devanagari, Bengali and Tamil), with their input methods and fonts. See
@@ -460,7 +460,7 @@ offers the packs available for each board; to build one yourself, see
 
 | Language pack | Keyboard layouts | Typing guide |
 |---------------|------------------|--------------|
-| Default | US-English and 23 European and Canadian layouts (below) | [default](docs/typing/default.md) |
+| Default | US-English and 24 European, Canadian and Brazilian layouts (below) | [default](docs/typing/default.md) |
 | Vietnamese | US, Vietnamese (Telex input) | [Vietnamese](docs/typing/vietnamese.md) |
 | Korean | US, Korean (2-set Hangul) | [Korean](docs/typing/korean.md) |
 | Japanese | US, Japanese (romaji to kana and kanji) | [Japanese](docs/typing/japanese.md) |
@@ -488,6 +488,7 @@ The **default language pack** has these 24 layouts:
 | FR-CH | Swiss French (QWERTZ) |
 | IT | Italian (QWERTY with accents) |
 | PT | Portuguese, Portugal (QWERTY) |
+| BR | Portuguese, Brazil (ABNT2) |
 | ES | Spanish, Spain (QWERTY) |
 | GB | United Kingdom (QWERTY) |
 | SE/FI | Swedish / Finnish (QWERTY) |

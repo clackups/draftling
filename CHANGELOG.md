@@ -23,6 +23,11 @@ in the git log.
   words you have written since the sprint started, next to the
   keyboard layout, for timers as well as word goals; the status bars
   then stay on screen while you type. The setting is remembered.
+- **Brazilian Portuguese (ABNT2) keyboard layout**: the default
+  firmware now includes the Brazilian ABNT2 layout (BR), with
+  c-cedilla on its own key, the acute / grave / tilde / circumflex /
+  diaeresis accents, and the extra `/ ?` key left of the right Shift.
+  Turn it on in F1 -> Settings -> Keyboard -> Active layouts.
 
 ### Changed
 

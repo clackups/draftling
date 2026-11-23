@@ -3,7 +3,7 @@
  *
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
- * Swiss French, Italian, Portuguese, Spanish, United Kingdom and the
+ * Swiss French, Italian, Portuguese (Portugal and Brazil), Spanish, United Kingdom and the
  * other European layouts, and the Korean, Tamil InScript, Devanagari
  * and Bengali layouts. Vietnamese, Japanese, Chinese and the other
  * Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on the US
@@ -3569,6 +3569,73 @@ static const key_entry_t FR_CA_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_FR_CA */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BR
+/* ------------------------------------------------------------------ */
+/* Portuguese (Brazil, ABNT2)                                         */
+/* ------------------------------------------------------------------ */
+/* Windows "Portuguese (Brazilian ABNT2)", XKB "br(abnt2)": c-cedilla
+ * right of L, dead acute / grave right of P, dead tilde / circumflex
+ * right of c-cedilla, dead diaeresis on Shift + 6, ' " left of 1,
+ * \ | on the ISO key left of Z, and the extra ABNT2 key left of Right
+ * Shift (HID 0x87, International1) typing / ? (AltGr: degree). The
+ * keys right of the brackets carry ordinal indicators on AltGr. */
+#define KC_INTL1 0x87
+static const char *const BR_NORMAL[] = {
+    LETTERS_QWERTY, DIGITS, CTRL_KEYS,
+    /* 2D */ "-",
+    /* 2E */ "=",
+    /* 2F */ DK_ACUTE,
+    /* 30 */ "[",
+    /* 31 */ "]",
+    /* 32 */ "]",
+    /* 33 */ CH_c_CED,
+    /* 34 */ DK_TILDE,
+    /* 35 */ "'",
+    /* 36 */ ",", ".", ";",
+};
+
+static const char *const BR_SHIFT[] = {
+    LETTERS_QWERTY_UP,
+    "!","@","#","$","%",DK_DIAER,"&","*","(",")",
+    CTRL_KEYS,
+    /* 2D */ "_",
+    /* 2E */ "+",
+    /* 2F */ DK_GRAVE,
+    /* 30 */ "{",
+    /* 31 */ "}",
+    /* 32 */ "}",
+    /* 33 */ CH_C_CED,
+    /* 34 */ DK_CIRC,
+    /* 35 */ "\x22",
+    /* 36 */ "<", ">", ":",
+};
+
+static const key_entry_t BR_EXTRA[] = {
+    { 0x1E,     L_ALTGR,  "\xC2\xB9" },   /* 1: U+00B9 superscript 1 */
+    { 0x1F,     L_ALTGR,  "\xC2\xB2" },   /* 2: U+00B2 superscript 2 */
+    { 0x20,     L_ALTGR,  "\xC2\xB3" },   /* 3: U+00B3 superscript 3 */
+    { 0x21,     L_ALTGR,  CH_POUND },     /* 4 */
+    { 0x22,     L_ALTGR,  CH_CENT },      /* 5 */
+    { 0x23,     L_ALTGR,  CH_NOT },       /* 6 */
+    { 0x2E,     L_ALTGR,  CH_SECT },      /* = key */
+    { 0x14,     L_ALTGR,  "/" },          /* q */
+    { 0x1A,     L_ALTGR,  "?" },          /* w */
+    { 0x08,     L_ALTGR,  CH_DEG },       /* e */
+    { 0x15,     L_ALTGR,  "\xC2\xAE" },   /* r: U+00AE registered */
+    { 0x06,     L_ALTGR,  "\xC2\xA9" },   /* c: U+00A9 copyright */
+    { 0x10,     L_ALTGR,  CH_MICRO },     /* m */
+    { 0x30,     L_ALTGR,  CH_ORDF },      /* [ key */
+    { 0x31,     L_ALTGR,  CH_ORDM },      /* ] key */
+    { 0x32,     L_ALTGR,  CH_ORDM },
+    { KC_ISO,   L_NORMAL, "\\" },
+    { KC_ISO,   L_SHIFT,  "|" },
+    { KC_INTL1, L_NORMAL, "/" },
+    { KC_INTL1, L_SHIFT,  "?" },
+    { KC_INTL1, L_ALTGR,  CH_DEG },
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_BR */
+
 #if defined(CONFIG_KB_LAYOUT_ENABLE_CRH) || defined(CONFIG_KB_LAYOUT_ENABLE_CRH_B)
 /* ------------------------------------------------------------------ */
 /* Crimean Tatar, Latin (Ave Team)                                    */
@@ -3797,6 +3864,9 @@ CHECK_TABLE(CRH_NORMAL); CHECK_TABLE(CRH_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_CRH_B
 CHECK_TABLE(CRH_B_NORMAL); CHECK_TABLE(CRH_B_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BR
+CHECK_TABLE(BR_NORMAL); CHECK_TABLE(BR_SHIFT);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #endif
@@ -3946,6 +4016,9 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BN_NJ
     [KB_LAYOUT_BN_NJ] = { BN_NJ_NORMAL, BN_NJ_SHIFT, BN_NJ_EXTRA, "BN-NJ", "Bengali National (Jatiya)", KB_IME_BENGALI_NJ, false },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BR
+    [KB_LAYOUT_BR] = { BR_NORMAL, BR_SHIFT, BR_EXTRA, "BR", "Portuguese (Brazil, ABNT2)", KB_IME_NONE, true },
 #endif
 };
 

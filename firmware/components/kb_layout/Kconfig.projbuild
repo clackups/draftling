@@ -149,6 +149,16 @@ config KB_LAYOUT_ENABLE_PT
         Enable the Portuguese (Portugal) QWERTY keyboard layout with
         c-cedilla and the acute / grave / tilde / circumflex dead keys.
 
+config KB_LAYOUT_ENABLE_BR
+    bool "Portuguese (Brazil, ABNT2)"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the Brazilian ABNT2 keyboard layout (Windows
+        "Portuguese (Brazilian ABNT2)", XKB "br(abnt2)"): c-cedilla on
+        its own key, acute / grave / tilde / circumflex / diaeresis
+        dead keys, and the extra / ? key left of Right Shift.
+
 config KB_LAYOUT_ENABLE_ES
     bool "Spanish (Spain, QWERTY)"
     default y if DRAFTLING_LANG_PACK_ALL

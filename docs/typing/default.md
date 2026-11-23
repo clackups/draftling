@@ -1,8 +1,9 @@
-# Typing guide: default pack (European and Canadian layouts)
+# Typing guide: default pack (European, Canadian and Brazilian layouts)
 
-The default firmware has US-English plus 23 layouts: Ukrainian (UA),
+The default firmware has US-English plus 24 layouts: Ukrainian (UA),
 German (DE), French (FR), Hebrew (HE), Swiss German (DE-CH), Swiss
-French (FR-CH), Italian (IT), Portuguese (PT), Spanish (ES), United
+French (FR-CH), Italian (IT), Portuguese (PT), Brazilian Portuguese
+ABNT2 (BR), Spanish (ES), United
 Kingdom (GB), Swedish / Finnish (SE/FI), Norwegian (NO), Danish (DK),
 Polish (PL), Czech (CZ), Slovak (SK), Hungarian (HU), Romanian (RO),
 Croatian / Slovenian (HR/SI), Turkish Q (TR), Canadian French
@@ -52,6 +53,12 @@ caron, `3` circumflex, `4` breve, `5` ring, `6` ogonek, `8` dot above,
   the way the arrows point. Caps Lock types Latin capitals, as on
   Windows.
 - **Turkish**: the dotless i key counts as I for shortcuts.
+- **Brazilian Portuguese** (BR, ABNT2): c-cedilla right of L, the
+  acute / grave accent right of P, tilde / circumflex right of
+  c-cedilla, the diaeresis on Shift + `6`. The extra key left of the
+  right Shift types `/` and `?` (AltGr: the degree sign); AltGr + Q and
+  W type them too, for keyboards without that key. AltGr + `[` and `]`
+  give the ordinal indicators, AltGr + E the degree sign.
 - **Crimean Tatar** (CRH, Ave Team's
   [Crimean Tatar Roman layout](https://keyboard.aveteam.org/en/crh-more)):
   QWERTY letters with the Ukrainian punctuation on the number row
