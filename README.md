@@ -201,7 +201,7 @@ load the firmware quickly without having to compile it.
 | Ctrl+H | Find + Replace (Tab switches field, Enter = next match, Ctrl+Enter = replace + next) |
 | Ctrl+C / Ctrl+X / Ctrl+V | Copy / Cut / Paste the current selection |
 | Ctrl+Q | Same as Escape, for keyboards without an Esc key (works on every screen) |
-| Ctrl+T | Writing timer (15, 25 or 50 minutes) or word goal (type the number of words; 1000 the first time), shown as a line growing down the right edge of the screen; blinks when the time is up or the goal is reached. No idle sleep while it runs. Again while running: restart, switch or stop |
+| Ctrl+T | Writing timer (15, 25 or 50 minutes) or word goal (type the number of words; 1000 the first time), shown as a line growing down the right edge of the screen; blinks when the time is up or the goal is reached. No idle sleep while it runs. "Show word count" puts the words written since the start in the top bar (which then stays visible while typing). Again while running: restart, switch or stop |
 | Ctrl+A | Select all |
 | Ctrl+R | Force full e-paper refresh (clears ghosting; e-paper boards only) |
 | Ctrl+B | Cycle backlight / front-light brightness (boards with a controllable backlight) |

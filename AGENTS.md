@@ -1340,8 +1340,15 @@ the Alt+I definition (`counts_feed()` over `editor_doc_text_parts()`,
 without moving the gap); a document closed or replaced keeps its words
 in `s_wg_frozen`. A document whose `editor_doc_generation()` changed
 is recounted from the 1 s tick once typing pauses for 2 s, and every
-15 s during continuous typing on documents up to 512 KB. Code that
-sizes editor or browser widgets must use `CONTENT_W`, not `SCR_W`.
+15 s during continuous typing on documents up to 512 KB. The same
+count runs during a timer. The picker's header is "Start a writing
+sprint" while none runs, and its "Show word count" checkbox
+(`PTIMER_ROW_WCOUNT`, `s_pt_show_words`, NVS `ptwcount`; Enter or
+Space toggles it, the picker stays open) makes `update_title_bar()`
+show the sprint's count after the layout tag (`sprint_title_words()`,
+-1 = none; `ptimer_update_title()` from the tick) and keeps the bars
+from hiding while typing (`bars_may_hide()`). Code that sizes editor
+or browser widgets must use `CONTENT_W`, not `SCR_W`.
 
 **Hide status bars while typing** (`s_hide_bars`, NVS `hidebars`, on
 by default; idle seconds `s_bars_idle_s`, NVS `barsidle`, default 30):

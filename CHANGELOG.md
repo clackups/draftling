@@ -17,6 +17,12 @@ in the git log.
   Ctrl+W, and Git sync simply tries to connect. It also has no
   backlight setting and no battery indicator, which the sandbox
   cannot reach. The Debian package keeps all of these.
+- **Word count during a writing sprint**: the Ctrl+T dialog, now
+  titled "Start a writing sprint", has a "Show word count" checkbox
+  (Enter or Space ticks it). When ticked, the top bar shows how many
+  words you have written since the sprint started, next to the
+  keyboard layout, for timers as well as word goals; the status bars
+  then stay on screen while you type. The setting is remembered.
 
 ### Changed
 
