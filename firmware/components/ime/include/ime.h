@@ -79,6 +79,12 @@ bool ime_composing(void);
  * The pointer stays valid until the next ime_* call. */
 const char *ime_status(void);
 
+/* True for the input methods that show what is being typed, candidates
+ * or choices in the status bar (Japanese, Chinese, Taravinyas, Telugu
+ * RTS): the editor keeps the bars on screen while such a layout is
+ * active. */
+bool ime_uses_status(kb_ime_t kind);
+
 /* Width of the status bar in monospace cells (a CJK character takes
  * two); candidate pages are cut to fit. Default 40. */
 void ime_set_status_cells(int cells);

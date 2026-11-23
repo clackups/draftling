@@ -4493,6 +4493,12 @@ extern "C" kb_ime_t kb_layout_ime(void)
     return s_layouts[s_layout].ime;
 }
 
+extern "C" kb_ime_t kb_layout_ime_of(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return KB_IME_NONE;
+    return s_layouts[layout].ime;
+}
+
 extern "C" const char *kb_layout_name(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return "??";

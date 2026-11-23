@@ -376,6 +376,19 @@ const char *ime_status(void)
     return s_engine ? s_engine->status() : NULL;
 }
 
+bool ime_uses_status(kb_ime_t kind)
+{
+    switch (kind) {
+    case KB_IME_KANA:
+    case KB_IME_PINYIN:
+    case KB_IME_TARAVINYAS:
+    case KB_IME_TELUGU_RTS:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void ime_set_status_cells(int cells)
 {
     g_status_cells = cells > 10 ? cells : 10;

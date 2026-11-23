@@ -45,6 +45,13 @@ in the git log.
 - **Linux: an application icon**: the Linux program now has its own
   icon in the desktop's menu and task bar instead of a generic text
   editor one.
+- **Status bars stay for input methods that use them**: when one of
+  your active keyboard layouts shows its typing in the status bar --
+  Japanese, Chinese, Tamil Taravinyas or Telugu RTS -- the status bars
+  no longer hide while you type, so the candidates and the letters
+  being composed stay visible. F1 -> Settings -> Editor shows "Hide
+  status bars while typing: on (not with ...)" then; remove that
+  layout from Active layouts to let the bars hide again.
 
 ## [1.0.32] - 2026-11-22
 

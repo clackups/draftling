@@ -1358,6 +1358,12 @@ widgets after each key (`bars_typing_begin()` / `bars_typing_end()`,
 made transparent with style opa, since other code toggles their
 HIDDEN flag) and restarts `s_bars_timer`; the timer and every
 `set_status_with_timeout()` call bring them back (`bars_show()`).
+`bars_may_hide()` keeps them while the sprint word count is shown and
+while any active layout's input method types through the status bar
+(`status_ime_layout()`: `ime_uses_status()` -- kana, pinyin,
+Taravinyas, Telugu RTS -- of `kb_layout_ime_of()` for each active
+layout; the Settings row then reads "on (not with <tag>)", and
+turning such a layout on in Active layouts shows hidden bars).
 `EDITOR_Y` / `EDITOR_H` follow `s_bars_hidden` (full screen while
 hidden). `bars_relayout()` re-runs `layout_panes()` and shifts each
 pane's view by the distance its top edge moved, in pixels

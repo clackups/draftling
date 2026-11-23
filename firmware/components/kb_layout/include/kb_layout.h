@@ -179,6 +179,9 @@ typedef enum {
 /* Input method of the active layout (KB_IME_NONE for plain layouts). */
 kb_ime_t kb_layout_ime(void);
 
+/* Input method of the given layout (KB_IME_NONE for plain layouts). */
+kb_ime_t kb_layout_ime_of(kb_layout_id_t layout);
+
 /* Returns the UTF-8 string for a given HID keycode + modifier.
  * The returned pointer is valid until the next call.
  * Returns NULL if the keycode does not produce a character.

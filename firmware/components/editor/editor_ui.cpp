@@ -1536,11 +1536,28 @@ static int find_bars_idle_option(uint16_t s)
 static void bars_relayout(void);
 static int sprint_title_words(void);
 
+/* The active layout that shows its input method's text in the status
+ * bar (ime_uses_status(): Japanese, Chinese, Taravinyas, Telugu RTS),
+ * or KB_LAYOUT_COUNT when none of the active layouts does. */
+static kb_layout_id_t status_ime_layout(void)
+{
+#ifdef DRAFTLING_HAS_IME
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        kb_layout_id_t id = (kb_layout_id_t)i;
+        if (kb_layout_is_active(id) && ime_uses_status(kb_layout_ime_of(id))) return id;
+    }
+#endif
+    return KB_LAYOUT_COUNT;
+}
+
 /* The bars stay while the title bar shows the writing sprint's word
- * count (Ctrl+T, "Show word count"). */
+ * count (Ctrl+T, "Show word count"), and while one of the active
+ * layouts types through the status bar (its candidates or the letters
+ * being composed must stay visible). */
 static bool bars_may_hide(void)
 {
-    return s_hide_bars && sprint_title_words() < 0;
+    return s_hide_bars && sprint_title_words() < 0 &&
+           status_ime_layout() == KB_LAYOUT_COUNT;
 }
 
 static void bars_set_hidden(bool hidden)
@@ -5960,8 +5977,14 @@ static void refresh_settings_items(void)
                  s_name_suggest ? "on" : "off");
         settings_add(SET_ITEM_NAME_SUGGEST, buf);
         /* Hide the title / status bars while typing */
-        snprintf(buf, sizeof(buf), "Hide status bars while typing: %s",
-                 s_hide_bars ? "on" : "off");
+        if (s_hide_bars && status_ime_layout() != KB_LAYOUT_COUNT) {
+            /* On, but kept off by a layout that types in the status bar. */
+            snprintf(buf, sizeof(buf), "Hide status bars while typing: on (not with %s)",
+                     kb_layout_name(status_ime_layout()));
+        } else {
+            snprintf(buf, sizeof(buf), "Hide status bars while typing: %s",
+                     s_hide_bars ? "on" : "off");
+        }
         settings_add(SET_ITEM_HIDE_BARS, buf);
         if (s_hide_bars) {
             snprintf(buf, sizeof(buf), "Show status bars after idle: %us",
@@ -6644,6 +6667,9 @@ static void handle_settings_key(const kb_event_t *ev)
                  * emptied out from under the user. */
                 if (kb_layout_set_active(id, !kb_layout_is_active(id))) {
                     save_active_layouts_to_nvs();
+                    /* A layout that types in the status bar keeps the
+                     * bars on screen. */
+                    if (!bars_may_hide()) bars_show();
                     refresh_layouts_picker_items();
                 }
             } else {
