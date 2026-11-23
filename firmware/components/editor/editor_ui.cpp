@@ -5519,7 +5519,11 @@ static void refresh_menu_items(void)
             menu_add(MENU_ITEM_KB_LAYOUT, buf);
         }
         menu_add(MENU_ITEM_SYNC_MENU, "Sync...");
+#if !(defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED) && defined(CONFIG_DRAFTLING_NO_BLUETOOTH))
+        /* Nothing to show without WiFi control and Bluetooth (the
+         * Flatpak). */
         menu_add(MENU_ITEM_CONN_MENU, "Connectivity...");
+#endif
         menu_add(MENU_ITEM_SYSTEM_MENU, "System & Storage...");
         menu_add(MENU_ITEM_SLEEP, "Sleep now");
 #if defined(CONFIG_DRAFTLING_HAS_QUIT)
@@ -5561,7 +5565,10 @@ static void refresh_menu_items(void)
         break;
 
     case MENU_LVL_CONN:
+#if !defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+        /* The host's network (the Flatpak): nothing to control. */
         menu_add(MENU_ITEM_WIFI_MENU, "WiFi...");
+#endif
 #if !defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
         /* Without a BLE keyboard host (keyboards connected natively:
          * USB, the Linux program's own keyboard) there is nothing to
@@ -7559,10 +7566,14 @@ static void refresh_fmt_picker_items(void)
         lv_label_set_text(s_lbl_menu_hdr,
                           "Really format the SD card? Cannot be undone.");
         lv_list_add_btn(s_menu_list, NULL, "Cancel");
+#if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+        lv_list_add_btn(s_menu_list, NULL, "Yes, format now");
+#else
         lv_list_add_btn(s_menu_list, NULL,
                         s_fmt_keep_wifi
                             ? "Yes, format now (keep WiFi settings)"
                             : "Yes, format now (erase WiFi settings)");
+#endif
         break;
     default:
         return;
@@ -7629,6 +7640,11 @@ static void fmt_task(void *arg)
     esp_err_t ret = sd_card_format();
     if (ret == ESP_OK) {
         const char *wifi_msg;
+#if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+        if (true) {
+            wifi_msg = "";   /* no WiFi settings of our own */
+        } else
+#endif
         if (a->keep_wifi) {
             wifi_msg = (wifi_manager_save_to_file(a->ssid, a->pass) == ESP_OK)
                 ? "The WiFi settings were written to the new wifi.cfg."
@@ -7640,8 +7656,9 @@ static void fmt_task(void *arg)
                 : "Could not erase the WiFi settings from the device memory.";
         }
         snprintf(text, sizeof(text),
-                 "The SD card is formatted.\n%s\n"
-                 "The device will restart in a few seconds.", wifi_msg);
+                 "The SD card is formatted.\n%s%s"
+                 "The device will restart in a few seconds.", wifi_msg,
+                 wifi_msg[0] ? "\n" : "");
     } else {
         snprintf(text, sizeof(text),
                  "Formatting failed: %s.\nRestart the device before "
@@ -7730,8 +7747,12 @@ static void open_fmt_picker(void)
         return;
     }
     s_fmt_keep_wifi = false;
+#if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+    bool have_wifi = false;
+#else
     bool have_wifi = wifi_manager_get_configured(s_fmt_ssid, sizeof(s_fmt_ssid),
                                                  s_fmt_pass, sizeof(s_fmt_pass));
+#endif
     fmt_set_step(have_wifi ? FMT_STEP_WIFI : FMT_STEP_CONFIRM1);
 }
 
@@ -8198,7 +8219,9 @@ static void help_common_rows(std::string &out, int cols, int kc)
     help_row(out, cols, kc, "Ctrl+2", "Split into two equal panes");
     help_row(out, cols, kc, "Ctrl+3", "Split with a wide first pane; again to make it narrow");
     help_row(out, cols, kc, "Ctrl+G", "Git sync of the current project");
+#if !defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
     help_row(out, cols, kc, "Ctrl+W", "WiFi connect / disconnect");
+#endif
     help_row(out, cols, kc, "Ctrl+P", "Sleep");
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
     help_row(out, cols, kc, "Ctrl+B", "Backlight brightness");
@@ -11767,6 +11790,9 @@ static void handle_editor_key_main(const kb_event_t *ev)
             start_project_sync();
             break;
         case 'w':
+#if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+            break;   /* the host's network */
+#endif
             if (!wifi_manager_is_connected()) {
                 editor_ui_set_status("WiFi: connecting...");
                 wifi_connect_async();
@@ -12353,6 +12379,9 @@ static void handle_browser_key(const kb_event_t *ev)
             return;
         }
         if (ck == 'w') {
+#if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
+            return;   /* the host's network */
+#endif
             if (!wifi_manager_is_connected()) {
                 editor_ui_set_status("WiFi: connecting...");
                 wifi_connect_async();

@@ -440,6 +440,8 @@ static const linux_io_backend_t *const s_backends[] = {
 
 static int s_open_w, s_open_h;
 
+bool linux_io_explicit;
+
 bool linux_port_open_io(const char *name)
 {
     if (N_BACKENDS == 0) {
@@ -450,7 +452,10 @@ bool linux_port_open_io(const char *name)
         const linux_io_backend_t *b = s_backends[i];
         if (name && strcmp(name, b->name) != 0) continue;
         int w = 0, h = 0;
-        if (b->open(&w, &h)) {
+        linux_io_explicit = name != NULL;
+        bool ok = b->open(&w, &h);
+        linux_io_explicit = false;
+        if (ok) {
             s_io = b;
             linux_io_repeats_keys = b->repeats_keys;
             s_open_w = w;
@@ -460,6 +465,14 @@ bool linux_port_open_io(const char *name)
         }
         if (name) {
             fprintf(stderr, "draftling: cannot use %s (see the message above)\n", name);
+#if defined(CONFIG_DRAFTLING_LINUX_FLATPAK)
+            /* --socket=fallback-x11: no X display while there is a
+             * Wayland one, even with --socket=x11 added. */
+            if (strcmp(name, "x11") == 0)
+                fprintf(stderr, "draftling: the Flatpak reaches X11 only without Wayland; "
+                        "to use it anyway: flatpak run --nosocket=fallback-x11 "
+                        "--socket=x11 art.draftling.Draftling --io x11\n");
+#endif
             return false;
         }
     }

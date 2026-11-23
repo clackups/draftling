@@ -6,6 +6,24 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Draftling for Linux as a Flatpak**: Flatpak bundles for 64-bit
+  Intel / AMD (x86_64) and 64-bit Arm (aarch64) computers, which
+  install on any distribution with Flatpak and run in a Wayland or
+  X11 window. Your documents and settings are kept in the app's own
+  folder, `~/.var/app/art.draftling.Draftling/`. The Flatpak uses the
+  computer's network connection as it is: it has no WiFi menu or
+  Ctrl+W, and Git sync simply tries to connect. It also has no
+  backlight setting and no battery indicator, which the sandbox
+  cannot reach. The Debian package keeps all of these.
+
+### Changed
+
+- **Linux: an application icon**: the Linux program now has its own
+  icon in the desktop's menu and task bar instead of a generic text
+  editor one.
+
 ## [1.0.32] - 2026-11-22
 
 ### Added

@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "sdkconfig.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,6 +70,11 @@ extern const linux_io_backend_t linux_io_wayland;
 extern const linux_io_backend_t linux_io_x11;
 #endif
 
+/* True while the backend --io names is being opened: a backend that
+ * finds no display then says so as a warning, not only with -v (when
+ * trying each in turn, a missing display is the normal case). */
+extern bool linux_io_explicit;
+
 /* Set by the port from the backend in use (repeats_keys). */
 extern bool linux_io_repeats_keys;
 
@@ -75,6 +82,14 @@ extern bool linux_io_repeats_keys;
 extern int linux_window_w, linux_window_h;
 /* Window title. */
 #define LINUX_WINDOW_TITLE "Draftling"
+/* Wayland app id: the desktop file's name, so the desktop finds its
+ * icon and name (draftling.desktop; the Flatpak renames it to its app
+ * id). */
+#if defined(CONFIG_DRAFTLING_LINUX_FLATPAK)
+#define LINUX_APP_ID "art.draftling.Draftling"
+#else
+#define LINUX_APP_ID "draftling"
+#endif
 
 /* ---- hooks the backends call (lvgl_port_linux.c / keyboard_linux.c) ----- */
 

@@ -1,0 +1,4 @@
+# The Flatpak (FLATPAK=1, packaging/flatpak/): applied on top of
+# sdkconfig.defaults. No backlight, battery or WiFi control in the
+# sandbox; the host's network is taken as always up.
+CONFIG_DRAFTLING_LINUX_FLATPAK=y

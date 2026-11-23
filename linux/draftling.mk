@@ -35,6 +35,9 @@ PROG := $(OUT)/bin/draftling$(if $(filter $(MAIN_PACK),$(PACK)),,-$(PACK))
 
 SDKCONFIG := $(PDIR)/sdkconfig.h
 DEFAULTS  := sdkconfig.defaults
+ifeq ($(FLATPAK),1)
+DEFAULTS  += sdkconfig.defaults.flatpak
+endif
 ifneq ($(PACK),default)
 DEFAULTS  += $(FIRMWARE)/sdkconfig.defaults.lang_$(PACK)
 endif
@@ -153,7 +156,11 @@ endif
 
 # ---- the Linux stand-ins and the I/O backends -----------------------------
 
-LINUX_SRCS := $(filter-out src/io_%.c,$(wildcard src/*.c) $(wildcard src/*.cpp))
+# The network: wifi_linux.c (system state, NetworkManager), or, when
+# the host manages it (the Flatpak), wifi_host.c.
+WIFI_SRC := $(if $(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED),src/wifi_host.c,src/wifi_linux.c)
+LINUX_SRCS := $(filter-out src/io_%.c src/wifi_%.c,$(wildcard src/*.c) $(wildcard src/*.cpp))
+LINUX_SRCS += $(WIFI_SRC)
 LINUX_SRCS += $(foreach b,$(IO),src/io_$(b).c)
 
 IO_DEFS := $(foreach b,$(IO),-DLINUX_IO_$(shell echo $(b) | tr a-z A-Z))
@@ -167,39 +174,60 @@ PKG_INC :=
 PKG_STATIC :=
 
 # OpenSSL (TLS for Git sync and Draftbox, SHA-1).
-OPENSSL_LIBS := $(shell pkg-config --static --libs libssl libcrypto 2>/dev/null)
+# LINK=dynamic (the Flatpak): the system's shared libraries, in
+# PKG_SHARED, instead of static archives.
+PKG_SHARED :=
+PKGCONF_LIBS := $(if $(filter static,$(LINK)),--static) --libs
+add_libs = $(if $(filter static,$(LINK)),$(eval PKG_STATIC += $(call static_of,$(1))),$(eval PKG_SHARED += $(1)))
+
+OPENSSL_LIBS := $(shell pkg-config $(PKGCONF_LIBS) libssl libcrypto 2>/dev/null)
 ifeq ($(OPENSSL_LIBS),)
 $(error OpenSSL development files not found (pkg-config libssl libcrypto) -- see README.md)
 endif
 PKG_INC    += $(shell pkg-config --cflags libssl libcrypto)
-PKG_STATIC += $(call static_of,$(OPENSSL_LIBS))
+$(call add_libs,$(OPENSSL_LIBS))
 
 # Wayland: libwayland-client built by wayland.mk, protocol code from
 # wayland-protocols, generated with the wayland-scanner wayland.mk
 # builds.
 ifneq ($(filter wayland,$(IO)),)
+WL_GEN   := $(OUT)/wayland-gen
+ifeq ($(LINK),static)
 WL_INST  := $(OUT)/wayland-inst
 WL_PROTO := $(BUILD)/wayland-protocols
-WL_GEN   := $(OUT)/wayland-gen
+else
+WL_PROTO := $(shell pkg-config --variable=pkgdatadir wayland-protocols 2>/dev/null)
+ifeq ($(WL_PROTO),)
+$(error wayland-protocols not found (pkg-config wayland-protocols))
+endif
+endif
 WL_XML_xdg-shell := $(WL_PROTO)/stable/xdg-shell/xdg-shell.xml
 WL_XML_xdg-decoration := $(WL_PROTO)/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml
 WL_PROTOS := xdg-shell xdg-decoration
 WL_HDRS := $(foreach p,$(WL_PROTOS),$(WL_GEN)/$(p)-client-protocol.h)
 WL_SRCS := $(foreach p,$(WL_PROTOS),$(WL_GEN)/$(p)-protocol.c)
+ifeq ($(LINK),static)
 WAYLAND_SCANNER ?= $(BUILD)/wayland-scanner-inst/bin/wayland-scanner
 PKG_INC += -I$(WL_INST)/include -I$(WL_GEN)
 FFI_LIBS := $(shell pkg-config --static --libs libffi 2>/dev/null || echo -lffi)
 PKG_STATIC += $(WL_INST)/lib/libwayland-client.a $(call static_of,$(FFI_LIBS))
+WL_CFLAGS := -I$(WL_INST)/include
+else
+WAYLAND_SCANNER ?= $(shell pkg-config --variable=wayland_scanner wayland-scanner 2>/dev/null || echo wayland-scanner)
+WL_CFLAGS := $(shell pkg-config --cflags wayland-client)
+PKG_INC += $(WL_CFLAGS) -I$(WL_GEN)
+PKG_SHARED += $(shell pkg-config --libs wayland-client)
+endif
 endif
 
 # X11 through XCB (+ the XKB extension for detectable auto-repeat).
 ifneq ($(filter x11,$(IO)),)
-XCB_LIBS := $(shell pkg-config --static --libs xcb xcb-xkb 2>/dev/null)
+XCB_LIBS := $(shell pkg-config $(PKGCONF_LIBS) xcb xcb-xkb 2>/dev/null)
 ifeq ($(XCB_LIBS),)
 $(error XCB development files not found (pkg-config xcb xcb-xkb) -- see README.md)
 endif
 PKG_INC    += $(shell pkg-config --cflags xcb xcb-xkb)
-PKG_STATIC += $(call static_of,$(XCB_LIBS))
+$(call add_libs,$(XCB_LIBS))
 endif
 
 EMBED_S := $(PDIR)/embed.S
@@ -239,10 +267,14 @@ HB_FLAGS := -Os $(ABI_FLAGS) -MMD -MP -DHB_TINY -DHB_NO_MT -fno-exceptions -fno-
 	-DHB_CONFIG_OVERRIDE_LAST_H='"hb_draftling_config.h"' \
 	-I$(COMPONENTS)/harfbuzz/config -I$(COMPONENTS)/harfbuzz/src -w
 
-LDFLAGS := $(OPT) -pthread -static-libgcc -static-libstdc++ \
+LDFLAGS := $(OPT) -pthread $(if $(filter static,$(LINK)),-static-libgcc -static-libstdc++) \
 	-Wl,--wrap=lv_text_get_line_width -Wl,--as-needed
 
-LDLIBS := $(LVGL_LIB) -Wl,-Bstatic $(PKG_STATIC) -Wl,-Bdynamic -ldl -lm -lrt
+# (Commas in variables: $(if) would split them.)
+LD_STATIC  := -Wl,-Bstatic
+LD_DYNAMIC := -Wl,-Bdynamic
+LDLIBS := $(LVGL_LIB) $(if $(strip $(PKG_STATIC)),$(LD_STATIC) $(PKG_STATIC) $(LD_DYNAMIC)) \
+	$(PKG_SHARED) -ldl -lm -lrt
 
 # ---- rules ------------------------------------------------------------------
 
@@ -290,7 +322,7 @@ $(WL_GEN)/%-protocol.c:
 
 $(PDIR)/obj/wl/%.c.o: $(WL_GEN)/%.c
 	@mkdir -p $(dir $@)
-	@$(CC) $(OPT) -I$(WL_INST)/include -c $< -o $@
+	@$(CC) $(OPT) $(WL_CFLAGS) -c $< -o $@
 
 $(PDIR)/obj/up/%.cc.o: ../%.cc $(GEN_HDRS)
 	@mkdir -p $(dir $@)

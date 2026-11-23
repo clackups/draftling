@@ -1,0 +1,71 @@
+# Flatpak of Draftling for Linux (`make flatpak`, build-flatpak.sh).
+#
+# The "all" language pack with both I/O backends, built in the
+# Freedesktop SDK with FLATPAK=1: sdkconfig.defaults.flatpak (no
+# backlight, no battery indicator, the host's network taken as always
+# up, no WiFi control) and the runtime's shared libraries
+# (LINK=dynamic). Documents and settings go to the app's own folders,
+# ~/.var/app/art.draftling.Draftling/data/draftling and .../config/draftling
+# ($XDG_DATA_HOME / $XDG_CONFIG_HOME inside the sandbox), so no access
+# to the home folder is needed.
+#
+# The sources are this checkout's (paths relative to this file); the
+# dependencies the Makefile would download are pinned here, since the
+# build runs without network access.
+app-id: art.draftling.Draftling
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: draftling
+rename-desktop-file: draftling.desktop
+rename-icon: draftling
+finish-args:
+  # The window: Wayland, or X11 when the session has no Wayland.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Git sync and Draftbox.
+  - --share=network
+modules:
+  - name: draftling
+    buildsystem: simple
+    build-commands:
+      - touch linux/build/lvgl/.fetched-v9.6.0
+      - make -C linux -j${FLATPAK_BUILDER_N_JOBS} FLATPAK=1 PREFIX=/app install
+      - sed -i 's|<launchable type="desktop-id">draftling.desktop</launchable>|<launchable type="desktop-id">art.draftling.Draftling.desktop</launchable>|'
+        /app/share/metainfo/art.draftling.Draftling.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..
+        dest: linux
+        skip:
+          - build
+          - dist
+      - type: dir
+        path: ../../../firmware/main
+        dest: firmware/main
+      - type: dir
+        path: ../../../firmware/components
+        dest: firmware/components
+      - type: file
+        path: ../../../firmware/CMakeLists.txt
+        dest: firmware
+      - type: file
+        path: ../../../firmware/sdkconfig.defaults.lang_all
+        dest: firmware
+      - type: file
+        path: ../../../LICENSE
+      # Pinned as in linux/Makefile.
+      - type: git
+        url: https://github.com/lvgl/lvgl.git
+        tag: v9.6.0
+        commit: 80ca777e37a2b176770726a02e07a6fb79ef0b39
+        dest: linux/build/lvgl
+      - type: file
+        url: https://raw.githubusercontent.com/ulfalizer/Kconfiglib/v14.1.0/kconfiglib.py
+        sha256: d81c16ca77a451e52e93c99d39ad9451d645506450766c9a6b7193d55c439103
+        dest: linux/build/kconfiglib
+      - type: file
+        url: https://raw.githubusercontent.com/richgel999/miniz/v114/miniz.c
+        sha256: 254342f2712562d9cd86a1c5a5d7a6875d1d9f87e56a7b39b86d847368f9bebe
+        dest: linux/build/miniz

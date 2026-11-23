@@ -385,7 +385,10 @@ static bool wl_open(int *w, int *h)
 {
     s_dpy = wl_display_connect(NULL);
     if (!s_dpy) {
-        ESP_LOGI(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
+        if (linux_io_explicit)
+            ESP_LOGW(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
+        else
+            ESP_LOGI(TAG, "No Wayland display (WAYLAND_DISPLAY not set or not reachable)");
         return false;
     }
     s_reg = wl_display_get_registry(s_dpy);
@@ -407,7 +410,7 @@ static bool wl_open(int *w, int *h)
     s_top = xdg_surface_get_toplevel(s_xsurf);
     xdg_toplevel_add_listener(s_top, &s_top_listener, NULL);
     xdg_toplevel_set_title(s_top, LINUX_WINDOW_TITLE);
-    xdg_toplevel_set_app_id(s_top, "draftling");
+    xdg_toplevel_set_app_id(s_top, LINUX_APP_ID);
     xdg_toplevel_set_min_size(s_top, 320, 240);
     if (s_deco_mgr) {
         s_deco = zxdg_decoration_manager_v1_get_toplevel_decoration(s_deco_mgr, s_top);

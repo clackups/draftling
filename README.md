@@ -617,7 +617,8 @@ hardware. See [BUILDING.md](BUILDING.md) for firmware compilation
 instructions.
 
 The Linux program is built with `make` in `linux/`, which can also
-produce a Debian package; see [linux/README.md](linux/README.md).
+produce a Debian package and Flatpak bundles; see
+[linux/README.md](linux/README.md).
 
 
 ## Use of LLM

@@ -313,6 +313,28 @@ add the stand-in or the `draftling.mk` selection there too, and check
 that `make` in `linux/` still builds. The build output (`build/`,
 `dist/`) is not committed.
 
+`make flatpak` builds Flatpak bundles (`dist/draftling_<version>_
+{x86_64,aarch64}.flatpak`; Flathub has no armhf runtime) from
+`linux/packaging/flatpak/art.draftling.Draftling.yml` with
+flatpak-builder in the Freedesktop SDK 25.08 (aarch64 under
+qemu-user-binfmt). The manifest builds with `FLATPAK=1`:
+`linux/sdkconfig.defaults.flatpak` sets `DRAFTLING_LINUX_FLATPAK`
+(prompted, `depends on DRAFTLING_MODEL_LINUX`), which turns off
+`DRAFTLING_DISPLAY_HAS_BACKLIGHT` and `DRAFTLING_HAS_BATTERY` and sets
+`DRAFTLING_NETWORK_HOST_MANAGED`: `src/wifi_host.c` replaces
+`src/wifi_linux.c` (`wifi_manager_network_up()` always true, no WiFi
+device), and `editor_ui.cpp` leaves out the WiFi menu (and F1 ->
+Connectivity, empty without Bluetooth), Ctrl+W, its help row and the
+WiFi step and wording of Format SD card. `FLATPAK=1` also means
+`LINK=dynamic` (the runtime's shared OpenSSL / XCB / libwayland and
+the SDK's wayland-scanner / wayland-protocols, output in
+`build/flatpak/`). Documents and settings stay at `$XDG_DATA_HOME` /
+`$XDG_CONFIG_HOME` `/draftling`, which Flatpak maps into
+`~/.var/app/art.draftling.Draftling/`; permissions are wayland,
+fallback-x11, ipc and network only. The LVGL, Kconfiglib and miniz
+pins in `linux/Makefile` are repeated in the manifest (flatpak-builder
+builds offline): keep them in step.
+
 ## Repository Layout
 
 Paths below are relative to `firmware/` (see the note at the top of
@@ -3383,6 +3405,8 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux |
 | DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
+| DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
+| DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
@@ -3628,15 +3652,21 @@ pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
 `freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
 also get one image per non-default pack, listed in the release's
 `languagePacks` array in `manifest.json`.
-The flasher's `linux` entry (`"kind": "download"`) carries the Debian
-packages of the Linux program (`make deb` / `make deb ARCH=arm64` in
-`linux/`, `firmware/<tag>/draftling_<version>_<arch>.deb`). They are
-built only on an Ubuntu 22.04 machine, so the packages run on the
-oldest glibc the program supports; a release published from here does
-NOT rebuild or update them: leave the `linux` entry's `releases`
-untouched (it keeps pointing at the tag of its last packages), and keep
-that tag's `firmware/<tag>/` directory in the flasher while the entry
-references it.
+The Linux program is not in `manifest.json`: the flasher's own page
+`linux.html` (static, linked from the header of `index.html`) has the
+download links and install instructions, with a version for each kind
+of package. The Debian packages (`make deb` / `make deb ARCH=arm64` /
+`make deb ARCH=armhf` in `linux/`,
+`firmware/<tag>/draftling_<version>_<arch>.deb`) are built only on an
+Ubuntu 22.04 machine, so the packages run on the oldest glibc the
+program supports; a release published from here does NOT rebuild or
+update them: leave their links in `linux.html` untouched (they keep
+pointing at the tag of their last packages), and keep those files in
+the flasher. The Flatpak bundles (`make flatpak` in `linux/`,
+`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`) take
+their glibc from the Flatpak runtime, so they can be built on any
+machine: a release rebuilds them, copies them to `firmware/vX.Y.Z/`
+and updates their links, file names and version in `linux.html`.
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),
@@ -3743,17 +3773,17 @@ tree referenced in steps 1-4.
      older entry only when asked to (e.g. a one-off build next to the
      regular release). Leave boards this release does not cover
      untouched -- they keep pointing at whatever tag they last shipped
-     under -- and likewise the `linux` entry and the Tab5's
+     under -- and likewise the Tab5's
      `c6-upgrade-<V>` release (see above). `xteink_x4_pro`,
      `xteink_x4_classic` and `seeed_reterminal_sticky` each have a
      fourth `parts` entry:
      `{ "path": "firmware/vX.Y.Z/draftling-<board>-otadata.bin",
      "offset": "0xd000" }` (their `draftling-<board>.bin` app part
      still sits at `0x10000`).
-   - Delete every file under `firmware/` that no `manifest.json` entry
-     references any more (check every board, not just the ones just
-     updated; e.g. keep the `.deb` files of the tag the `linux` entry
-     points at, delete that tag's board images), and empty
+   - Delete every file under `firmware/` that neither a `manifest.json`
+     entry nor `linux.html` references any more (check every board, not
+     just the ones just updated; e.g. keep the `.deb` files `linux.html`
+     links to, delete that tag's board images), and empty
      `firmware/<tag>/` directories.
    - Before changing anything in the flasher, bring the clone up to
      date (`git pull --ff-only origin main`; if the history was
