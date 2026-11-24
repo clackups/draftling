@@ -60,7 +60,6 @@ uint32_t utf8_decode(const char *s, size_t len, size_t *n);
 size_t utf8_encode(uint32_t cp, char *out);
 /* Byte length of the last code point of s[0..len). */
 size_t utf8_last_len(const char *s, size_t len);
-bool is_wide_cp(uint32_t cp);
 
 /* ---- Candidate list ---- */
 #define IME_CAND_MAX     64

@@ -86,7 +86,6 @@ typedef struct {
  * a partial list. */
 esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **out, int *count);
 void sd_card_free_list(sd_card_file_entry_t *list);
-long sd_card_file_size(const char *path);
 esp_err_t sd_card_rename(const char *old_path, const char *new_path);
 
 /* True if path names an existing directory. */

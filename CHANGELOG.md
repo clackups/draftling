@@ -141,6 +141,15 @@ in the git log.
   WiFi connected, before showing "WiFi: connected". WiFi status
   updates are now handled by the user-interface task, which has room
   for them.
+- **Over-long names and settings no longer act on the wrong file**: a
+  file path too long for the editor used to be cut short, so "Save
+  as" could write the document under a different, shortened name; it
+  is now refused. Copying a file to another project reports a failed
+  write instead of leaving an incomplete copy. In `git.cfg`, a
+  repository URL, branch or path too long to fit used to be cut short
+  and synced against a different place on the server; Git sync now
+  stops with "Repository URL or path in git.cfg too long" (or
+  "Invalid branch name in git.cfg").
 
 ## [1.0.28] - 2026-11-16
 

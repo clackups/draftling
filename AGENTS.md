@@ -2902,7 +2902,8 @@ after the Ctrl block and before the special-key switch; Ctrl / Alt /
 Win combinations and F-keys call `ime_finish()` first. Width estimates
 (`utf8_cells_in_bytes()`: status bar fitting, title truncation, the
 e-paper typing fast path) count CJK characters as two cells
-(`cp_is_wide()`, same ranges as `cjk_is_wide()`), Tamil by
+(`cjk_cp_is_wide()` in `kb_layout/include/cjk_width.h`, shared with
+the CJK font driver and the input methods), Tamil by
 `tamil_cp_cells()` and Devanagari / Bengali / Telugu by `indic_cp_cells()`
 (`cp_cells()`,
 which needs the code points around). The small text

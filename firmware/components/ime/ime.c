@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "ime_internal.h"
+#include "cjk_width.h"
 
 static const ime_host_t *s_host;
 static const ime_engine_t *s_engine;   /* engine of the open composition */
@@ -141,19 +142,6 @@ size_t utf8_last_len(const char *s, size_t len)
     return len - i;
 }
 
-bool is_wide_cp(uint32_t cp)
-{
-    return (cp >= 0x2E80 && cp <= 0x2FDF) ||
-           (cp >= 0x3000 && cp <= 0x33FF) ||
-           (cp >= 0x3400 && cp <= 0x4DBF) ||
-           (cp >= 0x4E00 && cp <= 0x9FFF) ||
-           (cp >= 0xAC00 && cp <= 0xD7A3) ||
-           (cp >= 0xF900 && cp <= 0xFAFF) ||
-           (cp >= 0xFE30 && cp <= 0xFE4F) ||
-           (cp >= 0xFF01 && cp <= 0xFF60) ||
-           (cp >= 0xFFE0 && cp <= 0xFFE6);
-}
-
 int ime_text_cells(const char *s, size_t len)
 {
     int cells = 0;
@@ -162,7 +150,7 @@ int ime_text_cells(const char *s, size_t len)
         size_t n;
         uint32_t cp = utf8_decode(s + i, len - i, &n);
         if (n == 0) break;
-        cells += is_wide_cp(cp) ? 2 : 1;
+        cells += cjk_cp_is_wide(cp) ? 2 : 1;
         i += n;
     }
     return cells;

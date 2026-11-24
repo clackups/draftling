@@ -79,6 +79,8 @@ static const char *json_string(const char *p, char *out, size_t out_sz, bool *tr
                                                 : (tolower((unsigned char)c) - 'a' + 10));
                 }
                 p += 4;
+                /* A NUL would silently cut the value short. */
+                if (cp == 0) return NULL;
                 /* Surrogates are not expected in this API; replace them. */
                 if (cp >= 0xD800 && cp <= 0xDFFF) cp = '?';
                 if (cp < 0x80) {

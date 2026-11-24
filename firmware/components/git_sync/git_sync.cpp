@@ -62,6 +62,7 @@ typedef struct {
     char local_path[160];      /* project folder, e.g. "/sdcard/MyDrafts" */
     bool configured;
     bool bad_branch;           /* branch= is not a valid branch name */
+    bool too_long;             /* repo_url= or path= does not fit */
 } git_cfg_t;
 
 /* Configuration of the project being synced. Written only by
@@ -938,18 +939,35 @@ static void trim(char *s)
         s[--n] = '\0';
 }
 
+/* Copy a git.cfg value; false when it does not fit. A cut value (a
+ * long token, for one) would fail later in a way that is hard to trace
+ * back here, so say which key was cut -- never the value, which may be
+ * a secret. */
+static bool cfg_set(char *dst, size_t sz, const char *key, const char *val)
+{
+    if (snprintf(dst, sz, "%s", val) < (int)sz) return true;
+    ESP_LOGW(TAG, "git.cfg: %s is too long (%u bytes, at most %u)",
+             key, (unsigned)strlen(val), (unsigned)(sz - 1));
+    return false;
+}
+
 static void parse_config(git_cfg_t *c, const char *data, const char *dir)
 {
     memset(c, 0, sizeof(*c));
     snprintf(c->branch, sizeof(c->branch), "%s", "main");
     snprintf(c->local_path, sizeof(c->local_path), "%s", dir);
-
+    /* A cut repository URL, branch or path names a different place on
+     * the server: never sync with one. */
     const char *p = data;
     while (*p) {
         const char *nl = strchr(p, '\n');
         size_t linelen = nl ? (size_t)(nl - p) : strlen(p);
         char line[400];
-        if (linelen >= sizeof(line)) linelen = sizeof(line) - 1;
+        if (linelen >= sizeof(line)) {
+            ESP_LOGW(TAG, "git.cfg: line of %u bytes truncated to %u",
+                     (unsigned)linelen, (unsigned)(sizeof(line) - 1));
+            linelen = sizeof(line) - 1;
+        }
         memcpy(line, p, linelen);
         line[linelen] = '\0';
         p = nl ? nl + 1 : p + strlen(p);
@@ -962,14 +980,15 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         trim(key);
         trim(val);
 
-        if (!strcmp(key, "repo_url"))          snprintf(c->repo_url, sizeof(c->repo_url), "%s", val);
-        else if (!strcmp(key, "branch"))       snprintf(c->branch, sizeof(c->branch), "%s", val);
-        else if (!strcmp(key, "token"))        snprintf(c->token, sizeof(c->token), "%s", val);
-        else if (!strcmp(key, "username"))     snprintf(c->username, sizeof(c->username), "%s", val);
-        else if (!strcmp(key, "author_name"))  snprintf(c->author_name, sizeof(c->author_name), "%s", val);
-        else if (!strcmp(key, "author_email")) snprintf(c->author_email, sizeof(c->author_email), "%s", val);
+#define CFG_SET(field) cfg_set(c->field, sizeof(c->field), key, val)
+        if (!strcmp(key, "repo_url"))          c->too_long |= !CFG_SET(repo_url);
+        else if (!strcmp(key, "branch"))       c->bad_branch |= !CFG_SET(branch);
+        else if (!strcmp(key, "token"))        CFG_SET(token);
+        else if (!strcmp(key, "username"))     CFG_SET(username);
+        else if (!strcmp(key, "author_name"))  CFG_SET(author_name);
+        else if (!strcmp(key, "author_email")) CFG_SET(author_email);
         else if (!strcmp(key, "path")) {
-            snprintf(c->remote_path, sizeof(c->remote_path), "%s", val);
+            c->too_long |= !CFG_SET(remote_path);
             /* normalise: no leading '/', exactly one trailing '/' */
             char *q = c->remote_path;
             while (*q == '/') memmove(q, q + 1, strlen(q));
@@ -982,11 +1001,12 @@ static void parse_config(git_cfg_t *c, const char *data, const char *dir)
         }
     }
 
+#undef CFG_SET
     if (c->branch[0] == '\0') snprintf(c->branch, sizeof(c->branch), "%s", "main");
     /* The branch name becomes a path under .git/refs: refuse one that
      * is not a valid name (and would reach elsewhere). */
-    c->bad_branch = !git_branch_name_ok(c->branch);
-    c->configured = (c->repo_url[0] != '\0') && !c->bad_branch;
+    if (!git_branch_name_ok(c->branch)) c->bad_branch = true;
+    c->configured = (c->repo_url[0] != '\0') && !c->bad_branch && !c->too_long;
 }
 
 /* "<dir>/git.cfg" */
@@ -1208,7 +1228,9 @@ extern "C" esp_err_t git_sync_start(const char *project_dir, git_sync_direction_
     if (s_draftbox_busy) { set_error("Draftbox connection in progress"); return ESP_ERR_INVALID_STATE; }
     if (!project_dir || !project_dir[0]) { set_error("No project selected"); return ESP_ERR_INVALID_ARG; }
     if (!load_config(&s_cfg, project_dir)) {
-        set_error(s_cfg.bad_branch ? "Invalid branch name in git.cfg" : "Not configured");
+        set_error(s_cfg.bad_branch ? "Invalid branch name in git.cfg"
+                  : s_cfg.too_long ? "Repository URL or path in git.cfg too long"
+                  : "Not configured");
         return ESP_ERR_INVALID_STATE;
     }
     ESP_LOGI(TAG, "Sync %s: %s branch=%s path=%s", project_dir, s_cfg.repo_url,
