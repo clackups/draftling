@@ -173,7 +173,7 @@ idf_component_register(
     SRCS ${srcs}
     INCLUDE_DIRS "include"
     EMBED_FILES ${embed_files}
-    PRIV_REQUIRES lvgl__lvgl
+    PRIV_REQUIRES lvgl__lvgl kb_layout
 )
 
 # Kconfig-conditional requirement: HarfBuzz is an empty component

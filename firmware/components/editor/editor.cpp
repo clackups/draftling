@@ -557,6 +557,12 @@ static size_t transcode_utf16_file(FILE *f, bool little_endian,
 
 extern "C" esp_err_t editor_open_file(const char *path)
 {
+    /* The document keeps the path: one that does not fit would be
+     * saved back under a truncated, different name. */
+    if (strlen(path) >= sizeof(s_path)) {
+        ESP_LOGE(TAG, "Open: path too long: %s", path);
+        return ESP_ERR_INVALID_SIZE;
+    }
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
     fseek(f, 0, SEEK_END);
@@ -648,11 +654,16 @@ extern "C" esp_err_t editor_save_file(void)
     esp_err_t ret = sd_card_write_file_parts(s_path, s_buf, s_gap_start,
                                              s_buf + s_gap_end, s_buf_size - s_gap_end);
     if (ret == ESP_OK) { s_modified = false; ESP_LOGI(TAG, "Saved: %s", s_path); }
+    else ESP_LOGE(TAG, "Save failed: %s (%s)", s_path, esp_err_to_name(ret));
     return ret;
 }
 
 extern "C" esp_err_t editor_save_file_as(const char *path)
 {
+    if (strlen(path) >= sizeof(s_path)) {
+        ESP_LOGE(TAG, "Save as: path too long: %s", path);
+        return ESP_ERR_INVALID_SIZE;
+    }
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
     /* The extension picks the format; any other name keeps the mode

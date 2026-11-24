@@ -38,6 +38,7 @@
 #include "usb_msc.h"
 #endif
 #include "kb_layout.h"
+#include "cjk_width.h"
 #if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_KB_LAYOUT_ENABLE_KO) || \
     defined(CONFIG_KB_LAYOUT_ENABLE_JA) || defined(CONFIG_KB_LAYOUT_ENABLE_ZH) || \
     defined(CONFIG_KB_LAYOUT_ENABLE_TA99) || defined(CONFIG_KB_LAYOUT_ENABLE_TA_TW) || \
@@ -2658,21 +2659,6 @@ static int char_width_for_font(const lv_font_t *font)
 #endif
 }
 
-/* True for code points drawn two monospace cells wide (CJK, Hangul,
- * kana, fullwidth forms; see components/fonts/cjk_font.c). */
-static bool cp_is_wide(uint32_t cp)
-{
-    return (cp >= 0x2E80 && cp <= 0x2FDF) ||
-           (cp >= 0x3000 && cp <= 0x33FF) ||
-           (cp >= 0x3400 && cp <= 0x4DBF) ||
-           (cp >= 0x4E00 && cp <= 0x9FFF) ||
-           (cp >= 0xAC00 && cp <= 0xD7A3) ||
-           (cp >= 0xF900 && cp <= 0xFAFF) ||
-           (cp >= 0xFE30 && cp <= 0xFE4F) ||
-           (cp >= 0xFF01 && cp <= 0xFF60) ||
-           (cp >= 0xFFE0 && cp <= 0xFFE6);
-}
-
 static uint32_t utf8_decode(const char *s, size_t len, size_t *i);
 
 /* Cells of cp between prev and next: two for the wide ones (CJK); a
@@ -2692,7 +2678,7 @@ static int cp_cells(uint32_t prev, uint32_t cp, uint32_t next)
     int d = indic_cp_cells(cp);
     if (d >= 0) return d;
 #endif
-    return cp_is_wide(cp) ? 2 : 1;
+    return cjk_cp_is_wide(cp) ? 2 : 1;
 }
 
 /* Monospace cells taken by the first byte_len bytes of text: one per

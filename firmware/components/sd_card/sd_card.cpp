@@ -500,10 +500,18 @@ extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t 
 
     long sz = -1;
     if (fseek(f, 0, SEEK_END) == 0) sz = ftell(f);
-    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return ESP_FAIL; }
+    if (sz < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        ESP_LOGE(TAG, "Seek failed: %s", path);
+        fclose(f);
+        return ESP_FAIL;
+    }
 
     char *buf = (char *)malloc(sz + 1);
-    if (!buf) { fclose(f); return ESP_ERR_NO_MEM; }
+    if (!buf) {
+        ESP_LOGE(TAG, "Read %s: no memory for %ld bytes", path, sz);
+        fclose(f);
+        return ESP_ERR_NO_MEM;
+    }
 
     size_t rd = fread(buf, 1, sz, f);
     bool err = ferror(f);
@@ -619,15 +627,24 @@ extern "C" bool sd_card_file_exists(const char *path)
 
 extern "C" esp_err_t sd_card_delete_file(const char *path)
 {
-    return (remove(path) == 0) ? ESP_OK : ESP_FAIL;
+    if (remove(path) == 0) return ESP_OK;
+    /* A missing file is a normal outcome for callers that clean up
+     * optional files (metadata sidecars); anything else is worth a
+     * line in the log. */
+    if (errno != ENOENT)
+        ESP_LOGW(TAG, "Delete %s failed: %s", path, strerror(errno));
+    return ESP_FAIL;
 }
 
 extern "C" esp_err_t sd_card_mkdir(const char *path)
 {
-    /* Create parent directories as needed */
+    /* Create parent directories as needed. A path that does not fit is
+     * refused: a truncated copy would create a different directory. */
     char tmp[256];
-    strncpy(tmp, path, sizeof(tmp) - 1);
-    tmp[sizeof(tmp) - 1] = '\0';
+    if (snprintf(tmp, sizeof(tmp), "%s", path) >= (int)sizeof(tmp)) {
+        ESP_LOGE(TAG, "mkdir: path too long: %s", path);
+        return ESP_ERR_INVALID_SIZE;
+    }
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = '\0';
@@ -635,7 +652,9 @@ extern "C" esp_err_t sd_card_mkdir(const char *path)
             *p = '/';
         }
     }
-    return (mkdir(tmp, 0755) == 0 || errno == EEXIST) ? ESP_OK : ESP_FAIL;
+    if (mkdir(tmp, 0755) == 0 || errno == EEXIST) return ESP_OK;
+    ESP_LOGE(TAG, "mkdir %s failed: %s", tmp, strerror(errno));
+    return ESP_FAIL;
 }
 
 /* qsort() comparator: directories first, then files; both groups
@@ -656,7 +675,10 @@ extern "C" esp_err_t sd_card_list_dir(const char *path, sd_card_file_entry_t **o
     *out = NULL;
     *count = 0;
     DIR *dir = opendir(path);
-    if (!dir) return ESP_FAIL;
+    if (!dir) {
+        ESP_LOGE(TAG, "list_dir %s: %s", path, strerror(errno));
+        return ESP_FAIL;
+    }
     sd_card_file_entry_t *v = NULL;
     int n = 0, cap = 0;
     esp_err_t ret = ESP_OK;
@@ -700,15 +722,11 @@ extern "C" void sd_card_free_list(sd_card_file_entry_t *list)
     if (list) heap_caps_free(list);
 }
 
-extern "C" long sd_card_file_size(const char *path)
-{
-    struct stat st;
-    return (stat(path, &st) == 0) ? st.st_size : -1;
-}
-
 extern "C" esp_err_t sd_card_rename(const char *old_path, const char *new_path)
 {
-    return (rename(old_path, new_path) == 0) ? ESP_OK : ESP_FAIL;
+    if (rename(old_path, new_path) == 0) return ESP_OK;
+    ESP_LOGE(TAG, "Rename %s -> %s failed: %s", old_path, new_path, strerror(errno));
+    return ESP_FAIL;
 }
 
 extern "C" bool sd_card_is_dir(const char *path)
@@ -720,11 +738,21 @@ extern "C" bool sd_card_is_dir(const char *path)
 extern "C" esp_err_t sd_card_copy_file(const char *src, const char *dst)
 {
     if (!s_card) return ESP_ERR_INVALID_STATE;
-    if (sd_card_file_exists(dst)) return ESP_ERR_INVALID_STATE;
+    if (sd_card_file_exists(dst)) {
+        ESP_LOGW(TAG, "Copy: %s already exists", dst);
+        return ESP_ERR_INVALID_STATE;
+    }
     FILE *in = fopen(src, "rb");
-    if (!in) return ESP_FAIL;
+    if (!in) {
+        ESP_LOGE(TAG, "Copy: cannot open %s: %s", src, strerror(errno));
+        return ESP_FAIL;
+    }
     FILE *out = fopen(dst, "wb");
-    if (!out) { fclose(in); return ESP_FAIL; }
+    if (!out) {
+        ESP_LOGE(TAG, "Copy: cannot create %s: %s", dst, strerror(errno));
+        fclose(in);
+        return ESP_FAIL;
+    }
     const size_t CHUNK = 4096;
     char *buf = (char *)malloc(CHUNK);
     esp_err_t ret = buf ? ESP_OK : ESP_ERR_NO_MEM;
@@ -735,9 +763,14 @@ extern "C" esp_err_t sd_card_copy_file(const char *src, const char *dst)
     }
     free(buf);
     fclose(in);
-    if (ret == ESP_OK) fsync(fileno(out));
-    fclose(out);
-    if (ret != ESP_OK) remove(dst);
+    /* The last cluster reaches the card on fsync / fclose: a failure
+     * there means the copy is incomplete. */
+    if (ret == ESP_OK && fsync(fileno(out)) != 0) ret = ESP_FAIL;
+    if (fclose(out) != 0 && ret == ESP_OK) ret = ESP_FAIL;
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Copy %s -> %s failed: %s", src, dst, esp_err_to_name(ret));
+        remove(dst);
+    }
     return ret;
 }
 
@@ -746,14 +779,23 @@ extern "C" esp_err_t sd_card_copy_file(const char *src, const char *dst)
 extern "C" esp_err_t sd_card_remove_tree(const char *path)
 {
     DIR *dir = opendir(path);
-    if (!dir) return ESP_FAIL;
+    if (!dir) {
+        ESP_LOGW(TAG, "remove_tree: cannot open %s: %s", path, strerror(errno));
+        return ESP_FAIL;
+    }
     esp_err_t ret = ESP_OK;
     char *full = (char *)malloc(512);
     if (!full) { closedir(dir); return ESP_ERR_NO_MEM; }
     struct dirent *ent;
     while ((ent = readdir(dir)) != NULL) {
         if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
-        snprintf(full, 512, "%s/%s", path, ent->d_name);
+        /* A truncated path would name a different file: skip it (the
+         * folder then stays, and the caller hears about it). */
+        if (snprintf(full, 512, "%s/%s", path, ent->d_name) >= 512) {
+            ESP_LOGW(TAG, "remove_tree: path too long under %s", path);
+            ret = ESP_FAIL;
+            continue;
+        }
         bool is_dir = (ent->d_type == DT_DIR);
         if (is_dir) {
             if (sd_card_remove_tree(full) != ESP_OK) ret = ESP_FAIL;

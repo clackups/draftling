@@ -29,10 +29,6 @@ extern "C" {
  * be chained further. Returns NULL when the pool is exhausted. */
 lv_font_t *cjk_font_create(int32_t line_height, int32_t base_line, int cell_w);
 
-/* True for code points drawn two cells wide by the CJK fonts (used by
- * width estimates in the editor). Does not check glyph availability. */
-bool cjk_is_wide(uint32_t cp);
-
 #ifdef __cplusplus
 }
 #endif
