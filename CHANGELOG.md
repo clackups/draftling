@@ -6,6 +6,14 @@ in the git log.
 
 ## [Unreleased]
 
+### Added
+
+- **Linux: copy and paste with other programs**: in Draftling for
+  Linux, Ctrl+C and Ctrl+X in the editor now also put the selected
+  text on the desktop clipboard, and Ctrl+V pastes text copied in any
+  other program, on Wayland and X11 desktops alike, including in the
+  Flatpak. Windows line ends in pasted text become plain line ends.
+
 ## [1.0.33] - 2026-11-24
 
 ### Added

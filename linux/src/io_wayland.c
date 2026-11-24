@@ -8,6 +8,12 @@
  * its own layouts. The window asks for server-side decorations
  * (xdg-decoration) where the compositor offers them; elsewhere (GNOME)
  * it has none.
+ *
+ * The desktop clipboard is the core wl_data_device: a copy makes a
+ * wl_data_source offering the text, a paste reads the current
+ * selection's wl_data_offer through a pipe. Both transfers are
+ * non-blocking and carried on by wl_dispatch() (the pipes are polled
+ * through wl_poll_fds()), since the other program may take its time.
  */
 
 
@@ -17,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -65,6 +72,36 @@ static double s_px, s_py;
 static bool s_btn;
 static double s_axis;
 static bool s_want_redraw;     /* a frame was dropped: no free buffer */
+static uint32_t s_input_serial; /* of the last key event, for set_selection */
+
+/* Clipboard. The text types offered and accepted, best first; STRING is
+ * Latin-1, the others UTF-8. */
+static const char *const CLIP_MIMES[] = {
+    "text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING",
+};
+#define CLIP_N_MIMES   (sizeof(CLIP_MIMES) / sizeof(CLIP_MIMES[0]))
+#define CLIP_MIME_STRING 4
+#define CLIP_N_TX      4                    /* deliveries at once */
+#define CLIP_MAX_RX    (256u * 1024 * 1024) /* largest text accepted */
+
+typedef struct {
+    int fd;
+    char *data;   /* NULL: the slot is free */
+    size_t len, off;
+} clip_tx_t;
+
+static struct wl_data_device_manager *s_ddm;
+static struct wl_data_device *s_ddev;
+static uint32_t s_ddm_version;
+static struct wl_data_offer *s_sel_offer;   /* the selection, another program's */
+static struct wl_data_offer *s_dnd_offer;   /* drag and drop: never accepted */
+static struct wl_data_source *s_src;        /* ours, while we own the selection */
+static char *s_clip;
+static size_t s_clip_len;
+static clip_tx_t s_tx[CLIP_N_TX];
+static int s_rx_fd = -1;
+static char *s_rx;
+static size_t s_rx_len, s_rx_cap;
 
 /* ---- shared memory ---------------------------------------------------------- */
 
@@ -201,7 +238,8 @@ static void kb_keymap(void *data, struct wl_keyboard *k, uint32_t fmt, int32_t f
 static void kb_enter(void *data, struct wl_keyboard *k, uint32_t serial,
                      struct wl_surface *s, struct wl_array *keys)
 {
-    (void)data; (void)k; (void)serial; (void)s; (void)keys;
+    (void)data; (void)k; (void)s; (void)keys;
+    s_input_serial = serial;
     linux_io_release_all_keys();
 }
 
@@ -214,7 +252,8 @@ static void kb_leave(void *data, struct wl_keyboard *k, uint32_t serial, struct 
 static void kb_key(void *data, struct wl_keyboard *k, uint32_t serial, uint32_t time,
                    uint32_t key, uint32_t state)
 {
-    (void)data; (void)k; (void)serial; (void)time;
+    (void)data; (void)k; (void)time;
+    s_input_serial = serial;
     linux_io_key((int)key, state == WL_KEYBOARD_KEY_STATE_PRESSED);
 }
 
@@ -315,6 +354,295 @@ static const struct wl_pointer_listener s_ptr_listener = {
     .axis_discrete = ptr_axis_discrete,
 };
 
+/* ---- clipboard ---------------------------------------------------------------- */
+
+/* Each offer carries the mask of CLIP_MIMES it offers as user data. */
+static void offer_mime(void *data, struct wl_data_offer *o, const char *mime)
+{
+    (void)o;
+    unsigned *mask = (unsigned *)data;
+    if (!mask) return;
+    for (unsigned i = 0; i < CLIP_N_MIMES; i++)
+        if (strcasecmp(mime, CLIP_MIMES[i]) == 0) *mask |= 1u << i;
+}
+
+static void offer_source_actions(void *data, struct wl_data_offer *o, uint32_t a)
+{
+    (void)data; (void)o; (void)a;
+}
+
+static void offer_action(void *data, struct wl_data_offer *o, uint32_t a)
+{
+    (void)data; (void)o; (void)a;
+}
+
+static const struct wl_data_offer_listener s_offer_listener = {
+    .offer = offer_mime,
+    .source_actions = offer_source_actions,
+    .action = offer_action,
+};
+
+static void offer_free(struct wl_data_offer **o)
+{
+    if (!*o) return;
+    free(wl_data_offer_get_user_data(*o));
+    wl_data_offer_destroy(*o);
+    *o = NULL;
+}
+
+static void dd_data_offer(void *data, struct wl_data_device *d, struct wl_data_offer *o)
+{
+    (void)data; (void)d;
+    wl_data_offer_add_listener(o, &s_offer_listener, calloc(1, sizeof(unsigned)));
+}
+
+static void dd_enter(void *data, struct wl_data_device *d, uint32_t serial,
+                     struct wl_surface *s, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *o)
+{
+    (void)data; (void)d; (void)serial; (void)s; (void)x; (void)y;
+    offer_free(&s_dnd_offer);
+    s_dnd_offer = o;
+}
+
+static void dd_leave(void *data, struct wl_data_device *d)
+{
+    (void)data; (void)d;
+    offer_free(&s_dnd_offer);
+}
+
+static void dd_motion(void *data, struct wl_data_device *d, uint32_t t, wl_fixed_t x, wl_fixed_t y)
+{
+    (void)data; (void)d; (void)t; (void)x; (void)y;
+}
+
+static void dd_drop(void *data, struct wl_data_device *d)
+{
+    (void)data; (void)d;
+}
+
+static void dd_selection(void *data, struct wl_data_device *d, struct wl_data_offer *o)
+{
+    (void)data; (void)d;
+    offer_free(&s_sel_offer);
+    s_sel_offer = o;
+}
+
+static const struct wl_data_device_listener s_dd_listener = {
+    .data_offer = dd_data_offer,
+    .enter = dd_enter,
+    .leave = dd_leave,
+    .motion = dd_motion,
+    .drop = dd_drop,
+    .selection = dd_selection,
+};
+
+static void tx_end(clip_tx_t *t)
+{
+    if (!t->data) return;
+    close(t->fd);
+    free(t->data);
+    memset(t, 0, sizeof(*t));
+}
+
+static void src_target(void *data, struct wl_data_source *src, const char *mime)
+{
+    (void)data; (void)src; (void)mime;
+}
+
+/* Another program pastes: queue the text for its pipe. */
+static void src_send(void *data, struct wl_data_source *src, const char *mime, int32_t fd)
+{
+    (void)data;
+    int kind = -1;
+    for (unsigned i = 0; i < CLIP_N_MIMES; i++)
+        if (strcasecmp(mime, CLIP_MIMES[i]) == 0) kind = (int)i;
+    clip_tx_t *t = NULL;
+    for (int i = 0; i < CLIP_N_TX && !t; i++)
+        if (!s_tx[i].data) t = &s_tx[i];
+    if (src != s_src || kind < 0 || !t || !s_clip) {
+        close(fd);
+        return;
+    }
+    if (kind == CLIP_MIME_STRING) {
+        t->data = linux_clip_to_latin1(s_clip, s_clip_len, &t->len);
+    } else {
+        t->data = (char *)malloc(s_clip_len + 1);
+        if (t->data) memcpy(t->data, s_clip, s_clip_len);
+        t->len = s_clip_len;
+    }
+    if (!t->data) {
+        close(fd);
+        return;
+    }
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    t->fd = fd;
+    t->off = 0;
+}
+
+static void clip_drop_own(void)
+{
+    if (s_src) wl_data_source_destroy(s_src);
+    s_src = NULL;
+    free(s_clip);
+    s_clip = NULL;
+    s_clip_len = 0;
+}
+
+/* Another program took the clipboard over. */
+static void src_cancelled(void *data, struct wl_data_source *src)
+{
+    (void)data;
+    if (src == s_src) clip_drop_own();
+    else wl_data_source_destroy(src);
+}
+
+static void src_dnd_drop_performed(void *data, struct wl_data_source *src)
+{
+    (void)data; (void)src;
+}
+
+static void src_dnd_finished(void *data, struct wl_data_source *src)
+{
+    (void)data; (void)src;
+}
+
+static void src_action(void *data, struct wl_data_source *src, uint32_t a)
+{
+    (void)data; (void)src; (void)a;
+}
+
+static const struct wl_data_source_listener s_src_listener = {
+    .target = src_target,
+    .send = src_send,
+    .cancelled = src_cancelled,
+    .dnd_drop_performed = src_dnd_drop_performed,
+    .dnd_finished = src_dnd_finished,
+    .action = src_action,
+};
+
+static void rx_end(bool deliver)
+{
+    if (s_rx_fd < 0) return;
+    close(s_rx_fd);
+    s_rx_fd = -1;
+    if (deliver) linux_io_clipboard_text(s_rx ? s_rx : "", s_rx_len);
+    free(s_rx);
+    s_rx = NULL;
+    s_rx_len = s_rx_cap = 0;
+}
+
+static void rx_fail(void)
+{
+    rx_end(false);
+    linux_io_clipboard_text(NULL, 0);
+}
+
+/* Carry the transfers on as far as the pipes allow. */
+static void clip_pump(void)
+{
+    for (int i = 0; i < CLIP_N_TX; i++) {
+        clip_tx_t *t = &s_tx[i];
+        bool done = false;
+        while (t->data && !done) {
+            if (t->off >= t->len) {
+                done = true;
+                break;
+            }
+            ssize_t n = write(t->fd, t->data + t->off, t->len - t->off);
+            if (n > 0) t->off += (size_t)n;
+            else if (n < 0 && errno == EINTR) continue;
+            else if (n < 0 && errno == EAGAIN) break;
+            else done = true;   /* the reader went away */
+        }
+        if (done) tx_end(t);
+    }
+    while (s_rx_fd >= 0) {
+        if (s_rx_cap - s_rx_len < 65536) {
+            size_t cap = s_rx_cap ? s_rx_cap * 2 : 65536;
+            char *b = cap > CLIP_MAX_RX ? NULL : (char *)realloc(s_rx, cap);
+            if (!b) {
+                ESP_LOGW(TAG, "Clipboard text too large");
+                rx_fail();
+                return;
+            }
+            s_rx = b;
+            s_rx_cap = cap;
+        }
+        ssize_t n = read(s_rx_fd, s_rx + s_rx_len, s_rx_cap - s_rx_len);
+        if (n > 0) s_rx_len += (size_t)n;
+        else if (n == 0) rx_end(true);
+        else if (errno == EINTR) continue;
+        else if (errno == EAGAIN) break;
+        else rx_fail();
+    }
+}
+
+static void wl_clip_set(const char *text, size_t len)
+{
+    if (!s_ddev) return;
+    if (!text) {
+        if (s_src) wl_data_device_set_selection(s_ddev, NULL, s_input_serial);
+        clip_drop_own();
+        return;
+    }
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) return;
+    memcpy(copy, text, len);
+    copy[len] = '\0';
+    struct wl_data_source *src = wl_data_device_manager_create_data_source(s_ddm);
+    wl_data_source_add_listener(src, &s_src_listener, NULL);
+    for (unsigned i = 0; i < CLIP_N_MIMES; i++) wl_data_source_offer(src, CLIP_MIMES[i]);
+    wl_data_device_set_selection(s_ddev, src, s_input_serial);
+    clip_drop_own();
+    s_src = src;
+    s_clip = copy;
+    s_clip_len = len;
+    wl_display_flush(s_dpy);
+}
+
+static bool wl_clip_request(void)
+{
+    if (!s_ddev || s_src || !s_sel_offer) return false;
+    unsigned *mask = (unsigned *)wl_data_offer_get_user_data(s_sel_offer);
+    int kind = -1;
+    for (unsigned i = 0; i < CLIP_N_MIMES && kind < 0; i++)
+        if (mask && (*mask & (1u << i))) kind = (int)i;
+    if (kind < 0) return false;
+    int p[2];
+    if (pipe2(p, O_CLOEXEC | O_NONBLOCK) != 0) return false;
+    rx_end(false);
+    wl_data_offer_receive(s_sel_offer, CLIP_MIMES[kind], p[1]);
+    close(p[1]);
+    s_rx_fd = p[0];
+    wl_display_flush(s_dpy);
+    return true;
+}
+
+static int wl_poll_fds(struct pollfd *fds, int max)
+{
+    int n = 0;
+    if (s_rx_fd >= 0 && n < max) fds[n++] = (struct pollfd){ .fd = s_rx_fd, .events = POLLIN };
+    for (int i = 0; i < CLIP_N_TX && n < max; i++)
+        if (s_tx[i].data) fds[n++] = (struct pollfd){ .fd = s_tx[i].fd, .events = POLLOUT };
+    return n;
+}
+
+static void clip_close_all(void)
+{
+    rx_end(false);
+    for (int i = 0; i < CLIP_N_TX; i++) tx_end(&s_tx[i]);
+    clip_drop_own();
+    offer_free(&s_sel_offer);
+    offer_free(&s_dnd_offer);
+    if (s_ddev) {
+        if (s_ddm_version >= 2) wl_data_device_release(s_ddev);
+        else wl_data_device_destroy(s_ddev);
+    }
+    if (s_ddm) wl_data_device_manager_destroy(s_ddm);
+    s_ddev = NULL;
+    s_ddm = NULL;
+}
+
 /* ---- seat / registry ------------------------------------------------------- */
 
 static void seat_caps(void *data, struct wl_seat *seat, uint32_t caps)
@@ -367,6 +695,9 @@ static void reg_global(void *data, struct wl_registry *r, uint32_t name, const c
         xdg_wm_base_add_listener(s_wm, &s_wm_listener, NULL);
     } else if (strcmp(iface, zxdg_decoration_manager_v1_interface.name) == 0) {
         s_deco_mgr = wl_registry_bind(r, name, &zxdg_decoration_manager_v1_interface, 1);
+    } else if (strcmp(iface, wl_data_device_manager_interface.name) == 0 && !s_ddm) {
+        s_ddm_version = min_u(version, 3);
+        s_ddm = wl_registry_bind(r, name, &wl_data_device_manager_interface, s_ddm_version);
     }
 }
 
@@ -400,6 +731,10 @@ static bool wl_open(int *w, int *h)
         return false;
     }
     wl_display_roundtrip(s_dpy);   /* seat capabilities */
+    if (s_ddm && s_seat) {
+        s_ddev = wl_data_device_manager_get_data_device(s_ddm, s_seat);
+        wl_data_device_add_listener(s_ddev, &s_dd_listener, NULL);
+    }
 
     s_w = linux_window_w ? linux_window_w : CONFIG_DRAFTLING_DISPLAY_WIDTH;
     s_h = linux_window_h ? linux_window_h : CONFIG_DRAFTLING_DISPLAY_HEIGHT;
@@ -443,6 +778,7 @@ static void wl_dispatch(void)
     if (poll(&p, 1, 0) > 0) wl_display_read_events(s_dpy);
     else wl_display_cancel_read(s_dpy);
     wl_display_dispatch_pending(s_dpy);
+    clip_pump();
     if (wl_display_get_error(s_dpy)) {
         ESP_LOGE(TAG, "Connection to the compositor lost");
         linux_io_close();
@@ -477,6 +813,7 @@ static void wl_flush_out(void)
 static void wl_close_all(void)
 {
     if (!s_dpy) return;
+    clip_close_all();
     for (int i = 0; i < N_BUFFERS; i++) buffer_free(&s_bufs[i]);
     if (s_kbd) wl_keyboard_destroy(s_kbd);
     if (s_ptr) wl_pointer_destroy(s_ptr);
@@ -499,4 +836,7 @@ const linux_io_backend_t linux_io_wayland = {
     .present = wl_present,
     .flush = wl_flush_out,
     .close = wl_close_all,
+    .clip_set = wl_clip_set,
+    .clip_request = wl_clip_request,
+    .poll_fds = wl_poll_fds,
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,6 +49,19 @@ void editor_ui_set_coprocessor(const char *chip, const char *firmware);
  * editor_ui_relayout(), both with the LVGL lock held. */
 bool editor_ui_can_relayout(void);
 void editor_ui_relayout(void);
+
+/* The host's desktop clipboard (the Linux program; on a device the
+ * editor's weak defaults do nothing). Ctrl+C / Ctrl+X hand the copied
+ * text to editor_host_clipboard_set() (NULL: the copy is not in
+ * memory, give the clipboard up). Ctrl+V asks
+ * editor_host_clipboard_request(): false means "use the editor's own
+ * clipboard" (Draftling owns the host's, or it has no text); true
+ * means the text follows through editor_ui_host_clipboard_text()
+ * (NULL: there was none), called with the LVGL lock held. All three
+ * run on the LVGL thread. */
+void editor_host_clipboard_set(const char *text, size_t len);
+bool editor_host_clipboard_request(void);
+void editor_ui_host_clipboard_text(const char *text, size_t len);
 
 #ifdef __cplusplus
 }

@@ -256,6 +256,13 @@ void editor_select_all(void);
 bool editor_copy(void);
 bool editor_cut(void);
 bool editor_paste(void);
+/* Replace the selection (if any) with text, as a paste does; false when
+ * it does not fit the buffer (nothing is changed then). */
+bool editor_paste_text(const char *text, size_t len);
+/* The clipboard's text, or NULL when it is empty or kept in the
+ * hidden file on the SD card (a copy too large for memory). Valid
+ * until the next copy or cut. */
+const char *editor_clipboard_data(size_t *len);
 
 #ifdef __cplusplus
 }

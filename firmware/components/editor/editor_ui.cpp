@@ -563,6 +563,35 @@ extern "C" __attribute__((weak)) int display_get_backlight(void)
     return -1;
 }
 
+/* Host desktop clipboard: nothing on a device. The Linux program
+ * overrides both (linux/src/clipboard_linux.c). */
+extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
+{
+    (void)text;
+    (void)len;
+}
+
+extern "C" __attribute__((weak)) bool editor_host_clipboard_request(void)
+{
+    return false;
+}
+
+/* A Ctrl+V waiting for the host clipboard's text: keys typed meanwhile
+ * stay queued (key_drain_cb()), so they land after the pasted text. */
+#define HOST_PASTE_TIMEOUT_MS 3000
+static bool     s_host_paste_pending;
+static uint32_t s_host_paste_start;
+
+/* Offer what Ctrl+C / Ctrl+X just put on the clipboard to the host
+ * (NULL when it went to the SD card file: the host then lets go of its
+ * clipboard, so Ctrl+V uses the editor's own). */
+static void host_clipboard_export(void)
+{
+    size_t len = 0;
+    const char *text = editor_clipboard_data(&len);
+    editor_host_clipboard_set(text, len);
+}
+
 static void load_backlight_from_nvs(void)
 {
     nvs_handle_t h;
@@ -11846,9 +11875,10 @@ static void handle_editor_key_main(const kb_event_t *ev)
             }
             return;
         case 'c':
-            if (editor_copy())
+            if (editor_copy()) {
+                host_clipboard_export();
                 editor_ui_set_status("Copied");
-            else if (editor_selection_active())
+            } else if (editor_selection_active())
                 editor_ui_set_status("Copy failed: no memory or SD card");
             ensure_cursor_visible();
             editor_ui_refresh();
@@ -11858,9 +11888,10 @@ static void handle_editor_key_main(const kb_event_t *ev)
                 editor_ui_set_status("Append-only: deletion disabled");
                 return;
             }
-            if (editor_cut())
+            if (editor_cut()) {
+                host_clipboard_export();
                 editor_ui_set_status("Cut");
-            else if (editor_selection_active())
+            } else if (editor_selection_active())
                 editor_ui_set_status("Cut failed: no memory or SD card");
             ensure_cursor_visible();
             editor_ui_refresh();
@@ -11869,6 +11900,13 @@ static void handle_editor_key_main(const kb_event_t *ev)
             if (s_append_only && !cursor_at_doc_end()) {
                 editor_clear_selection();
                 editor_move_doc_end();
+            }
+            if (s_host_paste_pending) return;
+            if (editor_host_clipboard_request()) {
+                /* The text comes later: editor_ui_host_clipboard_text(). */
+                s_host_paste_pending = true;
+                s_host_paste_start = lv_tick_get();
+                return;
             }
             if (!editor_paste())
                 editor_ui_set_status("Buffer full -- paste truncated");
@@ -12825,6 +12863,12 @@ static void key_drain_cb(lv_timer_t *timer)
     poll_usb_msc_auto_off();
 #endif
 
+    if (s_host_paste_pending) {
+        if (lv_tick_elaps(s_host_paste_start) < HOST_PASTE_TIMEOUT_MS) return;
+        s_host_paste_pending = false;
+        editor_ui_set_status("Paste failed: the clipboard did not answer");
+    }
+
     int drained = 0;
     while (xQueueReceive(s_key_queue, &ev, 0) == pdTRUE) {
         process_key_event(&ev);
@@ -12854,6 +12898,22 @@ static void key_drain_cb(lv_timer_t *timer)
         display_set_partial_clip(0, 0, 0, 0);
     }
 #endif
+}
+
+extern "C" void editor_ui_host_clipboard_text(const char *text, size_t len)
+{
+    if (!s_host_paste_pending) return;   /* timed out already */
+    s_host_paste_pending = false;
+    if (!text) {
+        editor_ui_set_status("The clipboard holds no text");
+        return;
+    }
+    if (!s_scr || lv_screen_active() != s_scr) return;
+    pane_bind_focus();
+    if (!editor_paste_text(text, len))
+        editor_ui_set_status("Buffer full -- paste truncated");
+    ensure_cursor_visible();
+    editor_ui_refresh();
 }
 
 /* BLE callback: enqueue the event and return immediately.
@@ -12897,7 +12957,7 @@ extern "C" void editor_ui_handle_key(const void *event)
 static void key_repeat_cb(lv_timer_t *timer)
 {
     (void)timer;
-    if (!s_repeat_held) return;
+    if (!s_repeat_held || s_host_paste_pending) return;
 
     uint32_t now = xTaskGetTickCount();
     uint32_t elapsed = (now - s_repeat_start) * portTICK_PERIOD_MS;
