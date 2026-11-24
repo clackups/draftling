@@ -70,6 +70,13 @@ in the git log.
 
 ### Fixed
 
+- **USB keyboard going silent**: a USB keyboard (M5Stack Tab5,
+  MicroJournal, any board with the new USB host option) stopped
+  typing, fully or for most keys, after a single failed transfer --
+  more likely behind a USB hub -- until it was unplugged. The input is
+  now restarted at once. Keyboards that report their keys on two
+  interfaces no longer lose keys either.
+
 - **Over-long names and settings no longer act on the wrong file**: a
   file path too long for the editor used to be cut short, so "Save
   as" could write the document under a different, shortened name; it
