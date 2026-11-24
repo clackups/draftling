@@ -2024,8 +2024,12 @@ static void wakeup_btn_init(void)
                  WAKEUP_GPIO_NUM);
         return;
     }
+#if defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
+    ESP_LOGI(TAG, "Wakeup button poller started (GPIO%d, level now %d)",
+#else
     ESP_LOGI(TAG, "Wakeup button poller started (GPIO%d, level now %d; "
                   "hold 2 s to forget all keyboards)",
+#endif
              WAKEUP_GPIO_NUM,
              gpio_get_level((gpio_num_t)WAKEUP_GPIO_NUM));
 }
@@ -3883,5 +3887,9 @@ extern "C" void app_main(void)
     power_set_long_press_cb(standby_enter_sleep);
 #endif
 
+#if defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
+    ESP_LOGI(TAG, "Draftling ready. Waiting for a USB keyboard...");
+#else
     ESP_LOGI(TAG, "Draftling ready. Waiting for Bluetooth keyboard...");
+#endif
 }

@@ -4618,11 +4618,13 @@ static void ble_prompt_off_btn_cb(lv_event_t *e)
  * scanning for a new keyboard, allowing the user to pair with a
  * different (or freshly reset) keyboard without needing a physical
  * keyboard to navigate the settings menu. */
+#if !defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
 static void ble_prompt_forget_btn_cb(lv_event_t *e)
 {
     (void)e;
     ble_keyboard_forget_all();
 }
+#endif
 
 #endif /* CONFIG_DRAFTLING_TOUCHSCREEN */
 
@@ -14090,7 +14092,9 @@ static void build_screens(void)
     int ble_btn_room = (int)SCR_W - 8 - ble_btn_gap - 12 * ble_btn_cw;
     if (4 * ble_btn_pad > ble_btn_room) ble_btn_pad = ble_btn_room > 8 ? ble_btn_room / 4 : 2;
     const int ble_off_w  = 3 * ble_btn_cw + 2 * ble_btn_pad;  /* "Off"       */
+#if !defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
     const int ble_fgt_w  = 9 * ble_btn_cw + 2 * ble_btn_pad;  /* "Forget KB" */
+#endif
     {
         lv_obj_t *off_btn = lv_button_create(s_scr_ble_prompt);
         lv_obj_set_size(off_btn, ble_off_w, ble_btn_h);
@@ -14120,7 +14124,9 @@ static void build_screens(void)
     /* "Forget KB" button to the left of the "Off" button. Clears all
      * stored keyboard pairings and starts a fresh scan, allowing the
      * user to pair a different keyboard without needing a physical
-     * keyboard to navigate the settings menu. */
+     * keyboard to navigate the settings menu. Not without Bluetooth
+     * (e.g. a USB keyboard host build): there is nothing to forget. */
+#if !defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
     {
         lv_obj_t *fgt_btn = lv_button_create(s_scr_ble_prompt);
         lv_obj_set_size(fgt_btn, ble_fgt_w, ble_btn_h);
@@ -14144,6 +14150,7 @@ static void build_screens(void)
         lv_label_set_text(fgt_lbl, "Forget KB");
         lv_obj_center(fgt_lbl);
     }
+#endif /* !CONFIG_DRAFTLING_NO_BLUETOOTH */
 #endif
 
     /* Register BLE status callbacks */
