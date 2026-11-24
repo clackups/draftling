@@ -3069,7 +3069,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   keyboard on a Pico plugged into the USB-C port; VBUS comes from the
   device's battery boost module, the T5 does not source it). The stock
   Rev.7 firmware keeps documents in internal flash; Draftling uses the
-  T5's MicroSD slot. Untested on physical hardware. *Requires ESP32-S3.*
+  T5's MicroSD slot, which is reachable in the Rev.7 enclosure. Untested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
   e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
   UC8279) auto-detected at boot by

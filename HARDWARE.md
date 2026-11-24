@@ -145,9 +145,9 @@ USB keyboard host. Not yet tested on physical hardware.
 - The knobs send Page Up / Page Down. Their clicks (F5 and Pause in the
   stock keymap) do nothing in Draftling yet; they can be remapped with
   Vial.
-- Documents are stored on a MicroSD card in the T5's slot. The stock
-  Rev.7 firmware keeps them in the internal flash instead and needs no
-  card, so check that the slot can be reached in your build.
+- Documents are stored on a MicroSD card in the T5's slot, which can be
+  reached in the assembled device. (The stock Rev.7 firmware keeps them
+  in the internal flash instead and needs no card.)
 - Switch the power off at the back after the device goes to sleep
   (Ctrl+P or the inactivity timeout); there is no wake button.
 - USB keyboard only: Bluetooth is left out to save battery.
