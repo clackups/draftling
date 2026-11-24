@@ -570,8 +570,8 @@ too. The MicroJournal Rev 5 and Rev.7 presets have it on.
   Flashing over USB needs download mode (hold BOOT while pressing
   reset).
 - Bluetooth is left out of such a firmware to save battery, so only
-  the USB keyboard works. Bluetooth also has to be off in the build
-  configuration (Component config -> Bluetooth), which the build checks.
+  the USB keyboard works. (Turning Bluetooth off in Component config ->
+  Bluetooth as well only makes the firmware smaller.)
 
 
 ## Other hardware

@@ -535,10 +535,12 @@ config DRAFTLING_USB_HOST_NATIVE
         UART0.
 
         Bluetooth is left out of such a build to save battery
-        (DRAFTLING_NO_BLUETOOTH): Bluetooth must be off in the sdkconfig
-        too (CONFIG_BT_ENABLED=n, i.e. a preset without
-        sdkconfig.defaults.bluetooth, as microjournal_rev5 / _rev7);
-        the configure step stops otherwise.
+        (DRAFTLING_NO_BLUETOOTH): the BLE keyboard code is compiled to
+        stubs and the Bluetooth controller is never started, even if
+        ESP-IDF's Bluetooth stays enabled in the board's sdkconfig.
+        Setting CONFIG_BT_ENABLED=n as well (Component config ->
+        Bluetooth; the microjournal_rev5 / _rev7 presets do) only makes
+        the image smaller.
 
 # The Linux program packaged as a Flatpak (linux/packaging/flatpak/, selected by
 # linux/sdkconfig.defaults.flatpak). Inside the sandbox it cannot set

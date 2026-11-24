@@ -35,13 +35,16 @@
  * IDF port for the target does not yet build the Bluedroid host) are
  * compiled to no-op stubs at the bottom of this file. They link the
  * same public API so Draftling startup code can call
- * ble_keyboard_init() unconditionally.
+ * ble_keyboard_init() unconditionally. So are builds without a BLE
+ * keyboard (CONFIG_DRAFTLING_NO_BLUETOOTH, e.g. a USB keyboard host
+ * build), even when the board's sdkconfig still enables Bluetooth: the
+ * controller is then never started and draws no power.
  */
 
 #include "sdkconfig.h"
 #include "ble_keyboard.h"
 
-#if !defined(CONFIG_BT_BLUEDROID_ENABLED)
+#if !defined(CONFIG_BT_BLUEDROID_ENABLED) || defined(CONFIG_DRAFTLING_NO_BLUETOOTH)
 
 #include <esp_log.h>
 
@@ -71,7 +74,7 @@ int64_t ble_keyboard_last_pairing_activity_us(void)                      { retur
 
 } /* extern "C" */
 
-#else /* CONFIG_BT_BLUEDROID_ENABLED */
+#else /* CONFIG_BT_BLUEDROID_ENABLED && !CONFIG_DRAFTLING_NO_BLUETOOTH */
 
 #include <cstdio>
 #include <cstdarg>
@@ -2730,4 +2733,4 @@ extern "C" int64_t ble_keyboard_last_pairing_activity_us(void)
     return s_last_pairing_us;
 }
 
-#endif /* CONFIG_BT_BLUEDROID_ENABLED */
+#endif /* CONFIG_BT_BLUEDROID_ENABLED && !CONFIG_DRAFTLING_NO_BLUETOOTH */

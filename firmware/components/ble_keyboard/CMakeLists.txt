@@ -58,7 +58,7 @@ idf_component_register(
     PRIV_REQUIRES nvs_flash
 )
 
-if(CONFIG_BT_BLUEDROID_ENABLED)
+if(CONFIG_BT_BLUEDROID_ENABLED AND NOT CONFIG_DRAFTLING_NO_BLUETOOTH)
     idf_component_optional_requires(PRIVATE bt esp_hid)
     if(CONFIG_BT_CONTROLLER_DISABLED)
         idf_component_optional_requires(PRIVATE espressif__esp_hosted)
