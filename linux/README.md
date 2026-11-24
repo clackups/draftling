@@ -312,7 +312,8 @@ sudo apt install gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-li
 does not need it: leave it out there.)
 
 For armhf (32-bit Arm, ARMv7 with hardware floating point) the same
-with `armhf`: `Architectures: arm64 armhf` in the ports sources file,
+with `armhf`: `Architectures: arm64 armhf` in the ports sources file
+(on Ubuntu 22.04: `[arch=arm64,armhf]` on each ports line),
 `sudo dpkg --add-architecture armhf`, and
 
 ```bash
