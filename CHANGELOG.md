@@ -53,6 +53,22 @@ in the git log.
   status bars while typing: on (not with ...)" then; remove that
   layout from Active layouts to let the bars hide again.
 
+### Fixed
+
+- **Over-long names and settings no longer act on the wrong file**: a
+  file path too long for the editor used to be cut short, so "Save
+  as" could write the document under a different, shortened name; it
+  is now refused. Copying a file to another project reports a failed
+  write instead of leaving an incomplete copy. In `git.cfg`, a
+  repository URL, branch or path too long to fit used to be cut short
+  and synced against a different place on the server; Git sync now
+  stops with "Repository URL or path in git.cfg too long" (or
+  "Invalid branch name in git.cfg").
+- **Active layouts list stays put when you tick a layout**: in F1 ->
+  Settings -> Keyboard -> Active layouts, ticking or unticking a
+  layout near the bottom of a long list (as in the Indic pack) no
+  longer scrolls the list; only the checkbox changes.
+
 ## [1.0.32] - 2026-11-22
 
 ### Added
@@ -141,15 +157,6 @@ in the git log.
   WiFi connected, before showing "WiFi: connected". WiFi status
   updates are now handled by the user-interface task, which has room
   for them.
-- **Over-long names and settings no longer act on the wrong file**: a
-  file path too long for the editor used to be cut short, so "Save
-  as" could write the document under a different, shortened name; it
-  is now refused. Copying a file to another project reports a failed
-  write instead of leaving an incomplete copy. In `git.cfg`, a
-  repository URL, branch or path too long to fit used to be cut short
-  and synced against a different place on the server; Git sync now
-  stops with "Repository URL or path in git.cfg too long" (or
-  "Invalid branch name in git.cfg").
 
 ## [1.0.28] - 2026-11-16
 

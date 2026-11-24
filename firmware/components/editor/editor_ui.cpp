@@ -6158,15 +6158,20 @@ static void close_theme_picker(void)
  * and persisted on the spot) rather than picking one value and
  * confirming -- there is no "cancel", since each toggle already is
  * the final state. */
+static void layouts_picker_row_text(kb_layout_id_t id, char *buf,
+                                    size_t sz)
+{
+    snprintf(buf, sz, "[%s] %-6s %s",
+             kb_layout_is_active(id) ? "x" : " ",
+             kb_layout_name(id), kb_layout_long_name(id));
+}
+
 static void refresh_layouts_picker_items(void)
 {
     lv_obj_clean(s_settings_list);
     char buf[80];
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
-        kb_layout_id_t id = (kb_layout_id_t)i;
-        snprintf(buf, sizeof(buf), "[%s] %-6s %s",
-                 kb_layout_is_active(id) ? "x" : " ",
-                 kb_layout_name(id), kb_layout_long_name(id));
+        layouts_picker_row_text((kb_layout_id_t)i, buf, sizeof(buf));
         lv_list_add_btn(s_settings_list, NULL, buf);
     }
     lv_list_add_btn(s_settings_list, NULL, "  Done (Esc)");
@@ -6181,6 +6186,23 @@ static void update_layouts_picker_highlight(void)
     update_list_highlight(s_settings_list, s_layouts_picker_sel,
                           s_layouts_picker_sel_prev);
     s_layouts_picker_sel_prev = s_layouts_picker_sel;
+}
+
+/* Re-label one row after a toggle. Rebuilding the whole list would
+ * reset its scroll offset, and scrolling the highlighted row back into
+ * view then moved the list under the user's eyes. */
+static void update_layouts_picker_row(kb_layout_id_t id)
+{
+    lv_obj_t *btn = lv_obj_get_child(s_settings_list, (int32_t)id);
+    lv_obj_t *lbl = btn ? lv_obj_get_child_by_type(btn, 0, &lv_label_class)
+                        : NULL;
+    if (!lbl) {
+        refresh_layouts_picker_items();
+        return;
+    }
+    char buf[80];
+    layouts_picker_row_text(id, buf, sizeof(buf));
+    lv_label_set_text(lbl, buf);
 }
 
 static void close_layouts_picker(void)
@@ -6656,7 +6678,7 @@ static void handle_settings_key(const kb_event_t *ev)
                     /* A layout that types in the status bar keeps the
                      * bars on screen. */
                     if (!bars_may_hide()) bars_show();
-                    refresh_layouts_picker_items();
+                    update_layouts_picker_row(id);
                 }
             } else {
                 /* Done row */
