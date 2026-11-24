@@ -201,6 +201,14 @@ const BBPANELDEF panelDefs[] = {
       4, 14, 39, 40, BB_NOT_USED, 0, 38, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5PRO_V2
     {1440, 720, 40000000, BB_PANEL_FLAG_MIRROR_X, {27,28,29,30,31,32,33,34}, 8, BB_NOT_USED, 36, 13, 25, 0, 26,
       24, 0, 7, 8, 0, 0, 11 /* LED1_EN */, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5P4 
+    // Draftling addition: LilyGO T5 4.7" e-paper, ESP32-S3 version (ED047TC1).
+    // Same 74HC4094 shift-register control scheme as BB_PANEL_LILYGO_T5PRO
+    // (CFG_DATA=13, CFG_CLK=12, CFG_STR=0); D0-D7 = 8,1,2,3,4,5,6,7,
+    // CKV=38, STH=40 (driven as the i80 CS), CKH=41. GPIO39 (a pin of the
+    // board's unpopulated expansion header) is the dummy D/C line the LCD
+    // driver insists on.
+    {960, 540, 20000000, BB_PANEL_FLAG_NONE, {8,1,2,3,4,5,6,7}, 8, BB_NOT_USED, BB_NOT_USED, 38, 40, BB_NOT_USED, BB_NOT_USED,
+      41, BB_NOT_USED, 13, 12, 0, 0, 39, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5_47_S3
 };
 //
 // Forward references for panel callback functions
@@ -246,6 +254,7 @@ const BBPANELPROCS panelProcs[] = {
     {LilyGoEinkPower, LilyGoIOInit, LilyGoRowControl, NULL, NULL},// BB_PANEL_LILYGO_T5PRO
     {EPDiyV7EinkPower, EPDiyV7IOInit, EPDiyV7RowControl, EPDiyV7IODeInit, EPDiyV7ExtIO},// BB_PANEL_LILYGO_T5PRO_V2
     {EPDiyV7EinkPower, EPDiyV7IOInit, EPDiyV7RowControl, EPDiyV7IODeInit, EPDiyV7ExtIO}, // BB_PANEL_LILYGO_T5P4  
+    {LilyGoEinkPower, LilyGoIOInit, LilyGoRowControl, NULL, NULL}, // BB_PANEL_LILYGO_T5_47_S3 (Draftling addition)
 };
 
 uint8_t ioRegs[24]; // MCP23017 copy of I/O register state so that we can just write new bits

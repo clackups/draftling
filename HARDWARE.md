@@ -33,6 +33,8 @@ Features used in the table:
 | [Waveshare ESP32-S3-RLCD-4.2](#waveshare-esp32-s3-rlcd-42) | `waveshare_rlcd42` | 4.2" 400x300 reflective LCD | - | - | yes | yes |
 | [LilyGO T5 E-Paper S3 Pro / Pro Lite](#lilygo-t5-e-paper-s3-pro-and-pro-lite) | `lilygo_t5_epd_s3_pro` | 4.7" 960x540 e-paper | yes | front-light | yes | yes |
 | [LilyGO T5 E-Paper S3 Pro (H752)](#lilygo-t5-e-paper-s3-pro-h752) | `lilygo_t5_epd_s3_pro_h752` | 4.7" 960x540 e-paper | yes | front-light | yes | yes |
+| [LilyGO T5 4.7" E-Paper (ESP32-S3)](#lilygo-t5-47-e-paper-esp32-s3) | `lilygo_t5_47_s3` | 4.7" 960x540 e-paper | - | - | - | yes |
+| [MicroJournal Rev.7](#microjournal-rev7) | `microjournal_rev7` | 4.7" 960x540 e-paper | - | - | - | - |
 | [M5Stack PaperS3](#m5stack-papers3) | `m5stack_papers3` | 4.7" 960x540 e-paper | yes | - | yes | yes |
 | [M5Stack PaperMono / PaperMono-Lite](#m5stack-papermono--papermono-lite) | `m5stack_papermono` | 3.97" 800x480 e-paper | yes | front-light | yes | yes |
 | [Xteink X4 Pro](#xteink-x4-pro) | `xteink_x4_pro` | 4.26" 800x480 e-paper | yes | front-light | yes | yes |
@@ -109,6 +111,48 @@ is the original revision (v1.0-240810) of the T5 E-Paper S3 Pro.
   paired keyboards on a 2 s hold. The touch key below the panel is
   Esc.
 - SD card via USB and Sync via browser.
+
+
+## LilyGO T5 4.7" E-Paper (ESP32-S3)
+
+[LilyGO T5 4.7" E-Paper](https://lilygo.cc/products/t5-4-7-inch-e-paper-v2-3),
+ESP32-S3 version (V2.3). Not the T5 E-Paper S3 Pro above: an older,
+different board. Not yet tested on physical hardware.
+
+- 4.7" 960x540 e-paper panel.
+- No touch (the touch panel of the touch version is not used yet), no
+  front-light, no battery level.
+- MicroSD card slot on the back of the board.
+- The user button (IO21) wakes the device and forgets the paired
+  keyboards on a 2 s hold. The BOOT button is not used: its line also
+  drives the display.
+- SD card via USB and Sync via browser over the USB-C port, or a USB
+  keyboard instead (see [USB keyboard host](#usb-keyboard-host) and the
+  MicroJournal Rev.7 below).
+
+
+## MicroJournal Rev.7
+
+[Micro Journal Rev.7](https://github.com/unkyulee/micro-journal/tree/main/rev.7/7.0)
+("Kindred Gift"), an e-paper writerdeck built around the LilyGO T5
+4.7" E-Paper (ESP32-S3) above, with a built-in keyboard (a Raspberry
+Pi Pico running QMK, connected to the T5's USB-C port). The
+`microjournal_rev7` preset is the T5 firmware with the USB-C port as a
+USB keyboard host. Not yet tested on physical hardware.
+
+- The keyboard works as on any computer: the Fn key with the number
+  row gives F1 - F12 (F1 opens the menu, F10 the help).
+- The knobs send Page Up / Page Down. Their clicks (F5 and Pause in the
+  stock keymap) do nothing in Draftling yet; they can be remapped with
+  Vial.
+- Documents are stored on a MicroSD card in the T5's slot. The stock
+  Rev.7 firmware keeps them in the internal flash instead and needs no
+  card, so check that the slot can be reached in your build.
+- Switch the power off at the back after the device goes to sleep
+  (Ctrl+P or the inactivity timeout); there is no wake button.
+- USB keyboard only: Bluetooth is left out to save battery.
+- No SD card via USB or Sync via browser: the USB port belongs to the
+  keyboard.
 
 
 ## M5Stack PaperS3
@@ -451,7 +495,8 @@ physical hardware with Rev 5.0 only.
   detected at boot (F1 -> System & Storage -> Hardware information
   shows which).
 - No touch, no backlight control, no battery level.
-- USB keyboard only: Bluetooth is disabled.
+- USB keyboard only: Bluetooth is disabled. Keyboards behind a USB hub
+  work too.
 - No wake button: after sleep, press reset or switch the power off and
   on.
 - No SD card via USB or Sync via browser.
@@ -501,6 +546,32 @@ body. Tested on physical hardware.
   [Arduino board support](https://github.com/MoveCall/onepage-reader-sdk-arduino)
   and [CrossPoint port](https://github.com/MoveCall/crosspoint-onepage)
   (MIT).
+
+
+## USB keyboard host
+
+Any ESP32-S3 board can take a USB keyboard on the chip's native USB
+port (GPIO19 / GPIO20) instead of using it as a USB device: turn on
+"Use the native USB port as a USB host for a keyboard" in
+`idf.py --preset <board> menuconfig` (DRAFTLING Configuration,
+`CONFIG_DRAFTLING_USB_HOST_NATIVE`). Keyboards behind a USB hub work
+too. The MicroJournal Rev 5 and Rev.7 presets have it on.
+
+- The board's USB connector must be wired to the native USB pins.
+  On boards whose USB port goes through a USB-to-UART chip (no "USB" in
+  the table above) the pins have to be wired to a USB socket by hand.
+  The option is not offered on the boards that use GPIO19 / GPIO20 for
+  touch (Sunton, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed
+  reTerminal E1001).
+- Most boards do not supply 5 V on their USB port. Power the keyboard
+  (or hub) from outside: a USB OTG splitter with a power input or a
+  self-powered hub, which usually powers the board as well.
+- SD card via USB and Sync via browser are not available then.
+  Flashing over USB needs download mode (hold BOOT while pressing
+  reset).
+- Bluetooth is left out of such a firmware to save battery, so only
+  the USB keyboard works. Bluetooth also has to be off in the build
+  configuration (Component config -> Bluetooth), which the build checks.
 
 
 ## Other hardware

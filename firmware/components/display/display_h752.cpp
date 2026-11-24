@@ -1,5 +1,21 @@
+/* Shift-register EPD47 backend on top of FastEPD (BitBank, vendored in
+ * components/fastepd). Two boards drive their ED047TC1-class 960x540
+ * panel through the same 74HC4094 control register (output enable,
+ * mode, STV, panel power, row latch):
+ *
+ *   - DRAFTLING_DISPLAY_H752_EPD: the original LilyGO T5 E-Paper S3 Pro
+ *     H752, FastEPD panel BB_PANEL_LILYGO_T5PRO, with a front-light on
+ *     GPIO40 (DRAFTLING_DISPLAY_HAS_BACKLIGHT);
+ *   - DRAFTLING_DISPLAY_T5_47_EPD: the LilyGO T5 4.7" e-paper, ESP32-S3
+ *     version, FastEPD panel BB_PANEL_LILYGO_T5_47_S3 (a Draftling
+ *     addition to the vendored library), no front-light -- GPIO40 is
+ *     the panel's STH line there.
+ *
+ * epdiy cannot drive either board on the ESP32-S3: its LCD output path
+ * needs the row latch (LE) and STV as plain GPIOs, and here both sit
+ * behind the shift register. */
 #include "sdkconfig.h"
-#if defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+#if defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || defined(CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
 
 #include <algorithm>
 #include <cstring>
@@ -16,7 +32,17 @@
 #include "epd_fb.h"
 #include "display_margins.h"
 
-static const char *TAG = "DisplayH752";
+static const char *TAG = "DisplayEPD47";
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
+#define EPD47_FASTEPD_PANEL   BB_PANEL_LILYGO_T5_47_S3
+#define EPD47_BUS_HZ          0          /* panel default (20 MHz) */
+#define EPD47_CONTROLLER_NAME "ED047TC1 (FastEPD)"
+#else
+#define EPD47_FASTEPD_PANEL   BB_PANEL_LILYGO_T5PRO
+#define EPD47_BUS_HZ          28000000
+#define EPD47_CONTROLLER_NAME "ED047TC2 (FastEPD)"
+#endif
 
 static constexpr int PANEL_WIDTH = 960;
 static constexpr int PANEL_HEIGHT = 540;
@@ -27,6 +53,10 @@ static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 #define H752_FULL_REFRESH_INTERVAL CONFIG_DRAFTLING_EPD_FULL_REFRESH_INTERVAL
 #else
 #define H752_FULL_REFRESH_INTERVAL 30
+#endif
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT)
+#define EPD47_HAS_FRONTLIGHT 1
 #endif
 
 #define H752_BL_LEDC_TIMER       LEDC_TIMER_0
@@ -57,10 +87,12 @@ static int s_clip_y1 = -1;
 
 static void backlight_pwm_init(void)
 {
+#if defined(EPD47_HAS_FRONTLIGHT)
     if (s_bl_inited) return;
     bl_ledc_setup(H752_BL_PIN, H752_BL_LEDC_TIMER, H752_BL_LEDC_CHANNEL,
                   H752_BL_LEDC_DUTY_RES, H752_BL_LEDC_FREQ_HZ, LEDC_AUTO_CLK, 0);
     s_bl_inited = true;
+#endif
 }
 
 static bool ensure_epd(void)
@@ -73,7 +105,7 @@ static bool ensure_epd(void)
         return false;
     }
 
-    int rc = s_epd->initPanel(BB_PANEL_LILYGO_T5PRO, 28000000);
+    int rc = s_epd->initPanel(EPD47_FASTEPD_PANEL, EPD47_BUS_HZ);
     if (rc != BBEP_SUCCESS) {
         ESP_LOGE(TAG, "FastEPD initPanel failed: %d", rc);
         delete s_epd;
@@ -120,7 +152,7 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     s_width = PANEL_WIDTH;
     s_height = PANEL_HEIGHT;
     if (width != s_width || height != s_height) {
-        ESP_LOGW(TAG, "Configured size %dx%d differs from H752 panel %dx%d",
+        ESP_LOGW(TAG, "Configured size %dx%d differs from EPD47 panel %dx%d",
                  width, height, s_width, s_height);
     }
 
@@ -134,7 +166,7 @@ extern "C" void display_init(int, int, int, int, int, int, int width, int height
     epd_fb_clear_dirty(&s_epdfb);
     s_initialized = true;
 
-    ESP_LOGI(TAG, "H752 EPD47 display initialized (%dx%d panel)", s_width, s_height);
+    ESP_LOGI(TAG, "EPD47 display initialized (%dx%d panel)", s_width, s_height);
 }
 
 extern "C" void display_clear(uint8_t color)
@@ -288,6 +320,7 @@ extern "C" void display_wake(void)
 
 extern "C" void display_deep_sleep_prepare(void)
 {
+#if defined(EPD47_HAS_FRONTLIGHT)
     if (s_bl_inited) {
         bl_ledc_write(H752_BL_LEDC_CHANNEL, 0);
     }
@@ -296,6 +329,7 @@ extern "C" void display_deep_sleep_prepare(void)
     gpio_set_direction((gpio_num_t)H752_BL_PIN, GPIO_MODE_OUTPUT);
     gpio_set_level((gpio_num_t)H752_BL_PIN, 0);
     gpio_hold_en((gpio_num_t)H752_BL_PIN);
+#endif
 
     if (s_epd) {
         s_epd->deInit();
@@ -308,7 +342,7 @@ extern "C" void display_deep_sleep_prepare(void)
 
 const char *display_controller_name(void)
 {
-    return "ED047TC2 (FastEPD)";
+    return EPD47_CONTROLLER_NAME;
 }
 
-#endif /* CONFIG_DRAFTLING_DISPLAY_H752_EPD */
+#endif /* CONFIG_DRAFTLING_DISPLAY_H752_EPD || CONFIG_DRAFTLING_DISPLAY_T5_47_EPD */

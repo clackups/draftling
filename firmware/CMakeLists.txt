@@ -45,6 +45,18 @@ endif()
 # before that file existed keeps the old list in its CMake cache, so
 # deleting only sdkconfig would give a firmware without the BLE
 # keyboard. Stop instead.
+# The other way round: a board without Bluetooth (or a build with the
+# native USB port as a keyboard host, which leaves Bluetooth out to save
+# battery) must not carry the Bluetooth stack.
+if(CONFIG_BT_ENABLED AND CONFIG_DRAFTLING_NO_BLUETOOTH)
+    message(FATAL_ERROR
+        "This build has no Bluetooth keyboard (CONFIG_DRAFTLING_NO_BLUETOOTH, "
+        "e.g. because CONFIG_DRAFTLING_USB_HOST_NATIVE is on), but Bluetooth "
+        "is enabled in ${SDKCONFIG}. Set CONFIG_BT_ENABLED=n (Component "
+        "config -> Bluetooth), or use a preset without "
+        "sdkconfig.defaults.bluetooth in its SDKCONFIG_DEFAULTS.")
+endif()
+
 if(NOT CONFIG_BT_ENABLED AND NOT CONFIG_DRAFTLING_NO_BLUETOOTH)
     message(FATAL_ERROR
         "Bluetooth is off in ${SDKCONFIG}, but this board uses a BLE "

@@ -65,6 +65,8 @@
 #include "boards/lilygo_t5_epd_s3_pro.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
 #include "boards/lilygo_t5_epd_s3_pro_h752.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_47_S3)
+#include "boards/lilygo_t5_47_s3.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_PAPERS3)
 #include "boards/m5stack_papers3.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349)

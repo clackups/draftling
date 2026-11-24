@@ -852,6 +852,19 @@ static void pre_sleep_h752_deinit(void)
 #endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752 */
 #endif /* LilyGO T5 EPD S3 family */
 
+#if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_47_S3)
+/* LilyGO T5 4.7" ESP32-S3: save, wipe the panel (pre_sleep_autosave),
+ * then release the SD card and switch the panel supplies off through
+ * the display's shift register before deep sleep. */
+static void pre_sleep_t5_47_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: LilyGO T5 4.7\" peripheral teardown");
+    pre_sleep_autosave();
+    (void)sd_card_deinit();
+    display_deep_sleep_prepare();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_LILYGO_T5_47_S3 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
 static void pre_sleep_xteink_x4_pro_deinit(void)
 {
@@ -2792,10 +2805,10 @@ extern "C" void app_main(void)
      * E-Paper S3 Pro / Pro Lite, the in-tree epd_board_papers3 on
      * the M5Stack PaperS3). Pin parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-#elif defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
-    /* Original LilyGO H752 EPD47 backend. Owns all panel GPIOs via
-     * the vendored LilyGO shift-register driver. Pin parameters are
-     * ignored. */
+#elif defined(CONFIG_DRAFTLING_DISPLAY_H752_EPD) || defined(CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
+    /* Shift-register EPD47 backend (original LilyGO H752, LilyGO T5
+     * 4.7" ESP32-S3). Owns all panel GPIOs through the vendored
+     * FastEPD panel definition. Pin parameters are ignored. */
     display_init(-1, -1, -1, -1, -1, -1, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 #elif defined(CONFIG_DRAFTLING_DISPLAY_XTEINK_EPD)
     /* Xteink X4 Pro / X4 Classic SPI e-paper backend. Owns all panel
@@ -3559,8 +3572,9 @@ extern "C" void app_main(void)
     }
 #endif
 
-    /* Bring up USB Host + HID keyboard driver (Tab5 USB-A /
-     * MicroJournal native USB port).
+    /* Bring up USB Host + HID keyboard driver (Tab5 USB-A, or the
+     * ESP32-S3 native USB port with CONFIG_DRAFTLING_USB_HOST_NATIVE:
+     * MicroJournal Rev 5 / Rev.7 and any other S3 board built so).
      * If a USB keyboard is enumerated within the probe window we
      * disable BLE so the wired keyboard is the sole input source;
      * if the user later unplugs the USB keyboard, the disconnect
@@ -3757,6 +3771,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_t5_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)
     standby_set_pre_sleep_cb(pre_sleep_h752_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_47_S3)
+    standby_set_pre_sleep_cb(pre_sleep_t5_47_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_M5STACK_TAB5)
     standby_set_pre_sleep_cb(pre_sleep_tab5_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)
