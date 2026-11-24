@@ -6,6 +6,8 @@ in the git log.
 
 ## [Unreleased]
 
+## [1.0.33] - 2026-11-24
+
 ### Added
 
 - **Draftling for Linux as a Flatpak**: Flatpak bundles for 64-bit
