@@ -3710,14 +3710,22 @@ of package. The Debian packages (`make deb` / `make deb ARCH=arm64` /
 `make deb ARCH=armhf` in `linux/`,
 `firmware/<tag>/draftling_<version>_<arch>.deb`) are built only on an
 Ubuntu 22.04 machine, so the packages run on the oldest glibc the
-program supports; a release published from here does NOT rebuild or
-update them: leave their links in `linux.html` untouched (they keep
-pointing at the tag of their last packages), and keep those files in
-the flasher. The Flatpak bundles (`make flatpak` in `linux/`,
-`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`) take
-their glibc from the Flatpak runtime, so they can be built on any
-machine: a release rebuilds them, copies them to `firmware/vX.Y.Z/`
-and updates their links, file names and version in `linux.html`.
+program supports. Releases are built on such a machine (an Ubuntu
+22.04 LXC container), so a release rebuilds all three, together with
+the Flatpak bundles (`make flatpak` in `linux/`,
+`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`, whose
+glibc comes from the Flatpak runtime), copies them to
+`firmware/vX.Y.Z/` and updates their links, file names and versions
+in `linux.html`. On a machine that is not Ubuntu 22.04, do not
+rebuild the Debian packages: leave their links in `linux.html`
+untouched (they keep pointing at the tag of their last packages) and
+keep those files in the flasher. In the container `make flatpak`
+uses Flathub's `org.flatpak.Builder` (Ubuntu 22.04's flatpak-builder
+1.2 is too old for the 25.08 SDK), `--disable-rofiles-fuse` (no
+`/dev/fuse`) and `dbus-run-session` (no session bus); the aarch64
+build needs `qemu-user-static` installed on the container's host
+(binfmt_misc is the host kernel's, and only a static qemu registered
+with the F flag runs inside the build sandbox).
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),

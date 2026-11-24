@@ -402,15 +402,25 @@ Requirements (Ubuntu / Debian), on top of `flatpak` and the Flathub
 remote:
 
 ```bash
-sudo apt install flatpak-builder qemu-user-binfmt
+sudo apt install flatpak-builder qemu-user-static
 flatpak install --user -y flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
 flatpak install --user -y --arch=aarch64 flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
 ```
 
 The SDK and runtime are also installed by the build when missing.
-`qemu-user-binfmt` runs the other architecture's build under
+flatpak-builder older than 1.4 (Ubuntu 22.04 has 1.2) runs
+`appstream-compose`, which the 25.08 SDK no longer has; the build then
+uses Flathub's `org.flatpak.Builder` instead (installed when missing,
+run under `dbus-run-session` when there is no D-Bus session bus).
+Without `/dev/fuse` (e.g. in an LXC container) it passes
+`--disable-rofiles-fuse`.
+`qemu-user-static` runs the other architecture's build under
 emulation (the aarch64 build on an x86_64 computer takes a good while
-longer than the native one). Installing and running a bundle:
+longer than the native one): its binfmt_misc entry has the F flag, so
+the static qemu also runs inside the build sandbox (Ubuntu 22.04's
+dynamically linked `qemu-user-binfmt` does not). In a container,
+binfmt_misc belongs to the host kernel: install `qemu-user-static` on
+the container's host. Installing and running a bundle:
 
 ```bash
 flatpak install --user dist/draftling_<version>_x86_64.flatpak
