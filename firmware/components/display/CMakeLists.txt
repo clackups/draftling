@@ -37,3 +37,13 @@ target_link_libraries(${lvgl_lib} PRIVATE idf::esp_hw_support)
 # for the same reason as lv_mem_psram.c and for its private headers.
 target_sources(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/lv_rtl_line_width.c")
 idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_text_get_line_width" APPEND)
+
+# epdiy 2.1.3 calls two LCD_CAM LL functions whose first parameter
+# became a group id in ESP-IDF v6.1.1; see epdiy_idf_compat.h. epdiy is
+# only pulled in on the ESP32-S3 (idf_component.yml).
+idf_build_get_property(build_components BUILD_COMPONENTS)
+if("vroland__epdiy" IN_LIST build_components)
+    idf_component_get_property(epdiy_lib vroland__epdiy COMPONENT_LIB)
+    target_compile_options(${epdiy_lib} PRIVATE
+        "$<$<COMPILE_LANGUAGE:C>:SHELL:-include ${CMAKE_CURRENT_LIST_DIR}/epdiy_idf_compat.h>")
+endif()
