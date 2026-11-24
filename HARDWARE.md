@@ -563,9 +563,15 @@ too. The MicroJournal Rev 5 and Rev.7 presets have it on.
   The option is not offered on the boards that use GPIO19 / GPIO20 for
   touch (Sunton, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed
   reTerminal E1001).
-- Most boards do not supply 5 V on their USB port. Power the keyboard
-  (or hub) from outside: a USB OTG splitter with a power input or a
-  self-powered hub, which usually powers the board as well.
+- Most boards do not supply 5 V on their USB port, and the cable
+  between the board and the keyboard (or hub) must carry 5 V on VBUS
+  anyway: a keyboard takes its power from it, and a self-powered hub
+  only connects to the board when it sees 5 V on its host cable (its
+  keyboard port may have power while the board still sees nothing).
+  Powering the board through its VCC / 5 V pin is not enough: that
+  supply does not reach the USB port's VBUS. Use a USB OTG splitter
+  with a power input, which powers the board as well, or wire the same
+  5 V to VBUS of the OTG cable.
 - SD card via USB and Sync via browser are not available then.
   Flashing over USB needs download mode (hold BOOT while pressing
   reset).
