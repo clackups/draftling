@@ -41,6 +41,13 @@ user documentation in `docs/`), with these differences:
   used.
 - **Mouse.** The left button acts as a touch (tap, double-tap selects a
   word, drag selects); the wheel moves the cursor three lines per notch.
+- **Clipboard.** Ctrl+C / Ctrl+X in the editor put the selection on
+  the desktop clipboard as well, and Ctrl+V pastes what another
+  program copied (any text type; Windows line ends become plain ones).
+  Text copied in Draftling stays there only while Draftling runs,
+  unless the desktop keeps a clipboard history. The middle-button
+  (primary) selection is not used, and the search, file-name and
+  WiFi fields do not paste.
 - **Window.** It can be resized; the editor lays its screens out again
   once the size has settled -- while a dialog, picker or pop-up is
   open, after it closes. The window splits panes (Ctrl+2 / Ctrl+3)
@@ -441,8 +448,9 @@ art.draftling.Draftling --io x11`.
 | Board settings | `sdkconfig` from the board's and the pack's defaults | `build/p/<pack>-<io>/sdkconfig.h`, from `linux/sdkconfig.defaults` and the pack's defaults |
 | Startup | `main/main.cpp` | `src/main_linux.cpp`: options, folders, single-instance lock, then the same init order |
 | Display | panel drivers, `lvgl_port.cpp` | `src/lvgl_port_linux.c`: LVGL renders RGB565 tiles into a 32-bit frame of the window's size (2x2 blocks with "2x scale"); the changed rectangle goes to the backend. Resize: `editor_ui_can_relayout()` / `editor_ui_relayout()` |
-| Wayland | | `src/io_wayland.c`: xdg-shell window, two SHM buffers, server-side decorations where offered (xdg-decoration) |
-| X11 | | `src/io_x11.c`: XCB window, PutImage in bands, XKB detectable auto-repeat |
+| Wayland | | `src/io_wayland.c`: xdg-shell window, two SHM buffers, server-side decorations where offered (xdg-decoration), the clipboard through `wl_data_device` (non-blocking pipes, polled by the main loop) |
+| X11 | | `src/io_x11.c`: XCB window, PutImage in bands, XKB detectable auto-repeat, the CLIPBOARD selection (TARGETS, UTF8_STRING / STRING / text/plain, INCR both ways) |
+| Clipboard | the editor's own (memory, or `.clipboard` on the card) | also the desktop's: `src/clipboard_linux.c` implements the editor's weak `editor_host_clipboard_*` hooks over the backend; a paste is asynchronous, and keys typed meanwhile wait in the key queue (up to 3 s) |
 | Keyboard | BLE HID (`ble_keyboard`) | `src/keyboard_linux.c`: Linux key codes -> HID usage codes and modifier byte (the kernel's usbkbd table), through the BLE keyboard API |
 | Touch | GT911 etc. | the window's mouse -> LVGL pointer |
 | SD card | FAT on MicroSD | the data folder; the process runs in it and `sd_card.cpp` mounts it at `.` (`src/sd_hw_linux.c`) |

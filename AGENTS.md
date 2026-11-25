@@ -293,6 +293,16 @@ makefile there) cross-builds with the `<triplet>-` toolchain into
 `build/<arch>/`, with `PKG_CONFIG_LIBDIR` set to the target's
 multiarch folder and a generated meson cross file for libwayland;
 `make deb ARCH=arm64` gives an arm64 package.
+Desktop clipboard: Ctrl+C / Ctrl+X hand the copied text to the weak
+`editor_host_clipboard_set()` hook (no-op on a device), and Ctrl+V
+asks `editor_host_clipboard_request()`; when that returns true the
+text arrives later through `editor_ui_host_clipboard_text()` and
+`key_drain_cb()` holds the key queue meanwhile (`HOST_PASTE_TIMEOUT_MS`).
+`linux/src/clipboard_linux.c` implements the hooks over the backend's
+`clip_set` / `clip_request` (and `poll_fds`, extra descriptors the
+main loop waits on): `io_wayland.c` uses `wl_data_device` with
+non-blocking pipes, `io_x11.c` the CLIPBOARD selection with INCR. No
+primary (middle-click) selection.
 "WiFi connected" (`wifi_manager_is_connected()`) means the computer's
 WiFi device; Backlight (`DRAFTLING_DISPLAY_HAS_BACKLIGHT`, default level
 `DRAFTLING_BACKLIGHT_DEFAULT_PCT` = 100): `display_linux.c` sets the

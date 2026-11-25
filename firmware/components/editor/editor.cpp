@@ -1609,22 +1609,44 @@ extern "C" bool editor_cut(void)
     return true;
 }
 
+extern "C" const char *editor_clipboard_data(size_t *len)
+{
+    if (s_clip_in_file || !s_clipboard) {
+        if (len) *len = 0;
+        return NULL;
+    }
+    if (len) *len = s_clip_len;
+    return s_clipboard;
+}
+
+/* Whether len bytes replacing the selection fit the buffer. Checked
+ * before anything is deleted: deleting the selection before finding
+ * out the paste does not fit would lose it. */
+static bool paste_fits(size_t len)
+{
+    size_t sel_s = s_gap_start, sel_e = s_gap_start;
+    if (editor_selection_active()) editor_get_selection_range(&sel_s, &sel_e);
+    if (content_len() - (sel_e - sel_s) + len > s_buf_size - 64) {
+        ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte paste",
+                 (unsigned)(s_buf_size / 1024), len);
+        return false;
+    }
+    return true;
+}
+
+extern "C" bool editor_paste_text(const char *text, size_t len)
+{
+    if (len == 0) return true;
+    if (!paste_fits(len)) return false;
+    editor_delete_selection();
+    return editor_insert_text(text, len);
+}
+
 extern "C" bool editor_paste(void)
 {
     if (s_clip_len == 0) return true;
-    /* Check the room first: the selection is replaced, and deleting it
-     * before finding out the paste does not fit would lose it. */
-    size_t sel_s = s_gap_start, sel_e = s_gap_start;
-    if (editor_selection_active()) editor_get_selection_range(&sel_s, &sel_e);
-    if (content_len() - (sel_e - sel_s) + s_clip_len > s_buf_size - 64) {
-        ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte paste",
-                 (unsigned)(s_buf_size / 1024), s_clip_len);
-        return false;
-    }
-    if (!s_clip_in_file) {
-        editor_delete_selection();
-        return editor_insert_text(s_clipboard, s_clip_len);
-    }
+    if (!s_clip_in_file) return editor_paste_text(s_clipboard, s_clip_len);
+    if (!paste_fits(s_clip_len)) return false;
     /* Read the clipboard file straight into the gap. */
     FILE *f = fopen(CLIPBOARD_FILE, "rb");
     if (!f) return false;
