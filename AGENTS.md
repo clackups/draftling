@@ -384,8 +384,14 @@ with `WEB_EV` in `client.js`; keys as Linux key codes from
 `KeyboardEvent.code`, Command as Ctrl on a Mac) and gets changed
 rectangles as RGBA (`Module.webPresent`); clipboard over
 `navigator.clipboard` / the `paste` event. Touch mode (a coarse
-pointer or a touch on the canvas): a tap focuses a hidden textarea
-(`#kbd-proxy`), which brings up the on-screen keyboard and is what
+pointer or a touch on the canvas): a tap focuses a hidden input
+(`#kbd-proxy`, `type="password"` by default: Gboard and the like ignore
+`autocomplete` / `autocorrect` / `spellcheck` but drop suggestions,
+autocorrection and learning for passwords; the key bar's "Suggest"
+makes it `type="text"`, remembered in `localStorage`; the field is
+emptied on blur / hide so no browser offers to save it; Enter /
+Backspace / Tab keydowns without a code are mapped by `e.key`), which
+brings up the on-screen keyboard and is what
 Android hands a Bluetooth keyboard's input to; keys with a
 `KeyboardEvent.code` still go through `onKeyDown()`, on-screen keyboard
 text is read back from the field as a diff (Backspaces + US-keyboard

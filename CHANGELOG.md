@@ -32,7 +32,8 @@ in the git log.
   tablets, a tap on the screen brings up the on-screen keyboard (and
   lets a Bluetooth keyboard type on Android), and a key bar below the
   screen adds Esc, Tab, Ctrl, the arrows and the menu; it hides while a
-  physical keyboard is in use.
+  physical keyboard is in use. The on-screen keyboard's word suggestions
+  and autocorrection are off; "Suggest" in the bar turns them on.
 
 ## [1.0.33] - 2026-11-24
 

@@ -360,6 +360,7 @@
   const realDown = new Set();
   let ctrlLeftAt = -1;           /* Windows AltGr: the ControlLeft it fakes */
   let imeKeyAt = -1e9;           /* last keydown the input method took */
+  const SOFT_KEY_NAMES = { Enter: KEYS.Enter, Backspace: KEYS.Backspace, Tab: KEYS.Tab };
   let fakeCtrl = false;
 
   /* The modifiers held according to the page's own record. */
@@ -439,6 +440,15 @@
     }
     const code = KEYS[e.code];
     if (!code) {
+      /* An on-screen keyboard's Enter / Backspace / Tab: a key event
+       * without a code (a one-line field takes no newline, and an empty
+       * one has nothing to delete). */
+      const softCode = e.keyCode !== 229 && SOFT_KEY_NAMES[e.key];
+      if (softCode && !e.repeat) {
+        e.preventDefault();
+        tapKey(softCode, false);
+        return;
+      }
       /* A key the input method takes (Android: dead keys such as
        * AltGr+I, keyCode 229): its keyup still carries the code, see
        * onKeyUp(). */
@@ -793,6 +803,31 @@
   document.getElementById("kb-full").addEventListener("click", () => toggleFullscreen());
   document.getElementById("kb-show").addEventListener("click", () => focusScreen(true));
 
+  /* Word suggestions: off by default (a password field, see index.html),
+   * remembered in this browser. */
+  const btnSuggest = document.getElementById("kb-suggest");
+  function setSuggest(on, save) {
+    proxy.type = on ? "text" : "password";
+    btnSuggest.setAttribute("aria-pressed", on ? "true" : "false");
+    if (save) {
+      try { localStorage.setItem("draftling-suggest", on ? "1" : "0"); } catch (e) { /* ignore */ }
+      /* The keyboard takes the new kind of field when it is focused again. */
+      if (document.activeElement === proxy) focusScreen(true);
+    }
+  }
+  let suggestSaved = null;
+  try { suggestSaved = localStorage.getItem("draftling-suggest"); } catch (e) { /* ignore */ }
+  setSuggest(suggestSaved === "1", false);
+  btnSuggest.addEventListener("click", () => setSuggest(proxy.type === "password", true));
+
+  /* Never leave text in a password field when the page goes away: the
+   * browser might offer to save it. */
+  function clearProxy() {
+    proxy.value = "";
+    proxyLast = "";
+  }
+  proxy.addEventListener("blur", () => { if (proxy.type === "password") clearProxy(); });
+
   setTouchMode(touchMode);
 
   /* ---- key log (?keylog) ------------------------------------------------- */
@@ -913,12 +948,16 @@
     }
   });
   document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") clearProxy();
     if (document.visibilityState === "hidden" && ready) {
       releaseAll();
       send(WEB_EV.SAVE, 0, 0, 0);
     }
   });
-  window.addEventListener("pagehide", () => { if (ready) send(WEB_EV.SAVE, 0, 0, 0); });
+  window.addEventListener("pagehide", () => {
+    clearProxy();
+    if (ready) send(WEB_EV.SAVE, 0, 0, 0);
+  });
 
   /* ---- full screen and toolbar --------------------------------------- */
 
