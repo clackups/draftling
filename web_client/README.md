@@ -63,6 +63,8 @@ help; see the user documentation in `docs/`), with these differences:
   with unsaved changes asks first. "Sleep now" and the standby timeout
   save and blank the screen until the next key or click. A setting
   that applies after a restart reloads the page.
+- **Help.** F10 lists these browser keys in its "Web browser"
+  section.
 - **Offline.** Once loaded, the site starts without a network
   connection (its service worker keeps the files of the current
   build).

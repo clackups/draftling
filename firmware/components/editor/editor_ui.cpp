@@ -8374,6 +8374,17 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
             help_row(out, cols, kc, "Ctrl+Tab", "Switch to the other pane");
         help_common_rows(out, cols, kc);
     }
+
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+    /* Keys the web client's page handles itself (web_client/web/client.js). */
+    help_heading(out, "Web browser");
+    help_row(out, cols, kc, "F9", "Files: download a document, a project or everything (ZIP); upload documents into a project. Saves the open documents first");
+    help_row(out, cols, kc, "F11", "Full screen; in Chrome and Edge, hold Esc to leave it");
+    help_row(out, cols, kc, "Ctrl+C / X / V", "Copy / cut / paste with the system clipboard");
+    help_row(out, cols, kc, "Command", "Works as Ctrl on a Mac");
+    help_row(out, cols, kc, "Ctrl+W/N/T/Tab", "Kept by the browser outside full screen: use full screen (or N in the file browser for a new file)");
+    help_row(out, cols, kc, "Storage", "Documents stay in this browser; Git sync or F9 keeps copies elsewhere");
+#endif
 }
 
 /* Text width of the help page in characters: the body width minus its

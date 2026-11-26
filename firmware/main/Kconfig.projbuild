@@ -529,6 +529,16 @@ config DRAFTLING_NETWORK_HOST_MANAGED
     default y if DRAFTLING_MODEL_WEB
     default n
 
+# DRAFTLING_WEB_PAGE: the editor runs inside a web page (the web
+# client), which adds keys of its own around it -- F9 opens the page's
+# Files panel, F11 switches to full screen -- passes the system
+# clipboard through, takes Command as Ctrl on a Mac and leaves some
+# shortcuts to the browser. The help page (F10) lists them.
+config DRAFTLING_WEB_PAGE
+    bool
+    default y if DRAFTLING_MODEL_WEB
+    default n
+
 # ---- Derived: display category (driven by hardware-model choice) ----
 #
 # DRAFTLING_DISPLAY_COLOR is set automatically when the selected board

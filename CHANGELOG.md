@@ -27,7 +27,8 @@ in the git log.
   panel to download a document, a project or everything as a ZIP
   file, and to upload .md, .fountain and .txt files into a project.
   Draftling saves the open documents when the tab is hidden, and asks
-  before the page is closed with unsaved changes.
+  before the page is closed with unsaved changes. The help page (F10)
+  lists these browser keys in a "Web browser" section.
 
 ## [1.0.33] - 2026-11-24
 

@@ -392,7 +392,10 @@ download a document or a ZIP (documents only, never `git.cfg`),
 upload into a project (refused while the document is open with
 unsaved changes; reloaded through `editor_ui_files_changed()` /
 `editor_reload_path()` otherwise), create a project. F11 is full
-screen with `navigator.keyboard.lock()` where available. When the
+screen with `navigator.keyboard.lock()` where available. The help page
+(F10) lists these in a "Web browser" section (`build_help_text()`,
+gated on the derived `DRAFTLING_WEB_PAGE`); keep it in step with
+`client.js`. When the
 editor or the Git client starts using a new ESP-IDF / FreeRTOS call or
 component API, or a font / input-method / git_sync source or data file
 is added, add it as for the Linux program (the shared stand-ins cover
@@ -3523,6 +3526,7 @@ in C / C++ code:
 | DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
 | DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak, web client |
+| DRAFTLING_WEB_PAGE                | The editor runs in a web page: the help page (F10) gets a "Web browser" section listing the page's own keys (F9 Files panel, F11 full screen), the system clipboard, Command as Ctrl and the shortcuts the browser keeps | web client |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
