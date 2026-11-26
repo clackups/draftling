@@ -35,6 +35,9 @@
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
 #include "tab5_kbd.h"
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+#include "matrix_kbd.h"
+#endif
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 #include "usb_msc.h"
 #endif
@@ -9117,6 +9120,12 @@ static void build_hwinfo_text(std::string &out, int cols)
         any_kbd = true;
     }
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+    if (matrix_kbd_is_present()) {
+        help_row(out, cols, kc, "Built-in", "key matrix");
+        any_kbd = true;
+    }
+#endif
     if (!any_kbd) help_row(out, cols, kc, "Status", "none connected");
 
     help_heading(out, "USB device");
@@ -13746,6 +13755,9 @@ static void apply_pending_connect_state(void)
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
         if (tab5_kbd_is_present()) other_kbd = true;
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+        if (matrix_kbd_is_present()) other_kbd = true;
+#endif
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
         if (usb_kbd_is_connected()) other_kbd = true;
 #endif
@@ -14595,6 +14607,11 @@ static void build_screens(void)
      * with USB / BLE rather than replacing them: on the Tab5 the
      * built-in keyboard and a USB keyboard are both accepted. */
     tab5_kbd_set_callback((kb_event_callback_t)editor_ui_handle_key);
+#endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+    /* A keyboard matrix on GPIO pins (MicroJournal Rev.6) feeds the
+     * same handler, next to BLE. */
+    matrix_kbd_set_callback((kb_event_callback_t)editor_ui_handle_key);
 #endif
 
     /* ---- BLE connection prompt screen ---- */

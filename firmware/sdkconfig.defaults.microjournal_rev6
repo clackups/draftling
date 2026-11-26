@@ -1,0 +1,15 @@
+# CMakePresets.json board defaults: MicroJournal Rev.6 (ESP32-S3 DevKitC
+# N16R8, ILI9341 or ST7789 panel detected at boot, 48-key keyboard matrix
+# on GPIO pins). Sets the hardware model and IDF target used by the preset.
+
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV6=y
+CONFIG_DRAFTLING_DISPLAY_ROTATE_180=y
+
+# Two keyboard columns are GPIO19 / GPIO20, the native USB pins, so the
+# console cannot use USB-Serial/JTAG: UART0 only (the DevKitC's UART port).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# Battery powered: dynamic frequency scaling, as on the Freenove boards.
+CONFIG_PM_ENABLE=y

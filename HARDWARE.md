@@ -62,6 +62,7 @@ Features used in the table:
 | [Freenove FNK0104N](#freenove-fnk0104a-fnk0104b-fnk0104s-fnk0104n) | `freenove_fnk0104n` | 3.5" 480x320 IPS | yes | yes | yes | yes |
 | [Viewe UEDX24320028E-WB-A + UEED035HV](#viewe-uedx24320028e-wb-a-with-ueed035hv-rx40-l001-display) | `viewe_uedx24320028_ueed035hv` | 3.5" 480x320 transflective | yes | yes | - | yes |
 | [MicroJournal Rev 5.0 / 5.1](#microjournal-rev-50--51) | `microjournal_rev5` | 2.8" 320x240 LCD | - | - | - | - |
+| [MicroJournal Rev.6](#microjournal-rev6) | `microjournal_rev6` | 2.8" 320x240 LCD | - | - | - | - |
 | [NiceMCU-C5E-DEV_2.8IPS](#nicemcu-c5e-dev_28ips) | `nicemcu_c5_28ips` | 2.8" 320x240 IPS | yes | yes | - | - |
 | [OnePage Reader](#onepage-reader) | `onepage_c61` | 4.26" 800x480 e-paper | - | - | yes | - |
 
@@ -530,6 +531,59 @@ stock panel is not supported).
 - No wake button: after sleep, press reset or switch the power off and
   on.
 - No SD card via USB or Sync via browser.
+
+
+## MicroJournal Rev.6
+
+[Micro Journal Rev.6](https://github.com/unkyulee/micro-journal/tree/main/rev.6/6.0),
+an ESP32-S3 writerdeck with a built-in 48-key mechanical keyboard. The
+keyboard is wired straight to the ESP32-S3's pins, and Draftling reads
+it directly.
+
+- ESP32-S3 DevKitC N16R8 (the N8R2 module is not supported).
+- 2.8" 320x240 color LCD (ILI9341 or ST7789, detected at boot, as on
+  the Rev 5) with the MicroSD slot of the display module. Draftling
+  keeps the documents on the MicroSD card, not in the internal flash
+  like the Micro Journal firmware 2.x: copy them to a card first.
+- No touch, no backlight control, no battery level.
+- The built-in keyboard is always there, so Draftling starts without
+  asking for one. A Bluetooth keyboard can still be connected from F1
+  -> Connectivity -> Bluetooth -> Scan for keyboard.
+- Any key wakes the device from sleep (the key is not typed).
+- Two keyboard wires use the DevKitC's native USB pins, so only its
+  UART USB-C port (the upper one) works: for power, charging and
+  flashing. No SD card via USB or Sync via browser.
+
+### Rev.6 keys
+
+The keys are where the Rev.6 keycaps show them. Draftling needs a few
+keys the Rev.6 does not have (Esc, F1, Ctrl, Alt, Tab); they are on
+the top-left key and on the Lower layer:
+
+| Key | Alone | With Shift | With Lower held |
+| --- | --- | --- | --- |
+| Top-left (Rev.6 menu key) | Esc | Esc | F1 (menu) |
+| q w e r t y u i o p | letters | capitals | 1 2 3 4 5 6 7 8 9 0 |
+| Backspace | Backspace | Delete | Delete |
+| `\` | `\` | `\|` | `` ` `` |
+| `-` | `-` | `_` | Ctrl, one-shot |
+| `=` | `=` | `+` | Alt, one-shot |
+| `[` | `[` | `{` | Tab |
+| Left / Right | Left / Right | select | Home / End |
+| Up / Down | Up / Down | select | Page Up / Page Down |
+
+Everything else types what it shows, and Lower + Shift + the top row
+types `! @ # $ % ^ & * ( )`. Lower + Shift + `\` is `~`.
+
+Ctrl and Alt are one-shot: press Lower + `-`, let go, then press the
+key the shortcut needs. For example Ctrl+S is Lower + `-`, then `s`;
+Ctrl+P (sleep) is Lower + `-`, then `p`; Ctrl+1 is Lower + `-`, then
+Lower + `q`. Pressing Lower + `-` again before the next key cancels
+it. Holding Lower + `-` down while pressing the other key works too.
+
+Differences from the Rev.6 firmware: Shift + Left / Right select text
+(Home and End are Lower + Left / Right), and Lower + Up / Down are
+Page Up / Down.
 
 
 ## NiceMCU-C5E-DEV_2.8IPS
