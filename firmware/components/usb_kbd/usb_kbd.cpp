@@ -72,11 +72,12 @@ static volatile bool s_kbd_connected = false;
 static TaskHandle_t  s_hid_event_task  = NULL;
 static QueueHandle_t s_hid_event_queue = NULL;
 
-/* Boot-protocol report state: track the previous 6 keycodes so we
- * emit one press/release event per change. */
+/* Boot-protocol report layout: up to 6 keycodes per report. Each
+ * keyboard interface keeps the previous report's keys (kbd_iface_t),
+ * so one press / release event is emitted per change. The state used
+ * to be shared by all interfaces, so on a keyboard with two keyboard
+ * interfaces a report from one cancelled the keys of the other. */
 #define KBD_BOOT_KEY_SLOTS 6
-static uint8_t s_prev_keys[KBD_BOOT_KEY_SLOTS] = {0};
-static uint8_t s_prev_mod = 0;
 
 /* Recognised keyboard interfaces. Some physical keyboards expose
  * more than one HID interface that we identify as a keyboard, e.g.
@@ -108,6 +109,9 @@ typedef struct {
     bool    is_boot;
     bool    uses_id;
     uint8_t report_id;
+    uint8_t prev_keys[KBD_BOOT_KEY_SLOTS];
+    uint8_t prev_mod;
+    uint32_t xfer_errors;   /* failed IN transfers, restarted each time */
 } kbd_iface_t;
 
 static kbd_iface_t s_kbd_ifaces[MAX_KBD_IFACES] = {};
@@ -231,6 +235,7 @@ typedef struct {
     hid_host_driver_event_t  event;
     void                    *arg;
     int                      leds;   /* >= 0: an LED update, not a driver event */
+    bool                     restart; /* restart a failed interface's input */
 } hid_event_t;
 
 /* Keyboard LED state (KB_LED_* bits), set by usb_kbd_set_leds() and
@@ -316,7 +321,7 @@ static void dispatch_key(uint8_t modifier, uint8_t keycode, bool pressed)
  *   [1]   = reserved (always 0)
  *   [2-7] = up to 6 simultaneous keycodes; 0 = empty slot
  */
-static void process_boot_kbd_report(const uint8_t *data, size_t len)
+static void process_boot_kbd_report(kbd_iface_t *k, const uint8_t *data, size_t len)
 {
     if (len < 3) return;     /* malformed; ignore */
 
@@ -331,14 +336,14 @@ static void process_boot_kbd_report(const uint8_t *data, size_t len)
         uint8_t kc = keys[i];
         /* HID keycodes 0..3 are reserved error codes; skip. */
         if (kc < 0x04) continue;
-        if (!key_in_array(kc, s_prev_keys, KBD_BOOT_KEY_SLOTS)) {
+        if (!key_in_array(kc, k->prev_keys, KBD_BOOT_KEY_SLOTS)) {
             dispatch_key(mod, kc, true);
         }
     }
 
     /* Released keys (in previous report, not in current) */
     for (int i = 0; i < KBD_BOOT_KEY_SLOTS; i++) {
-        uint8_t kc = s_prev_keys[i];
+        uint8_t kc = k->prev_keys[i];
         if (kc < 0x04) continue;
         if (!key_in_array(kc, keys, key_count)) {
             dispatch_key(mod, kc, false);
@@ -346,9 +351,21 @@ static void process_boot_kbd_report(const uint8_t *data, size_t len)
     }
 
     /* Save state for the next diff. */
-    memset(s_prev_keys, 0, sizeof(s_prev_keys));
-    memcpy(s_prev_keys, keys, (size_t)key_count);
-    s_prev_mod = mod;
+    memset(k->prev_keys, 0, sizeof(k->prev_keys));
+    memcpy(k->prev_keys, keys, (size_t)key_count);
+    k->prev_mod = mod;
+}
+
+/* Release every key an interface still holds (hot-unplug, a restarted
+ * transfer), so the editor does not see stuck keys or modifiers. */
+static void release_held_keys(kbd_iface_t *k)
+{
+    for (int i = 0; i < KBD_BOOT_KEY_SLOTS; i++) {
+        uint8_t kc = k->prev_keys[i];
+        if (kc >= 0x04) dispatch_key(k->prev_mod, kc, false);
+    }
+    memset(k->prev_keys, 0, sizeof(k->prev_keys));
+    k->prev_mod = 0;
 }
 
 /* ---- HID host driver callbacks ---- */
@@ -382,10 +399,14 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
             report++;
             report_len--;
         }
-        process_boot_kbd_report(report, report_len);
+        process_boot_kbd_report(iface, report, report_len);
         break;
     }
-    case HID_HOST_INTERFACE_EVENT_DISCONNECTED:
+    case HID_HOST_INTERFACE_EVENT_DISCONNECTED: {
+        kbd_iface_t *gone = find_kbd_iface(hid_dev_handle);
+        /* Release any held keys so the editor does not see stuck
+         * modifiers after a hot-unplug. */
+        if (gone) release_held_keys(gone);
         hid_host_device_close(hid_dev_handle);
         if (!remove_kbd_iface(hid_dev_handle)) {
             /* Not an interface we recognised as a keyboard: e.g. a
@@ -405,14 +426,6 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
         }
         ESP_LOGI(TAG, "USB HID keyboard disconnected");
         s_kbd_connected = false;
-        /* Release any held keys so the editor does not see stuck
-         * modifiers after a hot-unplug. */
-        for (int i = 0; i < KBD_BOOT_KEY_SLOTS; i++) {
-            uint8_t kc = s_prev_keys[i];
-            if (kc >= 0x04) dispatch_key(s_prev_mod, kc, false);
-        }
-        memset(s_prev_keys, 0, sizeof(s_prev_keys));
-        s_prev_mod = 0;
         if (s_connect_cb) s_connect_cb(false);
         /* The wired keyboard is gone. Hand input back to the BLE
          * keyboard subsystem (if BLE was initialised at boot) so
@@ -420,9 +433,27 @@ static void hid_iface_cb(hid_host_device_handle_t hid_dev_handle,
          * again. No-op when BLE has never been brought up. */
         ble_keyboard_enable();
         break;
-    case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR:
-        ESP_LOGW(TAG, "USB HID transfer error");
+    }
+    case HID_HOST_INTERFACE_EVENT_TRANSFER_ERROR: {
+        /* The HID host driver does not resubmit a failed IN transfer
+         * (in_xfer_done() in usb_host_hid), so the interface would stay
+         * silent until it is unplugged. Failures happen now and then,
+         * more often behind a hub (a low-speed keyboard behind a
+         * full-speed hub). Restart the polling from hid_event_task:
+         * stop / start are blocking endpoint operations that must not
+         * run in this callback. */
+        kbd_iface_t *k = find_kbd_iface(hid_dev_handle);
+        if (!k || !s_hid_event_queue) break;
+        k->xfer_errors++;
+        ESP_LOGW(TAG, "USB HID transfer error (%lu on this interface), "
+                      "restarting input", (unsigned long)k->xfer_errors);
+        hid_event_t evt = {};
+        evt.handle  = hid_dev_handle;
+        evt.leds    = -1;
+        evt.restart = true;
+        xQueueSend(s_hid_event_queue, &evt, 0);
         break;
+    }
     default:
         ESP_LOGD(TAG, "USB HID unhandled iface event %d", (int)event);
         break;
@@ -442,6 +473,7 @@ static void hid_drv_cb(hid_host_device_handle_t hid_dev_handle,
         .event  = event,
         .arg    = arg,
         .leds   = -1,
+        .restart = false,
     };
     xQueueSend(s_hid_event_queue, &evt, 0);
 }
@@ -451,6 +483,18 @@ static void hid_event_task(void *arg)
     hid_event_t evt;
     while (true) {
         if (xQueueReceive(s_hid_event_queue, &evt, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+        if (evt.restart) {
+            kbd_iface_t *k = find_kbd_iface(evt.handle);
+            if (!k) continue;   /* unplugged meanwhile */
+            release_held_keys(k);
+            esp_err_t se = hid_host_device_stop(evt.handle);
+            esp_err_t st = hid_host_device_start(evt.handle);
+            if (st != ESP_OK) {
+                ESP_LOGE(TAG, "USB HID input restart failed: stop %s, start %s",
+                         esp_err_to_name(se), esp_err_to_name(st));
+            }
             continue;
         }
         if (evt.leds >= 0) {

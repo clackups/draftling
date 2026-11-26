@@ -81,7 +81,8 @@ FW_SRCS := \
 	$(COMPONENTS)/display/display_orientation.cpp \
 	$(COMPONENTS)/display/display_flip.cpp \
 	$(COMPONENTS)/display/display_scale.cpp \
-	$(COMPONENTS)/display/lv_rtl_line_width.c
+	$(COMPONENTS)/display/lv_rtl_line_width.c \
+	$(COMPONENTS)/display/lv_wrap_spaces.c
 
 # The real Git client (components/git_sync/CMakeLists.txt).
 G := $(COMPONENTS)/git_sync
@@ -206,7 +207,7 @@ LDFLAGS := $(OPT) -pthread -sPROXY_TO_PTHREAD=1 -sPTHREAD_POOL_SIZE=6 \
 	-sEXPORTED_FUNCTIONS=_main,_malloc,_free,_web_input,_web_unsaved,_web_storage,_web_files_request \
 	-sEXPORTED_RUNTIME_METHODS=stringToNewUTF8 \
 	-Wno-pthreads-mem-growth --post-js src/glue.js \
-	-Wl,--wrap=lv_text_get_line_width
+	-Wl,--wrap=lv_text_get_line_width -Wl,--wrap=lv_text_get_next_line -Wl,--wrap=lv_text_get_size_attributes
 
 # ---- rules ------------------------------------------------------------------
 

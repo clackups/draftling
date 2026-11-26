@@ -18,6 +18,8 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_log.h>
+#include "hal/gpio_ll.h"
+#include "esp_timer.h"
 #if PSRAM != enabled && !defined(CONFIG_ESP32_SPIRAM_SUPPORT) && !defined(CONFIG_ESP32S3_SPIRAM_SUPPORT)
 #error "Please enable PSRAM support"
 #endif
@@ -201,6 +203,14 @@ const BBPANELDEF panelDefs[] = {
       4, 14, 39, 40, BB_NOT_USED, 0, 38, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5PRO_V2
     {1440, 720, 40000000, BB_PANEL_FLAG_MIRROR_X, {27,28,29,30,31,32,33,34}, 8, BB_NOT_USED, 36, 13, 25, 0, 26,
       24, 0, 7, 8, 0, 0, 11 /* LED1_EN */, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5P4 
+    // Draftling addition: LilyGO T5 4.7" e-paper, ESP32-S3 version (ED047TC1).
+    // Same 74HC4094 shift-register control scheme as BB_PANEL_LILYGO_T5PRO
+    // (CFG_DATA=13, CFG_CLK=12, CFG_STR=0); D0-D7 = 8,1,2,3,4,5,6,7,
+    // CKV=38, STH=40 (driven as the i80 CS), CKH=41. GPIO39 (a pin of the
+    // board's unpopulated expansion header) is the dummy D/C line the LCD
+    // driver insists on.
+    {960, 540, 20000000, BB_PANEL_FLAG_NONE, {8,1,2,3,4,5,6,7}, 8, BB_NOT_USED, BB_NOT_USED, 38, 40, BB_NOT_USED, BB_NOT_USED,
+      41, BB_NOT_USED, 13, 12, 0, 0, 39, u8M5Matrix, sizeof(u8M5Matrix), 0}, // BB_PANEL_LILYGO_T5_47_S3
 };
 //
 // Forward references for panel callback functions
@@ -246,6 +256,7 @@ const BBPANELPROCS panelProcs[] = {
     {LilyGoEinkPower, LilyGoIOInit, LilyGoRowControl, NULL, NULL},// BB_PANEL_LILYGO_T5PRO
     {EPDiyV7EinkPower, EPDiyV7IOInit, EPDiyV7RowControl, EPDiyV7IODeInit, EPDiyV7ExtIO},// BB_PANEL_LILYGO_T5PRO_V2
     {EPDiyV7EinkPower, EPDiyV7IOInit, EPDiyV7RowControl, EPDiyV7IODeInit, EPDiyV7ExtIO}, // BB_PANEL_LILYGO_T5P4  
+    {LilyGoEinkPower, LilyGoIOInit, LilyGoRowControl, NULL, NULL}, // BB_PANEL_LILYGO_T5_47_S3 (Draftling addition)
 };
 
 uint8_t ioRegs[24]; // MCP23017 copy of I/O register state so that we can just write new bits
@@ -553,8 +564,45 @@ uint8_t Inkplate5V2ExtIO(uint8_t iOp, uint8_t iPin, uint8_t iVal)
 //
 // Write 8 bits (_state.shift_data) to the shift register
 //
+// Draftling: the LilyGO T5 4.7" S3 steps every panel row through this
+// shift register (twice per row), so gpio_set_level()'s ~50 calls per
+// row were a large part of each refresh pass. Drive the three pins
+// through the GPIO registers instead; the NOPs keep every pulse well
+// above the 74HC4094's minimum width at 3.3 V.
+// Draftling: on the T5 4.7" S3, rows outside a partial update (and the
+// rows of the closing neutral pass) can be stepped through without being
+// sent again (see bbepPartialUpdate()). That made a typing update several
+// times faster but darkened the screen a little more per update, so it
+// is off.
+#ifndef T547_SKIP_ROWS
+#define T547_SKIP_ROWS 0
+#endif
+#define T547_NOPS() __asm__ __volatile__("nop; nop; nop; nop; nop; nop; nop; nop")
+static void bbepSendShiftDataFast(FASTEPDSTATE *pState)
+{
+    uint8_t uc = pState->shift_data;
+    const uint32_t sda = pState->panelDef.ioSDA;
+    const uint32_t scl = pState->panelDef.ioSCL;
+    const uint32_t str = pState->panelDef.ioShiftSTR;
+    gpio_ll_set_level(&GPIO, str, 0);
+    for (int i = 0; i < 8; i++) {
+        gpio_ll_set_level(&GPIO, scl, 0);
+        gpio_ll_set_level(&GPIO, sda, (uc & 0x80) ? 1 : 0);
+        uc <<= 1;
+        T547_NOPS();
+        gpio_ll_set_level(&GPIO, scl, 1);
+        T547_NOPS();
+    }
+    gpio_ll_set_level(&GPIO, str, 1);
+    T547_NOPS();
+}
+
 void bbepSendShiftData(FASTEPDSTATE *pState)
 {
+    if (pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3) {
+        bbepSendShiftDataFast(pState);
+        return;
+    }
     uint8_t uc = pState->shift_data;
 //    Serial.printf("Sending shift data: 0x%02x\n", uc);
     // Clear STR (store) to allow updating the value
@@ -597,6 +645,23 @@ int LilyGoEinkPower(void *pBBEP, int bOn)
         gpio_set_level((gpio_num_t)pState->panelDef.ioSPH, 1);
         pState->pwr_on = 1;
     } else { // off
+        if (pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3) {
+            // Draftling: end the frame as LilyGO's epd_end_frame() does
+            // before the rails go down -- output enable and the gate
+            // driver's MODE off, then two CKV pulses (FastEPD left MODE
+            // on). It did not change the darkening of the whole screen
+            // after each update; see touchup_cb() in display_h752.cpp.
+            pState->shift_data &= ~0x80; // OE off
+            bbepSendShiftData(pState);
+            pState->shift_data &= ~0x40; // ep_mode = false
+            bbepSendShiftData(pState);
+            for (int k = 0; k < 2; k++) {
+                gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 1);
+                delayMicroseconds(1);
+                gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 0);
+                delayMicroseconds(1);
+            }
+        }
         pState->shift_data &= ~0x04; // pos_power_enable = false
         bbepSendShiftData(pState);
         delayMicroseconds(10);
@@ -1592,6 +1657,20 @@ void bbepClear(FASTEPDSTATE *pState, uint8_t val, uint8_t count, BB_RECT *pRect)
         for (i = 0; i < pState->native_height; i++)
         {
             dy = (pState->iFlags & BB_PANEL_FLAG_MIRROR_Y) ? pState->native_height - 1 - i : i;
+            if (i >= 2 && !pRect && val == 0x00 &&
+                pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3 && T547_SKIP_ROWS) {
+                // Draftling: a whole-screen neutral pass sends the same
+                // all-zero row every time; after two rows the source
+                // drivers hold it, so only step the gate driver (as for
+                // the skipped rows of bbepPartialUpdate()).
+                while (!dma_is_done) {
+                    delayMicroseconds(1);
+                }
+                bbepRowControl(pState, ROW_STEP);
+                gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 1); // CKV on
+                delayMicroseconds(1);
+                continue;
+            }
             // Send the data
             if (dy < iStartRow || dy > iEndRow) { // skip this row
                 memset(pState->dma_buf, 0xff, pState->native_width / 4);
@@ -1957,6 +2036,7 @@ int bbepPartialUpdate(FASTEPDSTATE *pState, bool bKeepOn, int iStartLine, int iE
         iEndLine = i;
     }
     for (pass = 0; pass < pState->iPartialPasses; pass++) { // each pass is about 32ms
+        int64_t pass_t0 = esp_timer_get_time();
         uint8_t *d, *dp = pState->pTemp;
         int iDelta = pState->native_width / 4; // 2 bits per pixel
         int iSkipped = 0;
@@ -1984,12 +2064,40 @@ int bbepPartialUpdate(FASTEPDSTATE *pState, bool bKeepOn, int iStartLine, int iE
                  * streaks under any partially-updated text). */
                 if (iSkipped < 2) { // new skipped section
                     memset((void *)d, 0, pState->native_width/4);
+                    bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
+                } else if (pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3 && T547_SKIP_ROWS) {
+                    // Draftling: the source drivers already hold a
+                    // neutral row (the two rows above were sent as
+                    // zeros), so the latch just re-latches it: step the
+                    // gate driver without sending the row again.
+                    while (!dma_is_done) {
+                        delayMicroseconds(1);
+                    }
+                    if (i != 0) bbepRowControl(pState, ROW_STEP);
+                    gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 1); // CKV on
+                    delayMicroseconds(1);
+                } else {
+                    bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
                 }
-                bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
                 iSkipped++;
             }
             dp += iDelta;
             iDMAOff ^= (pState->native_width/4);
+        }
+        // Draftling: a pixel keeps the voltage of its last row write
+        // until the row is written again, so the time between passes is
+        // drive time. With the unchanged rows skipped a pass can be only
+        // a few ms long; hold it for the minimum the caller set.
+        if (pState->u32PartialPassMinUs) {
+            while (!dma_is_done) {
+                delayMicroseconds(1);
+            }
+            int64_t left = (int64_t)pState->u32PartialPassMinUs - (esp_timer_get_time() - pass_t0);
+            if (left >= 2000) {
+                vTaskDelay(pdMS_TO_TICKS(left / 1000));
+                left = (int64_t)pState->u32PartialPassMinUs - (esp_timer_get_time() - pass_t0);
+            }
+            if (left > 0) delayMicroseconds((uint32_t)left);
         }
     } // for each pass
 

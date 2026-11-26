@@ -38,6 +38,13 @@ target_link_libraries(${lvgl_lib} PRIVATE idf::esp_hw_support)
 target_sources(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/lv_rtl_line_width.c")
 idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_text_get_line_width" APPEND)
 
+# Spaces typed at a word-wrap point hung past the right edge and the
+# next row dropped them (Space seemed dead at the end of a full row);
+# see lv_wrap_spaces.c.
+target_sources(${lvgl_lib} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/lv_wrap_spaces.c")
+idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_text_get_next_line" APPEND)
+idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=lv_text_get_size_attributes" APPEND)
+
 # epdiy 2.1.3 calls two LCD_CAM LL functions whose first parameter
 # became a group id in ESP-IDF v6.1.1; see epdiy_idf_compat.h. epdiy is
 # only pulled in on the ESP32-S3 (idf_component.yml).

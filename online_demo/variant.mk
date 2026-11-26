@@ -70,7 +70,8 @@ FW_SRCS := \
 	$(COMPONENTS)/display/display_orientation.cpp \
 	$(COMPONENTS)/display/display_flip.cpp \
 	$(COMPONENTS)/display/display_scale.cpp \
-	$(COMPONENTS)/display/lv_rtl_line_width.c
+	$(COMPONENTS)/display/lv_rtl_line_width.c \
+	$(COMPONENTS)/display/lv_wrap_spaces.c
 
 EMBED :=
 
@@ -169,7 +170,7 @@ LDFLAGS := $(OPT) \
 	-sENVIRONMENT=web -sFORCE_FILESYSTEM=1 -lidbfs.js \
 	-sEXPORTED_FUNCTIONS=_main,_demo_key,_demo_pointer,_demo_button \
 	-sEXPORTED_RUNTIME_METHODS=FS,IDBFS,HEAPU8,HEAPU16,addRunDependency,removeRunDependency \
-	-Wl,--wrap=lv_text_get_line_width \
+	-Wl,--wrap=lv_text_get_line_width -Wl,--wrap=lv_text_get_next_line -Wl,--wrap=lv_text_get_size_attributes \
 	--embed-file samples@/seed
 
 # ---- rules ------------------------------------------------------------------

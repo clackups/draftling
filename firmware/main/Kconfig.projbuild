@@ -51,6 +51,22 @@ config DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
         the older LilyGO EPD47 shift-register display driver path
         instead of epdiy's epd_board_v7 PCA9535/TPS65185 path.
 
+config DRAFTLING_MODEL_LILYGO_T5_47_S3
+    bool "LilyGO T5 4.7\" E-Paper (ESP32-S3 version)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        LilyGO T5 4.7" e-paper board, ESP32-S3 version (16 MB flash,
+        8 MB PSRAM), with the 960x540 ED047TC1 panel. The panel's control
+        lines sit behind a 74HC4094 shift register, driven through the
+        vendored FastEPD library (components/display/display_h752.cpp).
+        MicroSD on SPI (CS=42, MOSI=15, SCK=11, MISO=16), user button on
+        GPIO21 as the wake source. The USB-C port is the ESP32-S3's native
+        USB: by default a USB device ("SD card via USB", "Sync via
+        browser"); with DRAFTLING_USB_HOST_NATIVE a USB host for a
+        keyboard (the MicroJournal Rev.7 build). Pins are defined in
+        main/boards/lilygo_t5_47_s3.h. Not yet tested on physical
+        hardware.
+
 config DRAFTLING_MODEL_M5STACK_PAPERS3
     bool "M5Stack PaperS3"
     depends on IDF_TARGET_ESP32S3
@@ -502,6 +518,52 @@ config DRAFTLING_MODEL_WEB
 
 endchoice
 
+# Boards that use GPIO19 / GPIO20 -- the ESP32-S3's native USB D- / D+
+# -- for something else (I2C to the touch controller on all of them),
+# so the USB host option below is not offered there.
+config DRAFTLING_NATIVE_USB_PINS_TAKEN
+    bool
+    default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_50
+    default y if DRAFTLING_MODEL_VIEWE_UEDX80480043
+    default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
+    default y if DRAFTLING_MODEL_SUNTON_8048S043
+    default y if DRAFTLING_MODEL_SUNTON_8048S070
+    default n
+
+config DRAFTLING_USB_HOST_NATIVE
+    bool "Use the native USB port as a USB host for a keyboard"
+    depends on IDF_TARGET_ESP32S3 && !DRAFTLING_NATIVE_USB_PINS_TAKEN
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default n
+    select USB_HOST_HUBS_SUPPORTED
+    help
+        Run the ESP32-S3's native USB port (GPIO19 D- / GPIO20 D+) as a
+        USB host for a keyboard (components/usb_kbd), with USB hub
+        support, instead of as a USB device. Any ESP32-S3 board whose
+        connector is wired to the native USB pins can do this; on a
+        board whose USB port goes through a USB-to-UART bridge the
+        native pins have to be wired to a USB socket by hand.
+
+        Most boards do not supply 5 V on their USB port: the keyboard
+        (or hub) needs 5 V on VBUS from outside, e.g. a powered OTG
+        splitter or a self-powered hub, which usually powers the board
+        as well. The MicroJournal Rev 5 has a USB-A host socket; the
+        MicroJournal Rev.7 (microjournal_rev7 preset, a LilyGO T5 4.7"
+        ESP32-S3) feeds VBUS from its battery boost module.
+
+        With this option "SD card via USB" and "Sync via browser" are
+        not available, and flashing over USB needs the board in
+        download mode (hold BOOT while resetting). The console stays on
+        UART0.
+
+        Bluetooth is left out of such a build to save battery
+        (DRAFTLING_NO_BLUETOOTH): the BLE keyboard code is compiled to
+        stubs and the Bluetooth controller is never started, even if
+        ESP-IDF's Bluetooth stays enabled in the board's sdkconfig.
+        Setting CONFIG_BT_ENABLED=n as well (Component config ->
+        Bluetooth; the microjournal_rev5 / _rev7 presets do) only makes
+        the image smaller.
+
 # The Linux program packaged as a Flatpak (linux/packaging/flatpak/, selected by
 # linux/sdkconfig.defaults.flatpak). Inside the sandbox it cannot set
 # the screen backlight or read the battery, and the network belongs to
@@ -863,6 +925,7 @@ config DRAFTLING_DISPLAY_EPD
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default y if DRAFTLING_MODEL_ELECROW_CROWPANEL_579
@@ -896,6 +959,15 @@ config DRAFTLING_DISPLAY_EPDIY
 config DRAFTLING_DISPLAY_H752_EPD
     bool
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default n
+
+# DRAFTLING_DISPLAY_T5_47_EPD selects the same FastEPD shift-register
+# backend (components/display/display_h752.cpp) for the LilyGO T5 4.7"
+# ESP32-S3 board, with its own pin set (FastEPD panel
+# BB_PANEL_LILYGO_T5_47_S3) and no front-light.
+config DRAFTLING_DISPLAY_T5_47_EPD
+    bool
+    default y if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default n
 
 # DRAFTLING_DISPLAY_XTEINK_EPD selects the from-scratch SPI e-paper
@@ -1344,7 +1416,9 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 # board whose sdkconfig has Bluetooth off.
 config DRAFTLING_NO_BLUETOOTH
     bool
-    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    # A USB keyboard host build leaves Bluetooth out to save battery
+    # (MicroJournal Rev 5 / Rev.7 and any S3 board with the option).
+    default y if DRAFTLING_USB_HOST_NATIVE
     # Linux, web browser: the computer's own keyboard, no BLE stack.
     default y if DRAFTLING_MODEL_LINUX
     default y if DRAFTLING_MODEL_WEB
@@ -1353,7 +1427,7 @@ config DRAFTLING_NO_BLUETOOTH
 config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
-    default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_USB_HOST_NATIVE
     default n
 
 # Some USB host ports are initialized by a board support package rather
@@ -1400,10 +1474,13 @@ config DRAFTLING_USB_KBD_PROBE_MS
 # so it is deliberately absent from this list.
 config DRAFTLING_HAS_USB_MSC
     bool
+    # The native USB port is a USB host instead (option above).
+    depends on !DRAFTLING_USB_HOST_NATIVE
     default y if DRAFTLING_MODEL_XTEINK_X4_PRO
     default y if DRAFTLING_MODEL_XTEINK_X4_CLASSIC
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_WAVESHARE_EPAPER_397
     default y if DRAFTLING_MODEL_WAVESHARE_RLCD42
@@ -1547,6 +1624,10 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_GUITION_JC3248W535
     default 0  if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 48 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    # LilyGO T5 4.7" ESP32-S3: user button on GPIO21 (RTC-capable).
+    # BOOT (GPIO0) cannot be used: it is the display shift register's
+    # strobe line.
+    default 21 if DRAFTLING_MODEL_LILYGO_T5_47_S3
     # M5Stack Tab5 (ESP32-P4): no BOOT button is wired to an LP_IO
     # (the only LP_IO range on the P4 is GPIO0-15), so there is no
     # GPIO wake source available. On Tab5 standby enters real deep
@@ -1991,6 +2072,7 @@ config DRAFTLING_DISPLAY_WIDTH
     default 960 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 960 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 960 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default 960 if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default 640 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default 480 if DRAFTLING_MODEL_GUITION_JC3248W535
     default 720 if DRAFTLING_MODEL_M5STACK_TAB5
@@ -2043,6 +2125,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 540 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 540 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 540 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default 540 if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default 172 if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default 320 if DRAFTLING_MODEL_GUITION_JC3248W535
     default 1280 if DRAFTLING_MODEL_M5STACK_TAB5
@@ -2134,6 +2217,7 @@ config DRAFTLING_DISPLAY_HIDPI
     default y if DRAFTLING_MODEL_M5STACK_PAPERS3
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default y if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
+    default y if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default y if DRAFTLING_MODEL_M5STACK_TAB5
     default y if DRAFTLING_MODEL_SUNTON_8048S070
     default y if DRAFTLING_MODEL_SUNTON_8048S043
@@ -2164,6 +2248,9 @@ config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
     depends on DRAFTLING_DISPLAY_EPD
     range 1 1000
+    # The LilyGO T5 4.7" S3's "full" refresh is a partial-waveform pass
+    # over every pixel (~140 ms, no flash), so it can run often.
+    default 8 if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default 30
     help
         How many partial refreshes the e-paper driver performs before it

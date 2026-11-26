@@ -109,6 +109,7 @@ card).
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
+| LilyGO T5 4.7" E-Paper (ESP32-S3) / MicroJournal Rev.7 | 4.7-inch e-paper (ED047TC1, shift-register control lines, FastEPD), 960x540, no touch; Rev.7 = the same board with its USB-C port as a USB keyboard host (untested on hardware) |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
@@ -1014,6 +1015,20 @@ Waveshare ePaper-3.97 and the Seeed reTerminal Sticky):
 
 Board-specific needs (SPI clock, pins, power rails, a non-blocking
 refresh as on the Sticky) may differ; the register sequence should not.
+
+**Spaces at a wrap point.** `lv_text_get_next_line()` lets the
+spaces after a row's last word hang past the right edge and, at an
+automatic wrap, skips all of them, so Space at the end of a full row
+seemed dead (cursor off screen, the next letter at the start of the
+next row). `lv_wrap_spaces.c` (in `lvgl__lvgl`, linked with
+`-Wl,--wrap=lv_text_get_next_line` and
+`-Wl,--wrap=lv_text_get_size_attributes`; also in the Linux, web and
+online-demo makefiles) ends such a row after the spaces that fit plus
+the one it breaks at, so further spaces start the next row; the size
+function is redone with that breaking because it calls the row
+function inside `lv_text.c`, where `--wrap` does not reach. The editor
+clamps the cursor to the label's right edge after the one hanging
+space.
 
 **Right-to-left rows.** LVGL right-aligns a row with
 `lv_text_get_line_width()`, which leaves out trailing spaces; in a
@@ -3138,6 +3153,51 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   internal PHY; `usb_kbd_init()` installs the USB Host library itself
   (no BSP). Backlight control is disabled. Tested on physical hardware with the
   Rev 5.0 (ILI9341) panel only; the Rev 5.1 (ST7789) is untested. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_LILYGO_T5_47_S3** -- LilyGO T5 4.7" e-paper, ESP32-S3
+  version (V2.3; `main/boards/lilygo_t5_47_s3.h`), not the T5 E-Paper
+  S3 Pro: 960x540 ED047TC1 whose output enable, mode, STV, panel
+  supplies and row latch sit behind a 74HC4094 shift register (DATA=13,
+  CLK=12, STR=0 -- the BOOT net), so epdiy's S3 LCD path (LE and STV
+  as GPIOs) cannot drive it. `DRAFTLING_DISPLAY_T5_47_EPD` compiles
+  `display_h752.cpp`, which it shares with the original H752, against
+  the vendored FastEPD's `BB_PANEL_LILYGO_T5_47_S3`, a Draftling
+  addition to `components/fastepd` (D0-D7 = 8,1,2,3,4,5,6,7 -- LilyGO's
+  S3 driver permutes them only to reuse the ESP32 I2S LUTs; CKV=38,
+  STH=40 as the i80 CS, CKH=41, dummy D/C GPIO39; LilyGO shift-register
+  callbacks as for BB_PANEL_LILYGO_T5PRO). Every refresh uses FastEPD's
+  `partialUpdate()` (`EPD47_PARTIAL_ONLY`; the H752 keeps its flashing
+  `fullUpdate()`): a "full" refresh (requested, most of the screen
+  dirty, or every `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` partials, 8 on
+  this board) loads the previous plane with the inverse of the new
+  frame and drives all rows, so every pixel is re-driven, like the
+  SSD1677 full refresh of `display_ws_epd397.cpp`. For this panel only,
+  FastEPD drives the 74HC4094 through the GPIO registers
+  (`bbepSendShiftDataFast()`), uses 8 partial passes
+  (`EPD47_PARTIAL_PASSES`) of at least 15 ms each
+  (`EPD47_PARTIAL_PASS_MIN_US`, `setPartialPassTime()`: a pixel keeps
+  its drive until its row is written again, so the time between passes
+  is drive time), and ends each frame as LilyGO's `epd_end_frame()`
+  (OE and MODE off, two CKV pulses) before power-off. Measured on
+  hardware: every update that changes pixels darkens the whole screen
+  evenly, also the rows it does not drive, while updates without
+  changes do not. `touchup_cb()` corrects it once typing pauses for
+  `EPD47_TOUCHUP_IDLE_MS` (1 s): one pass with the previous plane all
+  black, so every white pixel is lightened and the black ones are left
+  alone; after every keystroke it flickered. FastEPD can also step the
+  gate driver through rows outside the update without sending them
+  (`T547_SKIP_ROWS`, off: several times faster, but more darkening). Hack fonts (HIDPI), MicroSD
+  on SPI3 (CS=42, MOSI=15, SCK=11, MISO=16), user button IO21 as the
+  wake source; no touch, front-light or battery level yet (touch on
+  I2C 18/17 INT 47; the GPIO14 battery divider is reported to be live
+  only while the panel supply is on). `pre_sleep_t5_47_deinit()` saves,
+  releases the card and powers the panel down. Presets:
+  `lilygo_t5_47_s3` (USB-C as USB device: MSC + Kermit) and
+  `microjournal_rev7` (github.com/unkyulee/micro-journal `rev.7/7.0`:
+  the same board with `DRAFTLING_USB_HOST_NATIVE` and no Bluetooth, its built-in QMK
+  keyboard on a Pico plugged into the USB-C port; VBUS comes from the
+  device's battery boost module, the T5 does not source it). The stock
+  Rev.7 firmware keeps documents in internal flash; Draftling uses the
+  T5's MicroSD slot, which is reachable in the Rev.7 enclosure. Untested on physical hardware. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
   e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
   UC8279) auto-detected at boot by
@@ -3329,12 +3389,12 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
-- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3), 320
+- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3, LilyGO T5 4.7"), 320
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
   480 (Guition JC4827W543C), 1024 (Linux and web, initial window).
-- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3), 820
+- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3, LilyGO T5 4.7"), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
@@ -3519,8 +3579,9 @@ in C / C++ code:
 |--------|---------|--------|
 | DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
 | DRAFTLING_MODEL_XTEINK_X4         | Common to the Xteink X4 Pro and X4 Classic (shared `display_xteink_epd.cpp` backend, CW2017 gauge, SDMMC slot, OTA partition table, GPIO1 peripheral-rail latch, GPIO3 Power/wake) | Xteink X4 Pro, Xteink X4 Classic |
-| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
+| DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
+| DRAFTLING_DISPLAY_T5_47_EPD       | Compiles `display_h752.cpp` (FastEPD shift-register backend, shared with the original H752) for FastEPD panel `BB_PANEL_LILYGO_T5_47_S3`, without the H752's front-light (GPIO40 is STH here) | LilyGO T5 4.7" S3 |
 | DRAFTLING_EPDIY_BOARD_PAPERS3     | Switches `display_epdiy.cpp` to the PaperS3 board definition (no VCOM, no shared I2C) | PaperS3 |
 | DRAFTLING_DISPLAY_XTEINK_EPD      | Selects `display_xteink_epd.cpp` (plain SPI, auto-detects SSD1677/UC8179/UC8279 at boot) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_SSD1683         | Selects `display_ssd1683.cpp` (dual-controller plain-SPI e-paper backend) | Elecrow CrowPanel 5.79" |
@@ -3555,7 +3616,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux, web client |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux, web client |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
@@ -3563,7 +3624,9 @@ in C / C++ code:
 | DRAFTLING_BATTERY_AXP2101         | Selects the AXP2101 PMIC backend (`battery_init_axp2101(shared_i2c_bus)`); real integrated charger, so charging state is reported directly. Same chip's ALDO3 output also powers the e-paper panel -- see `battery_axp2101_enable_display_rail()`, called from the display backend's `display_set_shared_i2c_bus()` before `display_init()` | Waveshare ESP32-S3-ePaper-3.97 |
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
 | DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> Sync -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
-| DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, MicroJournal Rev 5 |
+| DRAFTLING_USB_HOST_NATIVE         | Prompted, every ESP32-S3 board except those with `DRAFTLING_NATIVE_USB_PINS_TAKEN`: the native USB port (GPIO19 / GPIO20) is a USB keyboard host instead of a device -- sets DRAFTLING_HAS_USB_HOST, turns off DRAFTLING_HAS_USB_MSC (and so Kermit), selects ESP-IDF's `USB_HOST_HUBS_SUPPORTED` (the `usb` component, only in the build while usb_host_hid is), sets DRAFTLING_NO_BLUETOOTH to save battery: `ble_keyboard.cpp` compiles to its no-op stubs and main.cpp never calls `ble_keyboard_init()`, even with `CONFIG_BT_ENABLED` still on in the board's sdkconfig (the controller is never started; `CONFIG_BT_ENABLED=n`, as in the microjournal presets, only saves flash) | default y on MicroJournal Rev 5; set by the `microjournal_rev7` preset |
+| DRAFTLING_NATIVE_USB_PINS_TAKEN   | GPIO19 / GPIO20 serve something else (touch I2C), so DRAFTLING_USB_HOST_NATIVE is not offered | Sunton 8048S043 / 8048S070, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed reTerminal E1001 |
+| DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, any S3 board with DRAFTLING_USB_HOST_NATIVE (MicroJournal Rev 5 / Rev.7) |
 | DRAFTLING_USB_HOST_BSP_MANAGED    | USB PHY, VBUS and the USB Host library task are owned by the board BSP (`bsp_usb_host_start()`); otherwise `usb_kbd_init()` installs the host library and its task itself (ESP32-S3 native USB-OTG) | M5Stack Tab5 |
 | DRAFTLING_USB_HOST_DEP            | `int` mirror (0/1) of DRAFTLING_HAS_USB_HOST, tested by the `espressif/usb_host_hid` rule in `components/usb_kbd/idf_component.yml` (the component manager reads `sdkconfig.json`, which omits hidden bool symbols that are n); `components/usb_kbd/` registers as an empty component when DRAFTLING_HAS_USB_HOST is unset, so neither it nor `usb_host_hid` is compiled on other boards | M5Stack Tab5, MicroJournal Rev 5 |
 | DRAFTLING_HAS_POWER_LATCH         | Enables the `power` component: TCA9554-latched battery rail + PWR-button long-press = power off; standby cuts the latch before falling back to deep sleep | Touch-LCD-3.49 |
@@ -3739,7 +3802,8 @@ PSRAM) are not supported.
 
 `firmware/` ships a `CMakePresets.json` with one preset per supported
 board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
-`lilygo_t5_epd_s3_pro_h752`, `waveshare_touch_lcd_349`, `m5stack_tab5`,
+`lilygo_t5_epd_s3_pro_h752`, `lilygo_t5_47_s3`, `microjournal_rev7`,
+`waveshare_touch_lcd_349`, `m5stack_tab5`,
 `guition_jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
@@ -3799,8 +3863,8 @@ GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `freenove_fnk0104a`, `freenove_fnk0104s`,
-`microjournal_rev5` and `m5stack_tab5`, each with the default language
-pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
+`microjournal_rev5`, `microjournal_rev7` and `m5stack_tab5`, each
+with the default language pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
 `freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
 also get one image per non-default pack, listed in the release's
 `languagePacks` array in `manifest.json`.

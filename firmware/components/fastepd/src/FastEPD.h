@@ -71,6 +71,7 @@ enum {
     BB_PANEL_LILYGO_T5PRO,
     BB_PANEL_LILYGO_T5PRO_V2,
     BB_PANEL_LILYGO_T5P4,
+    BB_PANEL_LILYGO_T5_47_S3, // Draftling addition: LilyGO T5 4.7" (ESP32-S3)
     BB_PANEL_CUSTOM,
     BB_PANEL_VIRTUAL,
     BB_PANEL_COUNT
@@ -197,6 +198,7 @@ typedef struct tag_fastepdstate
     int width, height, native_width, native_height;
     int rotation;
     int iPartialPasses, iFullPasses;
+    uint32_t u32PartialPassMinUs; // Draftling: minimum duration of a partial pass (0 = none)
     int iScreenOffset, iOrientation;
     int iFG, iBG; //current color
     int iFont, iFlags, iVCOM;
@@ -251,6 +253,8 @@ class FASTEPD
     int partialUpdate(bool bKeepOn, int iStartRow = 0, int iEndRow = 4095);
     int smoothUpdate(bool bKeepOn, uint8_t u8Color);
     void setPasses(uint8_t iPartialPasses, uint8_t iFullPasses = 5);
+    // Draftling: hold each partialUpdate() pass for at least this long
+    void setPartialPassTime(uint32_t u32MinUs) { _state.u32PartialPassMinUs = u32MinUs; }
     int setRotation(int iAngle);
     int getRotation(void) { return _state.rotation;}
     void backupPlane(void);

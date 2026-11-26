@@ -8,6 +8,20 @@ in the git log.
 
 ### Added
 
+- **LilyGO T5 4.7" E-Paper (ESP32-S3) and MicroJournal Rev.7**: new
+  presets `lilygo_t5_47_s3` for the LilyGO T5 4.7" e-paper board
+  (ESP32-S3 version, documents on its MicroSD card) and
+  `microjournal_rev7` for the Micro Journal Rev.7 writerdeck built
+  around it, whose built-in keyboard plugs into the board's USB-C
+  port. Not yet tested on physical hardware.
+- **USB keyboard on any ESP32-S3 board**: a new build option, "Use the
+  native USB port as a USB host for a keyboard", lets an ESP32-S3
+  board take a USB keyboard on its native USB port instead of offering
+  "SD card via USB" there. Keyboards behind a USB hub work too, also
+  on the MicroJournal Rev 5. The keyboard needs 5 V from outside, for
+  example from a USB OTG splitter with a power input. Such a firmware
+  leaves Bluetooth out to save battery. See HARDWARE.md, "USB keyboard
+  host".
 - **Linux: copy and paste with other programs**: in Draftling for
   Linux, Ctrl+C and Ctrl+X in the editor now also put the selected
   text on the desktop clipboard, and Ctrl+V pastes text copied in any
@@ -34,6 +48,20 @@ in the git log.
   screen adds Esc, Tab, Ctrl, the arrows and the menu; it hides while a
   physical keyboard is in use. The on-screen keyboard's word suggestions
   and autocorrection are off; "Suggest" in the bar turns them on.
+
+### Fixed
+
+- **Spaces at the end of a full row**: pressing Space at the end of a
+  row that was already full seemed to do nothing -- the cursor went
+  off the right edge, and the spaces disappeared once the next letter
+  was typed. Spaces past the edge now start the next row, so every
+  press moves the cursor and the text appears where it is.
+- **USB keyboard going silent**: a USB keyboard (M5Stack Tab5,
+  MicroJournal, any board with the new USB host option) stopped
+  typing, fully or for most keys, after a single failed transfer --
+  more likely behind a USB hub -- until it was unplugged. The input is
+  now restarted at once. Keyboards that report their keys on two
+  interfaces no longer lose keys either.
 
 ## [1.0.33] - 2026-11-24
 

@@ -38,6 +38,24 @@
             }
         },
         {
+            "name": "lilygo_t5_47_s3",
+            "displayName": "LilyGO T5 4.7in E-Paper (ESP32-S3), USB-C as USB device",
+            "binaryDir": "build/lilygo_t5_47_s3",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.lilygo_t5_47_s3",
+                "SDKCONFIG": "build/lilygo_t5_47_s3/sdkconfig"
+            }
+        },
+        {
+            "name": "microjournal_rev7",
+            "displayName": "MicroJournal Rev.7 (LilyGO T5 4.7in E-Paper ESP32-S3, USB host keyboard with hub support)",
+            "binaryDir": "build/microjournal_rev7",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.microjournal_rev7",
+                "SDKCONFIG": "build/microjournal_rev7/sdkconfig"
+            }
+        },
+        {
             "name": "waveshare_touch_lcd_349",
             "displayName": "Waveshare ESP32-S3-Touch-LCD-3.49",
             "binaryDir": "build/waveshare_touch_lcd_349",

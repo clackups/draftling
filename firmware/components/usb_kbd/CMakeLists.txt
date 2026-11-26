@@ -1,5 +1,7 @@
 ## usb_kbd is only built on boards with a USB host keyboard port
-## (CONFIG_DRAFTLING_HAS_USB_HOST: M5Stack Tab5, MicroJournal Rev 5).
+## (CONFIG_DRAFTLING_HAS_USB_HOST: M5Stack Tab5, and every ESP32-S3 board
+## built with CONFIG_DRAFTLING_USB_HOST_NATIVE, e.g. the MicroJournal
+## Rev 5 and Rev.7).
 ## Everywhere else it registers as an empty component, so the
 ## `idf_component_optional_requires(usb_kbd)` calls in main / editor
 ## (themselves gated on the same symbol) stay a no-op and neither this

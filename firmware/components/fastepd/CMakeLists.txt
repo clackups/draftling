@@ -1,6 +1,7 @@
-## FastEPD is only used by the original-H752 display backend
-## (components/display/display_h752.cpp). Compile its sources only
-## when that backend is selected: the library drives the ESP32-S3
+## FastEPD is only used by the shift-register EPD47 display backend
+## (components/display/display_h752.cpp: the original LilyGO T5 E-Paper
+## S3 Pro H752 and the LilyGO T5 4.7" ESP32-S3). Compile its sources
+## only when that backend is selected: the library drives the ESP32-S3
 ## LCD_CAM peripheral directly and does not build on other targets
 ## (the M5Stack Tab5 is an ESP32-P4). Gating SRCS on a CONFIG_ value
 ## is safe here -- unlike REQUIRES, the source list is evaluated in
@@ -9,7 +10,7 @@
 ## gotcha). INCLUDE_DIRS stays unconditional so display_h752.cpp's
 ## #include resolves on every board; its body is preprocessed away
 ## when the backend is off.
-if(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+if(CONFIG_DRAFTLING_DISPLAY_H752_EPD OR CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
     set(fastepd_srcs
         "src/FastEPD.cpp"
         "src/FastEPD.inl"
@@ -26,7 +27,7 @@ idf_component_register(
     REQUIRES driver esp_driver_gpio esp_lcd esp_timer
 )
 
-if(CONFIG_DRAFTLING_DISPLAY_H752_EPD)
+if(CONFIG_DRAFTLING_DISPLAY_H752_EPD OR CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
     target_compile_definitions(${COMPONENT_LIB} PRIVATE USE_BIT_BANG_I2C=1)
     # Vendored third-party sources (FastEPD by BitBank) leave some
     # ESP-IDF struct fields default-initialized (e.g. the newer

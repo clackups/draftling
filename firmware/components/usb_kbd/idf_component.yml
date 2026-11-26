@@ -1,7 +1,8 @@
 ## Pulls in the USB HID Host driver (boot keyboard / mouse / generic
 ## reports), only for boards with a USB host keyboard port
-## (CONFIG_DRAFTLING_HAS_USB_HOST): the M5Stack Tab5 (ESP32-P4) and the
-## MicroJournal Rev 5 (ESP32-S3 native USB-OTG). The rule tests the
+## (CONFIG_DRAFTLING_HAS_USB_HOST): the M5Stack Tab5 (ESP32-P4) and any
+## ESP32-S3 board built with CONFIG_DRAFTLING_USB_HOST_NATIVE (native
+## USB-OTG, e.g. the MicroJournal Rev 5 and Rev.7). The rule tests the
 ## int mirror DRAFTLING_USB_HOST_DEP (see main/Kconfig.projbuild), not
 ## the bool itself, which sdkconfig.json omits when it is n.
 dependencies:
