@@ -345,11 +345,28 @@
 
   const MODIFIER_CODES = new Set([29, 42, 54, 56, 97, 100, 125, 126]);
   const down = new Set();        /* codes Draftling has been sent as down */
+  /* Modifier keys whose own keydown the page saw, until their keyup (or
+   * the page loses the focus). They count as held whatever later events
+   * say: Android does not always set altKey / ctrlKey on the next key's
+   * event for a Bluetooth keyboard, and Alt+I then arrived as a plain
+   * I. */
+  const realDown = new Set();
   let ctrlLeftAt = -1;           /* Windows AltGr: the ControlLeft it fakes */
   let fakeCtrl = false;
 
-  function mods(e) {
+  /* The modifiers held according to the page's own record. */
+  function heldMods() {
     let m = 0;
+    if (realDown.has(42) || realDown.has(54)) m |= MOD.SHIFT;
+    if ((realDown.has(29) && !fakeCtrl) || realDown.has(97)) m |= MOD.CTRL;
+    if (realDown.has(56) || realDown.has(100)) m |= MOD.ALT;
+    if (realDown.has(125) || realDown.has(126)) m |= MOD.SUPER;
+    return m;
+  }
+
+  function mods(e) {
+    let m = heldMods();
+    if (!e) return m;
     if (e.shiftKey) m |= MOD.SHIFT;
     if ((e.ctrlKey && !fakeCtrl) || (IS_MAC && e.metaKey)) m |= MOD.CTRL;
     if (e.altKey) m |= MOD.ALT;
@@ -382,14 +399,15 @@
       } else if (!(bit === MOD.ALT && (m & MOD.ALTGR))) {
         /* Released where the page did not see it: the program drops it
          * (the modifier mask), and so does this record. */
-        down.delete(left);
-        down.delete(right);
+        if (!realDown.has(left)) down.delete(left);
+        if (!realDown.has(right)) down.delete(right);
       }
     }
   }
 
   function releaseAll() {
     down.clear();
+    realDown.clear();
     fakeCtrl = false;
     send(WEB_EV.RELEASE_ALL, 0, 0, 0);
   }
@@ -428,7 +446,9 @@
       fakeCtrl = true;
       sendKey(29, false, e);
     }
-    if (!MODIFIER_CODES.has(code)) catchUpModifiers(e);
+    if (MODIFIER_CODES.has(code)) realDown.add(code);
+    else catchUpModifiers(e);
+    noteHardwareKey(e);
     sendKey(code, true, e);
   }
 
@@ -437,6 +457,7 @@
     const code = KEYS[e.code];
     if (!code) return;
     e.preventDefault();
+    realDown.delete(code);
     if (e.code === "ControlLeft" && fakeCtrl) {
       fakeCtrl = false;
       if (!down.has(29)) return;
@@ -525,6 +546,9 @@
   let composing = false;
   let stickyCtrl = false;
   let warnedNonUs = false;
+  /* A physical keyboard is in use: its keys arrive with a code. The key
+   * bar is then hidden, until an on-screen keyboard types again. */
+  let hwKeyboard = false;
   let toastTimer = 0;
 
   function toast(msg, ms) {
@@ -537,8 +561,23 @@
   function setTouchMode(on) {
     touchMode = on;
     document.body.classList.toggle("touch", on);
-    keybar.hidden = !on;
+    keybar.hidden = !on || hwKeyboard;
     if (on) toolbar.classList.remove("shown");
+  }
+
+  function setHwKeyboard(on) {
+    if (on === hwKeyboard) return;
+    hwKeyboard = on;
+    keybar.hidden = !touchMode || hwKeyboard;
+  }
+
+  /* A key with a code that only a physical keyboard sends (on-screen
+   * keyboards may send Enter / Backspace / Space with a code, but not
+   * letters, digits, modifiers or arrows). */
+  const SOFT_CODES = new Set(["Enter", "Backspace", "Space", "Tab", "NumpadEnter"]);
+  function noteHardwareKey(e) {
+    if (touchMode && !e.isComposing && e.keyCode !== 229 && !SOFT_CODES.has(e.code))
+      setHwKeyboard(true);
   }
 
   function proxyReset() {
@@ -616,7 +655,9 @@
    * asked; the modifiers go down and up around it. */
   function tapKey(code, shift) {
     const ctrl = stickyCtrl;
-    const m = (shift ? MOD.SHIFT : 0) | (ctrl ? MOD.CTRL : 0);
+    /* Modifiers of a physical keyboard held meanwhile (Android may turn
+     * Alt + a letter into text in the field instead of a key event). */
+    const m = (shift ? MOD.SHIFT : 0) | (ctrl ? MOD.CTRL : 0) | heldMods();
     if (ctrl) send(WEB_EV.KEY, 29, 1, m);
     if (shift) send(WEB_EV.KEY, 42, 1, m);
     send(WEB_EV.KEY, code, 1, m);
@@ -645,6 +686,9 @@
   function proxyInput() {
     if (!ready) return;
     const now = proxy.value;
+    /* Text without key events while no physical modifier is held: an
+     * on-screen keyboard typed it, so it is in use again. */
+    if (now !== proxyLast && !heldMods()) setHwKeyboard(false);
     let i = 0;
     while (i < proxyLast.length && i < now.length && proxyLast[i] === now[i]) i++;
     for (let n = proxyLast.length - i; n > 0; n--) tapKey(KEYS.Backspace, false);
@@ -682,6 +726,36 @@
   document.getElementById("kb-show").addEventListener("click", () => focusScreen(true));
 
   setTouchMode(touchMode);
+
+  /* ---- key log (?keylog) ------------------------------------------------- */
+
+  /* For finding out what a browser sends for a key (an Android Bluetooth
+   * keyboard, say): with ?keylog in the address, the last events are
+   * listed over the screen. */
+  if (new URLSearchParams(location.search).has("keylog")) {
+    const box = document.createElement("pre");
+    box.id = "keylog";
+    document.body.appendChild(box);
+    const lines = [];
+    const add = (text) => {
+      lines.push(text);
+      while (lines.length > 12) lines.shift();
+      box.textContent = lines.join("\n");
+    };
+    const flags = (e) => (e.shiftKey ? "S" : "-") + (e.ctrlKey ? "C" : "-") +
+      (e.altKey ? "A" : "-") + (e.metaKey ? "M" : "-") +
+      (e.getModifierState && e.getModifierState("AltGraph") ? "G" : "-");
+    for (const type of ["keydown", "keyup"]) {
+      window.addEventListener(type, (e) => add(type + " code=" + JSON.stringify(e.code) +
+        " key=" + JSON.stringify(e.key) + " keyCode=" + e.keyCode + " " + flags(e) +
+        (e.isComposing ? " composing" : "") + (e.repeat ? " repeat" : "")), true);
+    }
+    for (const type of ["beforeinput", "input", "compositionstart", "compositionend"]) {
+      proxy.addEventListener(type, (e) => add(type +
+        (e.inputType ? " " + e.inputType : "") + " data=" + JSON.stringify(e.data) +
+        " held=" + heldMods()), true);
+    }
+  }
 
   /* ---- clipboard ---------------------------------------------------------- */
 

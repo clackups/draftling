@@ -391,7 +391,12 @@ Android hands a Bluetooth keyboard's input to; keys with a
 text is read back from the field as a diff (Backspaces + US-keyboard
 keys, as in the online demo), `#app` follows `visualViewport` and the
 `#keybar` adds Esc / Tab / sticky Ctrl / arrows / F1 / Files / full
-screen. `src/http_client_web.c` is
+screen (hidden while a physical keyboard's coded keys arrive,
+`setHwKeyboard()`). Modifier keys whose keydown the page saw count as
+held until their keyup or a blur (`realDown`, `heldMods()`), also for
+text read from the field: Android may leave `altKey` off the next key
+or turn Alt + a letter into field input. `?keylog` lists the last key /
+input events over the screen. `src/http_client_web.c` is
 `esp_http_client` over one synchronous `XMLHttpRequest` per request
 (the sync task is a worker), so Git servers must allow the page with
 CORS headers (Draftbox does). The page's Files panel (F9) runs its

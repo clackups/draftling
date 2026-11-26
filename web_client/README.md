@@ -66,8 +66,13 @@ help; see the user documentation in `docs/`), with these differences:
   with Ctrl+L); a Bluetooth keyboard works as on a computer. A bar
   below the screen has the keys a phone keyboard lacks -- Esc, Tab,
   Ctrl (for the next key), the arrows, Menu (F1) -- plus Files, Full
-  screen and Keyboard (brings a dismissed keyboard back). The screen
-  shrinks above the on-screen keyboard instead of being covered.
+  screen and Keyboard (brings a dismissed keyboard back). The bar
+  hides while a physical keyboard is in use and comes back when the
+  on-screen keyboard types again. The screen shrinks above the
+  on-screen keyboard instead of being covered.
+- **Key log.** With `?keylog` added to the address, the page lists the
+  last key and input events it receives -- for finding out what a
+  browser sends for a key that does not work.
 - **Leaving.** Hiding the tab saves the open documents; closing it
   with unsaved changes asks first. "Sleep now" and the standby timeout
   save and blank the screen until the next key or click. A setting

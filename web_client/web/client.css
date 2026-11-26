@@ -262,3 +262,20 @@ html, body {
   .panel { padding: 16px; }
   .file { flex-wrap: wrap; }
 }
+
+/* ?keylog: the last key and input events. */
+#keylog {
+  position: fixed;
+  left: 4px;
+  top: 4px;
+  z-index: 20;
+  margin: 0;
+  padding: 6px 8px;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.8);
+  color: #9f9;
+  font: 11px/1.35 ui-monospace, monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
