@@ -18,6 +18,7 @@
 #include <esp_lcd_panel_io.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_log.h>
+#include "hal/gpio_ll.h"
 #if PSRAM != enabled && !defined(CONFIG_ESP32_SPIRAM_SUPPORT) && !defined(CONFIG_ESP32S3_SPIRAM_SUPPORT)
 #error "Please enable PSRAM support"
 #endif
@@ -562,8 +563,37 @@ uint8_t Inkplate5V2ExtIO(uint8_t iOp, uint8_t iPin, uint8_t iVal)
 //
 // Write 8 bits (_state.shift_data) to the shift register
 //
+// Draftling: the LilyGO T5 4.7" S3 steps every panel row through this
+// shift register (twice per row), so gpio_set_level()'s ~50 calls per
+// row were a large part of each refresh pass. Drive the three pins
+// through the GPIO registers instead; the NOPs keep every pulse well
+// above the 74HC4094's minimum width at 3.3 V.
+#define T547_NOPS() __asm__ __volatile__("nop; nop; nop; nop; nop; nop; nop; nop")
+static void bbepSendShiftDataFast(FASTEPDSTATE *pState)
+{
+    uint8_t uc = pState->shift_data;
+    const uint32_t sda = pState->panelDef.ioSDA;
+    const uint32_t scl = pState->panelDef.ioSCL;
+    const uint32_t str = pState->panelDef.ioShiftSTR;
+    gpio_ll_set_level(&GPIO, str, 0);
+    for (int i = 0; i < 8; i++) {
+        gpio_ll_set_level(&GPIO, scl, 0);
+        gpio_ll_set_level(&GPIO, sda, (uc & 0x80) ? 1 : 0);
+        uc <<= 1;
+        T547_NOPS();
+        gpio_ll_set_level(&GPIO, scl, 1);
+        T547_NOPS();
+    }
+    gpio_ll_set_level(&GPIO, str, 1);
+    T547_NOPS();
+}
+
 void bbepSendShiftData(FASTEPDSTATE *pState)
 {
+    if (pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3) {
+        bbepSendShiftDataFast(pState);
+        return;
+    }
     uint8_t uc = pState->shift_data;
 //    Serial.printf("Sending shift data: 0x%02x\n", uc);
     // Clear STR (store) to allow updating the value
@@ -1601,6 +1631,20 @@ void bbepClear(FASTEPDSTATE *pState, uint8_t val, uint8_t count, BB_RECT *pRect)
         for (i = 0; i < pState->native_height; i++)
         {
             dy = (pState->iFlags & BB_PANEL_FLAG_MIRROR_Y) ? pState->native_height - 1 - i : i;
+            if (i >= 2 && !pRect && val == 0x00 &&
+                pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3) {
+                // Draftling: a whole-screen neutral pass sends the same
+                // all-zero row every time; after two rows the source
+                // drivers hold it, so only step the gate driver (as for
+                // the skipped rows of bbepPartialUpdate()).
+                while (!dma_is_done) {
+                    delayMicroseconds(1);
+                }
+                bbepRowControl(pState, ROW_STEP);
+                gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 1); // CKV on
+                delayMicroseconds(1);
+                continue;
+            }
             // Send the data
             if (dy < iStartRow || dy > iEndRow) { // skip this row
                 memset(pState->dma_buf, 0xff, pState->native_width / 4);
@@ -1993,8 +2037,21 @@ int bbepPartialUpdate(FASTEPDSTATE *pState, bool bKeepOn, int iStartLine, int iE
                  * streaks under any partially-updated text). */
                 if (iSkipped < 2) { // new skipped section
                     memset((void *)d, 0, pState->native_width/4);
+                    bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
+                } else if (pState->iPanelType == BB_PANEL_LILYGO_T5_47_S3) {
+                    // Draftling: the source drivers already hold a
+                    // neutral row (the two rows above were sent as
+                    // zeros), so the latch just re-latches it: step the
+                    // gate driver without sending the row again.
+                    while (!dma_is_done) {
+                        delayMicroseconds(1);
+                    }
+                    if (i != 0) bbepRowControl(pState, ROW_STEP);
+                    gpio_set_level((gpio_num_t)pState->panelDef.ioCKV, 1); // CKV on
+                    delayMicroseconds(1);
+                } else {
+                    bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
                 }
-                bbepWriteRow(pState, d, (pState->native_width / 4), (i!=0));
                 iSkipped++;
             }
             dp += iDelta;

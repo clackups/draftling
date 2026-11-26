@@ -2248,6 +2248,9 @@ config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
     depends on DRAFTLING_DISPLAY_EPD
     range 1 1000
+    # The LilyGO T5 4.7" S3's "full" refresh is a partial-waveform pass
+    # over every pixel (~140 ms, no flash), so it can run often.
+    default 8 if DRAFTLING_MODEL_LILYGO_T5_47_S3
     default 30
     help
         How many partial refreshes the e-paper driver performs before it

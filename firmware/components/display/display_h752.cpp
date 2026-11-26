@@ -59,6 +59,13 @@ static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 #define EPD47_HAS_FRONTLIGHT 1
 #endif
 
+/* LilyGO T5 4.7" S3: every refresh uses the partial waveform, see
+ * display_flush(). The H752 keeps its flashing full refreshes. */
+#if defined(CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
+#define EPD47_PARTIAL_ONLY 1
+#define EPD47_PARTIAL_PASSES 8
+#endif
+
 #define H752_BL_LEDC_TIMER       LEDC_TIMER_0
 #define H752_BL_LEDC_CHANNEL     LEDC_CHANNEL_0
 #define H752_BL_LEDC_DUTY_RES    LEDC_TIMER_10_BIT
@@ -114,6 +121,13 @@ static bool ensure_epd(void)
     }
 
     s_epd->setMode(BB_MODE_1BPP);
+#if defined(EPD47_PARTIAL_ONLY)
+    /* The skipped rows make a partial pass far shorter than FastEPD's
+     * default ~45 ms frame, and each pixel is driven only for about one
+     * frame per pass, so 4 passes left shadows of text that moved
+     * (black -> white). More passes restore the drive. */
+    s_epd->setPasses(EPD47_PARTIAL_PASSES);
+#endif
     if (!s_epd->currentBuffer()) {
         ESP_LOGE(TAG, "FastEPD did not allocate a current buffer");
         s_epd->deInit();
@@ -236,6 +250,39 @@ extern "C" void display_flush(void)
     }
     memcpy(target, s_fb, FRAMEBUFFER_BYTES);
 
+    long dirty_area = (long)(x1 - x0 + 1) * (y1 - y0 + 1);
+    bool huge = dirty_area * 4 > (long)s_width * s_height * 3;
+    bool do_full = s_force_full || huge ||
+                   s_partial_count >= H752_FULL_REFRESH_INTERVAL;
+
+    int rc;
+#if defined(EPD47_PARTIAL_ONLY)
+    /* Partial updates only, as on the SSD1677 boards
+     * (display_ws_epd397.cpp): no flashing fullUpdate. A "full" refresh
+     * (requested, most of the screen dirty, or every
+     * H752_FULL_REFRESH_INTERVAL partials) is the same partialUpdate
+     * over every row with the previous plane loaded with the inverse of
+     * the new frame, so every pixel counts as changed and is re-driven
+     * towards its target colour. partialUpdate then copies the new
+     * frame into the previous plane itself. */
+    if (do_full) {
+        uint8_t *prev = s_epd->previousBuffer();
+        if (prev) {
+            for (int i = 0; i < FRAMEBUFFER_BYTES; i++) prev[i] = (uint8_t)~target[i];
+        }
+        y0 = 0;
+        y1 = s_height - 1;
+        s_partial_count = 0;
+        ESP_LOGD(TAG, "EPD47 full (partial waveform, all pixels)");
+    } else {
+        s_partial_count++;
+        ESP_LOGD(TAG, "EPD47 partial rows %d-%d", y0, y1);
+    }
+    rc = s_epd->partialUpdate(false, y0, y1);
+    if (rc != BBEP_SUCCESS) {
+        ESP_LOGW(TAG, "FastEPD partialUpdate failed: %d", rc);
+    }
+#else
     /* Small changes (typing, cursor, deletions) go through FastEPD's
      * partialUpdate: it diffs the current plane against the previous
      * plane and drives only the changed pixels in the given row range,
@@ -245,12 +292,6 @@ extern "C" void display_flush(void)
      * screen (a giant partial is slower and dirtier than a full), or
      * every H752_FULL_REFRESH_INTERVAL partials to clear the residual
      * ghosting partial waveforms accumulate. */
-    long dirty_area = (long)(x1 - x0 + 1) * (y1 - y0 + 1);
-    bool huge = dirty_area * 4 > (long)s_width * s_height * 3;
-    bool do_full = s_force_full || huge ||
-                   s_partial_count >= H752_FULL_REFRESH_INTERVAL;
-
-    int rc;
     if (do_full) {
         int clear_mode = s_force_full ? CLEAR_SLOW : CLEAR_FAST;
         ESP_LOGD(TAG, "H752 full %d,%d-%d,%d clear=%d", x0, y0, x1, y1, clear_mode);
@@ -271,6 +312,7 @@ extern "C" void display_flush(void)
         }
         s_partial_count++;
     }
+#endif
     s_clip_x0 = s_clip_y0 = s_clip_x1 = s_clip_y1 = -1;
     s_force_full = false;
 }

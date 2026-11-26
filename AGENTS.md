@@ -1016,6 +1016,20 @@ Waveshare ePaper-3.97 and the Seeed reTerminal Sticky):
 Board-specific needs (SPI clock, pins, power rails, a non-blocking
 refresh as on the Sticky) may differ; the register sequence should not.
 
+**Spaces at a wrap point.** `lv_text_get_next_line()` lets the
+spaces after a row's last word hang past the right edge and, at an
+automatic wrap, skips all of them, so Space at the end of a full row
+seemed dead (cursor off screen, the next letter at the start of the
+next row). `lv_wrap_spaces.c` (in `lvgl__lvgl`, linked with
+`-Wl,--wrap=lv_text_get_next_line` and
+`-Wl,--wrap=lv_text_get_size_attributes`; also in the Linux, web and
+online-demo makefiles) ends such a row after the spaces that fit plus
+the one it breaks at, so further spaces start the next row; the size
+function is redone with that breaking because it calls the row
+function inside `lv_text.c`, where `--wrap` does not reach. The editor
+clamps the cursor to the label's right edge after the one hanging
+space.
+
 **Right-to-left rows.** LVGL right-aligns a row with
 `lv_text_get_line_width()`, which leaves out trailing spaces; in a
 right-to-left row the bidi reordering draws them at the left, so a
