@@ -36,6 +36,7 @@ LARGE_PACKS="indic"
 DEP_GROUPS=(
     "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono freenove_fnk0104a freenove_fnk0104s"
     "microjournal_rev5 microjournal_rev7"
+    "microjournal_rev6"
     "m5stack_tab5"
 )
 
