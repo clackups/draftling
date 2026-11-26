@@ -4093,8 +4093,8 @@ GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_trmnl_75_og_diy`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `freenove_fnk0104a`, `freenove_fnk0104s`,
-`microjournal_rev5`, `microjournal_rev7` and `m5stack_tab5`, each
-with the default language pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
+`microjournal_rev5`, `microjournal_rev6`, `microjournal_rev7` and
+`m5stack_tab5`, each with the default language pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
 `freenove_fnk0104s` (`ALL_PACK_BOARDS` in `firmware/build_release.sh`)
 also get one image per non-default pack, listed in the release's
 `languagePacks` array in `manifest.json`.
