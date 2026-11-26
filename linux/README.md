@@ -41,6 +41,13 @@ user documentation in `docs/`), with these differences:
   used.
 - **Mouse.** The left button acts as a touch (tap, double-tap selects a
   word, drag selects); the wheel moves the cursor three lines per notch.
+- **Clipboard.** Ctrl+C / Ctrl+X in the editor put the selection on
+  the desktop clipboard as well, and Ctrl+V pastes what another
+  program copied (any text type; Windows line ends become plain ones).
+  Text copied in Draftling stays there only while Draftling runs,
+  unless the desktop keeps a clipboard history. The middle-button
+  (primary) selection is not used, and the search, file-name and
+  WiFi fields do not paste.
 - **Window.** It can be resized; the editor lays its screens out again
   once the size has settled -- while a dialog, picker or pop-up is
   open, after it closes. The window splits panes (Ctrl+2 / Ctrl+3)
@@ -402,15 +409,25 @@ Requirements (Ubuntu / Debian), on top of `flatpak` and the Flathub
 remote:
 
 ```bash
-sudo apt install flatpak-builder qemu-user-binfmt
+sudo apt install flatpak-builder qemu-user-static
 flatpak install --user -y flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
 flatpak install --user -y --arch=aarch64 flathub org.freedesktop.Sdk//25.08 org.freedesktop.Platform//25.08
 ```
 
 The SDK and runtime are also installed by the build when missing.
-`qemu-user-binfmt` runs the other architecture's build under
+flatpak-builder older than 1.4 (Ubuntu 22.04 has 1.2) runs
+`appstream-compose`, which the 25.08 SDK no longer has; the build then
+uses Flathub's `org.flatpak.Builder` instead (installed when missing,
+run under `dbus-run-session` when there is no D-Bus session bus).
+Without `/dev/fuse` (e.g. in an LXC container) it passes
+`--disable-rofiles-fuse`.
+`qemu-user-static` runs the other architecture's build under
 emulation (the aarch64 build on an x86_64 computer takes a good while
-longer than the native one). Installing and running a bundle:
+longer than the native one): its binfmt_misc entry has the F flag, so
+the static qemu also runs inside the build sandbox (Ubuntu 22.04's
+dynamically linked `qemu-user-binfmt` does not). In a container,
+binfmt_misc belongs to the host kernel: install `qemu-user-static` on
+the container's host. Installing and running a bundle:
 
 ```bash
 flatpak install --user dist/draftling_<version>_x86_64.flatpak
@@ -431,8 +448,9 @@ art.draftling.Draftling --io x11`.
 | Board settings | `sdkconfig` from the board's and the pack's defaults | `build/p/<pack>-<io>/sdkconfig.h`, from `linux/sdkconfig.defaults` and the pack's defaults |
 | Startup | `main/main.cpp` | `src/main_linux.cpp`: options, folders, single-instance lock, then the same init order |
 | Display | panel drivers, `lvgl_port.cpp` | `src/lvgl_port_linux.c`: LVGL renders RGB565 tiles into a 32-bit frame of the window's size (2x2 blocks with "2x scale"); the changed rectangle goes to the backend. Resize: `editor_ui_can_relayout()` / `editor_ui_relayout()` |
-| Wayland | | `src/io_wayland.c`: xdg-shell window, two SHM buffers, server-side decorations where offered (xdg-decoration) |
-| X11 | | `src/io_x11.c`: XCB window, PutImage in bands, XKB detectable auto-repeat |
+| Wayland | | `src/io_wayland.c`: xdg-shell window, two SHM buffers, server-side decorations where offered (xdg-decoration), the clipboard through `wl_data_device` (non-blocking pipes, polled by the main loop) |
+| X11 | | `src/io_x11.c`: XCB window, PutImage in bands, XKB detectable auto-repeat, the CLIPBOARD selection (TARGETS, UTF8_STRING / STRING / text/plain, INCR both ways) |
+| Clipboard | the editor's own (memory, or `.clipboard` on the card) | also the desktop's: `src/clipboard_linux.c` implements the editor's weak `editor_host_clipboard_*` hooks over the backend; a paste is asynchronous, and keys typed meanwhile wait in the key queue (up to 3 s) |
 | Keyboard | BLE HID (`ble_keyboard`) | `src/keyboard_linux.c`: Linux key codes -> HID usage codes and modifier byte (the kernel's usbkbd table), through the BLE keyboard API |
 | Touch | GT911 etc. | the window's mouse -> LVGL pointer |
 | SD card | FAT on MicroSD | the data folder; the process runs in it and `sd_card.cpp` mounts it at `.` (`src/sd_hw_linux.c`) |

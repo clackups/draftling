@@ -19,6 +19,12 @@ On a computer, Draftling also runs as a native Linux program: in a
 Wayland or X11 window, with the computer's keyboard, a local folder for the documents and the same Git
 sync (see [linux/](linux/README.md)).
 
+In a web browser, Draftling runs as a web application that fills the
+window: the same editor with every language, documents kept in the
+browser's own storage, Git sync with Draftbox over the browser's
+connection, the system clipboard, full screen with F11, and F9 to
+download or upload documents (see [web_client/](web_client/README.md)).
+
 Seeed reTerminal Sticky running Draftling firmware:
 ![Sticky on a MagSafe stand](images/Seeed_reTerminal_Sticky_01.jpg)
 
@@ -623,7 +629,9 @@ instructions.
 
 The Linux program is built with `make` in `linux/`, which can also
 produce a Debian package and Flatpak bundles; see
-[linux/README.md](linux/README.md).
+[linux/README.md](linux/README.md). The web client is built with
+`make` in `web_client/` (Emscripten); see
+[web_client/README.md](web_client/README.md).
 
 
 ## Use of LLM

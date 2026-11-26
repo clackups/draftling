@@ -16,7 +16,9 @@ keyboards).
 The same editor also runs on Linux computers, as a native program in a
 Wayland or X11 window; it is built with
 `make` in `linux/` rather than with a preset (see
-[linux/README.md](linux/README.md)).
+[linux/README.md](linux/README.md)), and in a web browser, as a web
+application built with `make` in `web_client/` (see
+[web_client/README.md](web_client/README.md)).
 
 Features used in the table:
 

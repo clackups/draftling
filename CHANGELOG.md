@@ -22,6 +22,45 @@ in the git log.
   example from a USB OTG splitter with a power input. Such a firmware
   leaves Bluetooth out to save battery. See HARDWARE.md, "USB keyboard
   host".
+- **Linux: copy and paste with other programs**: in Draftling for
+  Linux, Ctrl+C and Ctrl+X in the editor now also put the selected
+  text on the desktop clipboard, and Ctrl+V pastes text copied in any
+  other program, on Wayland and X11 desktops alike, including in the
+  Flatpak. Windows line ends in pasted text become plain line ends.
+- **Draftling in a web browser**: a new web client runs the full
+  editor as a web application that fills the browser window, with
+  every language, layout and input method built in. Documents and
+  settings stay in the browser's own storage, which Draftling asks the
+  browser to keep for good (it does not start until the browser
+  agrees, so the documents cannot be cleared to make room). Git sync
+  and Draftbox work over the browser's connection, with Draftbox
+  repositories or any Git server that allows web clients. Ctrl+C,
+  Ctrl+X and Ctrl+V use the system clipboard; on a Mac, Command works
+  as Ctrl. F11 switches to full screen, where Chrome and Edge also
+  pass Esc and their own shortcuts to Draftling. F9 opens a Files
+  panel to download a document, a project or everything as a ZIP
+  file, and to upload .md, .fountain and .txt files into a project.
+  Draftling saves the open documents when the tab is hidden, and asks
+  before the page is closed with unsaved changes. The help page (F10)
+  lists these browser keys in a "Web browser" section. On phones and
+  tablets, a tap on the screen brings up the on-screen keyboard (and
+  lets a Bluetooth keyboard type on Android), and a key bar below the
+  screen adds Esc, Tab, Ctrl, the arrows and the menu; it hides while a
+  physical keyboard is in use. The on-screen keyboard's word suggestions
+  and autocorrection are off; "Suggest" in the bar turns them on.
+
+### Fixed
+
+- **USB keyboard going silent**: a USB keyboard (M5Stack Tab5,
+  MicroJournal, any board with the new USB host option) stopped
+  typing, fully or for most keys, after a single failed transfer --
+  more likely behind a USB hub -- until it was unplugged. The input is
+  now restarted at once. Keyboards that report their keys on two
+  interfaces no longer lose keys either.
+
+## [1.0.33] - 2026-11-24
+
+### Added
 
 - **Draftling for Linux as a Flatpak**: Flatpak bundles for 64-bit
   Intel / AMD (x86_64) and 64-bit Arm (aarch64) computers, which
@@ -69,13 +108,6 @@ in the git log.
   layout from Active layouts to let the bars hide again.
 
 ### Fixed
-
-- **USB keyboard going silent**: a USB keyboard (M5Stack Tab5,
-  MicroJournal, any board with the new USB host option) stopped
-  typing, fully or for most keys, after a single failed transfer --
-  more likely behind a USB hub -- until it was unplugged. The input is
-  now restarted at once. Keyboards that report their keys on two
-  interfaces no longer lose keys either.
 
 - **Over-long names and settings no longer act on the wrong file**: a
   file path too long for the editor used to be cut short, so "Save

@@ -8,7 +8,8 @@ document -- `main/...`, `components/...`, `CMakeLists.txt`,
 The repository root also has `docs/`, `images/`, `3D_Prints/`, `misc/`
 (separate ESP-IDF projects, see "M5Stack Tab5 and ESP-Hosted" below),
 `online_demo/` (the WebAssembly demo, see "Online demo" below),
-`linux/` (the native Linux program, see "Linux application" below), and
+`linux/` (the native Linux program, see "Linux application" below),
+`web_client/` (the browser application, see "Web client" below), and
 the top-level `README.md` / `HARDWARE.md` / `BUILDING.md` / this file.
 
 ## Git Author
@@ -270,7 +271,9 @@ latter. Real POSIX threads run the editor's tasks
 (`linux/src/freertos_linux.c`); the main thread holds the recursive
 LVGL lock while it runs `lv_timer_handler()`. I/O backends (Wayland,
 X11 / XCB) are chosen at build time (`IO=`) and at run time (Wayland,
-then X11, or `--io`); everything but libc is linked
+then X11, or `--io`; a backend without file descriptors -- the web
+client's canvas -- waits through its `wait` hook instead of `poll()`);
+everything but libc is linked
 statically (libwayland-client is built from source). The data folder
 is the process's current directory and the SD card layer is mounted at
 `.`, since the firmware's path buffers are sized for `/sdcard`. Git
@@ -294,6 +297,16 @@ makefile there) cross-builds with the `<triplet>-` toolchain into
 `build/<arch>/`, with `PKG_CONFIG_LIBDIR` set to the target's
 multiarch folder and a generated meson cross file for libwayland;
 `make deb ARCH=arm64` gives an arm64 package.
+Desktop clipboard: Ctrl+C / Ctrl+X hand the copied text to the weak
+`editor_host_clipboard_set()` hook (no-op on a device), and Ctrl+V
+asks `editor_host_clipboard_request()`; when that returns true the
+text arrives later through `editor_ui_host_clipboard_text()` and
+`key_drain_cb()` holds the key queue meanwhile (`HOST_PASTE_TIMEOUT_MS`).
+`linux/src/clipboard_linux.c` implements the hooks over the backend's
+`clip_set` / `clip_request` (and `poll_fds`, extra descriptors the
+main loop waits on): `io_wayland.c` uses `wl_data_device` with
+non-blocking pipes, `io_x11.c` the CLIPBOARD selection with INCR. No
+primary (middle-click) selection.
 "WiFi connected" (`wifi_manager_is_connected()`) means the computer's
 WiFi device; Backlight (`DRAFTLING_DISPLAY_HAS_BACKLIGHT`, default level
 `DRAFTLING_BACKLIGHT_DEFAULT_PCT` = 100): `display_linux.c` sets the
@@ -336,6 +349,86 @@ fallback-x11, ipc and network only. The LVGL, Kconfiglib and miniz
 pins in `linux/Makefile` are repeated in the manifest (flatpak-builder
 builds offline): keep them in step.
 
+## Web client
+
+`web_client/` builds the editor firmware to WebAssembly as a web
+application that fills the browser window; `web_client/README.md` has
+the toolchain, build, deployment and design notes. It is the Linux
+program's sibling, not the online demo's: a hardware model of its own,
+`DRAFTLING_MODEL_WEB` (`depends on IDF_TARGET_WEB`, which
+`main/Kconfig.projbuild` declares off for every other build and
+`web_client/tools/Kconfig.web` sets; `main/boards/web.h`), selected by
+`web_client/sdkconfig.defaults` and always built with the `all`
+language pack. Its derived flags follow the Linux Flatpak's: COLOR,
+HIDPI, TOUCHSCREEN, RESIZABLE, NETWORK_HOST_MANAGED, NO_BLUETOOTH,
+STANDBY_DISPLAY_OFF; no backlight, battery, quit or wake GPIO. It
+compiles the firmware sources `linux/draftling.mk` does (the real
+`git_sync` included) and reuses the Linux stand-ins that are plain
+POSIX -- `freertos_linux.c`, `nvs_linux.cpp`, `standby_linux.c`,
+`clipboard_linux.c`, `keyboard_linux.c`, `lvgl_port_linux.c`,
+`display_linux.c`, `wifi_host.c`, `battery_linux.c` (`LINUX_SRCS` in
+`web_client/client.mk`) -- with `linux/shim/include/`, overridden by
+`web_client/shim/include/` (SHA-1 and base64 without OpenSSL). Emscripten
+pthreads with `PROXY_TO_PTHREAD`: `main()` and every task are Web
+Workers, so the LVGL loop, the Git client and the file system may
+block while the page's thread owns the DOM; this needs cross-origin
+isolation (COOP / COEP headers, added by `web/sw.js` when the server
+does not send them). Storage is the origin-private file system through
+WasmFS (`/opfs/documents` is the SD card and the current directory,
+`/opfs/settings` holds `settings.nvs`); `web/client.js` starts the
+program only with persistent storage (`navigator.storage.persist()`)
+and a Web Lock (one copy per browser profile). `src/io_web.c` is an
+I/O backend of the Linux port (`LINUX_IO_WEB`; it uses the backend's
+`wait` hook instead of file descriptors): the page queues DOM input
+lock-free (`web_input()`, `WEB_EV_*` in `src/web_host.h`, keep in step
+with `WEB_EV` in `client.js`; keys as Linux key codes from
+`KeyboardEvent.code`, Command as Ctrl on a Mac) and gets changed
+rectangles as RGBA (`Module.webPresent`); clipboard over
+`navigator.clipboard` / the `paste` event. Touch mode (a coarse
+pointer or a touch on the canvas): a tap focuses a hidden input
+(`#kbd-proxy`, `type="password"` by default: Gboard and the like ignore
+`autocomplete` / `autocorrect` / `spellcheck` but drop suggestions,
+autocorrection and learning for passwords; the key bar's "Suggest"
+makes it `type="text"`, remembered in `localStorage`; the field is
+emptied on blur / hide so no browser offers to save it; Enter /
+Backspace / Tab keydowns without a code are mapped by `e.key`), which
+brings up the on-screen keyboard and is what
+Android hands a Bluetooth keyboard's input to; keys with a
+`KeyboardEvent.code` still go through `onKeyDown()`, on-screen keyboard
+text is read back from the field as a diff (Backspaces + US-keyboard
+keys, as in the online demo), `#app` follows `visualViewport` and the
+`#keybar` adds Esc / Tab / sticky Ctrl / arrows / F1 / Files / full
+screen (hidden while a physical keyboard's coded keys arrive,
+`setHwKeyboard()`). Modifier keys whose keydown the page saw count as
+held until their keyup or a blur (`realDown`, `heldMods()`), also for
+text read from the field: Android may leave `altKey` off the next key
+or turn Alt + a letter into field input. A physical key the input
+method takes (Android: AltGr+I is a dead key, keydown `keyCode` 229
+with no code) is sent from its keyup, which still has the code; the
+text the input method composed for it is dropped (`dropImeText()`),
+and field text right after such a keydown waits `IME_WAIT_MS` for that
+keyup. A keydown for a key already down is a repeat (Android does not
+set `e.repeat`). `?keylog` lists the last key / input events over the
+screen. `src/http_client_web.c` is
+`esp_http_client` over one synchronous `XMLHttpRequest` per request
+(the sync task is a worker), so Git servers must allow the page with
+CORS headers (Draftbox does). The page's Files panel (F9) runs its
+requests on the LVGL loop (`src/files_web.c`, `WEB_EV_FILES`): list,
+download a document or a ZIP (documents only, never `git.cfg`),
+upload into a project (refused while the document is open with
+unsaved changes; reloaded through `editor_ui_files_changed()` /
+`editor_reload_path()` otherwise), create a project. F11 is full
+screen with `navigator.keyboard.lock()` where available. The help page
+(F10) lists these in a "Web browser" section (`build_help_text()`,
+gated on the derived `DRAFTLING_WEB_PAGE`); keep it in step with
+`client.js`. When the
+editor or the Git client starts using a new ESP-IDF / FreeRTOS call or
+component API, or a font / input-method / git_sync source or data file
+is added, add it as for the Linux program (the shared stand-ins cover
+both) and to `web_client/client.mk`, and check that `make` in
+`web_client/` still builds. The build output (`build/`, `dist/`) is not
+committed.
+
 ## Repository Layout
 
 Paths below are relative to `firmware/` (see the note at the top of
@@ -371,7 +464,7 @@ sdkconfig.defaults.<board>  Per-board target + hardware-model defaults, one
                             sdkconfig.defaults.waveshare_rlcd42)
 sdkconfig.defaults.lang_<pack>  Language-pack defaults (vietnamese,
                             korean, japanese, chinese, indic; all, Linux
-                            only), appended by
+                            and web only), appended by
                             idf.py --lang-pack
 idf_ext.py                  idf.py extension: --lang-pack option /
                             DRAFTLING_LANG_PACK variable (see
@@ -2708,7 +2801,7 @@ FR-CA, CRH, CRH-B, BR),
 (US, VI), `korean` (US, KO), `japanese` (US, JA), `chinese` (US,
 ZH) and `indic` (US, HI-IN, MR-IN, NE-TR, NE-RO, BN-IN, BN-PR, BN-NJ,
 TE-IN, TE-SA, TE-RT, TE-PO, TE-AP, TA99, TA-TW, TA-IN, TA-TV), plus `all` (every one of them; the Linux
-program only, see "Linux application"). Each is a separate image; the board preset picks the hardware and
+program and the web client only, see "Linux application"). Each is a separate image; the board preset picks the hardware and
 the pack is chosen independently.
 
 **Build mechanism.** `firmware/idf_ext.py` is a project idf.py
@@ -3250,6 +3343,13 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   `/sys/class/power_supply`, no Bluetooth, no wake GPIO, and
   `DRAFTLING_DISPLAY_RESIZABLE`: the 1024x640 below is only the
   initial window size. *Requires IDF_TARGET_LINUX.*
+- **DRAFTLING_MODEL_WEB** -- the browser application built in
+  `web_client/` (see "Web client"), not by idf.py. Color, HIDPI,
+  touch = the canvas's mouse / pen / finger, no battery, no
+  Bluetooth, no wake GPIO, the host's network
+  (`DRAFTLING_NETWORK_HOST_MANAGED`) and `DRAFTLING_DISPLAY_RESIZABLE`:
+  the 1024x640 below is only the initial size. *Requires
+  IDF_TARGET_WEB.*
 
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
@@ -3258,13 +3358,13 @@ consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
-  480 (Guition JC4827W543C), 1024 (Linux, initial window).
+  480 (Guition JC4827W543C), 1024 (Linux and web, initial window).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3, LilyGO T5 4.7"), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79",
-  Guition JC4827W543C), 640 (Linux, initial window).
+  Guition JC4827W543C), 640 (Linux and web, initial window).
 
 ### Screen margins (user-adjustable, not a Kconfig setting)
 
@@ -3472,15 +3572,16 @@ in C / C++ code:
 | DRAFTLING_RGB_BOARD_UEDX80480043 | Switches `display_rgb.cpp` to the VIEWE UEDX80480043E-WB timings (Sunton 8048S043C pin map, 16 MHz) and stops the panel and latches the backlight off before deep sleep | VIEWE UEDX80480043E-WB |
 | DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
-| DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux, web client |
+| DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux, web client |
 | DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
-| DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak |
+| DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak, web client |
+| DRAFTLING_WEB_PAGE                | The editor runs in a web page: the help page (F10) gets a "Web browser" section listing the page's own keys (F9 Files panel, F11 full screen), the system clipboard, Command as Ctrl and the shortcuts the browser keeps | web client |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
-| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |
+| DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux, web client |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |
 | DRAFTLING_BATTERY_BQ27220         | Selects the BQ27220 fuel-gauge backend (`battery_init_bq27220(bus)`) instead of the GPIO ADC backend. On the Seeed reTerminal Sticky the bus passed in is a second, dedicated one main.cpp creates just for the gauge, not `shared_i2c_bus` | T5 E-Paper S3 Pro / Pro Lite, Seeed reTerminal Sticky |
 | DRAFTLING_BATTERY_BQ27220_GAUGE_SOC | BQ27220 percentage comes from the gauge's StateOfCharge (0x2C) instead of the voltage LUT; only for gauges whose Data Memory is programmed for the pack | Seeed reTerminal Sticky |
@@ -3635,10 +3736,10 @@ order follows the compiled-in layouts. The mask is 64 bits
 storing it as a `u32`, only `actlay_all` is a `u64`.
 
 **The `all` pack** (`DRAFTLING_LANG_PACK_ALL`, `depends on
-IDF_TARGET_LINUX`, `sdkconfig.defaults.lang_all`, not in
-`idf_ext.py`'s `LANG_PACKS`): every layout, input method and font of
-the other packs, about 40 layouts, for the Linux program only -- too
-large for a device's flash. Its default active set is US only.
+IDF_TARGET_LINUX || IDF_TARGET_WEB`, `sdkconfig.defaults.lang_all`, not
+in `idf_ext.py`'s `LANG_PACKS`): every layout, input method and font of
+the other packs, about 40 layouts, for the Linux program and the web
+client only -- too large for a device's flash. Its default active set is US only.
 `DRAFTLING_CJK_FONT_SET` is `"all"`: `linux/tools/merge_cjk_fonts.py`
 merges the ja, zh and ko blobs at build time (kana from ja, bopomofo
 from zh, Hangul from ko, other code points from ja, then zh, then ko),
@@ -3739,14 +3840,22 @@ of package. The Debian packages (`make deb` / `make deb ARCH=arm64` /
 `make deb ARCH=armhf` in `linux/`,
 `firmware/<tag>/draftling_<version>_<arch>.deb`) are built only on an
 Ubuntu 22.04 machine, so the packages run on the oldest glibc the
-program supports; a release published from here does NOT rebuild or
-update them: leave their links in `linux.html` untouched (they keep
-pointing at the tag of their last packages), and keep those files in
-the flasher. The Flatpak bundles (`make flatpak` in `linux/`,
-`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`) take
-their glibc from the Flatpak runtime, so they can be built on any
-machine: a release rebuilds them, copies them to `firmware/vX.Y.Z/`
-and updates their links, file names and version in `linux.html`.
+program supports. Releases are built on such a machine (an Ubuntu
+22.04 LXC container), so a release rebuilds all three, together with
+the Flatpak bundles (`make flatpak` in `linux/`,
+`firmware/<tag>/draftling_<version>_{x86_64,aarch64}.flatpak`, whose
+glibc comes from the Flatpak runtime), copies them to
+`firmware/vX.Y.Z/` and updates their links, file names and versions
+in `linux.html`. On a machine that is not Ubuntu 22.04, do not
+rebuild the Debian packages: leave their links in `linux.html`
+untouched (they keep pointing at the tag of their last packages) and
+keep those files in the flasher. In the container `make flatpak`
+uses Flathub's `org.flatpak.Builder` (Ubuntu 22.04's flatpak-builder
+1.2 is too old for the 25.08 SDK), `--disable-rofiles-fuse` (no
+`/dev/fuse`) and `dbus-run-session` (no session bus); the aarch64
+build needs `qemu-user-static` installed on the container's host
+(binfmt_misc is the host kernel's, and only a static qemu registered
+with the F flag runs inside the build sandbox).
 The Tab5 entry also carries the C6 upgrade tool as a second release
 (tag `c6-upgrade-<V>`, `label` "C6 upgrade tool <V>", one image, no
 language packs, files in `firmware/c6-upgrade-<V>/` of the flasher),

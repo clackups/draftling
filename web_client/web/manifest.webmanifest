@@ -1,0 +1,14 @@
+{
+  "name": "Draftling",
+  "short_name": "Draftling",
+  "description": "Distraction-free Markdown, Fountain and plain-text editor.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#202020",
+  "theme_color": "#202020",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

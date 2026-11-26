@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "sdkconfig.h"
@@ -39,6 +40,8 @@ __attribute__((noreturn)) void linux_quit(int status);
 
 /* ---- I/O backends --------------------------------------------------------- */
 
+struct pollfd;
+
 /* Pixels handed to a backend: 32-bit 0x00RRGGBB, rows of stride
  * pixels. */
 typedef struct {
@@ -61,6 +64,20 @@ typedef struct {
     /* The server sends a held key's auto-repeat as further presses
      * (X11); otherwise a second press means the release was lost. */
     bool repeats_keys;
+    /* Desktop clipboard (clipboard_linux.c). clip_set: take it over
+     * with this UTF-8 text (the backend keeps a copy); NULL lets go of
+     * it. clip_request: ask for its text; false when Draftling owns it
+     * or nothing offers text, otherwise linux_io_clipboard_text()
+     * follows from dispatch() (NULL: it failed). Either may be NULL. */
+    void (*clip_set)(const char *text, size_t len);
+    bool (*clip_request)(void);
+    /* More file descriptors to wait on (clipboard transfers): fills at
+     * most max entries, returns how many. May be NULL. */
+    int (*poll_fds)(struct pollfd *fds, int max);
+    /* Wait up to timeout_ms for input, instead of polling fd() and
+     * poll_fds() (a backend without file descriptors: the web client's
+     * canvas). May be NULL. */
+    void (*wait)(int timeout_ms);
 } linux_io_backend_t;
 
 #if defined(LINUX_IO_WAYLAND)
@@ -68,6 +85,10 @@ extern const linux_io_backend_t linux_io_wayland;
 #endif
 #if defined(LINUX_IO_X11)
 extern const linux_io_backend_t linux_io_x11;
+#endif
+#if defined(LINUX_IO_WEB)
+/* The web client's canvas (web_client/src/io_web.c). */
+extern const linux_io_backend_t linux_io_web;
 #endif
 
 /* True while the backend --io names is being opened: a backend that
@@ -118,6 +139,12 @@ void linux_io_resize(int w, int h);
 void linux_io_damage_all(void);
 /* The user closed the window. */
 void linux_io_close(void);
+/* The clipboard text clip_request() asked for, in any encoding the
+ * backend got (NULL: none). */
+void linux_io_clipboard_text(const char *data, size_t len);
+/* UTF-8 to Latin-1 ('?' for what it lacks), for the X11 STRING type;
+ * malloc()ed, NUL-terminated. */
+char *linux_clip_to_latin1(const char *text, size_t len, size_t *out_len);
 
 /* ---- standby (standby_linux.c) ------------------------------------------ */
 
@@ -147,6 +174,8 @@ void linux_port_set_dim(int percent);
  * that works). Returns false with a message when none works. */
 bool linux_port_open_io(const char *name);
 const char *linux_port_io_name(void);
+/* The backend in use, or NULL. */
+const linux_io_backend_t *linux_port_io(void);
 /* The window size the backend opened with. */
 void linux_port_initial_size(int *w, int *h);
 /* The LVGL loop; never returns. */

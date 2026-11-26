@@ -121,6 +121,8 @@
 #include "boards/onepage_c61.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_LINUX)
 #include "boards/linux.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_WEB)
+#include "boards/web.h"
 #else
 #error "No hardware model selected. Run idf.py menuconfig and choose a model."
 #endif

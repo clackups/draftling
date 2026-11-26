@@ -44,6 +44,8 @@ static const char *TAG = "LinuxPort";
 #define RESIZE_SETTLE_MS 120
 #define RELAYOUT_RETRY_MS 250
 #define LOOP_MAX_WAIT_MS 50
+/* Clipboard transfers the loop waits on besides the display. */
+#define LOOP_MAX_EXTRA_FDS 8
 #define BORDER_COLOR 0x00202020u
 
 static const linux_io_backend_t *s_io;
@@ -435,6 +437,9 @@ static const linux_io_backend_t *const s_backends[] = {
 #if defined(LINUX_IO_X11)
     &linux_io_x11,
 #endif
+#if defined(LINUX_IO_WEB)
+    &linux_io_web,
+#endif
 };
 #define N_BACKENDS (sizeof(s_backends) / sizeof(s_backends[0]))
 
@@ -491,6 +496,11 @@ bool linux_port_open_io(const char *name)
 const char *linux_port_io_name(void)
 {
     return s_io ? s_io->name : "none";
+}
+
+const linux_io_backend_t *linux_port_io(void)
+{
+    return s_io;
 }
 
 /* The size the backend opened with (main_linux.cpp passes it to
@@ -570,9 +580,18 @@ void linux_port_run(void)
         if (s_want_w != s_win_w || s_want_h != s_win_h || s_relayout_pending) {
             if (wait > 20) wait = 20;
         }
-        struct pollfd pfd = { .fd = s_io->fd ? s_io->fd() : -1, .events = POLLIN };
-        if (pfd.fd >= 0) {
-            poll(&pfd, 1, (int)wait);
+        if (s_io->wait) {
+            s_io->wait((int)wait);
+            pthread_mutex_lock(&s_lock);
+            continue;
+        }
+        struct pollfd pfd[1 + LOOP_MAX_EXTRA_FDS];
+        int nfd = 0;
+        int dfd = s_io->fd ? s_io->fd() : -1;
+        if (dfd >= 0) pfd[nfd++] = (struct pollfd){ .fd = dfd, .events = POLLIN };
+        if (s_io->poll_fds) nfd += s_io->poll_fds(pfd + nfd, LOOP_MAX_EXTRA_FDS);
+        if (nfd > 0) {
+            poll(pfd, (nfds_t)nfd, (int)wait);
         } else {
             struct timespec ts = { 0, (long)wait * 1000000L };
             nanosleep(&ts, NULL);
