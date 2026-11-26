@@ -3777,6 +3777,11 @@ static void refresh_active_pane(bool draw_cursor)
                 lv_point_t lpos;
                 lv_label_get_letter_pos(s_line_labels[i],
                                         (uint32_t)col_in_display, &lpos);
+                /* The space a row breaks at may hang past the right
+                 * edge (see lv_wrap_spaces.c); keep the cursor after it
+                 * at the edge instead of off screen. */
+                int32_t cw = lv_obj_get_content_width(s_line_labels[i]);
+                if (cw > 2 && lpos.x > cw - 2) lpos.x = cw - 2;
                 lv_point_t cofs = label_content_offset(s_line_labels[i]);
                 cur_x = 2 + cofs.x + lpos.x;
                 cur_y = y_pos + cofs.y + lpos.y;

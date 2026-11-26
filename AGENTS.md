@@ -3164,7 +3164,21 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   addition to `components/fastepd` (D0-D7 = 8,1,2,3,4,5,6,7 -- LilyGO's
   S3 driver permutes them only to reuse the ESP32 I2S LUTs; CKV=38,
   STH=40 as the i80 CS, CKH=41, dummy D/C GPIO39; LilyGO shift-register
-  callbacks as for BB_PANEL_LILYGO_T5PRO). Hack fonts (HIDPI), MicroSD
+  callbacks as for BB_PANEL_LILYGO_T5PRO). Every refresh uses FastEPD's
+  `partialUpdate()` (`EPD47_PARTIAL_ONLY`; the H752 keeps its flashing
+  `fullUpdate()`): a "full" refresh (requested, most of the screen
+  dirty, or every `DRAFTLING_EPD_FULL_REFRESH_INTERVAL` partials, 8 on
+  this board) loads the previous plane with the inverse of the new
+  frame and drives all rows, so every pixel is re-driven, like the
+  SSD1677 full refresh of `display_ws_epd397.cpp`. For this panel only,
+  FastEPD drives the 74HC4094 through the GPIO registers
+  (`bbepSendShiftDataFast()`) and, after two neutral rows, only steps
+  the gate driver for rows outside the update and in the closing
+  neutral pass (no DMA). That shortens a pass from ~45 ms to a few ms,
+  but each pixel is driven for about one frame per pass, so the drive
+  per pass fell with it and moved text left shadows:
+  `EPD47_PARTIAL_PASSES` (8, FastEPD default 4) restores it. Measured:
+  one text line ~35 ms at 4 passes, whole screen ~260 ms at 8. Hack fonts (HIDPI), MicroSD
   on SPI3 (CS=42, MOSI=15, SCK=11, MISO=16), user button IO21 as the
   wake source; no touch, front-light or battery level yet (touch on
   I2C 18/17 INT 47; the GPIO14 battery divider is reported to be live

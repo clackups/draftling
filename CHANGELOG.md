@@ -51,6 +51,11 @@ in the git log.
 
 ### Fixed
 
+- **Spaces at the end of a full row**: pressing Space at the end of a
+  row that was already full seemed to do nothing -- the cursor went
+  off the right edge, and the spaces disappeared once the next letter
+  was typed. Spaces past the edge now start the next row, so every
+  press moves the cursor and the text appears where it is.
 - **USB keyboard going silent**: a USB keyboard (M5Stack Tab5,
   MicroJournal, any board with the new USB host option) stopped
   typing, fully or for most keys, after a single failed transfer --

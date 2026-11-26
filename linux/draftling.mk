@@ -87,7 +87,8 @@ FW_SRCS := \
 	$(COMPONENTS)/display/display_orientation.cpp \
 	$(COMPONENTS)/display/display_flip.cpp \
 	$(COMPONENTS)/display/display_scale.cpp \
-	$(COMPONENTS)/display/lv_rtl_line_width.c
+	$(COMPONENTS)/display/lv_rtl_line_width.c \
+	$(COMPONENTS)/display/lv_wrap_spaces.c
 
 # The real Git client (components/git_sync/CMakeLists.txt).
 G := $(COMPONENTS)/git_sync
@@ -273,7 +274,7 @@ HB_FLAGS := -Os $(ABI_FLAGS) -MMD -MP -DHB_TINY -DHB_NO_MT -fno-exceptions -fno-
 	-I$(COMPONENTS)/harfbuzz/config -I$(COMPONENTS)/harfbuzz/src -w
 
 LDFLAGS := $(OPT) -pthread $(if $(filter static,$(LINK)),-static-libgcc -static-libstdc++) \
-	-Wl,--wrap=lv_text_get_line_width -Wl,--as-needed
+	-Wl,--wrap=lv_text_get_line_width -Wl,--wrap=lv_text_get_next_line -Wl,--wrap=lv_text_get_size_attributes -Wl,--as-needed
 
 # (Commas in variables: $(if) would split them.)
 LD_STATIC  := -Wl,-Bstatic
