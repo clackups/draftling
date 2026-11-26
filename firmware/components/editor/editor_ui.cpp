@@ -563,35 +563,6 @@ extern "C" __attribute__((weak)) int display_get_backlight(void)
     return -1;
 }
 
-/* Host desktop clipboard: nothing on a device. The Linux program
- * overrides both (linux/src/clipboard_linux.c). */
-extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
-{
-    (void)text;
-    (void)len;
-}
-
-extern "C" __attribute__((weak)) bool editor_host_clipboard_request(void)
-{
-    return false;
-}
-
-/* A Ctrl+V waiting for the host clipboard's text: keys typed meanwhile
- * stay queued (key_drain_cb()), so they land after the pasted text. */
-#define HOST_PASTE_TIMEOUT_MS 3000
-static bool     s_host_paste_pending;
-static uint32_t s_host_paste_start;
-
-/* Offer what Ctrl+C / Ctrl+X just put on the clipboard to the host
- * (NULL when it went to the SD card file: the host then lets go of its
- * clipboard, so Ctrl+V uses the editor's own). */
-static void host_clipboard_export(void)
-{
-    size_t len = 0;
-    const char *text = editor_clipboard_data(&len);
-    editor_host_clipboard_set(text, len);
-}
-
 static void load_backlight_from_nvs(void)
 {
     nvs_handle_t h;
@@ -641,6 +612,35 @@ static int find_backlight_option(int pct)
     return best;
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
+
+/* Host desktop clipboard: nothing on a device. The Linux program
+ * overrides both (linux/src/clipboard_linux.c). */
+extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
+{
+    (void)text;
+    (void)len;
+}
+
+extern "C" __attribute__((weak)) bool editor_host_clipboard_request(void)
+{
+    return false;
+}
+
+/* A Ctrl+V waiting for the host clipboard's text: keys typed meanwhile
+ * stay queued (key_drain_cb()), so they land after the pasted text. */
+#define HOST_PASTE_TIMEOUT_MS 3000
+static bool     s_host_paste_pending;
+static uint32_t s_host_paste_start;
+
+/* Offer what Ctrl+C / Ctrl+X just put on the clipboard to the host
+ * (NULL when it went to the SD card file: the host then lets go of its
+ * clipboard, so Ctrl+V uses the editor's own). */
+static void host_clipboard_export(void)
+{
+    size_t len = 0;
+    const char *text = editor_clipboard_data(&len);
+    editor_host_clipboard_set(text, len);
+}
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
 /* ---- Runtime 180-degree display flip ----
