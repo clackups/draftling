@@ -291,11 +291,18 @@
   }
   window.addEventListener("resize", measureScreen);
 
+  /* One frame pixel on the page: the ratio of the screen area's CSS size
+   * to the device-pixel size reported for it, so the canvas fills it
+   * exactly even where the observer's pixel ratio differs from
+   * window.devicePixelRatio (browser zoom, emulators). */
   function sizeCanvasCss() {
     if (!frameW) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.style.width = (frameW / dpr) + "px";
-    canvas.style.height = (frameH / dpr) + "px";
+    const r = screenEl.getBoundingClientRect();
+    let kx = screenW && r.width ? r.width / screenW : 0;
+    let ky = screenH && r.height ? r.height / screenH : 0;
+    if (!kx || !ky) kx = ky = 1 / (window.devicePixelRatio || 1);
+    canvas.style.width = (frameW * kx) + "px";
+    canvas.style.height = (frameH * ky) + "px";
   }
 
   function present(fw, fh, x, y, w, h, bytes) {
@@ -352,6 +359,7 @@
    * I. */
   const realDown = new Set();
   let ctrlLeftAt = -1;           /* Windows AltGr: the ControlLeft it fakes */
+  let imeKeyAt = -1e9;           /* last keydown the input method took */
   let fakeCtrl = false;
 
   /* The modifiers held according to the page's own record. */
@@ -430,7 +438,20 @@
       return;
     }
     const code = KEYS[e.code];
-    if (!code) return;
+    if (!code) {
+      /* A key the input method takes (Android: dead keys such as
+       * AltGr+I, keyCode 229): its keyup still carries the code, see
+       * onKeyUp(). */
+      if (e.keyCode === 229 || e.key === "Unidentified" || e.key === "Process")
+        imeKeyAt = performance.now();
+      return;
+    }
+    /* Down already: Android repeats a held key without setting
+     * e.repeat. Draftling repeats keys itself. */
+    if (down.has(code)) {
+      e.preventDefault();
+      return;
+    }
     /* Ctrl+V: the browser's paste event brings the clipboard's text. */
     const paste = isCtrlCombo(e) && e.code === "KeyV";
     if (!paste) e.preventDefault();
@@ -457,6 +478,20 @@
     const code = KEYS[e.code];
     if (!code) return;
     e.preventDefault();
+    /* The keyup of a physical key whose keydown the input method took
+     * (Android hands AltGr+I to it as a dead key, keyCode 229): send
+     * the key now, with the modifiers held, and drop what the input
+     * method put into the field. */
+    if (!down.has(code) && !MODIFIER_CODES.has(code) &&
+        performance.now() - imeKeyAt < 3000) {
+      imeKeyAt = -1e9;
+      dropImeText();
+      setHwKeyboard(true);
+      const m = mods(e);
+      send(WEB_EV.KEY, code, 1, m);
+      send(WEB_EV.KEY, code, 0, m);
+      return;
+    }
     realDown.delete(code);
     if (e.code === "ControlLeft" && fakeCtrl) {
       fakeCtrl = false;
@@ -549,6 +584,11 @@
   /* A physical keyboard is in use: its keys arrive with a code. The key
    * bar is then hidden, until an on-screen keyboard types again. */
   let hwKeyboard = false;
+  /* Field text that may belong to a physical key the input method took
+   * (see onKeyUp()): typed only if no such keyup follows in time. */
+  const IME_WAIT_MS = 400;
+  let imeTimer = 0;
+  let suppressUntil = 0;
   let toastTimer = 0;
 
   function toast(msg, ms) {
@@ -683,8 +723,36 @@
     }
   }
 
+  /* Throw away what the input method put into the field for a physical
+   * key, and end its composition (an Android dead key would otherwise
+   * turn the next letter into an accented one). */
+  function dropImeText() {
+    clearTimeout(imeTimer);
+    imeTimer = 0;
+    suppressUntil = performance.now() + 150;
+    composing = false;
+    proxy.blur();
+    proxyReset();
+    proxy.focus({ preventScroll: true });
+  }
+
   function proxyInput() {
     if (!ready) return;
+    if (performance.now() < suppressUntil) {
+      if (!composing) proxyReset();
+      return;
+    }
+    /* With a physical keyboard in use, text right after a key the input
+     * method took may be that key's: wait for its keyup first. */
+    if (hwKeyboard && performance.now() - imeKeyAt < IME_WAIT_MS) {
+      clearTimeout(imeTimer);
+      imeTimer = setTimeout(() => {
+        imeTimer = 0;
+        imeKeyAt = -1e9;
+        proxyInput();
+      }, IME_WAIT_MS);
+      return;
+    }
     const now = proxy.value;
     /* Text without key events while no physical modifier is held: an
      * on-screen keyboard typed it, so it is in use again. */

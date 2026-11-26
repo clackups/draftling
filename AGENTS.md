@@ -395,8 +395,14 @@ screen (hidden while a physical keyboard's coded keys arrive,
 `setHwKeyboard()`). Modifier keys whose keydown the page saw count as
 held until their keyup or a blur (`realDown`, `heldMods()`), also for
 text read from the field: Android may leave `altKey` off the next key
-or turn Alt + a letter into field input. `?keylog` lists the last key /
-input events over the screen. `src/http_client_web.c` is
+or turn Alt + a letter into field input. A physical key the input
+method takes (Android: AltGr+I is a dead key, keydown `keyCode` 229
+with no code) is sent from its keyup, which still has the code; the
+text the input method composed for it is dropped (`dropImeText()`),
+and field text right after such a keydown waits `IME_WAIT_MS` for that
+keyup. A keydown for a key already down is a repeat (Android does not
+set `e.repeat`). `?keylog` lists the last key / input events over the
+screen. `src/http_client_web.c` is
 `esp_http_client` over one synchronous `XMLHttpRequest` per request
 (the sync task is a worker), so Git servers must allow the page with
 CORS headers (Draftbox does). The page's Files panel (F9) runs its
