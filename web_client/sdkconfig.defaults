@@ -1,0 +1,6 @@
+# Web client: the Kconfig defaults of the "board", as
+# firmware/sdkconfig.defaults.<board> is for a device. Every language
+# is built in: firmware/sdkconfig.defaults.lang_all is applied on top
+# (see client.mk).
+CONFIG_IDF_TARGET="web"
+CONFIG_DRAFTLING_MODEL_WEB=y

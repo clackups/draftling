@@ -437,6 +437,9 @@ static const linux_io_backend_t *const s_backends[] = {
 #if defined(LINUX_IO_X11)
     &linux_io_x11,
 #endif
+#if defined(LINUX_IO_WEB)
+    &linux_io_web,
+#endif
 };
 #define N_BACKENDS (sizeof(s_backends) / sizeof(s_backends[0]))
 
@@ -576,6 +579,11 @@ void linux_port_run(void)
         if (wait < 1) wait = 1;
         if (s_want_w != s_win_w || s_want_h != s_win_h || s_relayout_pending) {
             if (wait > 20) wait = 20;
+        }
+        if (s_io->wait) {
+            s_io->wait((int)wait);
+            pthread_mutex_lock(&s_lock);
+            continue;
         }
         struct pollfd pfd[1 + LOOP_MAX_EXTRA_FDS];
         int nfd = 0;

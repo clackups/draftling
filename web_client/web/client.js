@@ -1,0 +1,882 @@
+/*
+ * Draftling web client -- the page side.
+ *
+ * The program (draftling.js / draftling.wasm, built by client.mk) runs
+ * on Web Workers; this script owns the page:
+ *
+ * - Start: cross-origin isolation (needed for the program's threads;
+ *   sw.js adds the headers when the server does not), a single running
+ *   copy per browser profile (Web Locks: two would write the same
+ *   files), persistent storage (navigator.storage.persist(): without it
+ *   the browser may delete the documents when the disk runs low, so
+ *   Draftling does not start until it is granted), then the program.
+ * - Screen: a canvas the size of the window in device pixels; the
+ *   program draws changed rectangles (Module.webPresent) and lays its
+ *   screens out again when the size changes (WEB_EV.RESIZE).
+ * - Keyboard: KeyboardEvent.code (the physical key) -> Linux key code,
+ *   as the Linux program gets them from Wayland / X11; the program
+ *   applies its own layouts (Ctrl+L), dead keys, input methods and key
+ *   repeat. The browser's repeats are dropped.
+ * - Mouse / pen / touch on the canvas -> the program's pointer; the
+ *   wheel moves the cursor.
+ * - Clipboard: Ctrl+C / Ctrl+X put the text on the system clipboard,
+ *   Ctrl+V pastes what is there (the browser's paste event, or
+ *   navigator.clipboard.readText()).
+ * - Files panel (F9): download documents, a project or everything as
+ *   a ZIP; upload documents into a project.
+ * - Full screen (F11), with the keyboard locked where the browser
+ *   offers it, so Esc and the browser's own shortcuts reach Draftling.
+ * - Leaving or hiding the page saves the documents; leaving with
+ *   unsaved changes asks first.
+ */
+"use strict";
+
+(function () {
+  const BUILD = window.DRAFTLING_BUILD || "dev";
+
+  /* Keep in step with web_client/src/web_host.h. */
+  const WEB_EV = {
+    KEY: 1, POINTER: 2, WHEEL: 3, RESIZE: 4, RELEASE_ALL: 5,
+    PASTE: 6, SAVE: 7, DAMAGE: 8,
+  };
+  /* Keep in step with files_web.c. */
+  const FILES_OP = { LIST: 1, READ: 2, ZIP: 3, WRITE: 4, MKPROJECT: 5 };
+  /* LINUX_MOD_* in linux/src/linux_host.h. */
+  const MOD = { SHIFT: 1, CTRL: 2, ALT: 4, ALTGR: 8, SUPER: 16 };
+
+  const ua = navigator.userAgent;
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || "") || /Mac OS X/.test(ua);
+  const IS_SAFARI = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(ua);
+  const IS_FIREFOX = /firefox/i.test(ua);
+
+  const canvas = document.getElementById("canvas");
+  const screenEl = document.getElementById("screen");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const messageEl = document.getElementById("message");
+  const messageTitle = document.getElementById("message-title");
+  const messageBody = document.getElementById("message-body");
+  const messageActions = document.getElementById("message-actions");
+  const toolbar = document.getElementById("toolbar");
+
+  let ready = false;          /* the program is running */
+  let failed = false;
+  let screenW = 0, screenH = 0;   /* window size in device pixels */
+
+  /* ---- messages (start-up and errors) --------------------------------- */
+
+  function showMessage(title, html, actions) {
+    messageTitle.textContent = title;
+    messageBody.innerHTML = html;
+    messageActions.textContent = "";
+    for (const a of actions || []) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = a.label;
+      if (a.primary) b.className = "primary";
+      b.addEventListener("click", a.onClick);
+      messageActions.appendChild(b);
+    }
+    messageEl.hidden = false;
+    const first = messageActions.querySelector("button");
+    if (first) first.focus();
+  }
+
+  function fail(title, html) {
+    failed = true;
+    showMessage(title, html, [{ label: "Reload", onClick: () => location.reload() }]);
+  }
+
+  /* ---- start ------------------------------------------------------------ */
+
+  async function isolate() {
+    if (window.crossOriginIsolated) return true;
+    if (!("serviceWorker" in navigator)) return false;
+    /* The service worker adds the isolation headers. A page it did not
+     * load yet is reloaded once, through it. */
+    try {
+      await navigator.serviceWorker.register("sw.js");
+      await navigator.serviceWorker.ready;
+    } catch (e) {
+      console.warn("Draftling: service worker:", e);
+      return false;
+    }
+    let tried = null;
+    try { tried = sessionStorage.getItem("draftling-isolate"); } catch (e) { /* ignore */ }
+    if (tried === BUILD) return false;
+    try { sessionStorage.setItem("draftling-isolate", BUILD); } catch (e) { /* ignore */ }
+    location.reload();
+    return new Promise(() => {});   /* the reload takes over */
+  }
+
+  function missingFeatures() {
+    const missing = [];
+    if (typeof SharedArrayBuffer === "undefined" || !window.crossOriginIsolated)
+      missing.push("cross-origin isolation (SharedArrayBuffer)");
+    if (!navigator.storage || !navigator.storage.getDirectory)
+      missing.push("the origin-private file system");
+    if (!navigator.locks) missing.push("Web Locks");
+    if (typeof WebAssembly !== "object") missing.push("WebAssembly");
+    return missing;
+  }
+
+  function persistHelp() {
+    if (IS_FIREFOX) {
+      return "<p>Firefox asks whether this site may store data persistently: allow it, " +
+        "then press <b>Try again</b>. If it did not ask, open the site information " +
+        "(the icon left of the address) and allow <i>Store data in persistent storage</i>.</p>";
+    }
+    if (IS_SAFARI) {
+      return "<p>Safari grants it to a site added to the Dock (File &rarr; Add to Dock) " +
+        "or to the Home Screen. Open Draftling from there, then press <b>Try again</b>.</p>";
+    }
+    return "<p>Chrome and Edge grant it to a site installed as an app, or one you use " +
+      "often. Install Draftling (the install icon in the address bar, or the browser " +
+      "menu &rarr; <i>Install Draftling</i>) and open it from there, or bookmark this page; " +
+      "then press <b>Try again</b>.</p>";
+  }
+
+  async function ensurePersistent() {
+    for (;;) {
+      let ok = false;
+      try {
+        ok = await navigator.storage.persisted() || await navigator.storage.persist();
+      } catch (e) {
+        console.warn("Draftling: persist():", e);
+      }
+      if (ok) return;
+      await new Promise((resolve) => {
+        showMessage("Draftling needs persistent storage",
+          "<p>Draftling keeps your documents in this browser. Unless the browser marks " +
+          "that storage as persistent, it may delete it, documents included, when the " +
+          "disk runs low or the site has not been used for a while.</p>" + persistHelp() +
+          "<p>Synchronize with a Git repository or download your documents regularly " +
+          "(F9) to keep copies elsewhere as well.</p>",
+          [{ label: "Try again", primary: true, onClick: resolve }]);
+      });
+      showMessage("Draftling", "<p>Checking storage...</p>", []);
+    }
+  }
+
+  async function storageEstimate() {
+    try {
+      const e = await navigator.storage.estimate();
+      return [e.quota || 0, e.usage || 0];
+    } catch (e) {
+      return [0, 0];
+    }
+  }
+
+  async function start() {
+    if (!await isolate() || missingFeatures().length) {
+      const m = missingFeatures();
+      fail("This browser cannot run Draftling",
+        "<p>Draftling needs " + (m.length ? m.join(", ") : "cross-origin isolation") +
+        ". Use a current Chrome, Edge, Firefox or Safari, and not a private window.</p>");
+      return;
+    }
+    /* One Draftling per browser profile: hold the lock while it runs. */
+    const got = await new Promise((resolve) => {
+      navigator.locks.request("draftling-client", { ifAvailable: true }, (lock) => {
+        resolve(!!lock);
+        return lock ? new Promise(() => {}) : undefined;
+      });
+    });
+    if (!got) {
+      fail("Draftling is already open",
+        "<p>Draftling is open in another tab or window of this browser. Use that one: " +
+        "two would overwrite each other's documents.</p>");
+      return;
+    }
+    await ensurePersistent();
+    showMessage("Draftling", "<p>Loading...</p>", []);
+    const est = await storageEstimate();
+    measureScreen();
+    loadProgram(est);
+  }
+
+  /* ---- the program --------------------------------------------------- */
+
+  const Module = window.Module = {
+    locateFile: (path) => path + "?v=" + BUILD,
+    mainScriptUrlOrBlob: "draftling.js?v=" + BUILD,
+    webLogLevel: ({ error: 1, warn: 2, info: 3, debug: 4 })[
+      new URLSearchParams(location.search).get("log")] || 0,
+    print: (s) => console.log(s),
+    printErr: (s) => console.warn(s),
+    webSize: () => [screenW, screenH],
+    webPresent: present,
+    webClipSet: clipSet,
+    webClipRequest: clipRequest,
+    webFilesReply: filesReply,
+    webReady: () => {
+      ready = true;
+      messageEl.hidden = true;
+      canvas.focus();
+      showToolbar();
+    },
+    webFatal: (msg) => fail("Draftling stopped", "<p>" + escapeHtml(msg) + "</p>"),
+    webRestart: () => location.reload(),
+    onAbort: (what) => fail("Draftling stopped",
+      "<p>The program ended unexpectedly" + (what ? ": " + escapeHtml(String(what)) : "") +
+      ". Your saved documents are kept.</p>"),
+  };
+
+  function loadProgram(est) {
+    Module.onRuntimeInitialized = () => {
+      Module._web_storage(est[0], est[1]);
+      setInterval(async () => {
+        const e = await storageEstimate();
+        if (Module._web_storage) Module._web_storage(e[0], e[1]);
+      }, 30000);
+    };
+    const s = document.createElement("script");
+    s.src = "draftling.js?v=" + BUILD;
+    s.onerror = () => fail("Draftling could not be loaded",
+      "<p>The program's files did not load. Check the connection and reload.</p>");
+    document.body.appendChild(s);
+  }
+
+  function send(type, a, b, c) {
+    if (ready && Module._web_input) Module._web_input(type, a | 0, b | 0, c | 0);
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;",
+      "\"": "&quot;", "'": "&#39;" })[c]);
+  }
+
+  /* ---- screen --------------------------------------------------------- */
+
+  let frameW = 0, frameH = 0;
+  let resizeTimer = 0;
+
+  function setScreen(w, h) {
+    w = Math.max(1, Math.round(w));
+    h = Math.max(1, Math.round(h));
+    if (w === screenW && h === screenH) return;
+    screenW = w;
+    screenH = h;
+    sizeCanvasCss();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => send(WEB_EV.RESIZE, screenW, screenH), 30);
+  }
+
+  function measureScreen() {
+    const r = screenEl.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    setScreen(r.width * dpr, r.height * dpr);
+  }
+
+  /* The window's size in device pixels: exact where the browser reports
+   * it, so every canvas pixel is one screen pixel. */
+  try {
+    new ResizeObserver((entries) => {
+      for (const e of entries) {
+        if (e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0]) {
+          setScreen(e.devicePixelContentBoxSize[0].inlineSize,
+            e.devicePixelContentBoxSize[0].blockSize);
+        } else {
+          measureScreen();
+        }
+      }
+    }).observe(screenEl, { box: "device-pixel-content-box" });
+  } catch (e) {
+    new ResizeObserver(measureScreen).observe(screenEl);
+  }
+  window.addEventListener("resize", measureScreen);
+
+  function sizeCanvasCss() {
+    if (!frameW) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = (frameW / dpr) + "px";
+    canvas.style.height = (frameH / dpr) + "px";
+  }
+
+  function present(fw, fh, x, y, w, h, bytes) {
+    if (fw !== frameW || fh !== frameH || canvas.width !== fw || canvas.height !== fh) {
+      frameW = fw;
+      frameH = fh;
+      canvas.width = fw;
+      canvas.height = fh;
+      sizeCanvasCss();
+      if (x !== 0 || y !== 0 || w !== fw || h !== fh) {
+        /* A new canvas is blank: have the whole frame sent again. */
+        send(WEB_EV.DAMAGE, 0, 0, 0);
+      }
+    }
+    if (!w || !h) return;
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(bytes.buffer, 0, w * h * 4), w, h), x, y);
+  }
+
+  /* ---- keyboard ---------------------------------------------------------- */
+
+  /* KeyboardEvent.code -> Linux input event code (linux/input-event-codes.h). */
+  const KEYS = {
+    Escape: 1, Digit1: 2, Digit2: 3, Digit3: 4, Digit4: 5, Digit5: 6, Digit6: 7,
+    Digit7: 8, Digit8: 9, Digit9: 10, Digit0: 11, Minus: 12, Equal: 13, Backspace: 14,
+    Tab: 15, KeyQ: 16, KeyW: 17, KeyE: 18, KeyR: 19, KeyT: 20, KeyY: 21, KeyU: 22,
+    KeyI: 23, KeyO: 24, KeyP: 25, BracketLeft: 26, BracketRight: 27, Enter: 28,
+    ControlLeft: 29, KeyA: 30, KeyS: 31, KeyD: 32, KeyF: 33, KeyG: 34, KeyH: 35,
+    KeyJ: 36, KeyK: 37, KeyL: 38, Semicolon: 39, Quote: 40, Backquote: 41,
+    ShiftLeft: 42, Backslash: 43, IntlHash: 43, KeyZ: 44, KeyX: 45, KeyC: 46, KeyV: 47,
+    KeyB: 48, KeyN: 49, KeyM: 50, Comma: 51, Period: 52, Slash: 53, ShiftRight: 54,
+    NumpadMultiply: 55, AltLeft: 56, Space: 57, CapsLock: 58,
+    F1: 59, F2: 60, F3: 61, F4: 62, F5: 63, F6: 64, F7: 65, F8: 66, F9: 67, F10: 68,
+    NumLock: 69, ScrollLock: 70, Numpad7: 71, Numpad8: 72, Numpad9: 73,
+    NumpadSubtract: 74, Numpad4: 75, Numpad5: 76, Numpad6: 77, NumpadAdd: 78,
+    Numpad1: 79, Numpad2: 80, Numpad3: 81, Numpad0: 82, NumpadDecimal: 83,
+    IntlBackslash: 86, F11: 87, F12: 88, IntlRo: 89, NumpadEnter: 96,
+    ControlRight: 97, NumpadDivide: 98, PrintScreen: 99, AltRight: 100,
+    Home: 102, ArrowUp: 103, PageUp: 104, ArrowLeft: 105, ArrowRight: 106, End: 107,
+    ArrowDown: 108, PageDown: 109, Insert: 110, Delete: 111, NumpadEqual: 117,
+    Pause: 119, IntlYen: 124, MetaLeft: 125, MetaRight: 126, ContextMenu: 127,
+  };
+  /* On a Mac, Command is Draftling's Ctrl (Cmd+C, Cmd+V, Cmd+S...). */
+  if (IS_MAC) {
+    KEYS.MetaLeft = 29;
+    KEYS.MetaRight = 97;
+  }
+
+  const MODIFIER_CODES = new Set([29, 42, 54, 56, 97, 100, 125, 126]);
+  const down = new Set();        /* codes Draftling has been sent as down */
+  let ctrlLeftAt = -1;           /* Windows AltGr: the ControlLeft it fakes */
+  let fakeCtrl = false;
+
+  function mods(e) {
+    let m = 0;
+    if (e.shiftKey) m |= MOD.SHIFT;
+    if ((e.ctrlKey && !fakeCtrl) || (IS_MAC && e.metaKey)) m |= MOD.CTRL;
+    if (e.altKey) m |= MOD.ALT;
+    if (e.getModifierState && e.getModifierState("AltGraph")) m |= MOD.ALTGR;
+    if (e.metaKey && !IS_MAC) m |= MOD.SUPER;
+    return m;
+  }
+
+  function sendKey(code, pressed, e) {
+    if (pressed) down.add(code);
+    else down.delete(code);
+    send(WEB_EV.KEY, code, pressed ? 1 : 0, mods(e));
+  }
+
+  /* A modifier the event says is held, but whose key went down before
+   * the page had the focus (or in another window): press it now, so
+   * Ctrl+S is Ctrl+S. Releases need no help -- the program drops a
+   * modifier the event no longer reports (WEB_EV.KEY's modifier mask). */
+  function catchUpModifiers(e) {
+    const m = mods(e);
+    const want = [
+      [MOD.SHIFT, 42, 54],
+      [MOD.CTRL, 29, 97],
+      [MOD.ALT, 56, 100],
+      [MOD.SUPER, 125, 126],
+    ];
+    for (const [bit, left, right] of want) {
+      if (m & bit) {
+        if (!down.has(left) && !down.has(right)) sendKey(left, true, e);
+      } else if (!(bit === MOD.ALT && (m & MOD.ALTGR))) {
+        /* Released where the page did not see it: the program drops it
+         * (the modifier mask), and so does this record. */
+        down.delete(left);
+        down.delete(right);
+      }
+    }
+  }
+
+  function releaseAll() {
+    down.clear();
+    fakeCtrl = false;
+    send(WEB_EV.RELEASE_ALL, 0, 0, 0);
+  }
+
+  function isCtrlCombo(e) {
+    return (e.ctrlKey && !fakeCtrl) || (IS_MAC && e.metaKey);
+  }
+
+  function onKeyDown(e) {
+    if (!ready || !filesEl.hidden || !messageEl.hidden) return;
+    hideToolbar();
+    if (e.code === "F11") {
+      e.preventDefault();
+      if (!e.repeat) toggleFullscreen();
+      return;
+    }
+    if (e.code === "F9") {
+      e.preventDefault();
+      if (!e.repeat) openFiles();
+      return;
+    }
+    const code = KEYS[e.code];
+    if (!code) return;
+    /* Ctrl+V: the browser's paste event brings the clipboard's text. */
+    const paste = isCtrlCombo(e) && e.code === "KeyV";
+    if (!paste) e.preventDefault();
+    if (e.repeat) return;   /* Draftling repeats keys itself */
+    if (paste) pasteKeyAt = performance.now();
+    if (isCtrlCombo(e) && (e.code === "KeyC" || e.code === "KeyX")) prepareCopy();
+
+    /* Windows sends AltGr as ControlLeft + AltRight: take the
+     * ControlLeft back. */
+    if (e.code === "ControlLeft") ctrlLeftAt = e.timeStamp;
+    if (e.code === "AltRight" && down.has(29) && ctrlLeftAt >= 0 &&
+        e.timeStamp - ctrlLeftAt < 50) {
+      fakeCtrl = true;
+      sendKey(29, false, e);
+    }
+    if (!MODIFIER_CODES.has(code)) catchUpModifiers(e);
+    sendKey(code, true, e);
+  }
+
+  function onKeyUp(e) {
+    if (!ready) return;
+    const code = KEYS[e.code];
+    if (!code) return;
+    e.preventDefault();
+    if (e.code === "ControlLeft" && fakeCtrl) {
+      fakeCtrl = false;
+      if (!down.has(29)) return;
+    }
+    if (!down.has(code)) return;
+    sendKey(code, false, e);
+  }
+
+  window.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("keyup", onKeyUp, true);
+  window.addEventListener("blur", () => { if (ready) releaseAll(); });
+
+  /* ---- pointer -------------------------------------------------------- */
+
+  function canvasPoint(e) {
+    const r = canvas.getBoundingClientRect();
+    const sx = r.width ? canvas.width / r.width : 1;
+    const sy = r.height ? canvas.height / r.height : 1;
+    return [Math.floor((e.clientX - r.left) * sx), Math.floor((e.clientY - r.top) * sy)];
+  }
+
+  let pointerDown = false;
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (!ready || e.button !== 0) return;
+    e.preventDefault();
+    canvas.focus();
+    canvas.setPointerCapture(e.pointerId);
+    pointerDown = true;
+    const [x, y] = canvasPoint(e);
+    send(WEB_EV.POINTER, x, y, 1);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!ready) return;
+    const [x, y] = canvasPoint(e);
+    send(WEB_EV.POINTER, x, y, pointerDown ? 1 : 0);
+  });
+  const pointerUp = (e) => {
+    if (!ready || !pointerDown) return;
+    pointerDown = false;
+    const [x, y] = canvasPoint(e);
+    send(WEB_EV.POINTER, x, y, 0);
+  };
+  canvas.addEventListener("pointerup", pointerUp);
+  canvas.addEventListener("pointercancel", pointerUp);
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  let wheelAcc = 0;
+  canvas.addEventListener("wheel", (e) => {
+    if (!ready) return;
+    e.preventDefault();
+    /* One step = one mouse-wheel notch (three lines in Draftling). */
+    const unit = e.deltaMode === 1 ? 3 : e.deltaMode === 2 ? 1 : 100;
+    wheelAcc += e.deltaY / unit;
+    const steps = wheelAcc > 0 ? Math.floor(wheelAcc) : Math.ceil(wheelAcc);
+    if (steps) {
+      wheelAcc -= steps;
+      send(WEB_EV.WHEEL, steps, 0, 0);
+    }
+  }, { passive: false });
+
+  /* ---- clipboard ---------------------------------------------------------- */
+
+  let pasteKeyAt = -1e9;
+  let lastPaste = null;        /* { text, at } from the last paste event */
+  let pasteWanted = false;
+  let pasteTimer = 0;
+  let copyResolve = null;      /* Safari: the pending ClipboardItem's text */
+
+  /* Safari writes the clipboard only while handling the key: hand it a
+   * promise of the text now, and fulfil it when Draftling copies. */
+  function prepareCopy() {
+    if (!IS_SAFARI || !window.ClipboardItem || !navigator.clipboard ||
+        !navigator.clipboard.write) return;
+    const p = new Promise((resolve, reject) => {
+      copyResolve = resolve;
+      setTimeout(() => { if (copyResolve === resolve) { copyResolve = null; reject(new Error("nothing copied")); } }, 2000);
+    });
+    navigator.clipboard.write([new ClipboardItem({ "text/plain": p })]).catch(() => {});
+  }
+
+  function clipSet(text) {
+    if (copyResolve) {
+      const r = copyResolve;
+      copyResolve = null;
+      r(new Blob([text], { type: "text/plain" }));
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch((e) =>
+        console.warn("Draftling: the clipboard refused the copy:", e));
+    }
+  }
+
+  function deliverPaste(text) {
+    pasteWanted = false;
+    clearTimeout(pasteTimer);
+    if (text === null || text === undefined) {
+      send(WEB_EV.PASTE, 0, 0, 0);
+      return;
+    }
+    const bytes = new TextEncoder().encode(text);
+    const p = Module.webCopyIn(bytes);
+    send(WEB_EV.PASTE, p, bytes.length, 0);
+  }
+
+  function clipRequest() {
+    const now = performance.now();
+    if (lastPaste && now - lastPaste.at < 1500) {
+      const t = lastPaste.text;
+      lastPaste = null;
+      deliverPaste(t);
+      return;
+    }
+    pasteWanted = true;
+    /* No paste event (Ctrl+V on a Mac, a browser that sends none):
+     * ask the clipboard directly. */
+    pasteTimer = setTimeout(() => {
+      if (!pasteWanted) return;
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then((t) => deliverPaste(t), (e) => {
+          console.warn("Draftling: the clipboard cannot be read:", e);
+          deliverPaste(null);
+        });
+      } else {
+        deliverPaste(null);
+      }
+    }, 250);
+  }
+
+  document.addEventListener("paste", (e) => {
+    if (!ready || !filesEl.hidden) return;
+    e.preventDefault();
+    const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+    if (pasteWanted) deliverPaste(text);
+    else lastPaste = { text, at: performance.now() };
+  });
+
+  /* ---- leaving -------------------------------------------------------- */
+
+  window.addEventListener("beforeunload", (e) => {
+    if (!ready || failed || !Module._web_unsaved) return;
+    send(WEB_EV.SAVE, 0, 0, 0);
+    if (Module._web_unsaved()) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && ready) {
+      releaseAll();
+      send(WEB_EV.SAVE, 0, 0, 0);
+    }
+  });
+  window.addEventListener("pagehide", () => { if (ready) send(WEB_EV.SAVE, 0, 0, 0); });
+
+  /* ---- full screen and toolbar --------------------------------------- */
+
+  const btnFull = document.getElementById("btn-fullscreen");
+
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+      /* Chrome / Edge: Esc and the browser's shortcuts (Ctrl+W, Ctrl+N,
+       * Ctrl+T, Ctrl+Tab) go to Draftling; holding Esc leaves. */
+      if (navigator.keyboard && navigator.keyboard.lock) {
+        await navigator.keyboard.lock().catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Draftling: full screen:", e);
+    }
+    canvas.focus();
+  }
+
+  document.addEventListener("fullscreenchange", () => {
+    btnFull.textContent = document.fullscreenElement ? "Leave full screen" : "Full screen";
+    if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) {
+      navigator.keyboard.unlock();
+    }
+  });
+  btnFull.addEventListener("click", toggleFullscreen);
+  document.getElementById("btn-files").addEventListener("click", openFiles);
+
+  let toolbarTimer = 0;
+  function showToolbar() {
+    toolbar.classList.add("shown");
+    clearTimeout(toolbarTimer);
+    toolbarTimer = setTimeout(hideToolbar, 2500);
+  }
+  function hideToolbar() {
+    if (toolbar.matches(":hover")) return;
+    toolbar.classList.remove("shown");
+  }
+  window.addEventListener("mousemove", (e) => {
+    if (ready && e.clientY < 80) showToolbar();
+  });
+  toolbar.addEventListener("mouseleave", () => {
+    clearTimeout(toolbarTimer);
+    toolbarTimer = setTimeout(hideToolbar, 1200);
+  });
+
+  /* ---- Files panel ------------------------------------------------------- */
+
+  const filesEl = document.getElementById("files");
+  const filesList = document.getElementById("files-list");
+  const filesStatus = document.getElementById("files-status");
+  const uploadInput = document.getElementById("upload-input");
+  const pending = new Map();
+  let nextId = 1;
+  let listing = null;          /* the last LIST answer */
+  let uploadProject = null;
+
+  function filesReply(id, ok, text, bytes) {
+    const p = pending.get(id);
+    if (!p) return;
+    pending.delete(id);
+    if (ok) p.resolve({ text, bytes });
+    else p.reject(new Error(text || "failed"));
+  }
+
+  function newString(s) {
+    if (s === null || s === undefined) return 0;
+    const b = new TextEncoder().encode(s + "\0");
+    return Module.webCopyIn(b);
+  }
+
+  function filesRequest(op, a, b, data) {
+    return new Promise((resolve, reject) => {
+      if (!ready) {
+        reject(new Error("Draftling is not running."));
+        return;
+      }
+      const id = nextId++;
+      pending.set(id, { resolve, reject });
+      const pd = data ? Module.webCopyIn(data) : 0;
+      Module._web_files_request(op, id, newString(a), newString(b), pd, data ? data.length : 0);
+    });
+  }
+
+  function status(msg, error) {
+    filesStatus.textContent = msg || "";
+    filesStatus.classList.toggle("error", !!error);
+  }
+
+  function sizeText(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  }
+
+  function saveBlob(bytes, name, type) {
+    const url = URL.createObjectURL(new Blob([bytes], { type }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  function mimeOf(name) {
+    return /\.md$/i.test(name) ? "text/markdown" : "text/plain";
+  }
+
+  async function openFiles() {
+    if (!ready) return;
+    releaseAll();
+    filesEl.hidden = false;
+    status("Reading...");
+    document.getElementById("files-close").focus();
+    await refreshFiles();
+  }
+
+  function closeFiles() {
+    filesEl.hidden = true;
+    canvas.focus();
+  }
+
+  async function refreshFiles() {
+    try {
+      const r = await filesRequest(FILES_OP.LIST);
+      listing = JSON.parse(r.text);
+      renderFiles();
+      status("");
+    } catch (e) {
+      status(e.message, true);
+    }
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+
+  function button(label, title, onClick) {
+    const b = el("button", null, label);
+    b.type = "button";
+    if (title) b.title = title;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function renderFiles() {
+    filesList.textContent = "";
+    const projects = listing.projects || [];
+    document.getElementById("files-zip-all").disabled = !projects.some((p) => p.files.length);
+    if (!projects.length) {
+      filesList.appendChild(el("p", "hint",
+        "No projects yet. Create one here or in Draftling, then upload documents into it."));
+    }
+    for (const p of projects) {
+      const box = el("section", "project");
+      const head = el("div", "project-head");
+      head.appendChild(el("h2", null, p.name));
+      const zip = button("Download ZIP", "Every document of " + p.name, () => downloadZip(p.name));
+      zip.disabled = !p.files.length;
+      head.appendChild(zip);
+      head.appendChild(button("Upload...", "Upload documents into " + p.name, () => {
+        uploadProject = p.name;
+        uploadInput.value = "";
+        uploadInput.click();
+      }));
+      box.appendChild(head);
+      if (!p.files.length) box.appendChild(el("div", "empty", "No documents."));
+      for (const f of p.files) {
+        const row = el("div", "file");
+        row.appendChild(el("span", "name", f.name));
+        if (f.modified) row.appendChild(el("span", "badge", "open, unsaved"));
+        else if (f.open) row.appendChild(el("span", "badge", "open"));
+        row.appendChild(el("span", "size", sizeText(f.size)));
+        row.appendChild(button("Download", null, () => downloadFile(p.name, f.name)));
+        box.appendChild(row);
+      }
+      box.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        box.classList.add("drop");
+      });
+      box.addEventListener("dragleave", () => box.classList.remove("drop"));
+      box.addEventListener("drop", (e) => {
+        e.preventDefault();
+        box.classList.remove("drop");
+        upload(p.name, e.dataTransfer.files);
+      });
+      filesList.appendChild(box);
+    }
+  }
+
+  async function downloadFile(project, name) {
+    status("Downloading " + name + "...");
+    try {
+      const r = await filesRequest(FILES_OP.READ, project, name);
+      saveBlob(r.bytes, name, mimeOf(name));
+      status("");
+    } catch (e) {
+      status(e.message, true);
+    }
+  }
+
+  async function downloadZip(project) {
+    status("Packing " + (project || "every project") + "...");
+    try {
+      const r = await filesRequest(FILES_OP.ZIP, project || "");
+      saveBlob(r.bytes, (project || "Draftling") + "-" + stamp() + ".zip", "application/zip");
+      status("");
+    } catch (e) {
+      status(e.message, true);
+    }
+  }
+
+  async function upload(project, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    const proj = (listing.projects || []).find((p) => p.name === project);
+    const existing = new Set(proj ? proj.files.map((f) => f.name) : []);
+    const max = listing.maxSize || Infinity;
+    let done = 0;
+    const errors = [];
+    for (const f of files) {
+      if (!/\.(md|fountain|txt)$/i.test(f.name)) {
+        errors.push(f.name + ": only .md, .fountain and .txt files");
+        continue;
+      }
+      if (f.size > max) {
+        errors.push(f.name + ": larger than Draftling can open");
+        continue;
+      }
+      if (existing.has(f.name) &&
+          !confirm(project + " has a document " + f.name + " already. Replace it?")) continue;
+      status("Uploading " + f.name + "...");
+      try {
+        const data = new Uint8Array(await f.arrayBuffer());
+        await filesRequest(FILES_OP.WRITE, project, f.name, data);
+        done++;
+      } catch (e) {
+        errors.push(f.name + ": " + e.message);
+      }
+    }
+    await refreshFiles();
+    if (errors.length) status(errors.join(" "), true);
+    else status(done ? (done === 1 ? "1 document uploaded." : done + " documents uploaded.") : "");
+  }
+
+  uploadInput.addEventListener("change", () => {
+    if (uploadProject) upload(uploadProject, uploadInput.files);
+  });
+
+  document.getElementById("files-zip-all").addEventListener("click", () => downloadZip(""));
+  document.getElementById("files-new-project").addEventListener("click", async () => {
+    const name = prompt("Name of the new project (letters, digits, space, - and _):", "");
+    if (!name) return;
+    try {
+      await filesRequest(FILES_OP.MKPROJECT, name.trim());
+      await refreshFiles();
+      status("Project " + name.trim() + " created.");
+    } catch (e) {
+      status(e.message, true);
+    }
+  });
+  document.getElementById("files-close").addEventListener("click", closeFiles);
+  filesEl.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" || e.code === "F9") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFiles();
+    }
+  });
+  filesEl.addEventListener("mousedown", (e) => { if (e.target === filesEl) closeFiles(); });
+  /* Files dropped anywhere else do not open in the tab. */
+  window.addEventListener("dragover", (e) => e.preventDefault());
+  window.addEventListener("drop", (e) => e.preventDefault());
+
+  start().catch((e) => {
+    console.error(e);
+    fail("Draftling could not start", "<p>" + escapeHtml(String(e && e.message || e)) + "</p>");
+  });
+})();

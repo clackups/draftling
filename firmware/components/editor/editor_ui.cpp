@@ -613,8 +613,8 @@ static int find_backlight_option(int pct)
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
 
-/* Host desktop clipboard: nothing on a device. The Linux program
- * overrides both (linux/src/clipboard_linux.c). */
+/* Host desktop clipboard: nothing on a device. The Linux program and
+ * the web client override both (linux/src/clipboard_linux.c). */
 extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
 {
     (void)text;
@@ -14973,6 +14973,15 @@ extern "C" bool editor_ui_can_relayout(void)
     if (s_passkey_panel && !lv_obj_has_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN))
         return false;
     return true;
+}
+
+/* Files changed behind the editor's back (the web client's Files
+ * panel): see editor_ui.h. */
+extern "C" void editor_ui_files_changed(const char *path)
+{
+    if (path) editor_reload_path(path);
+    if (s_editor_screen_active) editor_ui_refresh();
+    if (lv_scr_act() == s_scr_browser) refresh_file_list();
 }
 
 /* Lay every screen out again for the LVGL display's new size (SCR_W /

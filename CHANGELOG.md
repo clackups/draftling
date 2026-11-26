@@ -13,6 +13,21 @@ in the git log.
   text on the desktop clipboard, and Ctrl+V pastes text copied in any
   other program, on Wayland and X11 desktops alike, including in the
   Flatpak. Windows line ends in pasted text become plain line ends.
+- **Draftling in a web browser**: a new web client runs the full
+  editor as a web application that fills the browser window, with
+  every language, layout and input method built in. Documents and
+  settings stay in the browser's own storage, which Draftling asks the
+  browser to keep for good (it does not start until the browser
+  agrees, so the documents cannot be cleared to make room). Git sync
+  and Draftbox work over the browser's connection, with Draftbox
+  repositories or any Git server that allows web clients. Ctrl+C,
+  Ctrl+X and Ctrl+V use the system clipboard; on a Mac, Command works
+  as Ctrl. F11 switches to full screen, where Chrome and Edge also
+  pass Esc and their own shortcuts to Draftling. F9 opens a Files
+  panel to download a document, a project or everything as a ZIP
+  file, and to upload .md, .fountain and .txt files into a project.
+  Draftling saves the open documents when the tab is hidden, and asks
+  before the page is closed with unsaved changes.
 
 ## [1.0.33] - 2026-11-24
 

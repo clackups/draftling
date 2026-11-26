@@ -50,6 +50,12 @@ void editor_ui_set_coprocessor(const char *chip, const char *firmware);
 bool editor_ui_can_relayout(void);
 void editor_ui_relayout(void);
 
+/* Files changed on the SD card behind the editor's back (the web
+ * client's Files panel uploaded one): reload the open documents of
+ * path (unless they have unsaved changes; path may be NULL) and list
+ * the file browser's folder again. Call with the LVGL lock held. */
+void editor_ui_files_changed(const char *path);
+
 /* The host's desktop clipboard (the Linux program; on a device the
  * editor's weak defaults do nothing). Ctrl+C / Ctrl+X hand the copied
  * text to editor_host_clipboard_set() (NULL: the copy is not in

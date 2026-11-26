@@ -1,5 +1,13 @@
 menu "DRAFTLING Configuration"
 
+# IDF_TARGET_WEB: the web client's build (web_client/, whose
+# tools/Kconfig.web sets it). There is no such ESP-IDF target; it is
+# declared here so the hardware-model choice below can refer to it in
+# every build.
+config IDF_TARGET_WEB
+    bool
+
+
 choice DRAFTLING_HARDWARE_MODEL
     prompt "Hardware Model"
     default DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
@@ -478,6 +486,20 @@ config DRAFTLING_MODEL_LINUX
         can be resized (DRAFTLING_DISPLAY_RESIZABLE); the screen size
         below is only the initial window size. See linux/README.md.
 
+config DRAFTLING_MODEL_WEB
+    bool "Web browser (WebAssembly application, web_client/)"
+    depends on IDF_TARGET_WEB
+    help
+        The editor as a web application, built to WebAssembly by the
+        Makefile in web_client/ (not by idf.py): a canvas filling the
+        browser window, the computer's own keyboard, the browser's
+        origin-private file system (OPFS) in place of the SD card, the
+        browser's own network connection for Git sync and Draftbox
+        (the servers must allow it with CORS headers) and the system
+        clipboard. The screen follows the window's size
+        (DRAFTLING_DISPLAY_RESIZABLE); the size below is only the
+        initial one. See web_client/README.md.
+
 endchoice
 
 # The Linux program packaged as a Flatpak (linux/packaging/flatpak/, selected by
@@ -502,6 +524,9 @@ config DRAFTLING_LINUX_FLATPAK
 config DRAFTLING_NETWORK_HOST_MANAGED
     bool
     default y if DRAFTLING_LINUX_FLATPAK
+    # Web browser: the browser's connection; a page cannot see or
+    # control the WiFi.
+    default y if DRAFTLING_MODEL_WEB
     default n
 
 # ---- Derived: display category (driven by hardware-model choice) ----
@@ -530,6 +555,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
 
 # DRAFTLING_DISPLAY_RESIZABLE is set when the screen is a window whose
@@ -545,6 +571,7 @@ config DRAFTLING_DISPLAY_RESIZABLE
     bool
     depends on DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
 
 # DRAFTLING_DISPLAY_TRANSFLECTIVE is set automatically when the
@@ -1308,8 +1335,9 @@ config DRAFTLING_CHARGER_WATCHDOG_REASSERT
 config DRAFTLING_NO_BLUETOOTH
     bool
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
-    # Linux: the computer's own keyboard, no BLE stack.
+    # Linux, web browser: the computer's own keyboard, no BLE stack.
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
 
 config DRAFTLING_HAS_USB_HOST
@@ -1570,8 +1598,9 @@ config DRAFTLING_WAKEUP_GPIO
     # OnePage Reader: Power button on GPIO2 (active-low, an LP IO, so
     # it can wake the ESP32-C61 through EXT1; the chip has no EXT0).
     default 2  if DRAFTLING_MODEL_ONEPAGE_C61
-    # Linux: no wake button.
+    # Linux, web browser: no wake button.
     default -1 if DRAFTLING_MODEL_LINUX
+    default -1 if DRAFTLING_MODEL_WEB
     default 0
 
 # DRAFTLING_WAKEUP_EXT1: arm DRAFTLING_WAKEUP_GPIO through EXT1
@@ -1685,8 +1714,10 @@ config DRAFTLING_TOUCHSCREEN
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
     # Linux: the mouse (or a touchscreen) on the Wayland / X11 window
-    # drives the LVGL pointer.
+    # drives the LVGL pointer; in the web browser, the mouse, pen or
+    # finger on the page's canvas.
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
     help
         Enable I2C touch-controller support and an LVGL pointer
@@ -1903,8 +1934,10 @@ config DRAFTLING_TOUCH_DEBUG_LOG
 # sleep + wake-on-touch.
 config DRAFTLING_STANDBY_DISPLAY_OFF
     bool "Standby: turn display off (keep MCU running) instead of deep sleep"
-    # Linux: sleep blanks the window; a key or click turns it on again.
+    # Linux, web browser: sleep blanks the window; a key or click turns
+    # it on again.
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
     help
         On standby, blank the display and put the panel into its
@@ -1985,8 +2018,10 @@ config DRAFTLING_DISPLAY_WIDTH
     # NiceMCU-C5E-DEV_2.8IPS: native 240x320 portrait panel, rendered
     # landscape by the display backend (MADCTL MV).
     default 320 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
-    # Linux: the initial window size; the window can be resized.
+    # Linux, web browser: the initial window size; the window can be
+    # resized.
     default 1024 if DRAFTLING_MODEL_LINUX
+    default 1024 if DRAFTLING_MODEL_WEB
     help
         Display width in pixels (derived). Driven by the hardware-model
         choice. Must be a multiple of 8 for e-paper backends.
@@ -2023,6 +2058,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 480 if DRAFTLING_MODEL_M5STACK_PAPERMONO
     default 240 if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default 640 if DRAFTLING_MODEL_LINUX
+    default 640 if DRAFTLING_MODEL_WEB
     help
         Display height in pixels (derived). Driven by the hardware-model
         choice.
@@ -2110,8 +2146,9 @@ config DRAFTLING_DISPLAY_HIDPI
     # Waveshare ESP32-S3-ePaper-3.97 above (~235 DPI).
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
-    # Linux: computer screens get the Hack fonts only.
+    # Linux, web browser: computer screens get the Hack fonts only.
     default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_WEB
     default n
 config DRAFTLING_EPD_FULL_REFRESH_INTERVAL
     int "E-paper full-refresh interval (partial updates between full refreshes)"
@@ -2149,6 +2186,7 @@ config DRAFTLING_NO_KEYBOARD_SLEEP_SEC
     range 0 3600
     default 0 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
     default 0 if DRAFTLING_MODEL_LINUX
+    default 0 if DRAFTLING_MODEL_WEB
     default 180
     help
         If no Bluetooth keyboard connects within this many seconds

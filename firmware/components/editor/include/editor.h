@@ -100,6 +100,12 @@ void editor_doc_foreach(void (*cb)(editor_doc_t *doc, void *ctx), void *ctx);
  * never silently dropped on an error. */
 void editor_discard_all_changes(void);
 
+/* Reload every open document whose file is path from the SD card, as
+ * after something else rewrote the file (the web client's Files panel).
+ * A document with unsaved changes is left alone and the call returns
+ * ESP_ERR_INVALID_STATE; ESP_OK when nothing has path open. */
+esp_err_t editor_reload_path(const char *path);
+
 void editor_init(void);
 esp_err_t editor_open_file(const char *path);
 esp_err_t editor_save_file(void);

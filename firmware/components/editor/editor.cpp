@@ -970,6 +970,32 @@ extern "C" void editor_discard_all_changes(void)
     invalidate_caches();
 }
 
+extern "C" esp_err_t editor_reload_path(const char *path)
+{
+    if (!path || !path[0]) return ESP_ERR_INVALID_ARG;
+    esp_err_t ret = ESP_OK;
+    editor_doc_t *prev = s_active;
+    for (int i = 0; i < EDITOR_MAX_DOCS; i++) {
+        editor_doc_t *d = &s_docs[i];
+        if (!d->in_use || strcmp(d->path, path) != 0) continue;
+        if (d->modified) {
+            ret = ESP_ERR_INVALID_STATE;
+            continue;
+        }
+        s_active = d;
+        char copy[sizeof(d->path)];
+        strncpy(copy, d->path, sizeof(copy));
+        copy[sizeof(copy) - 1] = '\0';
+        if (editor_open_file(copy) != ESP_OK) {
+            ESP_LOGW(TAG, "Could not reload %s", copy);
+            ret = ESP_FAIL;
+        }
+    }
+    s_active = (prev && prev->in_use) ? prev : pick_any_active();
+    invalidate_caches();
+    return ret;
+}
+
 static void move_gap_to(size_t pos);
 
 /* ---- Reading the text ----

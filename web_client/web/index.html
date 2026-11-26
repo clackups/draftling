@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Draftling</title>
+<meta name="description" content="Draftling, the distraction-free Markdown, Fountain and plain-text editor, in the browser.">
+<meta name="theme-color" content="#202020">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="client.css?v=@BUILD@">
+<script>window.DRAFTLING_BUILD = "@BUILD@"; window.DRAFTLING_VERSION = "@VERSION@";</script>
+</head>
+<body>
+<div id="screen">
+  <canvas id="canvas" tabindex="0" aria-label="Draftling editor"></canvas>
+</div>
+
+<div id="toolbar" role="toolbar" aria-label="Draftling">
+  <button type="button" id="btn-files" title="Download and upload documents (F9)">Files</button>
+  <button type="button" id="btn-fullscreen" title="Full screen (F11)">Full screen</button>
+</div>
+
+<div id="message" class="panel-backdrop">
+  <div class="panel message-panel" role="alertdialog" aria-labelledby="message-title">
+    <h1 id="message-title">Draftling</h1>
+    <div id="message-body"><p>Starting...</p></div>
+    <div id="message-actions" class="actions"></div>
+    <p class="version">Version @VERSION@</p>
+  </div>
+</div>
+
+<div id="files" class="panel-backdrop" hidden>
+  <div class="panel files-panel" role="dialog" aria-labelledby="files-title">
+    <header>
+      <h1 id="files-title">Documents</h1>
+      <button type="button" class="close" id="files-close" title="Close (Esc)">&times;</button>
+    </header>
+    <p class="hint">Kept in this browser's storage for this site. Download them to keep a copy
+      elsewhere; upload .md, .fountain and .txt files into a project, or drop them on it.</p>
+    <div class="actions top">
+      <button type="button" id="files-zip-all">Download everything (ZIP)</button>
+      <button type="button" id="files-new-project">New project...</button>
+    </div>
+    <div id="files-status" role="status"></div>
+    <div id="files-list"></div>
+  </div>
+</div>
+
+<input type="file" id="upload-input" multiple accept=".md,.fountain,.txt,text/plain,text/markdown" hidden>
+
+<script src="client.js?v=@BUILD@"></script>
+</body>
+</html>
