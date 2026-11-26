@@ -56,16 +56,16 @@ choice DRAFTLING_LANG_PACK
             large for boards with 4 MB of flash.
 
     config DRAFTLING_LANG_PACK_ALL
-        bool "All languages (every layout and input method; Linux only)"
-        depends on IDF_TARGET_LINUX
+        bool "All languages (every layout and input method; Linux and web only)"
+        depends on IDF_TARGET_LINUX || IDF_TARGET_WEB
         help
             Every keyboard layout, input method and font of the other
             packs in one program: the European layouts, Vietnamese,
             Korean, Japanese, Chinese and the Indic scripts. The CJK
             fonts are the three sets merged (DRAFTLING_CJK_FONT_SET
             "all", built by linux/tools/merge_cjk_fonts.py). Only for
-            the Linux application: the image does not fit a device's
-            flash.
+            the Linux application and the web client: the image does not
+            fit a device's flash.
 
 endchoice
 

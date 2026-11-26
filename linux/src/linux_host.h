@@ -74,6 +74,10 @@ typedef struct {
     /* More file descriptors to wait on (clipboard transfers): fills at
      * most max entries, returns how many. May be NULL. */
     int (*poll_fds)(struct pollfd *fds, int max);
+    /* Wait up to timeout_ms for input, instead of polling fd() and
+     * poll_fds() (a backend without file descriptors: the web client's
+     * canvas). May be NULL. */
+    void (*wait)(int timeout_ms);
 } linux_io_backend_t;
 
 #if defined(LINUX_IO_WAYLAND)
@@ -81,6 +85,10 @@ extern const linux_io_backend_t linux_io_wayland;
 #endif
 #if defined(LINUX_IO_X11)
 extern const linux_io_backend_t linux_io_x11;
+#endif
+#if defined(LINUX_IO_WEB)
+/* The web client's canvas (web_client/src/io_web.c). */
+extern const linux_io_backend_t linux_io_web;
 #endif
 
 /* True while the backend --io names is being opened: a backend that

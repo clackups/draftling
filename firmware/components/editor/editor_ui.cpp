@@ -563,35 +563,6 @@ extern "C" __attribute__((weak)) int display_get_backlight(void)
     return -1;
 }
 
-/* Host desktop clipboard: nothing on a device. The Linux program
- * overrides both (linux/src/clipboard_linux.c). */
-extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
-{
-    (void)text;
-    (void)len;
-}
-
-extern "C" __attribute__((weak)) bool editor_host_clipboard_request(void)
-{
-    return false;
-}
-
-/* A Ctrl+V waiting for the host clipboard's text: keys typed meanwhile
- * stay queued (key_drain_cb()), so they land after the pasted text. */
-#define HOST_PASTE_TIMEOUT_MS 3000
-static bool     s_host_paste_pending;
-static uint32_t s_host_paste_start;
-
-/* Offer what Ctrl+C / Ctrl+X just put on the clipboard to the host
- * (NULL when it went to the SD card file: the host then lets go of its
- * clipboard, so Ctrl+V uses the editor's own). */
-static void host_clipboard_export(void)
-{
-    size_t len = 0;
-    const char *text = editor_clipboard_data(&len);
-    editor_host_clipboard_set(text, len);
-}
-
 static void load_backlight_from_nvs(void)
 {
     nvs_handle_t h;
@@ -641,6 +612,35 @@ static int find_backlight_option(int pct)
     return best;
 }
 #endif  /* CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT */
+
+/* Host desktop clipboard: nothing on a device. The Linux program and
+ * the web client override both (linux/src/clipboard_linux.c). */
+extern "C" __attribute__((weak)) void editor_host_clipboard_set(const char *text, size_t len)
+{
+    (void)text;
+    (void)len;
+}
+
+extern "C" __attribute__((weak)) bool editor_host_clipboard_request(void)
+{
+    return false;
+}
+
+/* A Ctrl+V waiting for the host clipboard's text: keys typed meanwhile
+ * stay queued (key_drain_cb()), so they land after the pasted text. */
+#define HOST_PASTE_TIMEOUT_MS 3000
+static bool     s_host_paste_pending;
+static uint32_t s_host_paste_start;
+
+/* Offer what Ctrl+C / Ctrl+X just put on the clipboard to the host
+ * (NULL when it went to the SD card file: the host then lets go of its
+ * clipboard, so Ctrl+V uses the editor's own). */
+static void host_clipboard_export(void)
+{
+    size_t len = 0;
+    const char *text = editor_clipboard_data(&len);
+    editor_host_clipboard_set(text, len);
+}
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
 /* ---- Runtime 180-degree display flip ----
@@ -8374,6 +8374,17 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
             help_row(out, cols, kc, "Ctrl+Tab", "Switch to the other pane");
         help_common_rows(out, cols, kc);
     }
+
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+    /* Keys the web client's page handles itself (web_client/web/client.js). */
+    help_heading(out, "Web browser");
+    help_row(out, cols, kc, "F9", "Files: download a document, a project or everything (ZIP); upload documents into a project. Saves the open documents first");
+    help_row(out, cols, kc, "F11", "Full screen; in Chrome and Edge, hold Esc to leave it");
+    help_row(out, cols, kc, "Ctrl+C / X / V", "Copy / cut / paste with the system clipboard");
+    help_row(out, cols, kc, "Command", "Works as Ctrl on a Mac");
+    help_row(out, cols, kc, "Ctrl+W/N/T/Tab", "Kept by the browser outside full screen: use full screen (or N in the file browser for a new file)");
+    help_row(out, cols, kc, "Storage", "Documents stay in this browser; Git sync or F9 keeps copies elsewhere");
+#endif
 }
 
 /* Text width of the help page in characters: the body width minus its
@@ -14973,6 +14984,15 @@ extern "C" bool editor_ui_can_relayout(void)
     if (s_passkey_panel && !lv_obj_has_flag(s_passkey_panel, LV_OBJ_FLAG_HIDDEN))
         return false;
     return true;
+}
+
+/* Files changed behind the editor's back (the web client's Files
+ * panel): see editor_ui.h. */
+extern "C" void editor_ui_files_changed(const char *path)
+{
+    if (path) editor_reload_path(path);
+    if (s_editor_screen_active) editor_ui_refresh();
+    if (lv_scr_act() == s_scr_browser) refresh_file_list();
 }
 
 /* Lay every screen out again for the LVGL display's new size (SCR_W /

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Draftling</title>
+<meta name="description" content="Draftling, the distraction-free Markdown, Fountain and plain-text editor, in the browser.">
+<meta name="theme-color" content="#202020">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="client.css?v=@BUILD@">
+<script>window.DRAFTLING_BUILD = "@BUILD@"; window.DRAFTLING_VERSION = "@VERSION@";</script>
+</head>
+<body>
+<div id="app">
+  <div id="screen">
+    <canvas id="canvas" tabindex="0" aria-label="Draftling editor"></canvas>
+    <!-- Phones and tablets: a focused text field is what brings up the
+         on-screen keyboard (and what Android hands Bluetooth keyboard
+         input to); client.js turns what is typed into it into keys.
+         A password field by default: on-screen keyboards ignore the
+         hints below but turn off word suggestions, autocorrection and
+         learning for passwords ("Suggest" in the key bar switches it to
+         a text field). -->
+    <input id="kbd-proxy" class="kbd-proxy" type="password" inputmode="text"
+           enterkeyhint="enter" autocapitalize="off" autocomplete="off"
+           autocorrect="off" spellcheck="false" data-lpignore="true"
+           data-1p-ignore="true" data-bwignore="true" data-form-type="other"
+           aria-label="Keyboard input for Draftling">
+  </div>
+  <!-- Touch devices: the keys a phone keyboard lacks. -->
+  <div id="keybar" role="toolbar" aria-label="Keys" hidden>
+    <button type="button" data-key="Escape">Esc</button>
+    <button type="button" data-key="Tab">Tab</button>
+    <button type="button" id="kb-ctrl" aria-pressed="false" title="Ctrl for the next key">Ctrl</button>
+    <button type="button" data-key="ArrowLeft" aria-label="Left">&larr;</button>
+    <button type="button" data-key="ArrowUp" aria-label="Up">&uarr;</button>
+    <button type="button" data-key="ArrowDown" aria-label="Down">&darr;</button>
+    <button type="button" data-key="ArrowRight" aria-label="Right">&rarr;</button>
+    <button type="button" data-key="F1" title="Menu (F1)">Menu</button>
+    <button type="button" id="kb-files" title="Files (F9)">Files</button>
+    <button type="button" id="kb-full" title="Full screen (F11)">Full</button>
+    <button type="button" id="kb-show" title="Show the on-screen keyboard">Keyboard</button>
+    <button type="button" id="kb-suggest" aria-pressed="false" title="Word suggestions of the on-screen keyboard">Suggest</button>
+  </div>
+</div>
+
+<div id="toast" role="status" hidden></div>
+
+<div id="toolbar" role="toolbar" aria-label="Draftling">
+  <button type="button" id="btn-files" title="Download and upload documents (F9)">Files</button>
+  <button type="button" id="btn-fullscreen" title="Full screen (F11)">Full screen</button>
+</div>
+
+<div id="message" class="panel-backdrop">
+  <div class="panel message-panel" role="alertdialog" aria-labelledby="message-title">
+    <h1 id="message-title">Draftling</h1>
+    <div id="message-body"><p>Starting...</p></div>
+    <div id="message-actions" class="actions"></div>
+    <p class="version">Version @VERSION@</p>
+  </div>
+</div>
+
+<div id="files" class="panel-backdrop" hidden>
+  <div class="panel files-panel" role="dialog" aria-labelledby="files-title">
+    <header>
+      <h1 id="files-title">Documents</h1>
+      <button type="button" class="close" id="files-close" title="Close (Esc)">&times;</button>
+    </header>
+    <p class="hint">Kept in this browser's storage for this site. Download them to keep a copy
+      elsewhere; upload .md, .fountain and .txt files into a project, or drop them on it.</p>
+    <div class="actions top">
+      <button type="button" id="files-zip-all">Download everything (ZIP)</button>
+      <button type="button" id="files-new-project">New project...</button>
+    </div>
+    <div id="files-status" role="status"></div>
+    <div id="files-list"></div>
+  </div>
+</div>
+
+<input type="file" id="upload-input" multiple accept=".md,.fountain,.txt,text/plain,text/markdown" hidden>
+
+<script src="client.js?v=@BUILD@"></script>
+</body>
+</html>
