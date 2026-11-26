@@ -383,7 +383,15 @@ lock-free (`web_input()`, `WEB_EV_*` in `src/web_host.h`, keep in step
 with `WEB_EV` in `client.js`; keys as Linux key codes from
 `KeyboardEvent.code`, Command as Ctrl on a Mac) and gets changed
 rectangles as RGBA (`Module.webPresent`); clipboard over
-`navigator.clipboard` / the `paste` event. `src/http_client_web.c` is
+`navigator.clipboard` / the `paste` event. Touch mode (a coarse
+pointer or a touch on the canvas): a tap focuses a hidden textarea
+(`#kbd-proxy`), which brings up the on-screen keyboard and is what
+Android hands a Bluetooth keyboard's input to; keys with a
+`KeyboardEvent.code` still go through `onKeyDown()`, on-screen keyboard
+text is read back from the field as a diff (Backspaces + US-keyboard
+keys, as in the online demo), `#app` follows `visualViewport` and the
+`#keybar` adds Esc / Tab / sticky Ctrl / arrows / F1 / Files / full
+screen. `src/http_client_web.c` is
 `esp_http_client` over one synchronous `XMLHttpRequest` per request
 (the sync task is a worker), so Git servers must allow the page with
 CORS headers (Draftbox does). The page's Files panel (F9) runs its

@@ -59,6 +59,15 @@ help; see the user documentation in `docs/`), with these differences:
   paste.
 - **Mouse.** The left button acts as a touch (tap, double-tap selects
   a word, drag selects); the wheel moves the cursor.
+- **Phones and tablets.** Tap the screen to type: that brings up the
+  on-screen keyboard, and on Android it is also what lets a Bluetooth
+  keyboard type into Draftling. The on-screen keyboard types as a US
+  keyboard (for other scripts, turn on a Draftling layout and switch
+  with Ctrl+L); a Bluetooth keyboard works as on a computer. A bar
+  below the screen has the keys a phone keyboard lacks -- Esc, Tab,
+  Ctrl (for the next key), the arrows, Menu (F1) -- plus Files, Full
+  screen and Keyboard (brings a dismissed keyboard back). The screen
+  shrinks above the on-screen keyboard instead of being covered.
 - **Leaving.** Hiding the tab saves the open documents; closing it
   with unsaved changes asks first. "Sleep now" and the standby timeout
   save and blank the screen until the next key or click. A setting

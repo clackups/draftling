@@ -12,9 +12,34 @@
 <script>window.DRAFTLING_BUILD = "@BUILD@"; window.DRAFTLING_VERSION = "@VERSION@";</script>
 </head>
 <body>
-<div id="screen">
-  <canvas id="canvas" tabindex="0" aria-label="Draftling editor"></canvas>
+<div id="app">
+  <div id="screen">
+    <canvas id="canvas" tabindex="0" aria-label="Draftling editor"></canvas>
+    <!-- Phones and tablets: a focused text field is what brings up the
+         on-screen keyboard (and what Android hands Bluetooth keyboard
+         input to); client.js turns what is typed into it into keys. -->
+    <textarea id="kbd-proxy" class="kbd-proxy" rows="1" inputmode="text"
+              enterkeyhint="enter" autocapitalize="off" autocomplete="off"
+              autocorrect="off" spellcheck="false"
+              aria-label="Keyboard input for Draftling"></textarea>
+  </div>
+  <!-- Touch devices: the keys a phone keyboard lacks. -->
+  <div id="keybar" role="toolbar" aria-label="Keys" hidden>
+    <button type="button" data-key="Escape">Esc</button>
+    <button type="button" data-key="Tab">Tab</button>
+    <button type="button" id="kb-ctrl" aria-pressed="false" title="Ctrl for the next key">Ctrl</button>
+    <button type="button" data-key="ArrowLeft" aria-label="Left">&larr;</button>
+    <button type="button" data-key="ArrowUp" aria-label="Up">&uarr;</button>
+    <button type="button" data-key="ArrowDown" aria-label="Down">&darr;</button>
+    <button type="button" data-key="ArrowRight" aria-label="Right">&rarr;</button>
+    <button type="button" data-key="F1" title="Menu (F1)">Menu</button>
+    <button type="button" id="kb-files" title="Files (F9)">Files</button>
+    <button type="button" id="kb-full" title="Full screen (F11)">Full</button>
+    <button type="button" id="kb-show" title="Show the on-screen keyboard">Keyboard</button>
+  </div>
 </div>
+
+<div id="toast" role="status" hidden></div>
 
 <div id="toolbar" role="toolbar" aria-label="Draftling">
   <button type="button" id="btn-files" title="Download and upload documents (F9)">Files</button>

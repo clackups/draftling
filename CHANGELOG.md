@@ -28,7 +28,10 @@ in the git log.
   file, and to upload .md, .fountain and .txt files into a project.
   Draftling saves the open documents when the tab is hidden, and asks
   before the page is closed with unsaved changes. The help page (F10)
-  lists these browser keys in a "Web browser" section.
+  lists these browser keys in a "Web browser" section. On phones and
+  tablets, a tap on the screen brings up the on-screen keyboard (and
+  lets a Bluetooth keyboard type on Android), and a key bar below the
+  screen adds Esc, Tab, Ctrl, the arrows and the menu.
 
 ## [1.0.33] - 2026-11-24
 

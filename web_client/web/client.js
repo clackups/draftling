@@ -19,6 +19,11 @@
  *   repeat. The browser's repeats are dropped.
  * - Mouse / pen / touch on the canvas -> the program's pointer; the
  *   wheel moves the cursor.
+ * - Phones and tablets: a canvas brings up no keyboard, a text field
+ *   does, so a tap focuses a hidden textarea. A Bluetooth keyboard's
+ *   keys then arrive as ordinary key events; what an on-screen
+ *   keyboard types is read back from the field and sent as US-keyboard
+ *   keys. A key bar adds the keys a phone keyboard lacks.
  * - Clipboard: Ctrl+C / Ctrl+X put the text on the system clipboard,
  *   Ctrl+V pastes what is there (the browser's paste event, or
  *   navigator.clipboard.readText()).
@@ -211,8 +216,9 @@
     webReady: () => {
       ready = true;
       messageEl.hidden = true;
-      canvas.focus();
-      showToolbar();
+      focusScreen();
+      if (touchMode) toast("Tap the screen to type.");
+      else showToolbar();
     },
     webFatal: (msg) => fail("Draftling stopped", "<p>" + escapeHtml(msg) + "</p>"),
     webRestart: () => location.reload(),
@@ -457,7 +463,8 @@
   canvas.addEventListener("pointerdown", (e) => {
     if (!ready || e.button !== 0) return;
     e.preventDefault();
-    canvas.focus();
+    if (e.pointerType === "mouse") canvas.focus();
+    else if (!touchMode) setTouchMode(true);
     canvas.setPointerCapture(e.pointerId);
     pointerDown = true;
     const [x, y] = canvasPoint(e);
@@ -473,6 +480,9 @@
     pointerDown = false;
     const [x, y] = canvasPoint(e);
     send(WEB_EV.POINTER, x, y, 0);
+    /* The end of a tap is a user gesture: focusing the text field now
+     * brings up the on-screen keyboard. */
+    if (touchMode && e.type === "pointerup" && document.activeElement !== proxy) focusScreen();
   };
   canvas.addEventListener("pointerup", pointerUp);
   canvas.addEventListener("pointercancel", pointerUp);
@@ -491,6 +501,187 @@
       send(WEB_EV.WHEEL, steps, 0, 0);
     }
   }, { passive: false });
+
+  /* ---- phones and tablets ------------------------------------------------ */
+
+  /* A canvas never brings up the on-screen keyboard, a text field does
+   * -- and Android also hands a Bluetooth keyboard's keys only to a
+   * focused text field. In touch mode a tap on the screen focuses an
+   * invisible textarea. Keys with a code (a hardware keyboard) still go
+   * through onKeyDown(), which keeps them out of the field; on-screen
+   * keyboards send no usable key events ("Unidentified", and their
+   * predictive text rewrites whole words), so what they type is read
+   * back from the field: the difference to the last value becomes
+   * Backspaces and the US-keyboard keys of the new characters. */
+  const proxy = document.getElementById("kbd-proxy");
+  const keybar = document.getElementById("keybar");
+  const appEl = document.getElementById("app");
+  const toastEl = document.getElementById("toast");
+  let touchMode = !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+  /* Spaces before the caret, so Backspace in an empty field still
+   * deletes (and predictive text sees a word boundary). */
+  const PAD = " ".repeat(16);
+  let proxyLast = PAD;
+  let composing = false;
+  let stickyCtrl = false;
+  let warnedNonUs = false;
+  let toastTimer = 0;
+
+  function toast(msg, ms) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastEl.hidden = true; }, ms || 3500);
+  }
+
+  function setTouchMode(on) {
+    touchMode = on;
+    document.body.classList.toggle("touch", on);
+    keybar.hidden = !on;
+    if (on) toolbar.classList.remove("shown");
+  }
+
+  function proxyReset() {
+    proxy.value = PAD;
+    proxyLast = PAD;
+    try { proxy.setSelectionRange(PAD.length, PAD.length); } catch (e) { /* ignore */ }
+  }
+
+  /* The keys go to the canvas, or on touch devices to the text field
+   * (focused again, so a dismissed keyboard comes back). */
+  function focusScreen(reshow) {
+    if (!touchMode) {
+      canvas.focus();
+      return;
+    }
+    if (reshow && document.activeElement === proxy) proxy.blur();
+    proxyReset();
+    proxy.focus({ preventScroll: true });
+  }
+
+  /* The app follows the visual viewport, which the on-screen keyboard
+   * shortens (Safari does not resize the page for it). */
+  function fitViewport() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    appEl.style.top = vv.offsetTop + "px";
+    appEl.style.height = vv.height + "px";
+  }
+  if (window.visualViewport) {
+    visualViewport.addEventListener("resize", fitViewport);
+    visualViewport.addEventListener("scroll", fitViewport);
+  }
+
+  /* A US keyboard: character -> [key code, Shift]. */
+  const US_KEYS = {};
+  (function () {
+    for (let i = 0; i < 26; i++) {
+      const c = KEYS["Key" + String.fromCharCode(65 + i)];
+      US_KEYS[String.fromCharCode(97 + i)] = [c, false];
+      US_KEYS[String.fromCharCode(65 + i)] = [c, true];
+    }
+    const digits = "1234567890", shifted = "!@#$%^&*()";
+    for (let i = 0; i < 10; i++) {
+      const c = KEYS["Digit" + digits[i]];
+      US_KEYS[digits[i]] = [c, false];
+      US_KEYS[shifted[i]] = [c, true];
+    }
+    const pairs = [
+      ["-", "_", "Minus"], ["=", "+", "Equal"], ["[", "{", "BracketLeft"],
+      ["]", "}", "BracketRight"], ["\\", "|", "Backslash"], [";", ":", "Semicolon"],
+      ["'", "\"", "Quote"], ["`", "~", "Backquote"], [",", "<", "Comma"],
+      [".", ">", "Period"], ["/", "?", "Slash"],
+    ];
+    for (const [plain, shift, name] of pairs) {
+      US_KEYS[plain] = [KEYS[name], false];
+      US_KEYS[shift] = [KEYS[name], true];
+    }
+    US_KEYS[" "] = [KEYS.Space, false];
+    US_KEYS["\n"] = [KEYS.Enter, false];
+    US_KEYS["\t"] = [KEYS.Tab, false];
+    /* Typographic characters phone keyboards put in by themselves. */
+    const alias = {
+      "\u2018": "'", "\u2019": "'", "\u201c": "\"", "\u201d": "\"",
+      "\u2013": "-", "\u2014": "-", "\u00a0": " ",
+    };
+    for (const [from, to] of Object.entries(alias)) US_KEYS[from] = US_KEYS[to];
+  })();
+
+  function setStickyCtrl(on) {
+    stickyCtrl = on;
+    document.getElementById("kb-ctrl").setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  /* Press and release one key, with Shift and the key bar's Ctrl as
+   * asked; the modifiers go down and up around it. */
+  function tapKey(code, shift) {
+    const ctrl = stickyCtrl;
+    const m = (shift ? MOD.SHIFT : 0) | (ctrl ? MOD.CTRL : 0);
+    if (ctrl) send(WEB_EV.KEY, 29, 1, m);
+    if (shift) send(WEB_EV.KEY, 42, 1, m);
+    send(WEB_EV.KEY, code, 1, m);
+    send(WEB_EV.KEY, code, 0, m);
+    if (shift) send(WEB_EV.KEY, 42, 0, m & ~MOD.SHIFT);
+    if (ctrl) {
+      send(WEB_EV.KEY, 29, 0, 0);
+      setStickyCtrl(false);
+      if (code === KEYS.KeyC || code === KEYS.KeyX) prepareCopy();
+    }
+  }
+
+  function typeText(text) {
+    for (const ch of text.replace(/\u2026/g, "...")) {
+      const k = US_KEYS[ch];
+      if (k) {
+        tapKey(k[0], k[1]);
+      } else if (!warnedNonUs) {
+        warnedNonUs = true;
+        toast("The on-screen keyboard types as a US keyboard. For other scripts, " +
+              "turn on a layout in F1 -> Settings -> Keyboard and switch with Ctrl+L.", 7000);
+      }
+    }
+  }
+
+  function proxyInput() {
+    if (!ready) return;
+    const now = proxy.value;
+    let i = 0;
+    while (i < proxyLast.length && i < now.length && proxyLast[i] === now[i]) i++;
+    for (let n = proxyLast.length - i; n > 0; n--) tapKey(KEYS.Backspace, false);
+    typeText(now.slice(i));
+    proxyLast = now;
+    /* Keep the field short and the pad whole, but never in the middle
+     * of a word the keyboard is still composing. */
+    if (!composing) proxyReset();
+  }
+
+  proxy.addEventListener("input", proxyInput);
+  proxy.addEventListener("compositionstart", () => { composing = true; });
+  proxy.addEventListener("compositionend", () => {
+    composing = false;
+    /* Some browsers fire input after compositionend, some before. */
+    setTimeout(() => { if (!composing && proxy.value !== proxyLast) proxyInput(); }, 0);
+  });
+
+  /* The key bar's buttons leave the focus where it is, so the phone
+   * keyboard stays up. */
+  for (const btn of keybar.querySelectorAll("button")) {
+    btn.addEventListener("pointerdown", (e) => e.preventDefault());
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+  }
+  for (const btn of keybar.querySelectorAll("button[data-key]")) {
+    btn.addEventListener("click", () => {
+      if (!ready) return;
+      const code = KEYS[btn.dataset.key];
+      if (code) tapKey(code, false);
+    });
+  }
+  document.getElementById("kb-ctrl").addEventListener("click", () => setStickyCtrl(!stickyCtrl));
+  document.getElementById("kb-files").addEventListener("click", () => openFiles());
+  document.getElementById("kb-full").addEventListener("click", () => toggleFullscreen());
+  document.getElementById("kb-show").addEventListener("click", () => focusScreen(true));
+
+  setTouchMode(touchMode);
 
   /* ---- clipboard ---------------------------------------------------------- */
 
@@ -606,7 +797,7 @@
     } catch (e) {
       console.warn("Draftling: full screen:", e);
     }
-    canvas.focus();
+    focusScreen();
   }
 
   document.addEventListener("fullscreenchange", () => {
@@ -629,7 +820,7 @@
     toolbar.classList.remove("shown");
   }
   window.addEventListener("mousemove", (e) => {
-    if (ready && e.clientY < 80) showToolbar();
+    if (ready && !touchMode && e.clientY < 80) showToolbar();
   });
   toolbar.addEventListener("mouseleave", () => {
     clearTimeout(toolbarTimer);
@@ -717,7 +908,7 @@
 
   function closeFiles() {
     filesEl.hidden = true;
-    canvas.focus();
+    focusScreen();
   }
 
   async function refreshFiles() {
