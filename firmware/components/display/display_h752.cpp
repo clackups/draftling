@@ -26,6 +26,7 @@
 #include <esp_log.h>
 
 #include <FastEPD.h>
+#include "lvgl.h"
 
 #include "display.h"
 #include "bl_ledc.h"
@@ -64,6 +65,12 @@ static constexpr int FRAMEBUFFER_BYTES = PANEL_WIDTH * PANEL_HEIGHT / 8;
 #if defined(CONFIG_DRAFTLING_DISPLAY_T5_47_EPD)
 #define EPD47_PARTIAL_ONLY 1
 #define EPD47_PARTIAL_PASSES 8
+/* Minimum length of a partial pass, i.e. drive time per pass: see
+ * setPartialPassTime() below. */
+#define EPD47_PARTIAL_PASS_MIN_US 15000
+/* Whitening passes once typing pauses, see touchup_cb(). */
+#define EPD47_TOUCHUP_PASSES 1
+#define EPD47_TOUCHUP_IDLE_MS 1000
 #endif
 
 #define H752_BL_LEDC_TIMER       LEDC_TIMER_0
@@ -127,6 +134,10 @@ static bool ensure_epd(void)
      * frame per pass, so 4 passes left shadows of text that moved
      * (black -> white). More passes restore the drive. */
     s_epd->setPasses(EPD47_PARTIAL_PASSES);
+    /* ... and skipping the unchanged rows made a pass a few ms long, so
+     * typing got a fraction of the drive the whole-screen passes
+     * (~32 ms) get, and left the changed letters grey. */
+    s_epd->setPartialPassTime(EPD47_PARTIAL_PASS_MIN_US);
 #endif
     if (!s_epd->currentBuffer()) {
         ESP_LOGE(TAG, "FastEPD did not allocate a current buffer");
@@ -212,6 +223,49 @@ extern "C" bool display_push_rgb565(int x, int y, int w, int h, const void *colo
     return true;
 }
 
+#if defined(EPD47_PARTIAL_ONLY) && EPD47_TOUCHUP_PASSES > 0
+/* Driving the changed pixels darkens the whole panel evenly (also the
+ * rows an update leaves alone; updates without changes do not). Once
+ * typing pauses for EPD47_TOUCHUP_IDLE_MS, the white pixels get a short
+ * drive towards white: with the previous plane all black (0), only the
+ * pixels that are white now count as changed, and the black text is left
+ * alone. Running it after every keystroke made each one flicker. The
+ * LVGL timer runs on the LVGL task, like display_flush(). */
+static lv_timer_t *s_touchup_timer;
+
+static void touchup_cb(lv_timer_t *t)
+{
+    if (s_dirty_x0 >= 0) return;   /* a flush is pending: try again later */
+    lv_timer_pause(t);
+    if (!s_initialized || !s_epd || !s_fb) return;
+    uint8_t *prev = s_epd->previousBuffer();
+    uint8_t *cur = s_epd->currentBuffer();
+    if (!prev || !cur) return;
+    memcpy(cur, s_fb, FRAMEBUFFER_BYTES);
+    memset(prev, 0x00, FRAMEBUFFER_BYTES);
+    s_epd->setPasses(EPD47_TOUCHUP_PASSES);
+    s_epd->setPartialPassTime(0);
+    s_epd->partialUpdate(false, 0, s_height - 1);
+    s_epd->setPasses(EPD47_PARTIAL_PASSES);
+    s_epd->setPartialPassTime(EPD47_PARTIAL_PASS_MIN_US);
+}
+
+static void touchup_schedule(void)
+{
+    if (!s_touchup_timer) {
+        s_touchup_timer = lv_timer_create(touchup_cb, EPD47_TOUCHUP_IDLE_MS, NULL);
+        if (!s_touchup_timer) return;
+    }
+    lv_timer_reset(s_touchup_timer);
+    lv_timer_resume(s_touchup_timer);
+}
+
+static void touchup_cancel(void)
+{
+    if (s_touchup_timer) lv_timer_pause(s_touchup_timer);
+}
+#endif
+
 extern "C" void display_flush(void)
 {
     if (!s_initialized || !s_fb) return;
@@ -282,6 +336,10 @@ extern "C" void display_flush(void)
     if (rc != BBEP_SUCCESS) {
         ESP_LOGW(TAG, "FastEPD partialUpdate failed: %d", rc);
     }
+#if EPD47_TOUCHUP_PASSES > 0
+    if (do_full) touchup_cancel();
+    else touchup_schedule();
+#endif
 #else
     /* Small changes (typing, cursor, deletions) go through FastEPD's
      * partialUpdate: it diffs the current plane against the previous

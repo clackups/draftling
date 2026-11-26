@@ -3172,13 +3172,20 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   frame and drives all rows, so every pixel is re-driven, like the
   SSD1677 full refresh of `display_ws_epd397.cpp`. For this panel only,
   FastEPD drives the 74HC4094 through the GPIO registers
-  (`bbepSendShiftDataFast()`) and, after two neutral rows, only steps
-  the gate driver for rows outside the update and in the closing
-  neutral pass (no DMA). That shortens a pass from ~45 ms to a few ms,
-  but each pixel is driven for about one frame per pass, so the drive
-  per pass fell with it and moved text left shadows:
-  `EPD47_PARTIAL_PASSES` (8, FastEPD default 4) restores it. Measured:
-  one text line ~35 ms at 4 passes, whole screen ~260 ms at 8. Hack fonts (HIDPI), MicroSD
+  (`bbepSendShiftDataFast()`), uses 8 partial passes
+  (`EPD47_PARTIAL_PASSES`) of at least 15 ms each
+  (`EPD47_PARTIAL_PASS_MIN_US`, `setPartialPassTime()`: a pixel keeps
+  its drive until its row is written again, so the time between passes
+  is drive time), and ends each frame as LilyGO's `epd_end_frame()`
+  (OE and MODE off, two CKV pulses) before power-off. Measured on
+  hardware: every update that changes pixels darkens the whole screen
+  evenly, also the rows it does not drive, while updates without
+  changes do not. `touchup_cb()` corrects it once typing pauses for
+  `EPD47_TOUCHUP_IDLE_MS` (1 s): one pass with the previous plane all
+  black, so every white pixel is lightened and the black ones are left
+  alone; after every keystroke it flickered. FastEPD can also step the
+  gate driver through rows outside the update without sending them
+  (`T547_SKIP_ROWS`, off: several times faster, but more darkening). Hack fonts (HIDPI), MicroSD
   on SPI3 (CS=42, MOSI=15, SCK=11, MISO=16), user button IO21 as the
   wake source; no touch, front-light or battery level yet (touch on
   I2C 18/17 INT 47; the GPIO14 battery divider is reported to be live
