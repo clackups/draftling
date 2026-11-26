@@ -268,6 +268,22 @@ config DRAFTLING_MODEL_MICROJOURNAL_REV5
         See https://github.com/unkyulee/micro-journal (rev.5/5.0, rev.5/5.1).
         Not yet tested on physical hardware.
 
+config DRAFTLING_MODEL_MICROJOURNAL_REV6
+    bool "MicroJournal Rev.6 (ESP32-S3, ILI9341 or ST7789, 320x240, built-in 48-key keyboard)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        MicroJournal Rev.6 writerdeck: ESP32-S3 DevKitC (N16R8 or N8R2),
+        the same 2.8" 240x320 SPI color LCD module and MicroSD slot as
+        the Rev 5 (ILI9341 or ST7789, detected at boot), and a 48-key
+        mechanical keyboard whose 4 x 12 matrix is wired straight to the
+        S3's GPIO pins (components/matrix_kbd). Two of its columns are
+        the native USB pins (GPIO19 / GPIO20), so there is no "SD card
+        via USB" or "Sync via browser"; the console is on the UART
+        port. Any key wakes it from deep sleep. Pins and the keymap are
+        in main/boards/microjournal_rev6.h.
+        See https://github.com/unkyulee/micro-journal (rev.6/6.0).
+        Not yet tested on physical hardware.
+
 config DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     bool "Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 3.5\" transflective display (ESP32-S3, ST7365, 480x320, touch)"
     depends on IDF_TARGET_ESP32S3
@@ -519,7 +535,7 @@ config DRAFTLING_MODEL_WEB
 endchoice
 
 # Boards that use GPIO19 / GPIO20 -- the ESP32-S3's native USB D- / D+
-# -- for something else (I2C to the touch controller on all of them),
+# -- for something else (I2C to the touch controller, the Rev.6 keys),
 # so the USB host option below is not offered there.
 config DRAFTLING_NATIVE_USB_PINS_TAKEN
     bool
@@ -528,6 +544,8 @@ config DRAFTLING_NATIVE_USB_PINS_TAKEN
     default y if DRAFTLING_MODEL_SEEED_RETERMINAL_E1001
     default y if DRAFTLING_MODEL_SUNTON_8048S043
     default y if DRAFTLING_MODEL_SUNTON_8048S070
+    # The MicroJournal Rev.6 keyboard matrix uses them as columns.
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 config DRAFTLING_USB_HOST_NATIVE
@@ -624,6 +642,7 @@ config DRAFTLING_DISPLAY_COLOR
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default y if DRAFTLING_MODEL_LINUX
@@ -783,6 +802,7 @@ config DRAFTLING_DISPLAY_ILI9341
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default y if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 # DRAFTLING_DISPLAY_ST7796 is set automatically when the selected
@@ -840,6 +860,7 @@ config DRAFTLING_DISPLAY_ST7789
     bool
     default y if DRAFTLING_MODEL_NICEMCU_C5_28IPS
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 # DRAFTLING_ST7789_INIT_TFT_ESPI selects TFT_eSPI's ST7789 init table
@@ -850,6 +871,7 @@ config DRAFTLING_ST7789_INIT_TFT_ESPI
     bool
     depends on DRAFTLING_DISPLAY_ST7789
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 # DRAFTLING_ILI9341_INVERSION_OFF leaves display inversion off (INVOFF)
@@ -861,6 +883,7 @@ config DRAFTLING_ILI9341_INVERSION_OFF
     bool
     depends on DRAFTLING_DISPLAY_ILI9341
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 # DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT compiles both the ILI9341 and the
@@ -874,6 +897,7 @@ config DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT
     bool
     depends on DRAFTLING_DISPLAY_ILI9341 && DRAFTLING_DISPLAY_ST7789
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default n
 
 # DRAFTLING_LCD_BUS_PARLIO makes components/display/display_ili9341.cpp
@@ -1084,10 +1108,10 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     default y if DRAFTLING_DISPLAY_MIPI_DSI
     default y if DRAFTLING_DISPLAY_RGB
     # MicroJournal Rev 5.0 / 5.1 have no backlight control.
-    default y if DRAFTLING_DISPLAY_ILI9341 && !DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_DISPLAY_ILI9341 && !DRAFTLING_MODEL_MICROJOURNAL_REV5 && !DRAFTLING_MODEL_MICROJOURNAL_REV6
     default y if DRAFTLING_DISPLAY_ST7796
     default y if DRAFTLING_DISPLAY_ST7365
-    default y if DRAFTLING_DISPLAY_ST7789 && !DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default y if DRAFTLING_DISPLAY_ST7789 && !DRAFTLING_MODEL_MICROJOURNAL_REV5 && !DRAFTLING_MODEL_MICROJOURNAL_REV6
     default y if DRAFTLING_DISPLAY_ST77922
     default y if DRAFTLING_DISPLAY_NV3041A
     # LilyGO T5 E-Paper S3 Pro / Pro Lite carry a controllable white
@@ -1424,6 +1448,14 @@ config DRAFTLING_NO_BLUETOOTH
     default y if DRAFTLING_MODEL_WEB
     default n
 
+# DRAFTLING_HAS_MATRIX_KBD builds components/matrix_kbd: a keyboard
+# matrix wired straight to GPIO pins, with the pins and keymap in the
+# board header.
+config DRAFTLING_HAS_MATRIX_KBD
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
+    default n
+
 config DRAFTLING_HAS_USB_HOST
     bool
     default y if DRAFTLING_MODEL_M5STACK_TAB5
@@ -1661,6 +1693,7 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV6
     # Viewe UEDX24320028E-WB-A: BOOT button on GPIO0 (shared with
     # the WS2812B RGB LED data line, which Draftling leaves unused).
     default 0  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -2097,6 +2130,7 @@ config DRAFTLING_DISPLAY_WIDTH
     # editor landscape at 480x320.
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default 320 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default 320 if DRAFTLING_MODEL_MICROJOURNAL_REV6
     # Viewe UEDX24320028E-WB-A + UEED035HV: 320x480 portrait panel,
     # rendered landscape by the display backend (MADCTL MV).
     default 480 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -2139,6 +2173,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104A
     default 240 if DRAFTLING_MODEL_FREENOVE_FNK0104B
     default 240 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default 240 if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default 320 if DRAFTLING_MODEL_FREENOVE_FNK0104S
     default 480 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default 320 if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -2162,6 +2197,7 @@ choice DRAFTLING_DISPLAY_ROTATE
     default DRAFTLING_DISPLAY_ROTATE_270 if DRAFTLING_MODEL_WAVESHARE_LCD_316
     default DRAFTLING_DISPLAY_ROTATE_90 if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default DRAFTLING_DISPLAY_ROTATE_180 if DRAFTLING_MODEL_MICROJOURNAL_REV5
+    default DRAFTLING_DISPLAY_ROTATE_180 if DRAFTLING_MODEL_MICROJOURNAL_REV6
     default DRAFTLING_DISPLAY_ROTATE_0
     help
         Rotation angle for the display in degrees.

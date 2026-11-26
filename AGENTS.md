@@ -106,6 +106,7 @@ card).
 | Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host (tested on hardware with the ILI9341 only) |
+| MicroJournal Rev.6 | the Rev 5 display and MicroSD wiring (ILI9341 or ST7789, auto-detected, 320x240), built-in 48-key keyboard matrix on GPIO pins (untested on hardware) |
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
@@ -506,6 +507,7 @@ components/                 Reusable IDF components
   power/                    TCA9554-latched battery rail + PWR-button driver
   sd_card/                  SD card (SDMMC 1-bit) file operations
   standby/                  Deep-sleep / standby inactivity timer
+  matrix_kbd/               Keyboard matrix on GPIO pins (MicroJournal Rev.6)
   tab5_kbd/                 M5Stack Tab5 attachable keyboard (I2C + INT)
   wifi_manager/             WiFi STA connection manager
   usb_kbd/                  USB HID keyboard host (boot protocol)
@@ -2419,6 +2421,43 @@ heavy `esp_io_expander_tca9554` dependency.
 
 Public API: `power_init()`, `power_set_long_press_cb()`, `power_off()`.
 
+### components/matrix_kbd/
+
+Keyboard matrix wired straight to GPIO pins, built only with the
+derived `CONFIG_DRAFTLING_HAS_MATRIX_KBD` (MicroJournal Rev.6) and an
+empty component otherwise; main, editor and standby pull it in with
+`idf_component_optional_requires()`, and its own dependencies are
+optional requirements too (see usb_kbd). Board-agnostic: the board
+header defines the row / column pins and the keymap, and main.cpp
+passes them in a `matrix_kbd_config_t` (only main.cpp includes
+`app_config.h`, so the tables can be `static const` there).
+
+A task scans every 5 ms: each column is driven low in turn (open-drain)
+and the rows are read with pull-ups (diodes row -> column, QMK
+"ROW2COL"); a new key state counts once two scans agree. Keymap actions
+(`MKBD_*`, `uint16_t`): `MKBD_KC(hid)`, `MKBD_KC_NOSHIFT(hid)` (Shift
+dropped), `MKBD_MOD(mods)` (held), `MKBD_OSM(mods)` (one-shot: adds to
+the next key that produces an event, toggled by a second tap, or
+applies while held), `MKBD_LAYER(n)` (momentary), `MKBD_TRANS` (falls
+through to layer 0) and `MKBD_NONE`. An optional shift table is
+consulted first while a Shift modifier key is held. A key's action is
+resolved at press and kept until release, so releases always match.
+Events are the usual `kb_event_t` stream (HID usage + modifiers,
+character 0, no events for modifier / layer keys), so layouts and the
+editor handler apply unchanged. `matrix_kbd_prepare_sleep()` stops the
+scan, waits up to 3 s for all keys to be up, holds every column low
+through deep sleep (`gpio_hold_en()` + `gpio_deep_sleep_hold_en()`),
+enables the rows' RTC pull-ups and returns the row mask, which the
+board's pre-sleep hook arms as an EXT1 any-low wake (any key wakes);
+`matrix_kbd_init()` undoes the holds and the RTC mux. A present matrix
+counts as a wired keyboard like the Tab5's: BLE initialised but idle,
+the file browser at boot, no no-keyboard sleep, and a "Built-in" row on
+the Hardware information page. The engine was tested on the host with
+stub ESP-IDF headers (key sequences through `key_changed()`).
+
+Public API: `matrix_kbd_init()`, `matrix_kbd_is_present()`,
+`matrix_kbd_set_callback()`, `matrix_kbd_prepare_sleep()`.
+
 ### components/tab5_kbd/
 
 Driver for the M5Stack Tab5 attachable keyboard, a detachable QWERTY
@@ -3153,6 +3192,28 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   internal PHY; `usb_kbd_init()` installs the USB Host library itself
   (no BSP). Backlight control is disabled. Tested on physical hardware with the
   Rev 5.0 (ILI9341) panel only; the Rev 5.1 (ST7789) is untested. *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_MICROJOURNAL_REV6** -- MicroJournal Rev.6
+  (github.com/unkyulee/micro-journal `rev.6/6.0`,
+  `main/boards/microjournal_rev6.h`): ESP32-S3 DevKitC N16R8, the Rev
+  5 display and MicroSD wiring (the display module's slot, CS=GPIO9;
+  ILI9341 or ST7789 detected at boot, rotate 180) and a 48-key
+  keyboard: a 4 x 12 matrix, rows GPIO15-18, columns
+  1, 2, 42, 41, 40, 39, 45, 48, 47, 21, 20, 19 (upstream
+  micro-journal-mcu `keypad_48.cpp`), read by `components/matrix_kbd`.
+  The keymap is the Rev.6's key positions plus what Draftling needs:
+  top-left (the Rev.6 menu key) = Esc, Lower + it = F1, Lower + `-` /
+  `=` = one-shot Ctrl / Alt, Lower + `[` = Tab, Lower + arrows = Home /
+  PgDn / PgUp / End, Shift + Backspace = Delete; HARDWARE.md has the
+  user's table (keep the two in step). GPIO19 / GPIO20 (native USB)
+  are columns, so `DRAFTLING_NATIVE_USB_PINS_TAKEN`, no USB MSC /
+  Kermit, console on UART0 only (`CONFIG_ESP_CONSOLE_SECONDARY_NONE`),
+  flashing through the DevKitC's UART port. Bluetooth stays in the
+  build (idle at boot, started from the menu). No wake GPIO: the
+  pre-sleep hook arms an EXT1 any-low wake on the rows
+  (`matrix_kbd_prepare_sleep()`). No battery monitor or backlight
+  control. The stock firmware 2.x keeps documents in internal flash;
+  Draftling uses the MicroSD slot. Untested on physical hardware.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_LILYGO_T5_47_S3** -- LilyGO T5 4.7" e-paper, ESP32-S3
   version (V2.3; `main/boards/lilygo_t5_47_s3.h`), not the T5 E-Paper
   S3 Pro: 960x540 ED047TC1 whose output enable, mode, STV, panel
@@ -3390,13 +3451,13 @@ The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
 - **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3, LilyGO T5 4.7"), 320
-  (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
+  (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5 / Rev.6, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
   480 (Guition JC4827W543C), 1024 (Linux and web, initial window).
 - **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3, LilyGO T5 4.7"), 820
   (Waveshare LCD-3.16, FNK0104N), 240
-  (FNK0104A/B, MicroJournal Rev 5, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
+  (FNK0104A/B, MicroJournal Rev 5 / Rev.6, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 272 (Elecrow CrowPanel 5.79",
   Guition JC4827W543C), 640 (Linux and web, initial window).
@@ -3589,15 +3650,15 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_RETERMINAL_STICKY | Selects `display_reterminal_sticky.cpp` (plain SPI, SSD1677 or SSD2677 auto-detected by BUSY polarity, MISO wired since the MicroSD card shares this panel's bus) | Seeed reTerminal Sticky |
 | DRAFTLING_DISPLAY_M5_PAPERMONO    | Selects `display_m5_papermono.cpp` (plain SPI, single SSD1677 controller; panel supply/reset on the M5IOE1, front-light on the M5PM1) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_AXS15231B       | Selects `display_axs15231b.cpp`   | Touch-LCD-3.49, JC3248W535 |
-| DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B, MicroJournal Rev 5 |
-| DRAFTLING_ILI9341_INVERSION_OFF   | Ends the ILI9341 init sequence with INVOFF instead of INVON (the Freenove panels need INVON; the MicroJournal Rev 5.0 panel shows inverted colors with it) | MicroJournal Rev 5 |
+| DRAFTLING_DISPLAY_ILI9341         | Selects `display_ili9341.cpp` (shared ILI9341/ST7796 SPI backend) with the ILI9341 init sequence | Freenove FNK0104A / FNK0104B, MicroJournal Rev 5 / Rev.6 |
+| DRAFTLING_ILI9341_INVERSION_OFF   | Ends the ILI9341 init sequence with INVOFF instead of INVON (the Freenove panels need INVON; the MicroJournal Rev 5.0 panel shows inverted colors with it) | MicroJournal Rev 5 / Rev.6 |
 | DRAFTLING_DISPLAY_ST7796          | Selects `display_ili9341.cpp` with the ST7796 init sequence | Freenove FNK0104S |
 | DRAFTLING_DISPLAY_ST77922         | Selects `display_st77922.cpp` (ST77922 QSPI panel, native portrait, LVGL port rotates) | Freenove FNK0104N |
 | DRAFTLING_DISPLAY_NV3041A         | Selects `display_nv3041a.cpp` (NV3041A QSPI panel, native landscape; pins from the board header via `display_nv3041a_config()`) | Guition JC4827W543C |
 | DRAFTLING_DISPLAY_ST7365          | Selects `display_ili9341.cpp` with Viewe's ST7365 init table (pins, incl. RST and the IM0/IM1 interface-mode straps, come from the board header) | Viewe UEDX24320028E-WB-A + UEED035HV |
-| DRAFTLING_DISPLAY_ST7789          | Selects `display_ili9341.cpp` with an ST7789 init sequence: Adafruit_ST7789's with RGB-order landscape MADCTL 0xA0 by default | NiceMCU-C5E-DEV_2.8IPS, MicroJournal Rev 5 |
-| DRAFTLING_ST7789_INIT_TFT_ESPI    | Switches the ST7789 to TFT_eSPI's init table (inversion off, landscape MADCTL 0x68 = MX \| MV \| BGR), as in the upstream Micro Journal `rev_5_st7789` build | MicroJournal Rev 5 |
-| DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT | Compiles both the ILI9341 and the ST7789 init sequences into `display_ili9341.cpp` and picks one at boot from a bit-banged controller-ID read (needs the panel's SDO on MISO, or a bidirectional SDA); ILI9341 if nothing answers | MicroJournal Rev 5 |
+| DRAFTLING_DISPLAY_ST7789          | Selects `display_ili9341.cpp` with an ST7789 init sequence: Adafruit_ST7789's with RGB-order landscape MADCTL 0xA0 by default | NiceMCU-C5E-DEV_2.8IPS, MicroJournal Rev 5 / Rev.6 |
+| DRAFTLING_ST7789_INIT_TFT_ESPI    | Switches the ST7789 to TFT_eSPI's init table (inversion off, landscape MADCTL 0x68 = MX \| MV \| BGR), as in the upstream Micro Journal `rev_5_st7789` build | MicroJournal Rev 5 / Rev.6 |
+| DRAFTLING_DISPLAY_SPI_TFT_AUTODETECT | Compiles both the ILI9341 and the ST7789 init sequences into `display_ili9341.cpp` and picks one at boot from a bit-banged controller-ID read (needs the panel's SDO on MISO, or a bidirectional SDA); ILI9341 if nothing answers | MicroJournal Rev 5 / Rev.6 |
 | DRAFTLING_LCD_BUS_PARLIO          | `display_ili9341.cpp` sends its SPI traffic through PARLIO TX in 1-bit mode (`esp_lcd_new_panel_io_parl()`) instead of a GP-SPI host, leaving the C5's only GP-SPI controller to the SD card | NiceMCU-C5E-DEV_2.8IPS |
 | DRAFTLING_DISPLAY_MIPI_DSI        | Selects `display_mipi_dsi.cpp` (delegates to `espressif/m5stack_tab5` BSP) | M5Stack Tab5 |
 | DRAFTLING_DISPLAY_RGB             | Selects `display_rgb.cpp` (parallel RGB565 via `esp_lcd_new_rgb_panel`) | Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16 |
@@ -3607,7 +3668,7 @@ in C / C++ code:
 | DRAFTLING_RGB_BOARD_UEDX80480043 | Switches `display_rgb.cpp` to the VIEWE UEDX80480043E-WB timings (Sunton 8048S043C pin map, 16 MHz) and stops the panel and latches the backlight off before deep sleep | VIEWE UEDX80480043E-WB |
 | DRAFTLING_HAS_PCA9557             | Compiles in the PCA9557 IO-expander driver in the `io_expander` component (stubs otherwise); main.cpp resets the GT911 through it | Elecrow CrowPanel 5.0" |
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
-| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux, web client |
+| DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5 / Rev.6, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux, web client |
 | DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux, web client |
 | DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
@@ -3625,7 +3686,8 @@ in C / C++ code:
 | DRAFTLING_BATTERY_M5PM1           | Selects the M5PM1 backend (`battery_init_m5pm1(shared_i2c_bus)`, called early in boot since the chip gates the board's rails); voltage-only, "charging" = on USB. Its PWM0 drives the front-light (`battery_m5pm1_set_frontlight()`) | M5Stack PaperMono |
 | DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> Sync -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
 | DRAFTLING_USB_HOST_NATIVE         | Prompted, every ESP32-S3 board except those with `DRAFTLING_NATIVE_USB_PINS_TAKEN`: the native USB port (GPIO19 / GPIO20) is a USB keyboard host instead of a device -- sets DRAFTLING_HAS_USB_HOST, turns off DRAFTLING_HAS_USB_MSC (and so Kermit), selects ESP-IDF's `USB_HOST_HUBS_SUPPORTED` (the `usb` component, only in the build while usb_host_hid is), sets DRAFTLING_NO_BLUETOOTH to save battery: `ble_keyboard.cpp` compiles to its no-op stubs and main.cpp never calls `ble_keyboard_init()`, even with `CONFIG_BT_ENABLED` still on in the board's sdkconfig (the controller is never started; `CONFIG_BT_ENABLED=n`, as in the microjournal presets, only saves flash) | default y on MicroJournal Rev 5; set by the `microjournal_rev7` preset |
-| DRAFTLING_NATIVE_USB_PINS_TAKEN   | GPIO19 / GPIO20 serve something else (touch I2C), so DRAFTLING_USB_HOST_NATIVE is not offered | Sunton 8048S043 / 8048S070, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed reTerminal E1001 |
+| DRAFTLING_NATIVE_USB_PINS_TAKEN   | GPIO19 / GPIO20 serve something else (touch I2C, Rev.6 keyboard columns), so DRAFTLING_USB_HOST_NATIVE is not offered | Sunton 8048S043 / 8048S070, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed reTerminal E1001, MicroJournal Rev.6 |
+| DRAFTLING_HAS_MATRIX_KBD          | Builds `components/matrix_kbd` (keyboard matrix on GPIO pins, pins and keymap from the board header); main.cpp starts it and counts it as a wired keyboard | MicroJournal Rev.6 |
 | DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, any S3 board with DRAFTLING_USB_HOST_NATIVE (MicroJournal Rev 5 / Rev.7) |
 | DRAFTLING_USB_HOST_BSP_MANAGED    | USB PHY, VBUS and the USB Host library task are owned by the board BSP (`bsp_usb_host_start()`); otherwise `usb_kbd_init()` installs the host library and its task itself (ESP32-S3 native USB-OTG) | M5Stack Tab5 |
 | DRAFTLING_USB_HOST_DEP            | `int` mirror (0/1) of DRAFTLING_HAS_USB_HOST, tested by the `espressif/usb_host_hid` rule in `components/usb_kbd/idf_component.yml` (the component manager reads `sdkconfig.json`, which omits hidden bool symbols that are n); `components/usb_kbd/` registers as an empty component when DRAFTLING_HAS_USB_HOST is unset, so neither it nor `usb_host_hid` is compiled on other boards | M5Stack Tab5, MicroJournal Rev 5 |
@@ -3807,6 +3869,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `guition_jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
+`microjournal_rev6`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_reterminal_sticky`,

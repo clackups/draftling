@@ -8,6 +8,13 @@ in the git log.
 
 ### Added
 
+- **MicroJournal Rev.6**: a new preset, `microjournal_rev6`, for the
+  Micro Journal Rev.6 writerdeck with its built-in 48-key mechanical
+  keyboard, which Draftling reads directly. The keys stay where the
+  Rev.6 keycaps show them; Esc, F1, Ctrl, Alt and Tab are on the
+  top-left key and the Lower layer (see HARDWARE.md, "Rev.6 keys").
+  Documents are kept on the MicroSD card of the display, and any key
+  wakes the device from sleep. Not yet tested on physical hardware.
 - **LilyGO T5 4.7" E-Paper (ESP32-S3) and MicroJournal Rev.7**: new
   presets `lilygo_t5_47_s3` for the LilyGO T5 4.7" e-paper board
   (ESP32-S3 version, documents on its MicroSD card) and

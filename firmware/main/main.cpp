@@ -59,6 +59,9 @@
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
 #include "tab5_kbd.h"
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+#include "matrix_kbd.h"
+#endif
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 #include "usb_msc.h"
 #endif
@@ -1227,6 +1230,33 @@ static void pre_sleep_freenove_deinit(void)
     if (locked) draftling_lvgl_port_unlock();
 }
 #endif /* Freenove FNK0104A/B/S/N */
+
+#if defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV6)
+/* MicroJournal Rev.6: no wake button, so any key wakes the device. The
+ * keyboard driver holds every column low through deep sleep, and a
+ * pressed key pulls its row (GPIO15-18, RTC IOs) low: EXT1, any-low.
+ * standby_enter_sleep() arms no GPIO wake of its own on this board
+ * (DRAFTLING_WAKEUP_GPIO = -1), so this setting stays. */
+static void pre_sleep_microjournal_rev6_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: MicroJournal Rev.6");
+    pre_sleep_autosave();
+
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+
+    uint64_t rows = matrix_kbd_prepare_sleep();
+    if (rows) {
+        esp_err_t err = esp_sleep_enable_ext1_wakeup_io(rows, ESP_EXT1_WAKEUP_ANY_LOW);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Any key wakes the device (EXT1)");
+        } else {
+            ESP_LOGW(TAG, "EXT1 key wake: %s", esp_err_to_name(err));
+        }
+    }
+}
+#endif /* MicroJournal Rev.6 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY)
 static void pre_sleep_reterminal_sticky_deinit(void)
@@ -3622,11 +3652,31 @@ extern "C" void app_main(void)
      * disable it; the BT controller stays up but the host stops
      * scanning and stops dispatching key events / status text until
      * it is re-enabled. */
-    bool wired_kbd_present = usb_kbd_present || tab5_kbd_present;
+    /* Keyboard matrix wired to GPIO pins (MicroJournal Rev.6): pins and
+     * keymap from the board header. Like the Tab5 keyboard it is always
+     * there, so BLE stays idle until started from the menu. */
+    bool matrix_kbd_present = false;
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+    {
+        static const matrix_kbd_config_t kcfg = {
+            KBD_ROW_PINS, KBD_COL_PINS, KBD_ROWS, KBD_COLS,
+            &KBD_LAYERS[0][0],
+            (uint8_t)(sizeof(KBD_LAYERS) / sizeof(KBD_LAYERS[0])),
+            KBD_SHIFT_LAYER,
+        };
+        matrix_kbd_present = matrix_kbd_init(&kcfg) == 0;
+    }
+#endif
+
+    bool wired_kbd_present = usb_kbd_present || tab5_kbd_present ||
+                             matrix_kbd_present;
     if (wired_kbd_present) {
         if (usb_kbd_present) {
             ESP_LOGI(TAG, "USB keyboard detected; BLE will stay idle "
                           "until the USB keyboard is unplugged");
+        } else if (matrix_kbd_present) {
+            ESP_LOGI(TAG, "Built-in keyboard; BLE stays idle "
+                          "(connect on demand via the menu)");
         } else {
             ESP_LOGI(TAG, "Tab5 keyboard detected; BLE stays idle "
                           "(connect on demand via the menu)");
@@ -3808,6 +3858,8 @@ extern "C" void app_main(void)
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104S) || \
       defined(CONFIG_DRAFTLING_MODEL_FREENOVE_FNK0104N)
     standby_set_pre_sleep_cb(pre_sleep_freenove_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV6)
+    standby_set_pre_sleep_cb(pre_sleep_microjournal_rev6_deinit);
 #else
     standby_set_pre_sleep_cb(pre_sleep_autosave);
 #endif

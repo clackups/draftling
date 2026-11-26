@@ -191,6 +191,15 @@
             }
         },
         {
+            "name": "microjournal_rev6",
+            "displayName": "MicroJournal Rev.6 (ESP32-S3 N16R8, ILI9341 or ST7789 auto-detected, 48-key matrix keyboard)",
+            "binaryDir": "build/microjournal_rev6",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.microjournal_rev6",
+                "SDKCONFIG": "build/microjournal_rev6/sdkconfig"
+            }
+        },
+        {
             "name": "viewe_uedx24320028_ueed035hv",
             "displayName": "Viewe UEDX24320028E-WB-A + UEED035HV (3.5in ST7365 transflective, touch)",
             "binaryDir": "build/viewe_uedx24320028_ueed035hv",
