@@ -9,18 +9,32 @@
 # U+02DA, ogonek U+02DB, double acute U+02DD), the low / high double
 # quotes (U+201D, U+201E) of the Polish and Romanian layouts and the
 # en / em dashes and right single quote (U+2013, U+2014, U+2019) of the
-# Crimean Tatar layout.
+# Crimean Tatar layout, and the characters of the French BEPO layout's
+# AltGr layers and dead keys: schwa (U+018F, U+0259), Greek (U+0391..
+# U+03C9, dead Greek), the consonants with a dot below (U+1E04..U+1E93),
+# capital sharp s (U+1E9E), the opening curly quotes (U+2018, U+201C),
+# daggers (U+2020, U+2021), narrow no-break space (U+202F), per mille
+# (U+2030), primes (U+2032, U+2033), trade mark (U+2122), minus
+# (U+2212), not equal (U+2260) and less / greater or equal (U+2264,
+# U+2265).
 #
-# Greybeard and Hack both cover all of it.
+# Greybeard covers all of it. Hack lacks the schwa, the capital sharp
+# s and the dot-below consonants; those come from Noto Sans Mono, as
+# in gen_latinx.sh.
 #
 # Usage: gen_latina.sh <lv_font_conv.js> <greybeard ttf dir/> \
-#                      <Hack-Regular.ttf> <out dir>
+#                      <Hack-Regular.ttf> <NotoSansMono-Regular.ttf> <out dir>
 # lv_font_conv must be commit 1f44ab4 (see AGENTS.md, "Reproducing the
-# committed fonts"); Greybeard v1.0.0, Hack v3.003.
+# committed fonts"); Greybeard v1.0.0, Hack v3.003, Noto Sans Mono
+# v2.014 (hinted/ttf).
 set -e
-CONV="node $1"; GB="$2"; HACK="$3"; OUT="$4"
+CONV="node $1"; GB="$2"; HACK="$3"; NOTO="$4"; OUT="$5"
 
-RANGE=0x100-0x17F,0x218-0x21B,0x2C7,0x2D8-0x2DB,0x2DD,0x2013-0x2014,0x2019,0x201D-0x201E
+EXTA=0x100-0x17F,0x218-0x21B,0x2C7,0x2D8-0x2DB,0x2DD
+GREEK=0x391-0x3A1,0x3A3-0x3A9,0x3B1-0x3C9
+PUNCT=0x2013-0x2014,0x2018-0x2019,0x201C-0x201E,0x2020-0x2021,0x202F-0x2030,0x2032-0x2033,0x2122,0x2212,0x2260,0x2264-0x2265
+NOHACK=0x18F,0x259,0x1E04-0x1E05,0x1E0C-0x1E0D,0x1E24-0x1E25,0x1E32-0x1E33,0x1E36-0x1E37,0x1E42-0x1E43,0x1E46-0x1E47,0x1E5A-0x1E5B,0x1E62-0x1E63,0x1E6C-0x1E6D,0x1E7E-0x1E7F,0x1E88-0x1E89,0x1E92-0x1E93,0x1E9E
+RANGE=$EXTA,$NOHACK,$GREEK,$PUNCT
 
 fixup() {
     # Replace lv_font_conv's include block with a plain #include "lvgl.h"
@@ -65,7 +79,7 @@ gb 34 17 34
 
 hk() { # slot size cell
     n=hires_latina_$1
-    $CONV --font "$HACK" -r $RANGE --size $2 --bpp 1 \
+    $CONV --font "$HACK" -r $EXTA,$GREEK,$PUNCT --font "$NOTO" -r $NOHACK --size $2 --bpp 1 \
         --format lvgl --no-compress --lv-fallback hires_$1_la_next \
         --lv-font-name $n -o "$OUT/$n.c"
     fixup "$OUT/$n.c"

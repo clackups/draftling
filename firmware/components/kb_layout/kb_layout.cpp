@@ -118,6 +118,15 @@ typedef struct {
 #define DK_OGONEK "\x01\xCB\x9B"  /* U+02DB ogonek */
 #define DK_DACUTE "\x01\xCB\x9D"  /* U+02DD double acute */
 #define DK_COMMA  "\x01,"        /* comma below (no spacing form: a comma) */
+#define DK_MACRON "\x01\xC2\xAF"  /* U+00AF macron */
+#define DK_STROKE "\x01/"        /* stroke (spacing form: a slash) */
+#define DK_CURR   "\x01\xC2\xA4"  /* currency (U+00A4 currency sign) */
+#define DK_GREEK  "\x01\xC2\xB5"  /* Greek (spacing form: U+00B5 micro) */
+/* Horn, hook above and dot below have only combining forms, which the
+ * editor cannot show on their own; they type ' ? . instead. */
+#define DK_HORN   "\x01'"
+#define DK_HOOK   "\x01?"
+#define DK_DOTBEL "\x01."
 
 /* Latin-1 / punctuation characters used by the European layouts. */
 #define CH_SECT   "\xC2\xA7"  /* section sign */
@@ -4051,11 +4060,12 @@ static const char *const DVORAK_SHIFT[] = {
  * their own keys (e-circumflex on the ISO key left of Z), the symbols
  * " << >> ( ) @ + - / * on the number row with the digits on Shift
  * (and on Caps Lock, L_CAPS), a dead circumflex right of e-grave.
- * Shift + Space types a no-break space, AltGr + Space "_". The AltGr
- * layers leave out the characters the fonts do not have (the
- * mathematical signs, the high-6 quotes, schwa, dagger, ...) and the
- * dead keys Draftling does not know (stroke, macron, currency, horn,
- * hook, dot below, Greek). */
+ * Shift + Space types a no-break space, AltGr + Space "_", AltGr +
+ * Shift + Space a narrow no-break space. Every AltGr character and
+ * dead key of fr(bepo) is here; the dead keys reach what X11's Compose
+ * table gives for ASCII letters (dead Greek: the Greek alphabet; hook,
+ * horn, dot below: the Vietnamese letters and the latinx font subset).
+ * The layout pulls in the Latin Extended-A and latinx font subsets. */
 #define CH_NBSP  "\xC2\xA0"
 static const char *const BEPO_NORMAL[] = {
     /* 04 a */ "a",
@@ -4157,18 +4167,26 @@ static const key_entry_t BEPO_EXTRA[] = {
     { 0x1E,   L_ALTGR,       "\xE2\x80\x94" },  /* U+2014 em dash */
     { 0x1E,   L_ALTGR_SHIFT, "\xE2\x80\x9E" },  /* U+201E low double quote */
     { 0x1F,   L_ALTGR,       "<" },
+    { 0x1F,   L_ALTGR_SHIFT, "\xE2\x80\x9C" },  /* U+201C left double quote */
     { 0x20,   L_ALTGR,       ">" },
     { 0x20,   L_ALTGR_SHIFT, "\xE2\x80\x9D" },  /* U+201D right double quote */
     { 0x21,   L_ALTGR,       "[" },
+    { 0x21,   L_ALTGR_SHIFT, "\xE2\x89\xA4" },  /* U+2264 less or equal */
     { 0x22,   L_ALTGR,       "]" },
+    { 0x22,   L_ALTGR_SHIFT, "\xE2\x89\xA5" },  /* U+2265 greater or equal */
     { 0x23,   L_ALTGR,       "^" },
     { 0x24,   L_ALTGR,       "\xC2\xB1" },      /* U+00B1 plus-minus */
     { 0x24,   L_ALTGR_SHIFT, CH_NOT },
+    { 0x25,   L_ALTGR,       "\xE2\x88\x92" },  /* U+2212 minus */
     { 0x25,   L_ALTGR_SHIFT, "\xC2\xBC" },      /* U+00BC one quarter */
     { 0x26,   L_ALTGR,       "\xC3\xB7" },      /* U+00F7 division */
     { 0x26,   L_ALTGR_SHIFT, "\xC2\xBD" },      /* U+00BD one half */
     { 0x27,   L_ALTGR,       "\xC3\x97" },      /* U+00D7 multiplication */
     { 0x27,   L_ALTGR_SHIFT, "\xC2\xBE" },      /* U+00BE three quarters */
+    { 0x2D,   L_ALTGR,       "\xE2\x89\xA0" },  /* = key: U+2260 not equal */
+    { 0x2D,   L_ALTGR_SHIFT, "\xE2\x80\xB2" },  /* U+2032 prime */
+    { 0x2E,   L_ALTGR,       "\xE2\x80\xB0" },  /* % key: U+2030 per mille */
+    { 0x2E,   L_ALTGR_SHIFT, "\xE2\x80\xB3" },  /* U+2033 double prime */
     /* Top row */
     { 0x14,   L_ALTGR,       "|" },             /* b */
     { 0x14,   L_ALTGR_SHIFT, CH_BROKEN },
@@ -4184,8 +4202,11 @@ static const key_entry_t BEPO_EXTRA[] = {
     { 0x18,   L_ALTGR,       DK_CARON },        /* v */
     { 0x0C,   L_ALTGR,       "\xC3\xB0" },      /* d: U+00F0 eth */
     { 0x0C,   L_ALTGR_SHIFT, "\xC3\x90" },      /* U+00D0 ETH */
+    { 0x12,   L_ALTGR,       DK_STROKE },       /* l */
     { 0x13,   L_ALTGR,       "\xC4\xB3" },      /* j: U+0133 ij */
     { 0x13,   L_ALTGR_SHIFT, "\xC4\xB2" },      /* U+0132 IJ */
+    { 0x2F,   L_ALTGR,       "\xC9\x99" },      /* z: U+0259 schwa */
+    { 0x2F,   L_ALTGR_SHIFT, "\xC6\x8F" },      /* U+018F SCHWA */
     { 0x30,   L_ALTGR,       DK_BREVE },        /* w */
     /* Home row */
     { 0x04,   L_ALTGR,       "\xC3\xA6" },      /* a: U+00E6 ae */
@@ -4195,15 +4216,20 @@ static const key_entry_t BEPO_EXTRA[] = {
     { 0x07,   L_ALTGR,       DK_DIAER },        /* i */
     { 0x07,   L_ALTGR_SHIFT, DK_DOT },
     { 0x09,   L_ALTGR,       CH_EURO },         /* e */
+    { 0x09,   L_ALTGR_SHIFT, DK_CURR },
     { 0x0A,   L_ALTGR,       "\xE2\x80\x99" },  /* , key: U+2019 apostrophe */
+    { 0x0A,   L_ALTGR_SHIFT, DK_HORN },
     { 0x0B,   L_ALTGR,       "\xC2\xA9" },      /* c: U+00A9 copyright */
     { 0x0B,   L_ALTGR_SHIFT, "\xC5\xBF" },      /* U+017F long s */
     { 0x0D,   L_ALTGR,       "\xC3\xBE" },      /* t: U+00FE thorn */
     { 0x0D,   L_ALTGR_SHIFT, "\xC3\x9E" },      /* U+00DE THORN */
     { 0x0E,   L_ALTGR,       "\xC3\x9F" },      /* s: U+00DF sharp s */
+    { 0x0E,   L_ALTGR_SHIFT, "\xE1\xBA\x9E" },  /* U+1E9E capital sharp s */
     { 0x0F,   L_ALTGR,       "\xC2\xAE" },      /* r: U+00AE registered */
+    { 0x0F,   L_ALTGR_SHIFT, "\xE2\x84\xA2" },  /* U+2122 trade mark */
     { 0x33,   L_ALTGR,       DK_TILDE },        /* n */
-    { 0x34,   L_ALTGR_SHIFT, CH_ORDM },         /* m */
+    { 0x34,   L_ALTGR,       DK_MACRON },       /* m */
+    { 0x34,   L_ALTGR_SHIFT, CH_ORDM },
     { 0x31,   L_ALTGR,       DK_CEDIL },        /* c-cedilla */
     { 0x31,   L_ALTGR_SHIFT, DK_COMMA },
     { 0x32,   L_ALTGR,       DK_CEDIL },
@@ -4214,17 +4240,23 @@ static const key_entry_t BEPO_EXTRA[] = {
     { KC_ISO, L_ALTGR,       "/" },
     { 0x1D,   L_ALTGR,       "\\" },            /* a-grave */
     { 0x1B,   L_ALTGR,       "{" },             /* y */
+    { 0x1B,   L_ALTGR_SHIFT, "\xE2\x80\x98" },  /* U+2018 left single quote */
     { 0x06,   L_ALTGR,       "}" },             /* x */
     { 0x06,   L_ALTGR_SHIFT, "\xE2\x80\x99" },  /* U+2019 */
     { 0x19,   L_ALTGR,       "\xE2\x80\xA6" },  /* . key: U+2026 ellipsis */
     { 0x19,   L_ALTGR_SHIFT, CH_MIDDOT },
     { 0x05,   L_ALTGR,       "~" },             /* k */
     { 0x11,   L_ALTGR,       CH_IQUES },        /* ' key */
+    { 0x11,   L_ALTGR_SHIFT, DK_HOOK },
     { 0x10,   L_ALTGR,       DK_RING },         /* q */
-    { 0x36,   L_ALTGR,       CH_MICRO },        /* g */
+    { 0x10,   L_ALTGR_SHIFT, DK_DOTBEL },
+    { 0x36,   L_ALTGR,       DK_GREEK },        /* g */
+    { 0x37,   L_ALTGR,       "\xE2\x80\xA0" },  /* h: U+2020 dagger */
+    { 0x37,   L_ALTGR_SHIFT, "\xE2\x80\xA1" },  /* U+2021 double dagger */
     { 0x38,   L_ALTGR,       DK_OGONEK },       /* f */
     { 0x38,   L_ALTGR_SHIFT, CH_ORDF },
     { 0x2C,   L_ALTGR,       "_" },             /* Space */
+    { 0x2C,   L_ALTGR_SHIFT, "\xE2\x80\xAF" },  /* U+202F narrow no-break space */
     { 0, 0, NULL },
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_BEPO */
@@ -4654,7 +4686,8 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 
 /* Letters each accent combines with, and the code points they become
  * (Latin-1 or Latin Extended-A; the layouts with the accents beyond
- * Latin-1 pull in the Latin Extended-A font subset). */
+ * Latin-1 pull in the Latin Extended-A font subset; BEPO's dead keys
+ * also reach Greek, the Vietnamese letters and a few symbols). */
 typedef struct {
     const char *spacing;   /* the accent alone (DK_* without \x01) */
     const char *bases;     /* ASCII letters it combines with */
@@ -4696,6 +4729,33 @@ DK_TABLE(DACUTE, "ouOU",
          0x151,0x171, 0x150,0x170)
 DK_TABLE(COMMA, "stST",
          0x219,0x21B, 0x218,0x21A)
+/* The dead keys below follow the X11 Compose table (en_US.UTF-8),
+ * keeping the results the fonts have. */
+DK_TABLE(MACRON, "aeiouAEIOU",
+         0x101,0x113,0x12B,0x14D,0x16B, 0x100,0x112,0x12A,0x14C,0x16A)
+DK_TABLE(STROKE, "odhltODHLT=",
+         0xF8,0x111,0x127,0x142,0x167, 0xD8,0x110,0x126,0x141,0x166, 0x2260)
+DK_TABLE(CURR, "celySd",
+         0xA2,0x20AC,0xA3,0xA5,0x24,0x20AB)
+DK_TABLE(HORN, "ouOU",
+         0x1A1,0x1B0, 0x1A0,0x1AF)
+DK_TABLE(HOOK, "aeiouyAEIOUY",
+         0x1EA3,0x1EBB,0x1EC9,0x1ECF,0x1EE7,0x1EF7,
+         0x1EA2,0x1EBA,0x1EC8,0x1ECE,0x1EE6,0x1EF6)
+DK_TABLE(DOTBEL, "aeiouybdhklmnrstvwzAEIOUYBDHKLMNRSTVWZ",
+         0x1EA1,0x1EB9,0x1ECB,0x1ECD,0x1EE5,0x1EF5,
+         0x1E05,0x1E0D,0x1E25,0x1E33,0x1E37,0x1E43,0x1E47,0x1E5B,0x1E63,
+         0x1E6D,0x1E7F,0x1E89,0x1E93,
+         0x1EA0,0x1EB8,0x1ECA,0x1ECC,0x1EE4,0x1EF4,
+         0x1E04,0x1E0C,0x1E24,0x1E32,0x1E36,0x1E42,0x1E46,0x1E5A,0x1E62,
+         0x1E6C,0x1E7E,0x1E88,0x1E92)
+DK_TABLE(GREEK, "abgdezhjiklmnxoprstufqywABGDEZHJIKLMNXOPRSTUFQYW",
+         0x3B1,0x3B2,0x3B3,0x3B4,0x3B5,0x3B6,0x3B7,0x3B8,0x3B9,0x3BA,0x3BB,
+         0x3BC,0x3BD,0x3BE,0x3BF,0x3C0,0x3C1,0x3C3,0x3C4,0x3C5,0x3C6,0x3C7,
+         0x3C8,0x3C9,
+         0x391,0x392,0x393,0x394,0x395,0x396,0x397,0x398,0x399,0x39A,0x39B,
+         0x39C,0x39D,0x39E,0x39F,0x3A0,0x3A1,0x3A3,0x3A4,0x3A5,0x3A6,0x3A7,
+         0x3A8,0x3A9)
 
 static const dead_key_t s_dead_keys[] = {
     { DK_GRAVE + 1,  GRAVE_BASES,  GRAVE_CPS },
@@ -4711,6 +4771,13 @@ static const dead_key_t s_dead_keys[] = {
     { DK_OGONEK + 1, OGONEK_BASES, OGONEK_CPS },
     { DK_DACUTE + 1, DACUTE_BASES, DACUTE_CPS },
     { DK_COMMA + 1,  COMMA_BASES,  COMMA_CPS },
+    { DK_MACRON + 1, MACRON_BASES, MACRON_CPS },
+    { DK_STROKE + 1, STROKE_BASES, STROKE_CPS },
+    { DK_CURR + 1,   CURR_BASES,   CURR_CPS },
+    { DK_HORN + 1,   HORN_BASES,   HORN_CPS },
+    { DK_HOOK + 1,   HOOK_BASES,   HOOK_CPS },
+    { DK_DOTBEL + 1, DOTBEL_BASES, DOTBEL_CPS },
+    { DK_GREEK + 1,  GREEK_BASES,  GREEK_CPS },
 };
 
 /* ------------------------------------------------------------------ */
@@ -4905,10 +4972,20 @@ static const char *apply_dead_key(const char *dk, const char *next)
     if (d && base) {
         const char *p = strchr(d->bases, base);
         if (p) {
-            uint16_t cp = d->cps[p - d->bases];   /* < U+0800 */
-            buf[0] = (char)(0xC0 | (cp >> 6));
-            buf[1] = (char)(0x80 | (cp & 0x3F));
-            buf[2] = '\0';
+            uint16_t cp = d->cps[p - d->bases];
+            if (cp < 0x80) {
+                buf[0] = (char)cp;
+                buf[1] = '\0';
+            } else if (cp < 0x800) {
+                buf[0] = (char)(0xC0 | (cp >> 6));
+                buf[1] = (char)(0x80 | (cp & 0x3F));
+                buf[2] = '\0';
+            } else {
+                buf[0] = (char)(0xE0 | (cp >> 12));
+                buf[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+                buf[2] = (char)(0x80 | (cp & 0x3F));
+                buf[3] = '\0';
+            }
             return buf;
         }
     }

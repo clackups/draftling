@@ -85,11 +85,15 @@ caron, `3` circumflex, `4` breve, `5` ring, `6` ogonek, `8` dot above,
   of M. The number row types `" << >> ( ) @ + - / *` and the digits
   with Shift or Caps Lock. The key right of e-grave is a dead
   circumflex. Shift + Space types a no-break space (for the French
-  spacing before `: ; ! ?`), AltGr + Space `_`. AltGr gives the
-  characters printed on BEPO keyboards, with the dead keys acute,
-  double acute, grave, caron, breve, diaeresis, dot above, tilde,
-  cedilla, comma below, ring and ogonek. A few AltGr characters
-  Draftling's fonts do not have (the mathematical signs, the
-  opening curly quotes, schwa, the daggers, ...) and the dead keys
-  stroke, macron, currency, horn, hook, dot below and Greek are left
-  out.
+  spacing before `: ; ! ?`), AltGr + Space `_`, AltGr + Shift + Space
+  a narrow no-break space. AltGr gives every character printed on BEPO
+  keyboards, and all of its dead keys work: acute, double acute,
+  grave, caron, breve, diaeresis, dot above, tilde, cedilla, comma
+  below, ring, ogonek, macron (AltGr + M), stroke (AltGr + L: o, d, h,
+  l, t, and `=` for not equal), currency (AltGr + Shift + E: c, e, l,
+  y, S, d), Greek (AltGr + G: the Greek letter of each Latin letter,
+  e.g. j theta, q chi, y psi, w omega; Space gives the micro sign),
+  horn (AltGr + Shift + `,`: o, u), hook (AltGr + Shift + `'`) and dot
+  below (AltGr + Shift + Q) for the Vietnamese vowels and, with dot
+  below, the consonants of transliterations. Horn, hook and dot below
+  followed by Space type `'`, `?` and `.`.

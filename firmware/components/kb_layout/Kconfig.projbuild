@@ -543,8 +543,9 @@ config KB_LAYOUT_ENABLE_BEPO
     help
         Enable the French ergonomic BEPO layout (XKB "fr(bepo)"):
         accented letters on their own keys, the digits on Shift, and
-        the AltGr layer with dead keys. Pulls in the Latin Extended-A
-        font subset (oe, ij, dashes, quotes).
+        the AltGr layer with all of its dead keys (Greek, hook, horn,
+        dot below, ...). Pulls in the Latin Extended-A and Latin
+        extension font subsets.
 
 config DRAFTLING_HAS_TELUGU
     bool
@@ -570,6 +571,14 @@ config DRAFTLING_TALL_LINES
 config DRAFTLING_HAS_LATIN_EXT_A
     bool
     default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B || KB_LAYOUT_ENABLE_BEPO
+
+# Latin extension font subset (components/fonts/*_latinx_NN.c): the
+# Vietnamese letters, the dong sign and typographic punctuation, for
+# Vietnamese Telex, the CJK packs and BEPO's dead hook / horn / dot
+# below.
+config DRAFTLING_HAS_LATIN_EXT_X
+    bool
+    default y if KB_LAYOUT_ENABLE_VI || DRAFTLING_HAS_CJK || KB_LAYOUT_ENABLE_BEPO
 
 config DRAFTLING_HAS_CJK
     bool

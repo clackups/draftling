@@ -17,8 +17,8 @@
  *
  *   base --> hires_NN_ext (router)
  *        --> hires_hebrew_NN   --> hires_NN_he_next (router)   [Hebrew]
- *        --> hires_latina_NN   --> hires_NN_la_next (router)   [Latin Extended-A]
- *        --> hires_latinx_NN   --> hires_NN_lx_next (router)   [Vietnamese / CJK]
+ *        --> hires_latina_NN   --> hires_NN_la_next (router)   [Latin Extended-A, Greek, BEPO]
+ *        --> hires_latinx_NN   --> hires_NN_lx_next (router)   [Vietnamese / CJK / BEPO]
  *        --> CJK runtime font (cjk_font.c)                  [Korean / Japanese / Chinese]
  *        --> Tamil runtime font (tamil_font.c)              [Tamil]
  *        --> Indic runtime font (indic_font.c)              [Devanagari / Bengali / Telugu]
@@ -56,7 +56,7 @@
 #include "tall_lines.h"
 #endif
 
-#if defined(CONFIG_KB_LAYOUT_ENABLE_VI) || defined(CONFIG_DRAFTLING_HAS_CJK)
+#ifdef CONFIG_DRAFTLING_HAS_LATIN_EXT_X
 #define HAS_LATINX 1
 #endif
 

@@ -99,7 +99,7 @@ EMBED :=
 # Fonts, as components/fonts/CMakeLists.txt selects them. The Linux
 # "board" is high-density: only the hi-res (Hack) set.
 F := $(COMPONENTS)/fonts
-LATINX := $(if $(CONFIG_KB_LAYOUT_ENABLE_VI)$(CONFIG_DRAFTLING_HAS_CJK),y)
+LATINX := $(CONFIG_DRAFTLING_HAS_LATIN_EXT_X)
 ifneq ($(HAVE_CONFIG),)
 ifndef CONFIG_DRAFTLING_DISPLAY_HIDPI
 $(error The Linux build expects CONFIG_DRAFTLING_DISPLAY_HIDPI)

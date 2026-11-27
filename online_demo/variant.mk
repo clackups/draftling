@@ -77,7 +77,7 @@ EMBED :=
 
 # Fonts, as components/fonts/CMakeLists.txt selects them.
 F := $(COMPONENTS)/fonts
-LATINX := $(if $(CONFIG_KB_LAYOUT_ENABLE_VI)$(CONFIG_DRAFTLING_HAS_CJK),y)
+LATINX := $(CONFIG_DRAFTLING_HAS_LATIN_EXT_X)
 ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
 SET   := hires
 SLOTS := 9 11 14 16 18 22 26 30

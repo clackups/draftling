@@ -37,9 +37,10 @@ if(CONFIG_KB_LAYOUT_ENABLE_HE)
 endif()
 
 # Latin-extension subset (Vietnamese letters, curly quotes, dashes) for
-# the Vietnamese, Korean, Japanese and Chinese language packs.
+# the Vietnamese, Korean, Japanese and Chinese language packs and the
+# BEPO layout's dead hook / horn / dot below.
 set(latinx_enabled FALSE)
-if(CONFIG_KB_LAYOUT_ENABLE_VI OR CONFIG_DRAFTLING_HAS_CJK)
+if(CONFIG_DRAFTLING_HAS_LATIN_EXT_X)
     set(latinx_enabled TRUE)
 endif()
 set(font_slots_gb 11 14 16 18 22 26 30 34)
