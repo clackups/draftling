@@ -12,6 +12,9 @@
 <script>window.DRAFTLING_BUILD = "@BUILD@"; window.DRAFTLING_VERSION = "@VERSION@";</script>
 </head>
 <body>
+<!-- Everything the page shows, turned as a whole when Draftling's
+     Orientation / Rotate 180 setting asks for it (client.js layoutTurn()). -->
+<div id="turn">
 <div id="app">
   <div id="screen">
     <canvas id="canvas" tabindex="0" aria-label="Draftling editor"></canvas>
@@ -74,6 +77,8 @@
     <div id="files-status" role="status"></div>
     <div id="files-list"></div>
   </div>
+</div>
+
 </div>
 
 <input type="file" id="upload-input" multiple accept=".md,.fountain,.txt,text/plain,text/markdown" hidden>

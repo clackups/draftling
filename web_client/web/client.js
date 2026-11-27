@@ -217,6 +217,8 @@
     webClipRequest: clipRequest,
     webFilesReply: filesReply,
     webCorners: cornersSetting,
+    webRotation: rotationSetting,
+    webMacKeys: IS_MAC,
     webReady: () => {
       ready = true;
       armBack();
@@ -278,6 +280,92 @@
     }, 30);
   }
 
+  /* ---- orientation ------------------------------------------------------ */
+
+  /* Settings -> Display -> Orientation (as the screen / landscape /
+   * portrait) and Rotate 180 come here through Module.webRotation; the
+   * page turns everything it shows (#turn) a quarter turn clockwise when
+   * the screen's shape is the other one, and half a turn more for
+   * Rotate 180. The program only sees a screen of another size. The
+   * last setting is kept in this browser too, so the page starts turned
+   * before the program says so. */
+  const turnEl = document.getElementById("turn");
+  const TURN_KEY = "draftling-turn";
+  let turnOrient = 0;          /* 0 as the screen, 1 landscape, 2 portrait */
+  let turnFlip = false;
+  let turn = 0;                /* degrees clockwise */
+  try {
+    const v = JSON.parse(localStorage.getItem(TURN_KEY) || "null");
+    if (v) {
+      turnOrient = v.o | 0;
+      turnFlip = !!v.f;
+    }
+  } catch (e) { /* not kept */ }
+
+  /* Phones and tablets: the screen's orientation (the visual viewport
+   * turns landscape-shaped when the on-screen keyboard is up); elsewhere
+   * the window's shape. */
+  function screenIsPortrait() {
+    if (window.matchMedia && matchMedia("(pointer: coarse)").matches) {
+      const t = screen.orientation && screen.orientation.type;
+      if (t) return t.startsWith("portrait");
+      if (typeof window.orientation === "number") return window.orientation % 180 === 0;
+    }
+    return innerHeight > innerWidth;
+  }
+
+  function layoutTurn() {
+    const vv = window.visualViewport;
+    const W = vv ? vv.width : innerWidth;
+    const H = vv ? vv.height : innerHeight;
+    const y = vv ? vv.offsetTop : 0;
+    const portrait = screenIsPortrait();
+    let t = (turnOrient === 1 && portrait) || (turnOrient === 2 && !portrait) ? 90 : 0;
+    if (turnFlip) t += 180;
+    turn = t;
+    const side = t % 180 !== 0;
+    turnEl.style.width = (side ? H : W) + "px";
+    turnEl.style.height = (side ? W : H) + "px";
+    turnEl.style.transform =
+      t === 90 ? "translate(" + W + "px," + y + "px) rotate(90deg)" :
+      t === 180 ? "translate(" + W + "px," + (y + H) + "px) rotate(180deg)" :
+      t === 270 ? "translate(0px," + (y + H) + "px) rotate(270deg)" :
+      "translate(0px," + y + "px)";
+  }
+
+  function rotationSetting(orient, flip) {
+    turnOrient = orient | 0;
+    turnFlip = !!flip;
+    try {
+      localStorage.setItem(TURN_KEY, JSON.stringify({ o: turnOrient, f: turnFlip }));
+    } catch (e) { /* not kept */ }
+    layoutTurn();
+    reportCorners();
+  }
+
+  /* A point on the page -> CSS pixels in an element's own (unturned)
+   * frame, and its own size. */
+  function localPoint(el, clientX, clientY) {
+    const r = el.getBoundingClientRect();
+    switch (turn) {
+    case 90: return [clientY - r.top, r.right - clientX, r.height, r.width];
+    case 180: return [r.right - clientX, r.bottom - clientY, r.width, r.height];
+    case 270: return [r.bottom - clientY, clientX - r.left, r.height, r.width];
+    default: return [clientX - r.left, clientY - r.top, r.width, r.height];
+    }
+  }
+
+  function localSize(el) {
+    const r = el.getBoundingClientRect();
+    return turn % 180 ? { width: r.height, height: r.width } : { width: r.width, height: r.height };
+  }
+
+  layoutTurn();
+  window.addEventListener("resize", layoutTurn);
+  if (screen.orientation && screen.orientation.addEventListener)
+    screen.orientation.addEventListener("change", layoutTurn);
+  window.addEventListener("orientationchange", layoutTurn);
+
   /* ---- rounded screen corners ----------------------------------------- */
 
   /* A phone's screen has rounded corners, which in full screen cut into
@@ -320,16 +408,24 @@
       document.body.classList.toggle("round-corners", round);
       fitKeybar();
     }
-    let mask = 0;
+    let phys = 0;              /* corners of the screen, as the screen shows them */
     const r = screenEl.getBoundingClientRect();
     if (full && r.width > 0 && r.height > 0) {
       const left = r.left <= 1, right = r.right >= innerWidth - 1;
-      if (r.top <= 1) mask |= (left ? CORNER.TL : 0) | (right ? CORNER.TR : 0);
+      if (r.top <= 1) phys |= (left ? CORNER.TL : 0) | (right ? CORNER.TR : 0);
       if (Math.abs(r.bottom - screenHeightCss()) <= 2)
-        mask |= (left ? CORNER.BL : 0) | (right ? CORNER.BR : 0);
+        phys |= (left ? CORNER.BL : 0) | (right ? CORNER.BR : 0);
+    }
+    /* ... and as the program's (turned) screen has them: its top left
+     * corner is the screen's top right one after a quarter turn. */
+    const order = [CORNER.TL, CORNER.TR, CORNER.BR, CORNER.BL];   /* clockwise */
+    let mask = 0;
+    for (let i = 0; i < 4; i++) {
+      if (phys & order[(i + turn / 90) % 4]) mask |= order[i];
     }
     /* Canvas pixels per CSS pixel: the observer's exact device size. */
-    const k = screenW && r.width ? screenW / r.width : (window.devicePixelRatio || 1);
+    const lw = localSize(screenEl).width;
+    const k = screenW && lw ? screenW / lw : (window.devicePixelRatio || 1);
     const milli = Math.round(k * 1000);
     const key = mask + ":" + milli;
     if (!ready || key === cornersSent) return;
@@ -348,7 +444,7 @@
   }
 
   function measureScreen() {
-    const r = screenEl.getBoundingClientRect();
+    const r = localSize(screenEl);
     const dpr = window.devicePixelRatio || 1;
     setScreen(r.width * dpr, r.height * dpr);
   }
@@ -358,9 +454,13 @@
   try {
     new ResizeObserver((entries) => {
       for (const e of entries) {
-        if (e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0]) {
-          setScreen(e.devicePixelContentBoxSize[0].inlineSize,
-            e.devicePixelContentBoxSize[0].blockSize);
+        /* Chrome reports CSS pixels here for a turned screen: then
+         * (or when it is missing) measure. */
+        const d = e.devicePixelContentBoxSize && e.devicePixelContentBoxSize[0];
+        const dpr = window.devicePixelRatio || 1;
+        if (d && Math.abs(d.inlineSize - e.contentRect.width * dpr) <= 2 &&
+            Math.abs(d.blockSize - e.contentRect.height * dpr) <= 2) {
+          setScreen(d.inlineSize, d.blockSize);
         } else {
           measureScreen();
         }
@@ -377,7 +477,7 @@
    * window.devicePixelRatio (browser zoom, emulators). */
   function sizeCanvasCss() {
     if (!frameW) return;
-    const r = screenEl.getBoundingClientRect();
+    const r = localSize(screenEl);
     let kx = screenW && r.width ? r.width / screenW : 0;
     let ky = screenH && r.height ? r.height / screenH : 0;
     if (!kx || !ky) kx = ky = 1 / (window.devicePixelRatio || 1);
@@ -606,10 +706,10 @@
   /* ---- pointer -------------------------------------------------------- */
 
   function canvasPoint(e) {
-    const r = canvas.getBoundingClientRect();
-    const sx = r.width ? canvas.width / r.width : 1;
-    const sy = r.height ? canvas.height / r.height : 1;
-    return [Math.floor((e.clientX - r.left) * sx), Math.floor((e.clientY - r.top) * sy)];
+    const [x, y, w, h] = localPoint(canvas, e.clientX, e.clientY);
+    const sx = w ? canvas.width / w : 1;
+    const sy = h ? canvas.height / h : 1;
+    return [Math.floor(x * sx), Math.floor(y * sy)];
   }
 
   let pointerDown = false;
@@ -825,8 +925,7 @@
   function fitViewport() {
     const vv = window.visualViewport;
     if (!vv) return;
-    appEl.style.top = vv.offsetTop + "px";
-    appEl.style.height = vv.height + "px";
+    layoutTurn();
     reportCorners();
     keepKeyboardLater();
   }
@@ -1309,7 +1408,7 @@
     toolbar.classList.remove("shown");
   }
   window.addEventListener("mousemove", (e) => {
-    if (ready && !touchMode && e.clientY < 80) showToolbar();
+    if (ready && !touchMode && localPoint(turnEl, e.clientX, e.clientY)[1] < 80) showToolbar();
   });
   toolbar.addEventListener("mouseleave", () => {
     clearTimeout(toolbarTimer);

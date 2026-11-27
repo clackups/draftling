@@ -46,9 +46,17 @@ help; see the user documentation in `docs/`), with these differences:
 - **Keyboard.** Keys are read as physical keys, like a US keyboard on
   a device; the layout is chosen in Draftling (Ctrl+L, F1 -> Settings
   -> Keyboard -> Active layouts), not by the computer. On a Mac,
-  Command works as Ctrl. Browsers keep some shortcuts for themselves
-  (Ctrl+W, Ctrl+N, Ctrl+T, Ctrl+Tab), except in full screen in Chrome
-  and Edge.
+  Command works as Ctrl, and on a Mac, iPhone or iPad the hints and
+  the help page say Cmd+ and Opt+ (Control still works as Ctrl, and
+  the hints keep Ctrl+ for Q, W, M, H, N, T, Tab and Space, which
+  macOS or the browser keep for Command). Browsers keep some shortcuts
+  for themselves (Ctrl+W, Ctrl+N, Ctrl+T, Ctrl+Tab), except in full
+  screen in Chrome and Edge.
+- **Orientation.** F1 -> Settings -> Display -> "Orientation" (as the
+  screen, landscape, portrait) and "Rotate 180" turn the whole page,
+  key bar and panels included, a quarter turn when the screen has the
+  other shape, at once: landscape on a phone held (or locked) in
+  portrait.
 - **Back and quitting.** Back (also Escape on a physical keyboard,
   which Android turns into Back) acts as Esc in Draftling and does not
   close the page or the installed app. To leave, use F1 -> "Quit

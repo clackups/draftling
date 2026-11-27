@@ -67,6 +67,23 @@ enum {
 bool editor_ui_set_screen_corners(unsigned mask, int px_per_unit_milli);
 void editor_host_corners_changed(int size);
 
+/* Boards with CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE (the web client): the
+ * host turns the screen. editor_host_rotation_changed() (weak, no-op)
+ * tells it Settings -> Display -> Orientation (EDITOR_ORIENT_*) and
+ * Rotate 180 at start and on every change; the host then reports the
+ * new size as for a resized window. */
+enum {
+    EDITOR_ORIENT_AS_SCREEN = 0,
+    EDITOR_ORIENT_LANDSCAPE = 1,
+    EDITOR_ORIENT_PORTRAIT  = 2,
+};
+void editor_host_rotation_changed(int orient, bool rotate180);
+
+/* Call before editor_ui_init(): name the modifier keys the way a Mac or
+ * iOS keyboard labels them in hints and help ("Cmd+", "Opt+" for the
+ * Ctrl+ and Alt+ shortcuts). Only with CONFIG_DRAFTLING_WEB_PAGE. */
+void editor_ui_set_mac_key_names(bool on);
+
 /* Files changed on the SD card behind the editor's back (the web
  * client's Files panel uploaded one): reload the open documents of
  * path (unless they have unsaved changes; path may be NULL) and list

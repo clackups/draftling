@@ -154,6 +154,9 @@ int main(void)
     wifi_manager_init();
 
     editor_ui_set_board_name(BOARD_NAME);
+    /* A Mac, iPhone or iPad: hints say Cmd+ / Opt+ (the page takes
+     * Command as Ctrl). */
+    editor_ui_set_mac_key_names(MAIN_THREAD_EM_ASM_INT({ return Module.webMacKeys ? 1 : 0; }) != 0);
     editor_ui_init();
 
     if (sd_card_init(-1, -1, -1, MOUNT_POINT) != ESP_OK) {

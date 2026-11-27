@@ -124,6 +124,64 @@
 
 static const char *TAG = "EditorUI";
 
+/* Mac / iOS key names (the web client on such a device): the Ctrl+ and
+ * Alt+ of every hint, help row and menu label become Cmd+ and Opt+
+ * (the page treats Command as Ctrl, and Option is Alt). Applied where
+ * UI text reaches LVGL -- lv_label_set_text() and lv_list_add_button()
+ * below -- except the document's own lines, which are set with
+ * (lv_label_set_text)() to bypass it. */
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+static bool s_mac_key_names;
+
+extern "C" void editor_ui_set_mac_key_names(bool on)
+{
+    s_mac_key_names = on;
+}
+
+/* Command + these never reach a web page on a Mac (macOS or the browser
+ * quits, closes, hides, minimizes, opens a window or tab, switches
+ * apps): their hints keep Ctrl+, since Control works as Ctrl too. */
+static bool mac_reserved_cmd(const char *k)
+{
+    static const char *const RESERVED[] = { "Q", "W", "M", "H", "N", "T", "Tab", "Space" };
+    for (const char *r : RESERVED) {
+        size_t n = strlen(r);
+        if (!strncmp(k, r, n) && !isalnum((unsigned char)k[n])) return true;
+    }
+    return false;
+}
+
+static const char *mac_key_names(const char *s)
+{
+    if (!s_mac_key_names || !s || (!strstr(s, "Ctrl+") && !strstr(s, "Alt+")))
+        return s;
+    static std::string bufs[4];   /* a few calls' results alive at once */
+    static unsigned bi;
+    std::string &o = bufs[bi++ & 3];
+    o.clear();
+    for (const char *p = s; *p;) {
+        if (!strncmp(p, "Ctrl+", 5) && !mac_reserved_cmd(p + 5)) {
+            o += "Cmd+";
+            p += 5;
+        } else if (!strncmp(p, "Alt+", 4) && (p == s || !isalpha((unsigned char)p[-1]))) {
+            o += "Opt+";
+            p += 4;
+        } else {
+            o += *p++;
+        }
+    }
+    return o.c_str();
+}
+#define lv_label_set_text(obj, text) lv_label_set_text((obj), mac_key_names(text))
+#define lv_list_add_button(list, icon, text) \
+    lv_list_add_button((list), (icon), mac_key_names(text))
+#else
+extern "C" void editor_ui_set_mac_key_names(bool on)
+{
+    (void)on;
+}
+#endif
+
 /* Layout constants -- account for display rotation. The editor and
  * LVGL canvas render 1:1 at the panel resolution (no framebuffer
  * upscaling; high-density boards use a larger font instead), minus
@@ -1770,6 +1828,60 @@ static void save_hide_bars_to_nvs(void)
         nvs_close(h);
     }
 }
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE)
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+#error "DRAFTLING_DISPLAY_HOST_ROTATE needs DRAFTLING_DISPLAY_RESIZABLE"
+#endif
+/* ---- Orientation turned by the host ----
+ * The web client's page turns its whole screen a quarter turn when the
+ * user wants landscape on a portrait screen (or the other way round),
+ * and half a turn for Rotate 180; the editor only sees a window of a
+ * new size. Settings -> Display, applied at once. */
+#define NVS_KEY_HOST_ORIENT "horient"
+#define NVS_KEY_HOST_ROT180 "hrot180"
+static uint8_t s_host_orient;     /* EDITOR_ORIENT_* */
+static bool    s_host_rot180;
+
+static const char *host_orient_name(int o)
+{
+    switch (o) {
+    case EDITOR_ORIENT_LANDSCAPE: return "landscape";
+    case EDITOR_ORIENT_PORTRAIT:  return "portrait";
+    default:                      return "as the screen";
+    }
+}
+
+static void load_host_rotation_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_HOST_ORIENT, &v) == ESP_OK && v <= EDITOR_ORIENT_PORTRAIT)
+            s_host_orient = v;
+        if (nvs_get_u8(h, NVS_KEY_HOST_ROT180, &v) == ESP_OK)
+            s_host_rot180 = v != 0;
+        nvs_close(h);
+    }
+}
+
+static void save_host_rotation_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_HOST_ORIENT, s_host_orient);
+        nvs_set_u8(h, NVS_KEY_HOST_ROT180, s_host_rot180 ? 1 : 0);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+extern "C" __attribute__((weak)) void editor_host_rotation_changed(int orient, bool rotate180)
+{
+    (void)orient;
+    (void)rotate180;
+}
+#endif  /* CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE */
 
 #if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
 #if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
@@ -3860,7 +3972,7 @@ static void refresh_active_pane(bool draw_cursor)
                 lv_label_set_text_selection_end(s_line_labels[i],
                                                 LV_LABEL_TEXT_SELECTION_OFF);
                 lv_label_set_text_static(s_line_labels[i], "");
-                lv_label_set_text(s_line_labels[i], tmp.c_str());
+                (lv_label_set_text)(s_line_labels[i], tmp.c_str());
                 lv_obj_set_pos(s_line_labels[i], 2, y_pos);
 
                 /* Get the font for this line to compute correct line height */
@@ -6091,6 +6203,8 @@ enum settings_item_t {
     SET_ITEM_INVERT,         /* DISPLAY_CAN_INVERT */
     SET_ITEM_SCALE2X,
     SET_ITEM_CORNERS,        /* DISPLAY_ROUND_CORNERS */
+    SET_ITEM_HOST_ORIENT,    /* DISPLAY_HOST_ROTATE: the host turns the screen */
+    SET_ITEM_HOST_ROTATE,
     SET_ITEM_MARGINS_MENU,
     /* Display -> Screen margins */
     SET_ITEM_MARGIN_LEFT,
@@ -6220,7 +6334,13 @@ static void refresh_settings_items(void)
                  s_pending_portrait ? "Portrait" : "Landscape");
         settings_add(SET_ITEM_ORIENTATION, buf);
 #endif
-#if defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+#if defined(CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE)
+        /* The host turns the window's contents: applied at once. */
+        snprintf(buf, sizeof(buf), "Orientation: %s", host_orient_name(s_host_orient));
+        settings_add(SET_ITEM_HOST_ORIENT, buf);
+        snprintf(buf, sizeof(buf), "Rotate 180: %s", s_host_rot180 ? "on" : "off");
+        settings_add(SET_ITEM_HOST_ROTATE, buf);
+#elif defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         /* (no Rotate 180) */
 #elif defined(CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE)
         /* Runtime 180-degree display flip, applied at once */
@@ -6688,6 +6808,19 @@ static bool settings_cycle_item(int row, int dir)
         s_pending_upside_down = !s_pending_upside_down;
         display_flip_set_upside_down(s_pending_upside_down);
         s_restart_needed = true;
+        refresh_settings_items();
+        return true;
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE)
+    } else if (idx == SET_ITEM_HOST_ORIENT || idx == SET_ITEM_HOST_ROTATE) {
+        /* The host turns its screen and reports the new size; the
+         * screens are laid out again then (Settings stays open). */
+        if (idx == SET_ITEM_HOST_ORIENT)
+            s_host_orient = (uint8_t)((s_host_orient + dir + 3) % 3);
+        else
+            s_host_rot180 = !s_host_rot180;
+        save_host_rotation_to_nvs();
+        editor_host_rotation_changed(s_host_orient, s_host_rot180);
         refresh_settings_items();
         return true;
 #endif
@@ -8464,6 +8597,10 @@ static void handle_menu_key(const kb_event_t *ev)
 static void help_row(std::string &out, int cols, int keycol,
                      const char *key, const char *desc)
 {
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+    key = mac_key_names(key);   /* before the columns are measured */
+    desc = mac_key_names(desc);
+#endif
     int klen = (int)strlen(key);
     out += key;
     if (klen >= keycol) {
@@ -8594,8 +8731,13 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
     help_row(out, cols, kc, "F9", "Files: download a document, a project or everything (ZIP); upload documents into a project. Saves the open documents first");
     help_row(out, cols, kc, "F11", "Full screen; in Chrome and Edge, hold Esc to leave it");
     help_row(out, cols, kc, "Ctrl+C / X / V", "Copy / cut / paste with the system clipboard");
-    help_row(out, cols, kc, "Command", "Works as Ctrl on a Mac");
-    help_row(out, cols, kc, "Ctrl+W/N/T/Tab", "Kept by the browser outside full screen: use full screen (or N in the file browser for a new file)");
+    if (s_mac_key_names) {
+        help_row(out, cols, kc, "Cmd, Opt", "Command and Option, for Ctrl and Alt; Control works as Ctrl too");
+        help_row(out, cols, kc, "Ctrl+Q/W/M/H/N/T", "macOS and the browser keep these with Command: press Control");
+    } else {
+        help_row(out, cols, kc, "Command", "Works as Ctrl on a Mac");
+        help_row(out, cols, kc, "Ctrl+W/N/T/Tab", "Kept by the browser outside full screen: use full screen (or N in the file browser for a new file)");
+    }
     help_row(out, cols, kc, "Storage", "Documents stay in this browser; Git sync or F9 keeps copies elsewhere");
 #endif
 }
@@ -15260,6 +15402,10 @@ extern "C" void editor_ui_init(void)
     load_corners_from_nvs();
     corners_compute();
     editor_host_corners_changed(s_corner_size);
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_HOST_ROTATE)
+    load_host_rotation_from_nvs();
+    editor_host_rotation_changed(s_host_orient, s_host_rot180);
 #endif
     load_ptimer_from_nvs();
     load_name_suggest_from_nvs();

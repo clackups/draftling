@@ -68,6 +68,13 @@ in the git log.
   status bars then grow over the corners and their text moves in from
   them, so no letter is cut off, while the text area keeps the full
   width of the screen. The key bar's end buttons move in as well.
+  F1 -> Settings -> Display -> "Orientation" (as the screen, landscape
+  or portrait) and "Rotate 180" turn the whole page at once, so a
+  phone whose screen stays in portrait can be used in landscape, on a
+  stand with a keyboard, say. On a Mac, iPhone or iPad the hints and
+  the help page name the keys as Cmd+ and Opt+ (Command and Option);
+  the few shortcuts macOS or the browser keep for Command, such as
+  Ctrl+Q and Ctrl+W, still say Ctrl, since Control works there.
 
 ### Fixed
 

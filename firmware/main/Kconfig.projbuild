@@ -610,6 +610,16 @@ config DRAFTLING_DISPLAY_ROUND_CORNERS
     default y if DRAFTLING_MODEL_WEB
     default n
 
+# The host turns the screen (the web client's page): Settings ->
+# Display -> "Orientation" (as the screen / landscape / portrait) and
+# "Rotate 180" are applied at once by the host
+# (editor_host_rotation_changed()), which then reports the new size.
+# Needs DRAFTLING_DISPLAY_RESIZABLE.
+config DRAFTLING_DISPLAY_HOST_ROTATE
+    bool
+    default y if DRAFTLING_MODEL_WEB
+    default n
+
 # ---- Derived: display category (driven by hardware-model choice) ----
 #
 # DRAFTLING_DISPLAY_COLOR is set automatically when the selected board

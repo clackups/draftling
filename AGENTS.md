@@ -425,6 +425,24 @@ which corners of the canvas are screen corners (`reportCorners()`,
 canvas reaches the bottom of the screen -- no key bar or on-screen
 keyboard below it) and the device pixels per CSS pixel; `io_web.c`
 retries `editor_ui_set_screen_corners()` while a dialog is open.
+Orientation (`DRAFTLING_DISPLAY_HOST_ROTATE`): the editor hands the
+setting to `Module.webRotation`, and `layoutTurn()` sizes and turns
+`#turn` (everything the page shows; with a transform always, it is
+the box its fixed elements are placed in) a quarter turn clockwise
+when the screen's shape (phones: `screen.orientation`, else the
+window's) is the other one, half a turn more for Rotate 180; kept in
+`localStorage` so the page starts turned. `localPoint()` /
+`localSize()` undo the turn for pointer positions and sizes, and the
+corner mask is turned to the program's frame. The size comes from
+`localSize()` x `devicePixelRatio` when the observer's
+`devicePixelContentBoxSize` disagrees with it (Chrome reports CSS
+pixels there for a turned element). Mac key names: `main_web.cpp`
+calls `editor_ui_set_mac_key_names(Module.webMacKeys)` before
+`editor_ui_init()`; with `DRAFTLING_WEB_PAGE` `editor_ui.cpp` then
+turns the `Ctrl+` / `Alt+` of every label (`lv_label_set_text()` and
+`lv_list_add_button()` are macros there; document lines bypass them
+with `(lv_label_set_text)()`) and help row into `Cmd+` / `Opt+`,
+except Command keys macOS or the browser keep (`mac_reserved_cmd()`).
 Back: Android turns a physical keyboard's Escape into Back, which
 closed the installed app even though the page took the key; a
 `CloseWatcher` (Chrome) and, on Android or installed, a history entry
@@ -1448,10 +1466,12 @@ header `s_lbl_settings_hdr`):
 Editor...     Base font size, Append-only editing, Suggest character
               names, Hide status bars while typing, Show status bars
               after idle (15 / 30 / 60 / 120 s, only while hiding)
-Display...    Backlight, Color theme, Orientation, Rotate 180,
-              Invert display, 2x scale, Rounded screen corners (only
-              with DRAFTLING_DISPLAY_ROUND_CORNERS), Screen
-              margins... (Left, Right, Top, Bottom)
+Display...    Backlight, Color theme, Orientation, Rotate 180
+              (with DRAFTLING_DISPLAY_HOST_ROTATE: as the screen /
+              landscape / portrait and Rotate 180, applied at once by
+              the host), Invert display, 2x scale, Rounded screen
+              corners (only with DRAFTLING_DISPLAY_ROUND_CORNERS),
+              Screen margins... (Left, Right, Top, Bottom)
 Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
@@ -3666,6 +3686,7 @@ in C / C++ code:
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
 | DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak, web client |
 | DRAFTLING_DISPLAY_ROUND_CORNERS   | Settings -> Display -> "Rounded screen corners" (radius 0 / 16..64 in host units, NVS `corners`): the host reports which canvas corners are rounded screen corners (`editor_ui_set_screen_corners()`), `corners_compute()` grows `HEADER_H` / `STATUS_H` over them (text area rows lose at most `CORNER_SLACK` px) and insets the bar text (`HDR_IN_*` / `STA_IN_*`); hidden bars leave the bands (`TOP_CLEAR` / `BOT_CLEAR`). Needs RESIZABLE | web client |
+| DRAFTLING_DISPLAY_HOST_ROTATE     | Settings -> Display -> "Orientation" (as the screen / landscape / portrait, NVS `horient`) and "Rotate 180" (`hrot180`), applied at once: `editor_host_rotation_changed()` (weak) tells the host, which turns the screen and reports the new size. Needs RESIZABLE | web client |
 | DRAFTLING_WEB_PAGE                | The editor runs in a web page: the help page (F10) gets a "Web browser" section listing the page's own keys (F9 Files panel, F11 full screen), the system clipboard, Command as Ctrl and the shortcuts the browser keeps | web client |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |

@@ -157,6 +157,15 @@ void editor_host_corners_changed(int size)
     }, size);
 }
 
+/* Settings -> Display -> Orientation / Rotate 180: the page turns its
+ * screen and reports the new size (WEB_EV_RESIZE). */
+void editor_host_rotation_changed(int orient, bool rotate180)
+{
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (Module.webRotation) Module.webRotation($0, $1);
+    }, orient, rotate180 ? 1 : 0);
+}
+
 /* ---- the backend ------------------------------------------------------- */
 
 static uint8_t *s_rgba;
