@@ -58,7 +58,10 @@ in the git log.
   physical keyboard is in use. The on-screen keyboard stays up while no
   physical keyboard is in use, and comes back when dismissed. Its word
   suggestions and autocorrection are off. The bar's buttons all fit the
-  screen, in two rows on a narrow phone.
+  screen, in two rows on a narrow phone. Back (and Escape on a
+  physical keyboard, which Android turns into Back) works as Esc in
+  Draftling instead of closing the app; F1 -> "Quit Draftling" saves
+  and closes it.
   For phones with rounded screen corners, F1 -> Settings -> Display ->
   "Rounded screen corners" sets the corner radius (16 to 64, in the
   browser's pixels; off by default): in full screen the title and

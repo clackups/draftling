@@ -361,7 +361,7 @@ program's sibling, not the online demo's: a hardware model of its own,
 `web_client/sdkconfig.defaults` and always built with the `all`
 language pack. Its derived flags follow the Linux Flatpak's: COLOR,
 HIDPI, TOUCHSCREEN, RESIZABLE, NETWORK_HOST_MANAGED, NO_BLUETOOTH,
-STANDBY_DISPLAY_OFF; no backlight, battery, quit or wake GPIO. It
+STANDBY_DISPLAY_OFF, HAS_QUIT; no backlight, battery or wake GPIO. It
 compiles the firmware sources `linux/draftling.mk` does (the real
 `git_sync` included) and reuses the Linux stand-ins that are plain
 POSIX -- `freertos_linux.c`, `nvs_linux.cpp`, `standby_linux.c`,
@@ -425,6 +425,22 @@ which corners of the canvas are screen corners (`reportCorners()`,
 canvas reaches the bottom of the screen -- no key bar or on-screen
 keyboard below it) and the device pixels per CSS pixel; `io_web.c`
 retries `editor_ui_set_screen_corners()` while a dialog is open.
+Back: Android turns a physical keyboard's Escape into Back, which
+closed the installed app even though the page took the key; a
+`CloseWatcher` (Chrome) and, on Android or installed, a history entry
+of the page's own (`popstate`; the installed app still left with only
+the watcher) catch it, re-armed on every key, key release and tap
+(`armBack()`). Back fires the watcher's `cancel`, cancelable only after
+user input; otherwise `close` follows (Back is handled there only, not
+twice) and a new watcher is made at once, since Android hands the page
+only the keyup of an Escape, never its keydown.
+Chrome's back button skips an entry the page was on when it added the
+next one without user input (Escape is none), so the entry is added
+only after a key or tap (`histActivated`) and after a Back the page
+goes `history.forward()` onto it again; `?keylog` (kept for later
+starts, `?nokeylog` ends it) lists Back events, and Back acts as Esc (`backPressed()`, skipped
+right after an Escape keydown, closes the Files panel); leaving is
+F1 -> "Quit Draftling" (`quitApp()`).
 `?keylog` lists the last key / input events over the
 screen. `src/http_client_web.c` is
 `esp_http_client` over one synchronous `XMLHttpRequest` per request
@@ -3646,7 +3662,7 @@ in C / C++ code:
 | DRAFTLING_HAS_M5IOE1              | Compiles in the M5IOE1 IO-expander driver in the `io_expander` component (stubs otherwise) | M5Stack PaperMono |
 | DRAFTLING_DISPLAY_COLOR           | Enables the color-theme picker; PARTIAL render mode in `lvgl_port.cpp` | AXS15231B boards, Tab5, RGB boards (incl. Elecrow CrowPanel 5.0"), Freenove FNK0104 family, MicroJournal Rev 5, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux, web client |
 | DRAFTLING_DISPLAY_RESIZABLE       | The screen is a window that can change size: `editor_ui.cpp` reads `SCR_W` / `SCR_H` from the LVGL display, splits panes along the long axis, hides the orientation / rotate-180 / margin settings and offers `editor_ui_can_relayout()` / `editor_ui_relayout()` (needs COLOR) | Linux, web client |
-| DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
+| DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt); the web client saves and the page closes its window (`Module.webQuit`, `window.close()`, else a "Draftling has quit" message) | Linux, web client |
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
 | DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak, web client |
 | DRAFTLING_DISPLAY_ROUND_CORNERS   | Settings -> Display -> "Rounded screen corners" (radius 0 / 16..64 in host units, NVS `corners`): the host reports which canvas corners are rounded screen corners (`editor_ui_set_screen_corners()`), `corners_compute()` grows `HEADER_H` / `STATUS_H` over them (text area rows lose at most `CORNER_SLACK` px) and insets the bar text (`HDR_IN_*` / `STA_IN_*`); hidden bars leave the bands (`TOP_CLEAR` / `BOT_CLEAR`). Needs RESIZABLE | web client |

@@ -49,6 +49,11 @@ help; see the user documentation in `docs/`), with these differences:
   Command works as Ctrl. Browsers keep some shortcuts for themselves
   (Ctrl+W, Ctrl+N, Ctrl+T, Ctrl+Tab), except in full screen in Chrome
   and Edge.
+- **Back and quitting.** Back (also Escape on a physical keyboard,
+  which Android turns into Back) acts as Esc in Draftling and does not
+  close the page or the installed app. To leave, use F1 -> "Quit
+  Draftling": it saves the documents and closes the installed app (a
+  browser tab says it can be closed now).
 - **Full screen (F11, or "Full screen" at the top right).** Chrome and
   Edge also lock the keyboard there: Esc and the browser's shortcuts
   go to Draftling, and holding Esc leaves full screen. Firefox and
@@ -79,8 +84,9 @@ help; see the user documentation in `docs/`), with these differences:
   on-screen keyboard types again. The screen shrinks above the
   on-screen keyboard instead of being covered.
 - **Key log.** With `?keylog` added to the address, the page lists the
-  last key and input events it receives -- for finding out what a
-  browser sends for a key that does not work.
+  last key, input and Back events it receives -- for finding out what
+  a browser sends for a key that does not work. It stays on for later
+  starts, also of the installed app, until `?nokeylog`.
 - **Leaving.** Hiding the tab saves the open documents; closing it
   with unsaved changes asks first. "Sleep now" and the standby timeout
   save and blank the screen until the next key or click. A setting

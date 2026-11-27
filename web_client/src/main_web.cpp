@@ -84,8 +84,8 @@ extern "C" void linux_restart(void)
     __builtin_unreachable();
 }
 
-/* Not reached through the menu (no "Quit Draftling" in the web
- * client); the LVGL port calls it on a quit request. */
+/* F1 -> "Quit Draftling" (standby_quit()) or a quit request of the
+ * LVGL port: save, then the page closes the app (Module.webQuit). */
 extern "C" void linux_quit(int status)
 {
     (void)status;
@@ -94,6 +94,9 @@ extern "C" void linux_quit(int status)
     if (!quitting) {
         quitting = true;
         if (linux_pre_sleep_cb) linux_pre_sleep_cb();
+        MAIN_THREAD_ASYNC_EM_ASM({
+            if (Module.webQuit) Module.webQuit();
+        });
     }
     park();
     __builtin_unreachable();

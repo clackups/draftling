@@ -2057,7 +2057,7 @@ config DRAFTLING_STANDBY_DISPLAY_OFF
 # to quit to, so it never sets this.
 config DRAFTLING_HAS_QUIT
     bool
-    default y if DRAFTLING_MODEL_LINUX
+    default y if DRAFTLING_MODEL_LINUX || DRAFTLING_MODEL_WEB
     default n
 
 config DRAFTLING_STANDBY_WAKE_ON_TOUCH

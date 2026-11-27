@@ -55,6 +55,7 @@
   const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || "") || /Mac OS X/.test(ua);
   const IS_SAFARI = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(ua);
   const IS_FIREFOX = /firefox/i.test(ua);
+  const IS_ANDROID = /Android/i.test(ua);
 
   const canvas = document.getElementById("canvas");
   const screenEl = document.getElementById("screen");
@@ -218,6 +219,7 @@
     webCorners: cornersSetting,
     webReady: () => {
       ready = true;
+      armBack();
       reportCorners();
       messageEl.hidden = true;
       focusScreen();
@@ -226,6 +228,7 @@
     },
     webFatal: (msg) => fail("Draftling stopped", "<p>" + escapeHtml(msg) + "</p>"),
     webRestart: () => location.reload(),
+    webQuit: quitApp,
     onAbort: (what) => fail("Draftling stopped",
       "<p>The program ended unexpectedly" + (what ? ": " + escapeHtml(String(what)) : "") +
       ". Your saved documents are kept.</p>"),
@@ -503,6 +506,9 @@
   }
 
   function onKeyDown(e) {
+    if (e.code === "Escape") escKeyAt = performance.now();
+    else histActivated = true;   /* Escape gives no user activation */
+    armBack();
     if (!ready || !filesEl.hidden || !messageEl.hidden) return;
     hideToolbar();
     if (e.code === "F11") {
@@ -562,9 +568,14 @@
 
   function onKeyUp(e) {
     if (!ready) return;
+    armBack();
     const code = KEYS[e.code];
     if (!code) return;
     e.preventDefault();
+    /* Android: a physical Escape's keydown became Back (already sent as
+     * Esc), only its keyup reaches the page. */
+    if (e.code === "Escape" && !down.has(code) &&
+        performance.now() - backAt < BACK_AFTER_ESC_MS * 4) return;
     /* The keyup of a physical key whose keydown the input method took
      * (Android hands AltGr+I to it as a dead key, keyCode 229): send
      * the key now, with the modifiers held, and drop what the input
@@ -984,16 +995,45 @@
   /* For finding out what a browser sends for a key (an Android Bluetooth
    * keyboard, say): with ?keylog in the address, the last events are
    * listed over the screen. */
-  if (new URLSearchParams(location.search).has("keylog")) {
+  let logEvent = () => {};
+  /* ?keylog turns it on and ?nokeylog off for later starts too, so an
+   * installed app, which has no address bar, can show it. */
+  let keylogOn = false;
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.has("keylog")) localStorage.setItem("draftling-keylog", "1");
+    if (q.has("nokeylog")) localStorage.removeItem("draftling-keylog");
+    keylogOn = localStorage.getItem("draftling-keylog") === "1";
+  } catch (e) {
+    keylogOn = new URLSearchParams(location.search).has("keylog");
+  }
+  if (keylogOn) {
     const box = document.createElement("pre");
     box.id = "keylog";
     document.body.appendChild(box);
-    const lines = [];
+    /* The lines are kept across starts, so what happened just before
+     * the app closed can still be read. */
+    let lines = [];
+    try {
+      lines = JSON.parse(localStorage.getItem("draftling-keylog-lines") || "[]");
+    } catch (e) {
+      lines = [];
+    }
+    const t0 = performance.now();
     const add = (text) => {
-      lines.push(text);
-      while (lines.length > 12) lines.shift();
+      lines.push(((performance.now() - t0) / 1000).toFixed(1) + " " + text);
+      while (lines.length > 16) lines.shift();
       box.textContent = lines.join("\n");
+      try {
+        localStorage.setItem("draftling-keylog-lines", JSON.stringify(lines));
+      } catch (e) { /* not kept */ }
     };
+    logEvent = add;
+    add("--- start: " + (window.CloseWatcher ? "CloseWatcher" : "no CloseWatcher") +
+      ", " + (isInstalled() ? "installed" : "tab") + (IS_ANDROID ? ", Android" : "") +
+      ", history " + history.length + (history.state ? " (our entry)" : ""));
+    document.addEventListener("visibilitychange", () => add("page " + document.visibilityState));
+    window.addEventListener("pagehide", () => add("pagehide"));
     const flags = (e) => (e.shiftKey ? "S" : "-") + (e.ctrlKey ? "C" : "-") +
       (e.altKey ? "A" : "-") + (e.metaKey ? "M" : "-") +
       (e.getModifierState && e.getModifierState("AltGraph") ? "G" : "-");
@@ -1085,6 +1125,124 @@
     if (pasteWanted) deliverPaste(text);
     else lastPaste = { text, at: performance.now() };
   });
+
+  /* ---- Back (Android) and quitting ---------------------------------- */
+
+  /* Android turns Escape on a physical keyboard into Back, and Back
+   * closes an installed web app with nothing behind it in its history,
+   * even when the page took the Escape key. A close watcher (Chrome
+   * tabs) gets Back instead; on Android and when installed, a history
+   * entry of our own does too (an installed app leaves on Back without
+   * asking the close watchers). Back then acts as Esc in Draftling
+   * (once: Escape itself was already sent); F1 -> "Quit Draftling"
+   * closes the app.
+   *
+   * Chrome's back button skips the entry a page was on when it added
+   * one without user input since its last history change, so the entry
+   * is added only after a key (not Escape, which is no user input
+   * there) or a tap, and after a Back we go forward to it again
+   * instead of adding a new one. */
+  const BACK_AFTER_ESC_MS = 500;
+  let escKeyAt = -1e9;
+  let backAt = -1e9;         /* Back last sent as Esc */
+  let closeWatcher = null;
+  let backEntry = !!(history.state && history.state.draftlingBack);
+  let histActivated = false; /* user input since our last pushState */
+  let quitting = false;
+
+  function isInstalled() {
+    return !!(window.matchMedia &&
+      matchMedia("(display-mode: standalone), (display-mode: fullscreen), " +
+        "(display-mode: minimal-ui)").matches);
+  }
+
+  function armBack() {
+    if (!ready || quitting) return;
+    if (window.CloseWatcher && !closeWatcher) {
+      try {
+        closeWatcher = new CloseWatcher();
+        /* Back fires "cancel", which only user input since the last
+         * one makes cancelable; when it is not, "close" follows and the
+         * watcher is gone, so a new one is made at once -- the next
+         * key may be another Escape, whose keydown Android turns into
+         * Back before the page sees it. */
+        closeWatcher.oncancel = (e) => {
+          logEvent("back: close watcher cancel" + (e.cancelable ? "" : " (not cancelable)"));
+          if (!e.cancelable) return;
+          e.preventDefault();
+          backPressed();
+        };
+        closeWatcher.onclose = () => {
+          logEvent("back: close watcher close");
+          closeWatcher = null;
+          backPressed();
+          armBack();
+        };
+      } catch (e) {
+        closeWatcher = null;
+      }
+    }
+    if (!backEntry && histActivated && (isInstalled() || IS_ANDROID)) {
+      history.pushState({ draftlingBack: true }, "");
+      backEntry = true;
+      histActivated = false;
+      logEvent("back: history entry added (history " + history.length + ")");
+    }
+  }
+
+  window.addEventListener("popstate", (e) => {
+    if (e.state && e.state.draftlingBack) {
+      backEntry = true;          /* our forward() below arrived */
+      return;
+    }
+    if (!backEntry) return;
+    logEvent("back: popstate");
+    backEntry = false;
+    if (quitting) return;
+    backPressed();
+    history.forward();         /* back onto our entry, so a second Back stays too */
+  });
+
+  function backPressed() {
+    if (!ready || quitting) return;
+    if (!filesEl.hidden) {
+      closeFiles();
+      return;
+    }
+    if (!messageEl.hidden) return;
+    if (performance.now() - escKeyAt < BACK_AFTER_ESC_MS) return;
+    logEvent("back: sent as Esc");
+    backAt = performance.now();
+    tapKey(KEYS.Escape, false);
+  }
+
+  /* A mouse button gives user activation on press, a finger or pen on
+   * release. */
+  window.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") histActivated = true;
+    armBack();
+  }, true);
+  window.addEventListener("pointerup", (e) => {
+    histActivated = true;
+    armBack();
+  }, true);
+
+  /* After "Quit Draftling" (the program saved everything): close the
+   * app's window where the browser lets a page do that (an installed
+   * app), else say so. */
+  function quitApp() {
+    quitting = true;
+    ready = false;
+    if (closeWatcher) {
+      closeWatcher.destroy();
+      closeWatcher = null;
+    }
+    window.close();
+    setTimeout(() => showMessage("Draftling has quit",
+      "<p>Your documents are saved. You can close this " +
+      (isInstalled() ? "app" : "tab") + ".</p>",
+      [{ label: "Start again", primary: true, onClick: () => location.reload() }]), 300);
+  }
 
   /* ---- leaving -------------------------------------------------------- */
 
