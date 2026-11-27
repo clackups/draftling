@@ -547,6 +547,18 @@ config KB_LAYOUT_ENABLE_BEPO
         dot below, ...). Pulls in the Latin Extended-A and Latin
         extension font subsets.
 
+config KB_LAYOUT_ENABLE_FR_AFNOR
+    bool "French (AZERTY, AFNOR)"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the French standard AZERTY layout of 2019 (AFNOR
+        NF Z71-300, norme-azerty.fr; XKB "fr(afnor)"): the classic
+        AZERTY letters with every French character, the capital
+        accented letters on Caps Lock, and an AltGr layer with dead
+        keys and a level-5 latch (AltGr + H). Pulls in the Latin
+        Extended-A font subset.
+
 config DRAFTLING_HAS_TELUGU
     bool
     default y if KB_LAYOUT_ENABLE_TE_IN || KB_LAYOUT_ENABLE_TE_SA || KB_LAYOUT_ENABLE_TE_RTS || KB_LAYOUT_ENABLE_TE_PO || KB_LAYOUT_ENABLE_TE_AP
@@ -570,7 +582,7 @@ config DRAFTLING_TALL_LINES
 # a few punctuation marks (dashes, curly quotes) their layouts type.
 config DRAFTLING_HAS_LATIN_EXT_A
     bool
-    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B || KB_LAYOUT_ENABLE_BEPO
+    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B || KB_LAYOUT_ENABLE_BEPO || KB_LAYOUT_ENABLE_FR_AFNOR
 
 # Latin extension font subset (components/fonts/*_latinx_NN.c): the
 # Vietnamese letters, the dong sign and typographic punctuation, for

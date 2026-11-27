@@ -159,6 +159,9 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
     KB_LAYOUT_BEPO,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_AFNOR
+    KB_LAYOUT_FR_AFNOR,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 

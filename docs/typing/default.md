@@ -1,16 +1,17 @@
 # Typing guide: default pack (European, Canadian and Brazilian layouts)
 
-The default firmware has US-English plus 26 layouts: Ukrainian (UA),
+The default firmware has US-English plus 27 layouts: Ukrainian (UA),
 German (DE), French (FR), Hebrew (HE), Swiss German (DE-CH), Swiss
 French (FR-CH), Italian (IT), Portuguese (PT), Brazilian Portuguese
 ABNT2 (BR), Spanish (ES), United
 Kingdom (GB), Swedish / Finnish (SE/FI), Norwegian (NO), Danish (DK),
 Polish (PL), Czech (CZ), Slovak (SK), Hungarian (HU), Romanian (RO),
 Croatian / Slovenian (HR/SI), Turkish Q (TR), Canadian French
-(FR-CA), Crimean Tatar Latin (CRH, CRH-B), US Dvorak (DV) and French
-BEPO (BEPO). Each one matches the standard Windows layout of its
-country (Crimean Tatar: Ave Team's layout; Dvorak and BEPO: their
-standard layouts), so use a keyboard with those keys printed on it.
+(FR-CA), Crimean Tatar Latin (CRH, CRH-B), US Dvorak (DV), French
+BEPO (BEPO) and the French standard AZERTY of 2019 (FR-AF). Each one
+matches the standard Windows layout of its country (Crimean Tatar:
+Ave Team's layout; Dvorak, BEPO and AZERTY AFNOR: their standard
+layouts), so use a keyboard with those keys printed on it.
 
 ## Getting started
 
@@ -97,3 +98,24 @@ caron, `3` circumflex, `4` breve, `5` ring, `6` ogonek, `8` dot above,
   below (AltGr + Shift + Q) for the Vietnamese vowels and, with dot
   below, the consonants of transliterations. Horn, hook and dot below
   followed by Space type `'`, `?` and `.`.
+- **AZERTY AFNOR** (FR-AF): the French standard AZERTY of 2019 (AFNOR
+  NF Z71-300, https://norme-azerty.fr/), as on Linux (`fr(afnor)`),
+  for an ISO keyboard. The letters are where the classic AZERTY (FR)
+  has them; the number row types `a-grave e-acute e-grave
+  e-circumflex ( )`, the curly single quotes and `<< >>`, with the
+  digits on Shift. With Caps Lock on, the four accented keys type
+  their capitals (AltGr + Shift does too). Right of the zero are
+  `'` (Shift `"`) and the dead circumflex (Shift: diaeresis), left of
+  the one `@` (Shift `#`); `- + / * . , : ; < >` each have their own
+  key. AltGr gives every character printed on the keyboard: c-cedilla
+  on C, oe on O, ae on A, u-grave on U, the dashes, French quotes,
+  no-break spaces (AltGr + Space, with Shift a narrow one) and the
+  dead keys: acute and grave (AltGr + e-acute / e-grave), breve (AltGr
+  + `@`), double acute, macron, ring, caron, dot above and below (I),
+  currency (F), Greek (G), stroke (K and B), cedilla and ogonek (V),
+  tilde (N) and comma below. **AltGr + H** then a key types the
+  "European" letters: a / o the ordinals, e schwa, t thorn, i dotless
+  i (Shift: I with a dot), d eth, g eng, j ij, s long s, and on 7, 8,
+  9, 0 and `'` the low and English quotes (with Shift the single
+  guillemets). The dead inverted breve, double grave and macron below
+  of the standard type nothing: their letters are not in the fonts.

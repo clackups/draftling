@@ -93,7 +93,9 @@ static uint64_t s_active_mask = default_active_mask();
  * layer is not the capital of the letter (the Czech number row, the
  * Swiss accented letters). Other letter keys need no entry; see
  * is_upper_letter(). */
-enum { L_NORMAL, L_SHIFT, L_ALTGR, L_ALTGR_SHIFT, L_CAPS };
+/* L_LVL5 / L_LVL6: the key after the level-5 latch (LV5_LATCH, AltGr +
+ * H on the French AZERTY AFNOR layout), without and with Shift. */
+enum { L_NORMAL, L_SHIFT, L_ALTGR, L_ALTGR_SHIFT, L_CAPS, L_LVL5, L_LVL6 };
 
 typedef struct {
     uint8_t key;      /* HID keycode */
@@ -127,6 +129,9 @@ typedef struct {
 #define DK_HORN   "\x01'"
 #define DK_HOOK   "\x01?"
 #define DK_DOTBEL "\x01."
+/* Level-5 latch: types nothing; the next key gives its L_LVL5 /
+ * L_LVL6 output (or its usual one when it has none). */
+#define LV5_LATCH "\x02"
 
 /* Latin-1 / punctuation characters used by the European layouts. */
 #define CH_SECT   "\xC2\xA7"  /* section sign */
@@ -4261,6 +4266,229 @@ static const key_entry_t BEPO_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_BEPO */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_AFNOR
+/* ------------------------------------------------------------------ */
+/* French AZERTY, AFNOR (NF Z71-300)                                  */
+/* ------------------------------------------------------------------ */
+/* The French standard AZERTY of 2019 (norme-azerty.fr), after XKB
+ * "fr(afnor)", on an ISO keyboard. Like the classic AZERTY the number
+ * row types a-grave, e-acute, e-grave, e-circumflex, ( ) and quotes
+ * with the digits on Shift; Caps Lock gives the capital accented
+ * letters there (L_CAPS), as do AltGr + Shift. ' " is right of the
+ * zero, the dead circumflex / diaeresis next to it, @ # left of the
+ * one, and - + / * . , : ; < > on their own keys. AltGr + H is the
+ * level-5 latch ("European letters"): the next key types its L_LVL5
+ * / L_LVL6 character (ordinals, schwa, thorn, dotless i, eth, eng,
+ * ij, long s, the low and single quotes). XKB's dead inverted breve,
+ * double grave and macron below are left out: the fonts have none of
+ * their letters. Pulls in the Latin Extended-A font subset. */
+#define CH_NBSP_AF "\xC2\xA0"
+static const char *const FR_AFNOR_NORMAL[] = {
+    /* 04 a */ "q",
+    /* 05 b */ "b",
+    /* 06 c */ "c",
+    /* 07 d */ "d",
+    /* 08 e */ "e",
+    /* 09 f */ "f",
+    /* 0A g */ "g",
+    /* 0B h */ "h",
+    /* 0C i */ "i",
+    /* 0D j */ "j",
+    /* 0E k */ "k",
+    /* 0F l */ "l",
+    /* 10 m */ ".",
+    /* 11 n */ "n",
+    /* 12 o */ "o",
+    /* 13 p */ "p",
+    /* 14 q */ "a",
+    /* 15 r */ "r",
+    /* 16 s */ "s",
+    /* 17 t */ "t",
+    /* 18 u */ "u",
+    /* 19 v */ "v",
+    /* 1A w */ "z",
+    /* 1B x */ "x",
+    /* 1C y */ "y",
+    /* 1D z */ "w",
+    /* 1E-27 */ CH_a_GRV, CH_e_ACU, CH_e_GRV, "\xC3\xAA", "(", ")",
+    "\xE2\x80\x98",            /* U+2018 left single quote */
+    "\xE2\x80\x99",            /* U+2019 right single quote */
+    CH_LAQUO, CH_RAQUO,
+    CTRL_KEYS,
+    /* 2D */ "'",
+    /* 2E */ DK_CIRC,
+    /* 2F */ "-",
+    /* 30 */ "+",
+    /* 31 */ "*",
+    /* 32 */ "*",
+    /* 33 */ "m",
+    /* 34 */ "/",
+    /* 35 */ "@",
+    /* 36 */ ",", ":", ";",
+};
+
+static const char *const FR_AFNOR_SHIFT[] = {
+    /* 04 a */ "Q",
+    /* 05 b */ "B",
+    /* 06 c */ "C",
+    /* 07 d */ "D",
+    /* 08 e */ "E",
+    /* 09 f */ "F",
+    /* 0A g */ "G",
+    /* 0B h */ "H",
+    /* 0C i */ "I",
+    /* 0D j */ "J",
+    /* 0E k */ "K",
+    /* 0F l */ "L",
+    /* 10 m */ "?",
+    /* 11 n */ "N",
+    /* 12 o */ "O",
+    /* 13 p */ "P",
+    /* 14 q */ "A",
+    /* 15 r */ "R",
+    /* 16 s */ "S",
+    /* 17 t */ "T",
+    /* 18 u */ "U",
+    /* 19 v */ "V",
+    /* 1A w */ "Z",
+    /* 1B x */ "X",
+    /* 1C y */ "Y",
+    /* 1D z */ "W",
+    DIGITS,
+    /* 28-2C */ NULL, NULL, NULL, NULL, " ",
+    /* 2D */ "\x22",
+    /* 2E */ DK_DIAER,
+    /* 2F */ "\xE2\x80\x93",      /* U+2013 en dash */
+    /* 30 */ "\xC2\xB1",          /* U+00B1 plus-minus */
+    /* 31 */ "\xC2\xBD",          /* U+00BD one half */
+    /* 32 */ "\xC2\xBD",
+    /* 33 */ "M",
+    /* 34 */ "\\",
+    /* 35 */ "#",
+    /* 36 */ "!", "\xE2\x80\xA6", "=",   /* U+2026 ellipsis */
+};
+
+static const key_entry_t FR_AFNOR_EXTRA[] = {
+    /* Caps Lock on the accented letters of the number row. */
+    { 0x1E,   L_CAPS,        "\xC3\x80" },      /* U+00C0 A-grave */
+    { 0x1F,   L_CAPS,        CH_E_ACU },
+    { 0x20,   L_CAPS,        "\xC3\x88" },      /* U+00C8 E-grave */
+    { 0x21,   L_CAPS,        "\xC3\x8A" },      /* U+00CA E-circumflex */
+    /* Number row */
+    { 0x35,   L_ALTGR,       DK_BREVE },        /* @ key */
+    { 0x1E,   L_ALTGR,       CH_SECT },
+    { 0x1E,   L_ALTGR_SHIFT, "\xC3\x80" },
+    { 0x1F,   L_ALTGR,       DK_ACUTE },
+    { 0x1F,   L_ALTGR_SHIFT, CH_E_ACU },
+    { 0x20,   L_ALTGR,       DK_GRAVE },
+    { 0x20,   L_ALTGR_SHIFT, "\xC3\x88" },
+    { 0x21,   L_ALTGR,       "&" },
+    { 0x21,   L_ALTGR_SHIFT, "\xC3\x8A" },
+    { 0x22,   L_ALTGR,       "[" },
+    { 0x22,   L_ALTGR_SHIFT, DK_DACUTE },
+    { 0x23,   L_ALTGR,       "]" },
+    { 0x24,   L_ALTGR,       DK_MACRON },
+    { 0x24,   L_LVL5,        "\xE2\x80\x9A" },  /* U+201A low single quote */
+    { 0x24,   L_LVL6,        "\xE2\x80\xBA" },  /* U+203A single right guillemet */
+    { 0x25,   L_ALTGR,       "_" },
+    { 0x25,   L_ALTGR_SHIFT, "\xE2\x80\x94" },  /* U+2014 em dash */
+    { 0x25,   L_LVL5,        "\xE2\x80\x98" },  /* U+2018 */
+    { 0x25,   L_LVL6,        "\xE2\x80\xB9" },  /* U+2039 single left guillemet */
+    { 0x26,   L_ALTGR,       "\xE2\x80\x9C" },  /* U+201C left double quote */
+    { 0x26,   L_ALTGR_SHIFT, "\xE2\x80\xB9" },
+    { 0x26,   L_LVL5,        "\xE2\x80\x9E" },  /* U+201E low double quote */
+    { 0x26,   L_LVL6,        CH_RAQUO },
+    { 0x27,   L_ALTGR,       "\xE2\x80\x9D" },  /* U+201D right double quote */
+    { 0x27,   L_ALTGR_SHIFT, "\xE2\x80\xBA" },
+    { 0x27,   L_LVL5,        "\xE2\x80\x9C" },
+    { 0x27,   L_LVL6,        CH_LAQUO },
+    { 0x2D,   L_ALTGR,       CH_DEG },          /* ' key */
+    { 0x2D,   L_ALTGR_SHIFT, DK_RING },
+    { 0x2D,   L_LVL5,        "\xE2\x80\x99" },  /* U+2019 */
+    { 0x2E,   L_ALTGR,       DK_CARON },        /* dead circumflex */
+    /* Top row */
+    { 0x14,   L_ALTGR,       "\xC3\xA6" },      /* a: U+00E6 ae */
+    { 0x14,   L_ALTGR_SHIFT, "\xC3\x86" },      /* U+00C6 AE */
+    { 0x14,   L_LVL5,        CH_ORDF },
+    { 0x14,   L_LVL6,        CH_ORDF },
+    { 0x1A,   L_ALTGR,       CH_POUND },        /* z */
+    { 0x08,   L_ALTGR,       CH_EURO },         /* e */
+    { 0x08,   L_LVL5,        "\xC9\x99" },      /* U+0259 schwa */
+    { 0x08,   L_LVL6,        "\xC6\x8F" },      /* U+018F SCHWA */
+    { 0x15,   L_ALTGR,       "\xC2\xAE" },      /* r: U+00AE registered */
+    { 0x17,   L_ALTGR,       "{" },             /* t */
+    { 0x17,   L_ALTGR_SHIFT, "\xE2\x84\xA2" },  /* U+2122 trade mark */
+    { 0x17,   L_LVL5,        "\xC3\xBE" },      /* U+00FE thorn */
+    { 0x17,   L_LVL6,        "\xC3\x9E" },      /* U+00DE THORN */
+    { 0x1C,   L_ALTGR,       "}" },             /* y */
+    { 0x18,   L_ALTGR,       CH_u_GRV },        /* u */
+    { 0x18,   L_ALTGR_SHIFT, "\xC3\x99" },      /* U+00D9 U-grave */
+    { 0x0C,   L_ALTGR,       DK_DOT },          /* i */
+    { 0x0C,   L_ALTGR_SHIFT, DK_DOTBEL },
+    { 0x0C,   L_LVL5,        "\xC4\xB1" },      /* U+0131 dotless i */
+    { 0x0C,   L_LVL6,        "\xC4\xB0" },      /* U+0130 I with dot above */
+    { 0x12,   L_ALTGR,       "\xC5\x93" },      /* o: U+0153 oe */
+    { 0x12,   L_ALTGR_SHIFT, "\xC5\x92" },      /* U+0152 OE */
+    { 0x12,   L_LVL5,        CH_ORDM },
+    { 0x12,   L_LVL6,        CH_ORDM },
+    { 0x13,   L_ALTGR,       "%" },             /* p */
+    { 0x13,   L_ALTGR_SHIFT, "\xE2\x80\xB0" },  /* U+2030 per mille */
+    { 0x2F,   L_ALTGR,       "\xE2\x88\x92" },  /* - key: U+2212 minus */
+    { 0x2F,   L_ALTGR_SHIFT, "\xE2\x80\x91" },  /* U+2011 non-breaking hyphen */
+    { 0x30,   L_ALTGR,       "\xE2\x80\xA0" },  /* + key: U+2020 dagger */
+    { 0x30,   L_ALTGR_SHIFT, "\xE2\x80\xA1" },  /* U+2021 double dagger */
+    /* Home row */
+    { 0x04,   L_ALTGR,       "\xCE\xB8" },      /* q: U+03B8 theta */
+    { 0x04,   L_ALTGR_SHIFT, "\xCE\x98" },      /* U+0398 THETA */
+    { 0x16,   L_ALTGR,       "\xC3\x9F" },      /* s: U+00DF sharp s */
+    { 0x16,   L_ALTGR_SHIFT, "\xE1\xBA\x9E" },  /* U+1E9E capital sharp s */
+    { 0x16,   L_LVL5,        "\xC5\xBF" },      /* U+017F long s */
+    { 0x16,   L_LVL6,        "S" },
+    { 0x07,   L_ALTGR,       "$" },             /* d */
+    { 0x07,   L_LVL5,        "\xC3\xB0" },      /* U+00F0 eth */
+    { 0x07,   L_LVL6,        "\xC3\x90" },      /* U+00D0 ETH */
+    { 0x09,   L_ALTGR,       DK_CURR },         /* f */
+    { 0x0A,   L_ALTGR,       DK_GREEK },        /* g */
+    { 0x0A,   L_LVL5,        "\xC5\x8B" },      /* U+014B eng */
+    { 0x0A,   L_LVL6,        "\xC5\x8A" },      /* U+014A ENG */
+    { 0x0B,   L_ALTGR,       LV5_LATCH },       /* h */
+    { 0x0D,   L_LVL5,        "\xC4\xB3" },      /* j: U+0133 ij */
+    { 0x0D,   L_LVL6,        "\xC4\xB2" },      /* U+0132 IJ */
+    { 0x0E,   L_ALTGR,       DK_STROKE },       /* k */
+    { 0x0F,   L_ALTGR,       "|" },             /* l */
+    { 0x33,   L_ALTGR,       "\xE2\x88\x9E" },  /* m: U+221E infinity */
+    { 0x34,   L_ALTGR,       "\xC3\xB7" },      /* / key: U+00F7 division */
+    { 0x34,   L_ALTGR_SHIFT, "\xE2\x88\x9A" },  /* U+221A square root */
+    { 0x31,   L_ALTGR,       "\xC3\x97" },      /* * key: U+00D7 multiplication */
+    { 0x31,   L_ALTGR_SHIFT, "\xC2\xBC" },      /* U+00BC one quarter */
+    { 0x32,   L_ALTGR,       "\xC3\x97" },
+    { 0x32,   L_ALTGR_SHIFT, "\xC2\xBC" },
+    /* Bottom row */
+    { KC_ISO, L_NORMAL,      "<" },
+    { KC_ISO, L_SHIFT,       ">" },
+    { KC_ISO, L_ALTGR,       "\xE2\x89\xA4" },  /* U+2264 less or equal */
+    { KC_ISO, L_ALTGR_SHIFT, "\xE2\x89\xA5" },  /* U+2265 greater or equal */
+    { 0x1D,   L_ALTGR,       "\xCA\x92" },      /* w: U+0292 ezh */
+    { 0x1D,   L_ALTGR_SHIFT, "\xC6\xB7" },      /* U+01B7 EZH */
+    { 0x1B,   L_ALTGR,       "\xC2\xA9" },      /* x: U+00A9 copyright */
+    { 0x06,   L_ALTGR,       CH_c_CED },        /* c */
+    { 0x06,   L_ALTGR_SHIFT, CH_C_CED },
+    { 0x19,   L_ALTGR,       DK_CEDIL },        /* v */
+    { 0x19,   L_ALTGR_SHIFT, DK_OGONEK },
+    { 0x05,   L_ALTGR,       DK_STROKE },       /* b */
+    { 0x11,   L_ALTGR,       DK_TILDE },        /* n */
+    { 0x10,   L_ALTGR,       CH_IQUES },        /* . key */
+    { 0x36,   L_ALTGR,       CH_IEXCL },        /* , key */
+    { 0x36,   L_ALTGR_SHIFT, DK_COMMA },
+    { 0x37,   L_ALTGR,       CH_MIDDOT },       /* : key */
+    { 0x38,   L_ALTGR,       "\xE2\x89\x83" },  /* ; key: U+2243 asymptotically equal */
+    { 0x38,   L_ALTGR_SHIFT, "\xE2\x89\xA0" },  /* U+2260 not equal */
+    { 0x2C,   L_ALTGR,       CH_NBSP_AF },      /* Space: no-break space */
+    { 0x2C,   L_ALTGR_SHIFT, "\xE2\x80\xAF" },  /* U+202F narrow no-break space */
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_FR_AFNOR */
+
 #if defined(CONFIG_KB_LAYOUT_ENABLE_CRH) || defined(CONFIG_KB_LAYOUT_ENABLE_CRH_B)
 /* ------------------------------------------------------------------ */
 /* Crimean Tatar, Latin (Ave Team)                                    */
@@ -4498,6 +4726,9 @@ CHECK_TABLE(DVORAK_NORMAL); CHECK_TABLE(DVORAK_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
 CHECK_TABLE(BEPO_NORMAL); CHECK_TABLE(BEPO_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_AFNOR
+CHECK_TABLE(FR_AFNOR_NORMAL); CHECK_TABLE(FR_AFNOR_SHIFT);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #endif
@@ -4678,6 +4909,9 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
     [KB_LAYOUT_BEPO] = { BEPO_NORMAL, BEPO_SHIFT, BEPO_EXTRA, "BEPO", "French (B\xC3\x89PO)", KB_IME_NONE, true },
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_FR_AFNOR
+    [KB_LAYOUT_FR_AFNOR] = { FR_AFNOR_NORMAL, FR_AFNOR_SHIFT, FR_AFNOR_EXTRA, "FR-AF", "French (AZERTY, AFNOR)", KB_IME_NONE, true },
+#endif
 };
 
 /* ------------------------------------------------------------------ */
@@ -4787,6 +5021,10 @@ static const dead_key_t s_dead_keys[] = {
 /* Pending dead key (a DK_* entry), or NULL. */
 static const char *s_dead = NULL;
 
+/* Level-5 latch pressed (LV5_LATCH); the next key types its L_LVL5 /
+ * L_LVL6 output. */
+static bool s_lvl5 = false;
+
 extern "C" kb_layout_id_t kb_layout_get(void)
 {
     return s_layout;
@@ -4819,6 +5057,7 @@ extern "C" const char *kb_layout_name(kb_layout_id_t layout)
 extern "C" kb_layout_id_t kb_layout_next(void)
 {
     s_dead = NULL;
+    s_lvl5 = false;
     kb_layout_id_t next = s_layout;
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
         next = (kb_layout_id_t)((next + 1) % KB_LAYOUT_COUNT);
@@ -4834,7 +5073,7 @@ extern "C" bool kb_layout_select(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return false;
     if (!(s_active_mask & (1ull << layout))) return false;
-    if (layout != s_layout) s_dead = NULL;
+    if (layout != s_layout) { s_dead = NULL; s_lvl5 = false; }
     s_layout = layout;
     return true;
 }
@@ -4849,6 +5088,7 @@ extern "C" kb_layout_id_t kb_layout_force_latin(void)
     kb_layout_id_t prev = s_layout;
     if (plain_latin(s_layout)) return prev;
     s_dead = NULL;
+    s_lvl5 = false;
     kb_layout_id_t id = s_layout;
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
         id = (kb_layout_id_t)((id + 1) % KB_LAYOUT_COUNT);
@@ -4864,7 +5104,7 @@ extern "C" kb_layout_id_t kb_layout_force_latin(void)
 extern "C" void kb_layout_restore(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return;
-    if (layout != s_layout) s_dead = NULL;
+    if (layout != s_layout) { s_dead = NULL; s_lvl5 = false; }
     s_layout = layout;
     /* The active set may have changed meanwhile. */
     if (!(s_active_mask & (1ull << s_layout))) kb_layout_next();
@@ -4974,6 +5214,33 @@ static bool is_upper_letter(const char *s)
     return false;
 }
 
+/* True if the UTF-8 string is a single lowercase letter that has a
+ * capital form, in the ranges is_upper_letter() knows. */
+static bool is_lower_letter(const char *s)
+{
+    if (!s) return false;
+    const uint8_t *u = (const uint8_t *)s;
+    uint32_t cp;
+    if (u[0] < 0x80) {
+        if (u[1]) return false;
+        cp = u[0];
+    } else if ((u[0] & 0xE0) == 0xC0 && (u[1] & 0xC0) == 0x80 && !u[2]) {
+        cp = ((uint32_t)(u[0] & 0x1F) << 6) | (u[1] & 0x3F);
+    } else {
+        return false;
+    }
+    if (cp >= 'a' && cp <= 'z') return true;
+    if (cp >= 0xDF && cp <= 0xFF && cp != 0xF7) return true;   /* Latin-1 */
+    if (cp >= 0x100 && cp <= 0x137) return (cp & 1);
+    if (cp >= 0x139 && cp <= 0x148) return !(cp & 1);
+    if (cp >= 0x14A && cp <= 0x177) return (cp & 1);
+    if (cp >= 0x179 && cp <= 0x17E) return !(cp & 1);
+    if (cp == 0x219 || cp == 0x21B) return true;               /* Romanian */
+    if (cp >= 0x430 && cp <= 0x45F) return true;               /* Cyrillic */
+    if (cp >= 0x460 && cp <= 0x4FF && (cp & 1)) return true;
+    return false;
+}
+
 /* Output of a key on one layer, or NULL. */
 static const char *key_lookup(const layout_table_t *lt, uint8_t keycode, int layer)
 {
@@ -5050,7 +5317,7 @@ extern "C" bool kb_layout_has_altgr(void)
 
 extern "C" bool kb_layout_dead_key_pending(void)
 {
-    return s_dead != NULL;
+    return s_dead != NULL || s_lvl5;
 }
 
 extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
@@ -5063,10 +5330,32 @@ extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
 
     const char *result = NULL;
 
-    if (altgr) {
-        /* Caps Lock applies to AltGr letters too (Polish AltGr + a). */
+    if (s_lvl5) {
+        /* The key after the level-5 latch; one without a level-5
+         * character types as usual. */
+        s_lvl5 = false;
         bool s = shift;
-        if (s_caps_lock && is_upper_letter(key_lookup(lt, keycode, L_ALTGR_SHIFT)))
+        if (s_caps_lock && is_upper_letter(key_lookup(lt, keycode, L_LVL6)))
+            s = !s;
+        if (s) result = key_lookup(lt, keycode, L_LVL6);
+        if (!result) result = key_lookup(lt, keycode, L_LVL5);
+        if (result) {
+            if (s_dead) {
+                const char *dk = s_dead;
+                s_dead = NULL;
+                return apply_dead_key(dk, result);
+            }
+            return result;
+        }
+    }
+
+    if (altgr) {
+        /* Caps Lock applies to AltGr letters too (Polish AltGr + a),
+         * but not to a key whose AltGr output is no letter (AFNOR:
+         * AltGr + a-grave is the section sign, AltGr + Shift A-grave). */
+        bool s = shift;
+        if (s_caps_lock && is_upper_letter(key_lookup(lt, keycode, L_ALTGR_SHIFT)) &&
+            is_lower_letter(key_lookup(lt, keycode, L_ALTGR)))
             s = !s;
         if (s) result = key_lookup(lt, keycode, L_ALTGR_SHIFT);
         if (!result) result = key_lookup(lt, keycode, L_ALTGR);
@@ -5078,6 +5367,10 @@ extern "C" const char *kb_layout_translate(uint8_t keycode, uint8_t modifier)
         result = key_lookup(lt, keycode, shift ? L_SHIFT : L_NORMAL);
     }
 
+    if (result && result[0] == '\x02') {
+        s_lvl5 = true;           /* a pending dead key waits on */
+        return NULL;
+    }
     if (s_dead) {
         const char *dk = s_dead;
         s_dead = NULL;

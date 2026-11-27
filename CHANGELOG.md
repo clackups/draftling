@@ -8,6 +8,13 @@ in the git log.
 
 ### Added
 
+- **French AZERTY AFNOR layout**: the default firmware now includes
+  the French standard AZERTY of 2019 (FR-AF, https://norme-azerty.fr/)
+  next to the classic AZERTY. Turn it on in F1 -> Settings ->
+  Keyboard -> Active layouts. It has every character of the standard:
+  the capital accented letters with Caps Lock, French quotes and
+  no-break spaces, the dead keys, and AltGr + H for the "European"
+  letters (schwa, thorn, eth, eng, ...). See docs/typing/default.md.
 - **Dvorak and BEPO keyboard layouts**: the default firmware now
   includes the US Dvorak layout (DV) and the French BEPO layout
   (BEPO). Turn them on in F1 -> Settings -> Keyboard -> Active
