@@ -81,6 +81,10 @@ in the git log.
 
 ### Fixed
 
+- **Keyboard layout kept across restarts**: after sleep or a restart
+  Draftling always started with the US layout, even when another one
+  was in use. It now comes back with the layout that was selected
+  last (Ctrl+L, Win+Space or F1 -> Keyboard).
 - **Spaces at the end of a full row**: pressing Space at the end of a
   row that was already full seemed to do nothing -- the cursor went
   off the right edge, and the spaces disappeared once the next letter

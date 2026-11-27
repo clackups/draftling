@@ -936,6 +936,45 @@ static void save_active_layouts_to_nvs(void)
     }
 }
 
+/* The layout selected with Ctrl+L / Win+Space / F1 -> Keyboard, kept
+ * across restarts and deep sleep. Stored by its short name, not its id:
+ * the ids follow the compiled-in layouts and differ between language
+ * packs. */
+#define NVS_KEY_CUR_LAYOUT "curlayout"
+
+static void load_current_layout_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) != ESP_OK) return;
+    char name[16];
+    size_t len = sizeof(name);
+    if (nvs_get_str(h, NVS_KEY_CUR_LAYOUT, name, &len) == ESP_OK) {
+        for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+            if (strcmp(kb_layout_name((kb_layout_id_t)i), name) == 0) {
+                kb_layout_select((kb_layout_id_t)i);
+                break;
+            }
+        }
+    }
+    nvs_close(h);
+}
+
+/* Call after anything that may change the current layout; writes only
+ * when it differs from what was saved last. */
+static void save_current_layout_to_nvs(void)
+{
+    static kb_layout_id_t s_saved = KB_LAYOUT_COUNT;
+    kb_layout_id_t cur = kb_layout_get();
+    if (cur == s_saved) return;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_str(h, NVS_KEY_CUR_LAYOUT, kb_layout_name(cur)) == ESP_OK &&
+            nvs_commit(h) == ESP_OK)
+            s_saved = cur;
+        nvs_close(h);
+    }
+}
+
 /* ---- Screen margins ----
  * Pixels of physical panel hidden under an opaque bezel/enclosure
  * cover on each edge (main/app_config.h's DISPLAY_LOGICAL_WIDTH/
@@ -7057,6 +7096,8 @@ static void handle_settings_key(const kb_event_t *ev)
                  * emptied out from under the user. */
                 if (kb_layout_set_active(id, !kb_layout_is_active(id))) {
                     save_active_layouts_to_nvs();
+                    /* Removing the current layout switches to the next. */
+                    save_current_layout_to_nvs();
                     /* A layout that types in the status bar keeps the
                      * bars on screen. */
                     if (!bars_may_hide()) bars_show();
@@ -8376,6 +8417,7 @@ static void menu_activate_item(int row)
         break;
     case MENU_ITEM_KB_LAYOUT:
         kb_layout_next();
+        save_current_layout_to_nvs();
         refresh_menu_items();
         break;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
@@ -12167,6 +12209,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
     if ((ev->modifier & (KB_MOD_LGUI | KB_MOD_RGUI)) &&
         ev->keycode == KB_KEY_SPACE) {
         kb_layout_next();
+        save_current_layout_to_nvs();
         bars_flash_request();
         ensure_cursor_visible();
         editor_ui_refresh();
@@ -12320,6 +12363,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
         case 'l':
             /* Ctrl+L: cycle keyboard layout */
             kb_layout_next();
+            save_current_layout_to_nvs();
             bars_flash_request();
             break;
         case 'm':
@@ -15422,6 +15466,7 @@ extern "C" void editor_ui_init(void)
     load_name_suggest_from_nvs();
     load_hide_bars_from_nvs();
     load_active_layouts_from_nvs();
+    load_current_layout_from_nvs();
     load_margins_from_nvs();
     s_pending_portrait = display_orientation_get_pending_portrait();
     s_pending_upside_down = display_flip_get_pending_upside_down();

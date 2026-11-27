@@ -2130,6 +2130,13 @@ persisting this set to NVS and exposes it as the "Active layouts" row
 in F1 -> Settings -> Keyboard; it defaults to US only, plus the
 input-method layout of a VI / KO / JA / ZH pack. The title bar only
 shows the `[XX]` layout tag when `kb_layout_active_count() > 1`.
+The current layout itself survives restarts and deep sleep: every
+`kb_layout_next()` call (and removing the current layout from the
+active set) is followed by `save_current_layout_to_nvs()`, which
+stores the layout's short name (`kb_layout_name()`, NVS key
+`curlayout`; a name, since ids differ between packs), and
+`editor_ui_init()` restores it with `kb_layout_select()` after the
+active set is loaded.
 
 Caps Lock (`kb_layout_set_caps_lock()` / `kb_layout_get_caps_lock()`,
 HID keycode `KB_KEYCODE_CAPS_LOCK`) is applied inside

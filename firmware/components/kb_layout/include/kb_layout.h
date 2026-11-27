@@ -237,6 +237,11 @@ const char *kb_layout_long_name(kb_layout_id_t layout);
  * return its id. Layouts excluded from the active set are skipped. */
 kb_layout_id_t kb_layout_next(void);
 
+/* Make a layout the current one (e.g. the one saved before a restart).
+ * Refuses (returns false, no change) a layout that is not compiled in
+ * or not in the active set. */
+bool kb_layout_select(kb_layout_id_t layout);
+
 /* True when the active layout produces right-to-left script (Hebrew) */
 bool kb_layout_is_rtl(void);
 

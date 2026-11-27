@@ -4830,6 +4830,15 @@ extern "C" kb_layout_id_t kb_layout_next(void)
     return s_layout;
 }
 
+extern "C" bool kb_layout_select(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return false;
+    if (!(s_active_mask & (1ull << layout))) return false;
+    if (layout != s_layout) s_dead = NULL;
+    s_layout = layout;
+    return true;
+}
+
 extern "C" bool kb_layout_is_active(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return false;
