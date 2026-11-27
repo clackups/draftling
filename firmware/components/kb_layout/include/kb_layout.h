@@ -153,6 +153,12 @@ typedef enum {
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TE_AP
     KB_LAYOUT_TE_AP,
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DVORAK
+    KB_LAYOUT_DVORAK,
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
+    KB_LAYOUT_BEPO,
+#endif
     KB_LAYOUT_COUNT,
 } kb_layout_id_t;
 

@@ -4,7 +4,7 @@
  * Translates HID keycodes + modifier flags into UTF-8 strings
  * for US-English, Ukrainian, German, French, Hebrew, Swiss German,
  * Swiss French, Italian, Portuguese (Portugal and Brazil), Spanish, United Kingdom and the
- * other European layouts, and the Korean, Tamil InScript, Devanagari,
+ * other European layouts, Dvorak, French BEPO, and the Korean, Tamil InScript, Devanagari,
  * Bengali and Telugu layouts. Vietnamese, Japanese, Chinese and the other
  * Tamil layouts (Tamil 99, Typewriter, Taravinyas) type on the US
  * layout and are composed by an input method (components/ime/), and
@@ -3997,6 +3997,238 @@ static const key_entry_t BR_EXTRA[] = {
 };
 #endif /* CONFIG_KB_LAYOUT_ENABLE_BR */
 
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DVORAK
+/* ------------------------------------------------------------------ */
+/* English (Dvorak)                                                   */
+/* ------------------------------------------------------------------ */
+/* Windows "United States-Dvorak", XKB "us(dvorak)" without its AltGr
+ * dead keys: the letters and the ' , . ; / = - [ ] keys move, digits
+ * and the US symbols on them stay. Shortcuts follow the Dvorak
+ * letters (Ctrl+C is the key that types c). */
+static const char *const DVORAK_NORMAL[] = {
+    /* 04-0F */ "a","x","j","e",".","u","i","d","c","h","t","n",
+    /* 10-1B */ "m","b","r","l","'","p","o","y","g","k",",","q",
+    /* 1C-1D */ "f",";",
+    DIGITS, CTRL_KEYS,
+    /* 2D */ "[",
+    /* 2E */ "]",
+    /* 2F */ "/",
+    /* 30 */ "=",
+    /* 31 */ "\\",
+    /* 32 */ NULL,
+    /* 33 */ "s",
+    /* 34 */ "-",
+    /* 35 */ "`",
+    /* 36 */ "w", "v", "z",
+};
+
+static const char *const DVORAK_SHIFT[] = {
+    /* 04-0F */ "A","X","J","E",">","U","I","D","C","H","T","N",
+    /* 10-1B */ "M","B","R","L","\x22","P","O","Y","G","K","<","Q",
+    /* 1C-1D */ "F",":",
+    "!","@","#","$","%","^","&","*","(",")",
+    CTRL_KEYS,
+    /* 2D */ "{",
+    /* 2E */ "}",
+    /* 2F */ "?",
+    /* 30 */ "+",
+    /* 31 */ "|",
+    /* 32 */ NULL,
+    /* 33 */ "S",
+    /* 34 */ "_",
+    /* 35 */ "~",
+    /* 36 */ "W", "V", "Z",
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_DVORAK */
+
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
+/* ------------------------------------------------------------------ */
+/* French (BEPO)                                                      */
+/* ------------------------------------------------------------------ */
+/* The French ergonomic Dvorak-style layout, after XKB "fr(bepo)"
+ * (bepo 1.0) on an ISO keyboard. Letters a u i e , c t s r n m on the
+ * home row, e-acute / e-grave / a-grave / e-circumflex / c-cedilla on
+ * their own keys (e-circumflex on the ISO key left of Z), the symbols
+ * " << >> ( ) @ + - / * on the number row with the digits on Shift
+ * (and on Caps Lock, L_CAPS), a dead circumflex right of e-grave.
+ * Shift + Space types a no-break space, AltGr + Space "_". The AltGr
+ * layers leave out the characters the fonts do not have (the
+ * mathematical signs, the high-6 quotes, schwa, dagger, ...) and the
+ * dead keys Draftling does not know (stroke, macron, currency, horn,
+ * hook, dot below, Greek). */
+#define CH_NBSP  "\xC2\xA0"
+static const char *const BEPO_NORMAL[] = {
+    /* 04 a */ "a",
+    /* 05 b */ "k",
+    /* 06 c */ "x",
+    /* 07 d */ "i",
+    /* 08 e */ "p",
+    /* 09 f */ "e",
+    /* 0A g */ ",",
+    /* 0B h */ "c",
+    /* 0C i */ "d",
+    /* 0D j */ "t",
+    /* 0E k */ "s",
+    /* 0F l */ "r",
+    /* 10 m */ "q",
+    /* 11 n */ "'",
+    /* 12 o */ "l",
+    /* 13 p */ "j",
+    /* 14 q */ "b",
+    /* 15 r */ "o",
+    /* 16 s */ "u",
+    /* 17 t */ CH_e_GRV,
+    /* 18 u */ "v",
+    /* 19 v */ ".",
+    /* 1A w */ CH_e_ACU,
+    /* 1B x */ "y",
+    /* 1C y */ DK_CIRC,
+    /* 1D z */ CH_a_GRV,
+    /* 1E-27 */ "\x22", CH_LAQUO, CH_RAQUO, "(", ")", "@", "+", "-", "/", "*",
+    CTRL_KEYS,
+    /* 2D */ "=",
+    /* 2E */ "%",
+    /* 2F */ "z",
+    /* 30 */ "w",
+    /* 31 */ CH_c_CED,
+    /* 32 */ CH_c_CED,
+    /* 33 */ "n",
+    /* 34 */ "m",
+    /* 35 */ "$",
+    /* 36 */ "g", "h", "f",
+};
+
+static const char *const BEPO_SHIFT[] = {
+    /* 04 a */ "A",
+    /* 05 b */ "K",
+    /* 06 c */ "X",
+    /* 07 d */ "I",
+    /* 08 e */ "P",
+    /* 09 f */ "E",
+    /* 0A g */ ";",
+    /* 0B h */ "C",
+    /* 0C i */ "D",
+    /* 0D j */ "T",
+    /* 0E k */ "S",
+    /* 0F l */ "R",
+    /* 10 m */ "Q",
+    /* 11 n */ "?",
+    /* 12 o */ "L",
+    /* 13 p */ "J",
+    /* 14 q */ "B",
+    /* 15 r */ "O",
+    /* 16 s */ "U",
+    /* 17 t */ "\xC3\x88",     /* E-grave */
+    /* 18 u */ "V",
+    /* 19 v */ ":",
+    /* 1A w */ CH_E_ACU,
+    /* 1B x */ "Y",
+    /* 1C y */ "!",
+    /* 1D z */ "\xC3\x80",     /* A-grave */
+    DIGITS,
+    /* 28-2C */ NULL, NULL, NULL, NULL, CH_NBSP,
+    /* 2D */ CH_DEG,
+    /* 2E */ "`",
+    /* 2F */ "Z",
+    /* 30 */ "W",
+    /* 31 */ CH_C_CED,
+    /* 32 */ CH_C_CED,
+    /* 33 */ "N",
+    /* 34 */ "M",
+    /* 35 */ "#",
+    /* 36 */ "G", "H", "F",
+};
+
+static const key_entry_t BEPO_EXTRA[] = {
+    /* Caps Lock on the number row gives the digits. */
+    { 0x1E,   L_CAPS,        "1" },
+    { 0x1F,   L_CAPS,        "2" },
+    { 0x20,   L_CAPS,        "3" },
+    { 0x21,   L_CAPS,        "4" },
+    { 0x22,   L_CAPS,        "5" },
+    { 0x23,   L_CAPS,        "6" },
+    { 0x24,   L_CAPS,        "7" },
+    { 0x25,   L_CAPS,        "8" },
+    { 0x26,   L_CAPS,        "9" },
+    { 0x27,   L_CAPS,        "0" },
+    /* Number row */
+    { 0x35,   L_ALTGR,       "\xE2\x80\x93" },  /* $ key: U+2013 en dash */
+    { 0x35,   L_ALTGR_SHIFT, "\xC2\xB6" },      /* U+00B6 pilcrow */
+    { 0x1E,   L_ALTGR,       "\xE2\x80\x94" },  /* U+2014 em dash */
+    { 0x1E,   L_ALTGR_SHIFT, "\xE2\x80\x9E" },  /* U+201E low double quote */
+    { 0x1F,   L_ALTGR,       "<" },
+    { 0x20,   L_ALTGR,       ">" },
+    { 0x20,   L_ALTGR_SHIFT, "\xE2\x80\x9D" },  /* U+201D right double quote */
+    { 0x21,   L_ALTGR,       "[" },
+    { 0x22,   L_ALTGR,       "]" },
+    { 0x23,   L_ALTGR,       "^" },
+    { 0x24,   L_ALTGR,       "\xC2\xB1" },      /* U+00B1 plus-minus */
+    { 0x24,   L_ALTGR_SHIFT, CH_NOT },
+    { 0x25,   L_ALTGR_SHIFT, "\xC2\xBC" },      /* U+00BC one quarter */
+    { 0x26,   L_ALTGR,       "\xC3\xB7" },      /* U+00F7 division */
+    { 0x26,   L_ALTGR_SHIFT, "\xC2\xBD" },      /* U+00BD one half */
+    { 0x27,   L_ALTGR,       "\xC3\x97" },      /* U+00D7 multiplication */
+    { 0x27,   L_ALTGR_SHIFT, "\xC2\xBE" },      /* U+00BE three quarters */
+    /* Top row */
+    { 0x14,   L_ALTGR,       "|" },             /* b */
+    { 0x14,   L_ALTGR_SHIFT, CH_BROKEN },
+    { 0x1A,   L_ALTGR,       DK_ACUTE },        /* e-acute */
+    { 0x1A,   L_ALTGR_SHIFT, DK_DACUTE },
+    { 0x08,   L_ALTGR,       "&" },             /* p */
+    { 0x08,   L_ALTGR_SHIFT, CH_SECT },
+    { 0x15,   L_ALTGR,       "\xC5\x93" },      /* o: U+0153 oe */
+    { 0x15,   L_ALTGR_SHIFT, "\xC5\x92" },      /* U+0152 OE */
+    { 0x17,   L_ALTGR,       DK_GRAVE },        /* e-grave */
+    { 0x17,   L_ALTGR_SHIFT, "`" },
+    { 0x1C,   L_ALTGR,       CH_IEXCL },        /* dead circumflex */
+    { 0x18,   L_ALTGR,       DK_CARON },        /* v */
+    { 0x0C,   L_ALTGR,       "\xC3\xB0" },      /* d: U+00F0 eth */
+    { 0x0C,   L_ALTGR_SHIFT, "\xC3\x90" },      /* U+00D0 ETH */
+    { 0x13,   L_ALTGR,       "\xC4\xB3" },      /* j: U+0133 ij */
+    { 0x13,   L_ALTGR_SHIFT, "\xC4\xB2" },      /* U+0132 IJ */
+    { 0x30,   L_ALTGR,       DK_BREVE },        /* w */
+    /* Home row */
+    { 0x04,   L_ALTGR,       "\xC3\xA6" },      /* a: U+00E6 ae */
+    { 0x04,   L_ALTGR_SHIFT, "\xC3\x86" },      /* U+00C6 AE */
+    { 0x16,   L_ALTGR,       CH_u_GRV },        /* u */
+    { 0x16,   L_ALTGR_SHIFT, "\xC3\x99" },      /* U+00D9 U-grave */
+    { 0x07,   L_ALTGR,       DK_DIAER },        /* i */
+    { 0x07,   L_ALTGR_SHIFT, DK_DOT },
+    { 0x09,   L_ALTGR,       CH_EURO },         /* e */
+    { 0x0A,   L_ALTGR,       "\xE2\x80\x99" },  /* , key: U+2019 apostrophe */
+    { 0x0B,   L_ALTGR,       "\xC2\xA9" },      /* c: U+00A9 copyright */
+    { 0x0B,   L_ALTGR_SHIFT, "\xC5\xBF" },      /* U+017F long s */
+    { 0x0D,   L_ALTGR,       "\xC3\xBE" },      /* t: U+00FE thorn */
+    { 0x0D,   L_ALTGR_SHIFT, "\xC3\x9E" },      /* U+00DE THORN */
+    { 0x0E,   L_ALTGR,       "\xC3\x9F" },      /* s: U+00DF sharp s */
+    { 0x0F,   L_ALTGR,       "\xC2\xAE" },      /* r: U+00AE registered */
+    { 0x33,   L_ALTGR,       DK_TILDE },        /* n */
+    { 0x34,   L_ALTGR_SHIFT, CH_ORDM },         /* m */
+    { 0x31,   L_ALTGR,       DK_CEDIL },        /* c-cedilla */
+    { 0x31,   L_ALTGR_SHIFT, DK_COMMA },
+    { 0x32,   L_ALTGR,       DK_CEDIL },
+    { 0x32,   L_ALTGR_SHIFT, DK_COMMA },
+    /* Bottom row */
+    { KC_ISO, L_NORMAL,      "\xC3\xAA" },      /* U+00EA e-circumflex */
+    { KC_ISO, L_SHIFT,       "\xC3\x8A" },      /* U+00CA E-circumflex */
+    { KC_ISO, L_ALTGR,       "/" },
+    { 0x1D,   L_ALTGR,       "\\" },            /* a-grave */
+    { 0x1B,   L_ALTGR,       "{" },             /* y */
+    { 0x06,   L_ALTGR,       "}" },             /* x */
+    { 0x06,   L_ALTGR_SHIFT, "\xE2\x80\x99" },  /* U+2019 */
+    { 0x19,   L_ALTGR,       "\xE2\x80\xA6" },  /* . key: U+2026 ellipsis */
+    { 0x19,   L_ALTGR_SHIFT, CH_MIDDOT },
+    { 0x05,   L_ALTGR,       "~" },             /* k */
+    { 0x11,   L_ALTGR,       CH_IQUES },        /* ' key */
+    { 0x10,   L_ALTGR,       DK_RING },         /* q */
+    { 0x36,   L_ALTGR,       CH_MICRO },        /* g */
+    { 0x38,   L_ALTGR,       DK_OGONEK },       /* f */
+    { 0x38,   L_ALTGR_SHIFT, CH_ORDF },
+    { 0x2C,   L_ALTGR,       "_" },             /* Space */
+    { 0, 0, NULL },
+};
+#endif /* CONFIG_KB_LAYOUT_ENABLE_BEPO */
+
 #if defined(CONFIG_KB_LAYOUT_ENABLE_CRH) || defined(CONFIG_KB_LAYOUT_ENABLE_CRH_B)
 /* ------------------------------------------------------------------ */
 /* Crimean Tatar, Latin (Ave Team)                                    */
@@ -4228,6 +4460,12 @@ CHECK_TABLE(CRH_B_NORMAL); CHECK_TABLE(CRH_B_SHIFT);
 #ifdef CONFIG_KB_LAYOUT_ENABLE_BR
 CHECK_TABLE(BR_NORMAL); CHECK_TABLE(BR_SHIFT);
 #endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DVORAK
+CHECK_TABLE(DVORAK_NORMAL); CHECK_TABLE(DVORAK_SHIFT);
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
+CHECK_TABLE(BEPO_NORMAL); CHECK_TABLE(BEPO_SHIFT);
+#endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_KO
 CHECK_TABLE(KO_NORMAL); CHECK_TABLE(KO_SHIFT);
 #endif
@@ -4401,6 +4639,12 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_TE_AP
     [KB_LAYOUT_TE_AP] = { US_NORMAL, US_SHIFT, TE_ONEKEY_EXTRA, "TE-AP", "Telugu Apple", KB_IME_TELUGU_APPLE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_DVORAK
+    [KB_LAYOUT_DVORAK] = { DVORAK_NORMAL, DVORAK_SHIFT, NULL, "DV", "English (Dvorak)", KB_IME_NONE, true },
+#endif
+#ifdef CONFIG_KB_LAYOUT_ENABLE_BEPO
+    [KB_LAYOUT_BEPO] = { BEPO_NORMAL, BEPO_SHIFT, BEPO_EXTRA, "BEPO", "French (B\xC3\x89PO)", KB_IME_NONE, true },
 #endif
 };
 

@@ -8,6 +8,11 @@ in the git log.
 
 ### Added
 
+- **Dvorak and BEPO keyboard layouts**: the default firmware now
+  includes the US Dvorak layout (DV) and the French BEPO layout
+  (BEPO). Turn them on in F1 -> Settings -> Keyboard -> Active
+  layouts. See docs/typing/default.md for what BEPO's AltGr keys
+  type.
 - **LilyGO T5 4.7" E-Paper (ESP32-S3) and MicroJournal Rev.7**: new
   presets `lilygo_t5_47_s3` for the LilyGO T5 4.7" e-paper board
   (ESP32-S3 version, documents on its MicroSD card) and

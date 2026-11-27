@@ -1,15 +1,16 @@
 # Typing guide: default pack (European, Canadian and Brazilian layouts)
 
-The default firmware has US-English plus 24 layouts: Ukrainian (UA),
+The default firmware has US-English plus 26 layouts: Ukrainian (UA),
 German (DE), French (FR), Hebrew (HE), Swiss German (DE-CH), Swiss
 French (FR-CH), Italian (IT), Portuguese (PT), Brazilian Portuguese
 ABNT2 (BR), Spanish (ES), United
 Kingdom (GB), Swedish / Finnish (SE/FI), Norwegian (NO), Danish (DK),
 Polish (PL), Czech (CZ), Slovak (SK), Hungarian (HU), Romanian (RO),
 Croatian / Slovenian (HR/SI), Turkish Q (TR), Canadian French
-(FR-CA) and Crimean Tatar Latin (CRH, CRH-B). Each one matches the
-standard Windows layout of its country (Crimean Tatar: Ave Team's
-layout), so use a keyboard with those keys printed on it.
+(FR-CA), Crimean Tatar Latin (CRH, CRH-B), US Dvorak (DV) and French
+BEPO (BEPO). Each one matches the standard Windows layout of its
+country (Crimean Tatar: Ave Team's layout; Dvorak and BEPO: their
+standard layouts), so use a keyboard with those keys printed on it.
 
 ## Getting started
 
@@ -77,3 +78,18 @@ caron, `3` circumflex, `4` breve, `5` ring, `6` ogonek, `8` dot above,
   **CRH-B** is the same layout with the I key and the key right of
   s-cedilla swapped (I key: i, with Shift the dotted capital I; AltGr +
   i: the dotless i).
+- **Dvorak** (DV): the US Dvorak layout. Ctrl / Alt shortcuts follow
+  the Dvorak letters (Ctrl+C is the key that types c).
+- **BEPO**: the French ergonomic layout, as on Linux (`fr(bepo)`), for
+  an ISO keyboard: e-circumflex on the key left of Z, c-cedilla right
+  of M. The number row types `" << >> ( ) @ + - / *` and the digits
+  with Shift or Caps Lock. The key right of e-grave is a dead
+  circumflex. Shift + Space types a no-break space (for the French
+  spacing before `: ; ! ?`), AltGr + Space `_`. AltGr gives the
+  characters printed on BEPO keyboards, with the dead keys acute,
+  double acute, grave, caron, breve, diaeresis, dot above, tilde,
+  cedilla, comma below, ring and ogonek. A few AltGr characters
+  Draftling's fonts do not have (the mathematical signs, the
+  opening curly quotes, schwa, the daggers, ...) and the dead keys
+  stroke, macron, currency, horn, hook, dot below and Greek are left
+  out.

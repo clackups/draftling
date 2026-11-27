@@ -485,7 +485,7 @@ through the active ones, and so does the keyboard layout entry of the
 **F1 menu**. The current layout is shown in the title bar when more
 than one is active.
 
-The **default language pack** has these 24 layouts:
+The **default language pack** has these 26 layouts:
 
 | Code | Layout |
 |------|--------|
@@ -514,6 +514,8 @@ The **default language pack** has these 24 layouts:
 | FR-CA | Canadian French, traditional (QWERTY) |
 | CRH | Crimean Tatar, Latin ([Ave Team](https://keyboard.aveteam.org/en/crh-more)) |
 | CRH-B | Crimean Tatar, Latin, variant B (i and dotless i keys swapped) |
+| DV | English (Dvorak) |
+| BEPO | French (BEPO) |
 
 The accent keys of the European layouts are dead keys, as on a
 computer: press the accent, then the letter (acute + e gives e-acute).

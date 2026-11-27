@@ -527,6 +527,25 @@ config KB_LAYOUT_ENABLE_TE_AP
         types the Telugu digits. Pulls in the Telugu fonts and
         HarfBuzz.
 
+config KB_LAYOUT_ENABLE_DVORAK
+    bool "English (Dvorak)"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the US Dvorak keyboard layout (Windows "United
+        States-Dvorak", XKB "us(dvorak)"). Shortcuts follow the Dvorak
+        letters.
+
+config KB_LAYOUT_ENABLE_BEPO
+    bool "French (BEPO)"
+    default y if DRAFTLING_LANG_PACK_ALL
+    default y if DRAFTLING_LANG_PACK_DEFAULT
+    help
+        Enable the French ergonomic BEPO layout (XKB "fr(bepo)"):
+        accented letters on their own keys, the digits on Shift, and
+        the AltGr layer with dead keys. Pulls in the Latin Extended-A
+        font subset (oe, ij, dashes, quotes).
+
 config DRAFTLING_HAS_TELUGU
     bool
     default y if KB_LAYOUT_ENABLE_TE_IN || KB_LAYOUT_ENABLE_TE_SA || KB_LAYOUT_ENABLE_TE_RTS || KB_LAYOUT_ENABLE_TE_PO || KB_LAYOUT_ENABLE_TE_AP
@@ -550,7 +569,7 @@ config DRAFTLING_TALL_LINES
 # a few punctuation marks (dashes, curly quotes) their layouts type.
 config DRAFTLING_HAS_LATIN_EXT_A
     bool
-    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B
+    default y if KB_LAYOUT_ENABLE_PL || KB_LAYOUT_ENABLE_CZ || KB_LAYOUT_ENABLE_SK || KB_LAYOUT_ENABLE_HU || KB_LAYOUT_ENABLE_RO || KB_LAYOUT_ENABLE_HR || KB_LAYOUT_ENABLE_TR || KB_LAYOUT_ENABLE_CRH || KB_LAYOUT_ENABLE_CRH_B || KB_LAYOUT_ENABLE_BEPO
 
 config DRAFTLING_HAS_CJK
     bool
