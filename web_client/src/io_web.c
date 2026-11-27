@@ -272,6 +272,16 @@ static void web_present(const uint32_t *fb, int fb_w, int fb_h, int x, int y, in
     }, fb_w, fb_h, x, y, w, h, s_rgba);
 }
 
+/* Brightness (Settings -> Display): the page dims everything it shows
+ * with a CSS filter. */
+static bool web_set_dim(int percent)
+{
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (Module.webBrightness) Module.webBrightness($0);
+    }, percent);
+    return true;
+}
+
 const linux_io_backend_t linux_io_web = {
     .name = "web",
     .open = web_open,
@@ -285,4 +295,5 @@ const linux_io_backend_t linux_io_web = {
     .clip_request = web_clip_request,
     .poll_fds = NULL,
     .wait = web_wait,
+    .set_dim = web_set_dim,
 };

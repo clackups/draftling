@@ -317,7 +317,8 @@ by writing the current level (`linux_backlight_init()`); it reports
 that level through `display_get_backlight()` (weak `-1` default in
 `editor_ui.cpp`), which the editor keeps while no level is saved.
 Without one, `linux_port_set_dim()` makes `lvgl_port_linux.c` present
-a dimmed copy of the frame.
+a dimmed copy of the frame, unless the I/O backend's optional
+`set_dim` hook dims it itself (the web client).
 `wifi_manager_network_up()` (any default route on Linux,
 the same as WiFi on a device) is what Git sync, Draftbox and the
 Ctrl+G / Draftbox "connect first" checks ask. When the editor or
@@ -361,7 +362,10 @@ program's sibling, not the online demo's: a hardware model of its own,
 `web_client/sdkconfig.defaults` and always built with the `all`
 language pack. Its derived flags follow the Linux Flatpak's: COLOR,
 HIDPI, TOUCHSCREEN, RESIZABLE, NETWORK_HOST_MANAGED, NO_BLUETOOTH,
-STANDBY_DISPLAY_OFF, HAS_QUIT; no backlight, battery or wake GPIO. It
+STANDBY_DISPLAY_OFF, HAS_QUIT, HAS_BACKLIGHT ("Brightness", default
+100: the backend's `set_dim` hook hands the level to the page,
+`Module.webBrightness`, which dims everything it shows with a CSS
+`brightness()` filter on `#turn`); no battery or wake GPIO. It
 compiles the firmware sources `linux/draftling.mk` does (the real
 `git_sync` included) and reuses the Linux stand-ins that are plain
 POSIX -- `freertos_linux.c`, `nvs_linux.cpp`, `standby_linux.c`,
@@ -3689,7 +3693,7 @@ in C / C++ code:
 | DRAFTLING_DISPLAY_HOST_ROTATE     | Settings -> Display -> "Orientation" (as the screen / landscape / portrait, NVS `horient`) and "Rotate 180" (`hrot180`), applied at once: `editor_host_rotation_changed()` (weak) tells the host, which turns the screen and reports the new size. Needs RESIZABLE | web client |
 | DRAFTLING_WEB_PAGE                | The editor runs in a web page: the help page (F10) gets a "Web browser" section listing the page's own keys (F9 Files panel, F11 full screen), the system clipboard, Command as Ctrl and the shortcuts the browser keeps | web client |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
-| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |
+| DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux and web 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below). The web client calls it "Brightness" (`BACKLIGHT_LABEL`) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux, web client |
 | DRAFTLING_DISPLAY_BACKLIGHT_BINARY | Suppresses the entire backlight Settings entry / Ctrl+B feature (no PWM dimming is physically possible, so a brightness control would be misleading); the backlight is left at the display backend's own default (on) | Waveshare Touch-LCD-7 (any CH422G board) |
 | DRAFTLING_DISPLAY_HIDPI           | Renders the UI 1:1 with the larger Hack font (instead of upscaling the framebuffer); compiles the `hires_*` font sources and selects the Hack family in `editor_ui.cpp` | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Tab5, Sunton 8048S070 / 8048S043, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Waveshare Touch-LCD-7, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux, web client |
 | DRAFTLING_HAS_BATTERY             | Creates the battery-percentage status-bar label and its poll timer | RLCD-4.2, PaperS3, Touch-LCD-3.49, T5 E-Paper S3 Pro / Pro Lite, Freenove FNK0104 family, Waveshare LCD-3.16, Xteink X4 Pro / X4 Classic, Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono, Linux |

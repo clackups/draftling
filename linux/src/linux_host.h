@@ -78,6 +78,11 @@ typedef struct {
      * poll_fds() (a backend without file descriptors: the web client's
      * canvas). May be NULL. */
     void (*wait)(int timeout_ms);
+    /* Dim what the backend shows, in place of a backlight (percent,
+     * 100 = full): true when it does so itself (the web client's page
+     * dims its key bar and panels too); otherwise, or when NULL, the
+     * LVGL port dims the frame's pixels. */
+    bool (*set_dim)(int percent);
 } linux_io_backend_t;
 
 #if defined(LINUX_IO_WAYLAND)

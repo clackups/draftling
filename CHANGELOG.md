@@ -75,6 +75,9 @@ in the git log.
   the help page name the keys as Cmd+ and Opt+ (Command and Option);
   the few shortcuts macOS or the browser keep for Command, such as
   Ctrl+Q and Ctrl+W, still say Ctrl, since Control works there.
+  F1 -> Settings -> Display -> "Brightness" (also Ctrl+B) dims the
+  whole page, for writing in the dark; a web page cannot change the
+  screen's own brightness.
 
 ### Fixed
 

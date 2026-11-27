@@ -218,6 +218,7 @@
     webFilesReply: filesReply,
     webCorners: cornersSetting,
     webRotation: rotationSetting,
+    webBrightness: brightnessSetting,
     webMacKeys: IS_MAC,
     webReady: () => {
       ready = true;
@@ -341,6 +342,15 @@
     } catch (e) { /* not kept */ }
     layoutTurn();
     reportCorners();
+  }
+
+  /* Settings -> Display -> Brightness (Ctrl+B): a page cannot set the
+   * screen's brightness, so it dims everything it shows. From 20 % up,
+   * as the Linux program dims its window, so the lowest steps stay
+   * readable. */
+  function brightnessSetting(percent) {
+    const p = Math.max(0, Math.min(100, percent | 0));
+    turnEl.style.filter = p >= 100 ? "" : "brightness(" + ((20 + p * 0.8) / 100).toFixed(3) + ")";
   }
 
   /* A point on the page -> CSS pixels in an element's own (unturned)

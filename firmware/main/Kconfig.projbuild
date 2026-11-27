@@ -1128,6 +1128,9 @@ config DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # when it can be set, otherwise the window's pixels are dimmed.
     # Not in the Flatpak, whose sandbox cannot set either.
     default y if DRAFTLING_MODEL_LINUX && !DRAFTLING_LINUX_FLATPAK
+    # Web client: the page dims what it shows ("Brightness"); a web
+    # page cannot set the screen's own brightness.
+    default y if DRAFTLING_MODEL_WEB
     default n
 
 # Backlight brightness on a fresh install (no saved setting), in
@@ -1138,7 +1141,7 @@ config DRAFTLING_BACKLIGHT_DEFAULT_PCT
     int
     depends on DRAFTLING_DISPLAY_HAS_BACKLIGHT
     # Linux: a full-brightness window until the user dims it.
-    default 100 if DRAFTLING_MODEL_LINUX
+    default 100 if DRAFTLING_MODEL_LINUX || DRAFTLING_MODEL_WEB
     default 50
 
 # Backlight LEDC PWM frequency of the RGB backend (direct-GPIO

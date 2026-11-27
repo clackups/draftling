@@ -197,6 +197,7 @@ void linux_port_set_blank(bool blank)
 
 void linux_port_set_dim(int percent)
 {
+    if (s_io && s_io->set_dim && s_io->set_dim(percent)) return;
     if (percent >= 100) {
         if (!s_dim) return;
         s_dim = false;

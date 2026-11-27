@@ -124,6 +124,13 @@
 
 static const char *TAG = "EditorUI";
 
+/* A web page dims what it shows rather than a backlight. */
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+#define BACKLIGHT_LABEL "Brightness"
+#else
+#define BACKLIGHT_LABEL "Backlight"
+#endif
+
 /* Mac / iOS key names (the web client on such a device): the Ctrl+ and
  * Alt+ of every hint, help row and menu label become Cmd+ and Opt+
  * (the page treats Command as Ctrl, and Option is Alt). Applied where
@@ -6315,7 +6322,7 @@ static void refresh_settings_items(void)
     case SET_LVL_DISPLAY:
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
         /* Backlight brightness (LCD boards with a controllable backlight) */
-        snprintf(buf, sizeof(buf), "Backlight: %d%%", s_backlight_pct);
+        snprintf(buf, sizeof(buf), BACKLIGHT_LABEL ": %d%%", s_backlight_pct);
         settings_add(SET_ITEM_BACKLIGHT, buf);
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_COLOR)
@@ -8656,7 +8663,11 @@ static void help_common_rows(std::string &out, int cols, int kc)
 #endif
     help_row(out, cols, kc, "Ctrl+P", "Sleep");
 #if defined(CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT) && !defined(CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY)
+#if defined(CONFIG_DRAFTLING_WEB_PAGE)
+    help_row(out, cols, kc, "Ctrl+B", "Brightness");
+#else
     help_row(out, cols, kc, "Ctrl+B", "Backlight brightness");
+#endif
 #endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
     help_row(out, cols, kc, "Ctrl+R", "Full screen refresh (clears ghosting)");
@@ -12337,7 +12348,7 @@ static void handle_editor_key_main(const kb_event_t *ev)
             save_backlight_to_nvs();
             display_set_backlight(s_backlight_pct);
             char sbuf[32];
-            snprintf(sbuf, sizeof(sbuf), "Backlight: %d%%", s_backlight_pct);
+            snprintf(sbuf, sizeof(sbuf), BACKLIGHT_LABEL ": %d%%", s_backlight_pct);
             editor_ui_set_status(sbuf);
             return;
         }
@@ -12906,7 +12917,7 @@ static void handle_browser_key(const kb_event_t *ev)
             save_backlight_to_nvs();
             display_set_backlight(s_backlight_pct);
             char sbuf[32];
-            snprintf(sbuf, sizeof(sbuf), "Backlight: %d%%", s_backlight_pct);
+            snprintf(sbuf, sizeof(sbuf), BACKLIGHT_LABEL ": %d%%", s_backlight_pct);
             editor_ui_set_status(sbuf);
             return;
         }

@@ -57,6 +57,10 @@ help; see the user documentation in `docs/`), with these differences:
   key bar and panels included, a quarter turn when the screen has the
   other shape, at once: landscape on a phone held (or locked) in
   portrait.
+- **Brightness.** F1 -> Settings -> Display -> "Brightness" (or
+  Ctrl+B) dims everything the page shows. A web page cannot set the
+  screen's own brightness, so on a phone the system setting still
+  sets the most it can be.
 - **Back and quitting.** Back (also Escape on a physical keyboard,
   which Android turns into Back) acts as Esc in Draftling and does not
   close the page or the installed app. To leave, use F1 -> "Quit
