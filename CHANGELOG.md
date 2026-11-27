@@ -86,6 +86,15 @@ in the git log.
   whole page, for writing in the dark; a web page cannot change the
   screen's own brightness.
 
+### Changed
+
+- **Active layouts sorted by language**: F1 -> Settings -> Keyboard ->
+  Active layouts lists US-English first and then every other layout
+  in alphabetical order of its name, so the layouts of one language
+  are next to each other (French AZERTY, AZERTY AFNOR, BEPO, Canada,
+  Switzerland). The Swiss and Canadian layouts are now named "French
+  (Switzerland)", "German (Switzerland)" and "French (Canada)" there.
+  The layout codes in the title bar are unchanged.
 ### Fixed
 
 - **Keyboard layout kept across restarts**: after sleep or a restart

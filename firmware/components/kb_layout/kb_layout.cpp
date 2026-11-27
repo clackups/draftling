@@ -4784,10 +4784,10 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
     [KB_LAYOUT_HE] = { HE_NORMAL, HE_SHIFT, NULL, "HE", "Hebrew", KB_IME_NONE, false },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_DE_CH
-    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", "Swiss German", KB_IME_NONE, true },
+    [KB_LAYOUT_DE_CH] = { DE_CH_NORMAL, DE_CH_SHIFT, DE_CH_EXTRA, "DE-CH", "German (Switzerland)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CH
-    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", "Swiss French", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CH] = { FR_CH_NORMAL, FR_CH_SHIFT, FR_CH_EXTRA, "FR-CH", "French (Switzerland)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_IT
     [KB_LAYOUT_IT] = { IT_NORMAL, IT_SHIFT, IT_EXTRA, "IT", "Italian", KB_IME_NONE, true },
@@ -4832,7 +4832,7 @@ static const layout_table_t s_layouts[KB_LAYOUT_COUNT] = {
     [KB_LAYOUT_TR] = { TR_NORMAL, TR_SHIFT, TR_EXTRA, "TR", "Turkish", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_FR_CA
-    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "Canadian French", KB_IME_NONE, true },
+    [KB_LAYOUT_FR_CA] = { FR_CA_NORMAL, FR_CA_SHIFT, FR_CA_EXTRA, "FR-CA", "French (Canada)", KB_IME_NONE, true },
 #endif
 #ifdef CONFIG_KB_LAYOUT_ENABLE_CRH
     [KB_LAYOUT_CRH] = { CRH_NORMAL, CRH_SHIFT, CRH_EXTRA, "CRH", "Crimean Tatar (Latin)", KB_IME_NONE, true },

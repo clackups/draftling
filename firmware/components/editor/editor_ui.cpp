@@ -6579,6 +6579,30 @@ static void close_theme_picker(void)
  * and persisted on the spot) rather than picking one value and
  * confirming -- there is no "cancel", since each toggle already is
  * the final state. */
+/* Row order: US-English first, then the others by their long name, so
+ * the layouts of one language (French AZERTY, AFNOR, BEPO) are next to
+ * each other. The layout ids, and so the saved active-layout mask, keep
+ * their order. */
+static kb_layout_id_t s_layouts_order[KB_LAYOUT_COUNT];
+
+static int layouts_order_cmp(const void *a, const void *b)
+{
+    kb_layout_id_t x = *(const kb_layout_id_t *)a;
+    kb_layout_id_t y = *(const kb_layout_id_t *)b;
+    if (x == KB_LAYOUT_US) return y == KB_LAYOUT_US ? 0 : -1;
+    if (y == KB_LAYOUT_US) return 1;
+    int c = strcasecmp(kb_layout_long_name(x), kb_layout_long_name(y));
+    return c ? c : (int)x - (int)y;
+}
+
+static void layouts_picker_sort(void)
+{
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++)
+        s_layouts_order[i] = (kb_layout_id_t)i;
+    qsort(s_layouts_order, KB_LAYOUT_COUNT, sizeof(s_layouts_order[0]),
+          layouts_order_cmp);
+}
+
 static void layouts_picker_row_text(kb_layout_id_t id, char *buf,
                                     size_t sz)
 {
@@ -6590,9 +6614,10 @@ static void layouts_picker_row_text(kb_layout_id_t id, char *buf,
 static void refresh_layouts_picker_items(void)
 {
     lv_obj_clean(s_settings_list);
+    layouts_picker_sort();
     char buf[80];
     for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
-        layouts_picker_row_text((kb_layout_id_t)i, buf, sizeof(buf));
+        layouts_picker_row_text(s_layouts_order[i], buf, sizeof(buf));
         lv_list_add_btn(s_settings_list, NULL, buf);
     }
     lv_list_add_btn(s_settings_list, NULL, "  Done (Esc)");
@@ -6612,9 +6637,10 @@ static void update_layouts_picker_highlight(void)
 /* Re-label one row after a toggle. Rebuilding the whole list would
  * reset its scroll offset, and scrolling the highlighted row back into
  * view then moved the list under the user's eyes. */
-static void update_layouts_picker_row(kb_layout_id_t id)
+static void update_layouts_picker_row(int row)
 {
-    lv_obj_t *btn = lv_obj_get_child(s_settings_list, (int32_t)id);
+    kb_layout_id_t id = s_layouts_order[row];
+    lv_obj_t *btn = lv_obj_get_child(s_settings_list, (int32_t)row);
     lv_obj_t *lbl = btn ? lv_obj_get_child_by_type(btn, 0, &lv_label_class)
                         : NULL;
     if (!lbl) {
@@ -7116,7 +7142,7 @@ static void handle_settings_key(const kb_event_t *ev)
              * text field on this screen for Space to type into. */
             if (s_layouts_picker_sel >= 0 &&
                 s_layouts_picker_sel < KB_LAYOUT_COUNT) {
-                kb_layout_id_t id = (kb_layout_id_t)s_layouts_picker_sel;
+                kb_layout_id_t id = s_layouts_order[s_layouts_picker_sel];
                 /* kb_layout_set_active() silently refuses to remove the
                  * last active layout, so the checklist can never be
                  * emptied out from under the user. */
@@ -7127,7 +7153,7 @@ static void handle_settings_key(const kb_event_t *ev)
                     /* A layout that types in the status bar keeps the
                      * bars on screen. */
                     if (!bars_may_hide()) bars_show();
-                    update_layouts_picker_row(id);
+                    update_layouts_picker_row(s_layouts_picker_sel);
                 }
             } else {
                 /* Done row */
