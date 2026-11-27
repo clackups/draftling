@@ -389,14 +389,22 @@ extern "C" void draftling_lvgl_port_init(int width, int height, int rotate_deg,
      *
      * A draw buffer sized to ~1/8 of the screen is enough to hold any
      * single LVGL invalidated region the editor produces (status bar,
-     * a line of text, a dialog box) in one flush. */
-    size_t buf_size = (size_t)width * height * BYTES_PER_PIXEL / 8;
+     * a line of text, a dialog box) in one flush.
+     *
+     * The size is a multiple of LV_DRAW_BUF_ALIGN: LVGL fits as many
+     * rows as the size holds, but its reshape of the buffer to those
+     * rows asks for the size rounded up to the alignment and fails
+     * otherwise, and the rows are then drawn with the previous area's
+     * stride (possible with odd screen margins or 2x scale). */
+    size_t buf_size = LV_ROUND_UP((size_t)width * height * BYTES_PER_PIXEL / 8,
+                                  LV_DRAW_BUF_ALIGN);
     uint8_t *buf1 = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
     uint8_t *buf2 = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
     assert(buf1 && buf2);
     lv_display_set_buffers(disp, buf1, buf2, buf_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 #else
-    size_t buf_size = (size_t)width * height * BYTES_PER_PIXEL;
+    size_t buf_size = LV_ROUND_UP((size_t)width * height * BYTES_PER_PIXEL,
+                                  LV_DRAW_BUF_ALIGN);
     uint8_t *buf1 = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
     uint8_t *buf2 = (uint8_t *)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM);
     assert(buf1 && buf2);

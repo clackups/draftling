@@ -97,6 +97,13 @@ in the git log.
   The layout codes in the title bar are unchanged.
 ### Fixed
 
+- **Garbled screen at some window sizes**: in the web client and the
+  Linux program, a window of certain widths (often in portrait: a
+  phone held upright, or Orientation set to portrait) showed a sheared,
+  repeated picture: the status bar several times side by side and the
+  text squeezed into one part of the screen. The screen is now drawn
+  correctly at every size. The same could happen on a device with
+  some combinations of screen margins and 2x scale.
 - **Keyboard layout kept across restarts**: after sleep or a restart
   Draftling always started with the US layout, even when another one
   was in use. It now comes back with the layout that was selected

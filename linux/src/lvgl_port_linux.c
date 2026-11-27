@@ -277,7 +277,12 @@ static void canvas_for_window(int ww, int wh, int *cw, int *ch)
  * color-LCD boards. */
 static void alloc_draw_buffers(int cw, int ch)
 {
-    size_t bytes = (size_t)cw * (ch / 4 + 1) * 2;
+    /* A multiple of LV_DRAW_BUF_ALIGN: LVGL fits as many rows as the
+     * size holds, but its reshape of the buffer to those rows asks for
+     * the size rounded up to the alignment and fails at an odd width;
+     * the rows were then drawn with the previous area's stride (a
+     * sheared, repeated picture in a portrait window). */
+    size_t bytes = LV_ROUND_UP((size_t)cw * (ch / 4 + 1) * 2, LV_DRAW_BUF_ALIGN);
     if (bytes > s_buf_bytes) {
         free(s_buf1);
         free(s_buf2);

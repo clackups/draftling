@@ -132,7 +132,8 @@ void draftling_lvgl_port_init(int width, int height, int rotate_deg, int scale)
 
     s_disp = lv_display_create(s_w, s_h);
     lv_display_set_color_format(s_disp, LV_COLOR_FORMAT_RGB565);
-    size_t buf_bytes = (size_t)s_w * (s_h / 4 + 1) * 2;
+    /* A multiple of LV_DRAW_BUF_ALIGN, see linux/src/lvgl_port_linux.c. */
+    size_t buf_bytes = LV_ROUND_UP((size_t)s_w * (s_h / 4 + 1) * 2, LV_DRAW_BUF_ALIGN);
     void *b1 = malloc(buf_bytes);
     void *b2 = malloc(buf_bytes);
     lv_display_set_buffers(s_disp, b1, b2, buf_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
