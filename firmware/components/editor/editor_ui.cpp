@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cmath>
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_app_desc.h>
@@ -188,20 +189,54 @@ static int s_ptimer_strip = 0;
  * larger glyphs -- this reproduces the physical bar height users saw
  * when these boards still upscaled a FONT_11 (Greybeard 11 px) bar 2x. */
 #ifdef CONFIG_DRAFTLING_DISPLAY_HIDPI
-#define HEADER_H     32
-#define STATUS_H     32
-#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
+#define BASE_HEADER_H 32
+#define BASE_STATUS_H 32
 #else
-#define HEADER_H     16
-#define STATUS_H     16
-#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
+#define BASE_HEADER_H 16
+#define BASE_STATUS_H 16
 #endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
+/* Rounded screen corners (the web client in full screen on a phone;
+ * Settings -> Display -> "Rounded screen corners"): the bars grow to
+ * cover the corners the host reports (editor_ui_set_screen_corners()),
+ * so the text area below / above them keeps the full width, and their
+ * text moves in from the corners. Set by corners_compute() before
+ * build_screens(). */
+static int s_hdr_h = BASE_HEADER_H;   /* title bar height */
+static int s_sta_h = BASE_STATUS_H;   /* status bar height */
+static int s_hdr_in_l, s_hdr_in_r;    /* title bar text: room left at its ends */
+static int s_sta_in_l, s_sta_in_r;    /* status bar text: room left at its ends */
+static int s_top_clear, s_bot_clear;  /* corner bands kept while the bars are hidden */
+#define HEADER_H     s_hdr_h
+#define STATUS_H     s_sta_h
+#define HDR_IN_L     s_hdr_in_l
+#define HDR_IN_R     s_hdr_in_r
+#define STA_IN_L     s_sta_in_l
+#define STA_IN_R     s_sta_in_r
+#define TOP_CLEAR    s_top_clear
+#define BOT_CLEAR    s_bot_clear
+#else
+#define HEADER_H     BASE_HEADER_H
+#define STATUS_H     BASE_STATUS_H
+#define HDR_IN_L     0
+#define HDR_IN_R     0
+#define STA_IN_L     0
+#define STA_IN_R     0
+#define TOP_CLEAR    0
+#define BOT_CLEAR    0
+#endif
+#define LIST_PANEL_H (SCR_H - HEADER_H)  /* height for list panels below header */
+/* Top of the title bar's text: the bottom of a taller bar, where the
+ * rounded corners take the least room. */
+#define HDR_TEXT_Y   (HEADER_H - BASE_HEADER_H)
 /* The editor body sits between the bars, or fills the screen while
  * they are hidden (Settings -> Editor -> "Hide status bars while
- * typing", s_bars_hidden). bars_relayout() shifts each pane's view by
- * whole pixels (pane_t::top_px / lead_px) so the text stays put. */
-#define EDITOR_Y     (s_bars_hidden ? 0 : HEADER_H)
-#define EDITOR_H     (s_bars_hidden ? SCR_H : (SCR_H - HEADER_H - STATUS_H))
+ * typing", s_bars_hidden), less the bands rounded corners take.
+ * bars_relayout() shifts each pane's view by whole pixels
+ * (pane_t::top_px / lead_px) so the text stays put. */
+#define EDITOR_Y     (s_bars_hidden ? TOP_CLEAR : HEADER_H)
+#define EDITOR_H     (s_bars_hidden ? (SCR_H - TOP_CLEAR - BOT_CLEAR) \
+                                    : (SCR_H - HEADER_H - STATUS_H))
 
 /* ---- Base font size setting ----
  * The user can pick 11, 14, 16, 18, or 22 px as the editor body font.
@@ -263,6 +298,7 @@ static int s_char_w       = 6;
 
 /* Forward declaration (defined below) */
 static int char_width_for_font(const lv_font_t *font);
+static int status_avail_width(void);
 static int utf8_cells_in_bytes(const char *text, size_t byte_len);
 static size_t utf8_bytes_for_cells(const char *text, size_t byte_len, int cells);
 static size_t utf8_byte_of_char(const char *s, size_t len, int n);
@@ -972,7 +1008,7 @@ static void save_font_size_to_nvs(void)
  * real global here. */
 static lv_obj_t *s_scr       = NULL;
 static lv_obj_t *s_lbl_title = NULL;
-#define TITLE_W (CONTENT_W - 4)   /* title label width, set in build_screens() */
+#define TITLE_W (CONTENT_W - 4 - HDR_IN_L - HDR_IN_R)   /* title label width, set in build_screens() */
 static lv_obj_t *s_lbl_status= NULL;
 static lv_obj_t *s_scr_browser = NULL;
 static lv_obj_t *s_list_files  = NULL;
@@ -1734,6 +1770,152 @@ static void save_hide_bars_to_nvs(void)
         nvs_close(h);
     }
 }
+
+#if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
+#if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
+#error "DRAFTLING_DISPLAY_ROUND_CORNERS needs DRAFTLING_DISPLAY_RESIZABLE (editor_ui_can_relayout())"
+#endif
+/* ---- Rounded screen corners ----
+ * A phone's screen has rounded corners, which cut into the title and
+ * status bars when the web client runs in full screen. The user picks
+ * the corner radius (Settings -> Display -> "Rounded screen corners",
+ * in the host's units: CSS pixels in a browser); the host says which
+ * corners of the canvas are corners of the screen and how many canvas
+ * pixels a unit is (editor_ui_set_screen_corners()). The bars then
+ * grow to cover those corners, so every row of the text area keeps the
+ * full width, and the bar text moves in from the corners. */
+#define NVS_KEY_CORNERS "corners"
+static const uint8_t CORNER_OPTIONS[] = { 0, 16, 24, 32, 40, 48, 56, 64 };
+#define CORNER_OPTION_COUNT ((int)(sizeof(CORNER_OPTIONS) / sizeof(CORNER_OPTIONS[0])))
+/* A text row may lose this many pixels at its ends to a corner: the
+ * text area starts where the corner takes no more. */
+#define CORNER_SLACK 2
+static uint8_t  s_corner_size;            /* the setting, 0 = off */
+static unsigned s_corner_mask;            /* EDITOR_CORNER_* from the host */
+static int      s_corner_milli = 1000;    /* canvas pixels per unit x 1000 */
+
+static int find_corner_option(int v)
+{
+    for (int i = 0; i < CORNER_OPTION_COUNT; i++) {
+        if (CORNER_OPTIONS[i] == v) return i;
+    }
+    return 0;
+}
+
+static void load_corners_from_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v = 0;
+        if (nvs_get_u8(h, NVS_KEY_CORNERS, &v) == ESP_OK)
+            s_corner_size = CORNER_OPTIONS[find_corner_option(v)];
+        nvs_close(h);
+    }
+}
+
+static void save_corners_to_nvs(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS_EDITOR, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, NVS_KEY_CORNERS, s_corner_size);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+/* Pixels a corner of radius r takes from a row y pixels from its edge. */
+static int corner_clip(int r, int y)
+{
+    if (r <= 0 || y >= r) return 0;
+    double d = (double)(r - (y < 0 ? 0 : y));
+    return (int)ceil((double)r - sqrt((double)r * r - d * d));
+}
+
+/* Rows from the edge until a corner of radius r takes at most
+ * CORNER_SLACK pixels from a row. */
+static int corner_band(int r)
+{
+    if (r <= CORNER_SLACK) return 0;
+    const double sl = CORNER_SLACK;
+    return (int)ceil((double)r - sqrt(2.0 * r * sl - sl * sl));
+}
+
+/* Bar heights, insets and bands for the current setting and host
+ * geometry. */
+static void corners_compute(void)
+{
+    int r = 0;
+    if (s_corner_size && s_corner_mask) {
+        r = (int)((long)s_corner_size * s_corner_milli / 1000 / display_scale_factor());
+    }
+    const int r_tl = (s_corner_mask & EDITOR_CORNER_TOP_LEFT)     ? r : 0;
+    const int r_tr = (s_corner_mask & EDITOR_CORNER_TOP_RIGHT)    ? r : 0;
+    const int r_bl = (s_corner_mask & EDITOR_CORNER_BOTTOM_LEFT)  ? r : 0;
+    const int r_br = (s_corner_mask & EDITOR_CORNER_BOTTOM_RIGHT) ? r : 0;
+
+    s_top_clear = std::max(corner_band(r_tl), corner_band(r_tr));
+    s_bot_clear = std::max(corner_band(r_bl), corner_band(r_br));
+    s_hdr_h = std::max(BASE_HEADER_H, s_top_clear);
+    s_sta_h = std::max(BASE_STATUS_H, s_bot_clear);
+
+    /* The title text sits at the bottom of its bar (HDR_TEXT_Y), the
+     * status text at the top of its own, two pixels below the rule. */
+    const int hdr_text_top = s_hdr_h - BASE_HEADER_H;
+    s_hdr_in_l = corner_clip(r_tl, hdr_text_top);
+    s_hdr_in_r = corner_clip(r_tr, hdr_text_top);
+    const int sta_text_bottom = s_sta_h - 2 - (int)lv_font_get_line_height(FONT_11);
+    s_sta_in_l = corner_clip(r_bl, sta_text_bottom);
+    s_sta_in_r = corner_clip(r_br, sta_text_bottom);
+}
+
+/* Lay the screens out again when the corner geometry changed. False
+ * while a dialog is open (nothing changed then; ask again later). */
+static bool corners_apply(void)
+{
+    const int old[] = { s_hdr_h, s_sta_h, s_hdr_in_l, s_hdr_in_r,
+                        s_sta_in_l, s_sta_in_r, s_top_clear, s_bot_clear };
+    corners_compute();
+    const int now[] = { s_hdr_h, s_sta_h, s_hdr_in_l, s_hdr_in_r,
+                        s_sta_in_l, s_sta_in_r, s_top_clear, s_bot_clear };
+    if (memcmp(old, now, sizeof(old)) == 0 || !s_scr) return true;
+    if (!editor_ui_can_relayout()) {
+        s_hdr_h = old[0]; s_sta_h = old[1];
+        s_hdr_in_l = old[2]; s_hdr_in_r = old[3];
+        s_sta_in_l = old[4]; s_sta_in_r = old[5];
+        s_top_clear = old[6]; s_bot_clear = old[7];
+        return false;
+    }
+    rebuild_screens_for_theme();
+#ifdef DRAFTLING_HAS_IME
+    ime_set_status_cells(status_avail_width() / char_width_for_font(FONT_11));
+#endif
+    return true;
+}
+
+/* A header label that has no width of its own: keep it clear of the
+ * right-hand corner. */
+static void corner_fit_header(lv_obj_t *lbl)
+{
+    lv_obj_set_width(lbl, SCR_W - 4 - HDR_IN_L - HDR_IN_R);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+}
+
+/* The host's side of the setting: nothing by default (the web client
+ * fits its own key bar to the corners, web_client/src/io_web.c). */
+extern "C" __attribute__((weak)) void editor_host_corners_changed(int size)
+{
+    (void)size;
+}
+
+extern "C" bool editor_ui_set_screen_corners(unsigned mask, int px_per_unit_milli)
+{
+    s_corner_mask = mask;
+    s_corner_milli = px_per_unit_milli > 0 ? px_per_unit_milli : 1000;
+    return corners_apply();
+}
+#else
+#define corner_fit_header(lbl) ((void)(lbl))
+#endif /* CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS */
 
 /* ---- Key-event input queue ----
  * The BLE callback runs on the HID host task and must not block on the
@@ -5153,7 +5335,7 @@ static int status_avail_width(void)
     /* No battery; only the wifi icon at SCR_W-15. */
     right_reserved = 15 + 2;
 #endif
-    int avail = CONTENT_W - 2 /* left margin */ - right_reserved;
+    int avail = CONTENT_W - 2 /* left margin */ - right_reserved - STA_IN_L - STA_IN_R;
     if (avail < 0) avail = 0;
     return avail;
 }
@@ -5908,6 +6090,7 @@ enum settings_item_t {
     SET_ITEM_UPSIDE_DOWN,    /* otherwise: the same turn, after a restart */
     SET_ITEM_INVERT,         /* DISPLAY_CAN_INVERT */
     SET_ITEM_SCALE2X,
+    SET_ITEM_CORNERS,        /* DISPLAY_ROUND_CORNERS */
     SET_ITEM_MARGINS_MENU,
     /* Display -> Screen margins */
     SET_ITEM_MARGIN_LEFT,
@@ -6063,6 +6246,16 @@ static void refresh_settings_items(void)
         snprintf(buf, sizeof(buf), "2x scale (large view): %s (restart to apply)",
                  s_pending_scale2x ? "on" : "off");
         settings_add(SET_ITEM_SCALE2X, buf);
+#if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
+        /* Rounded screen corners (full screen on a phone): applied at
+         * once, the bars cover the corners. */
+        if (s_corner_size)
+            snprintf(buf, sizeof(buf), "Rounded screen corners: %u (full screen)",
+                     (unsigned)s_corner_size);
+        else
+            snprintf(buf, sizeof(buf), "Rounded screen corners: off");
+        settings_add(SET_ITEM_CORNERS, buf);
+#endif
 #if !defined(CONFIG_DRAFTLING_DISPLAY_RESIZABLE)
         settings_add(SET_ITEM_MARGINS_MENU, "Screen margins...");
 #endif
@@ -6496,6 +6689,19 @@ static bool settings_cycle_item(int row, int dir)
         display_flip_set_upside_down(s_pending_upside_down);
         s_restart_needed = true;
         refresh_settings_items();
+        return true;
+#endif
+#if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
+    } else if (idx == SET_ITEM_CORNERS) {
+        /* Off, then growing radii; applied at once (the screens are
+         * rebuilt, Settings stays where it is). */
+        int oi = find_corner_option(s_corner_size);
+        oi = (oi + dir + CORNER_OPTION_COUNT) % CORNER_OPTION_COUNT;
+        s_corner_size = CORNER_OPTIONS[oi];
+        save_corners_to_nvs();
+        editor_host_corners_changed(s_corner_size);
+        refresh_settings_items();
+        corners_apply();
         return true;
 #endif
     } else if (idx == SET_ITEM_SCALE2X) {
@@ -9975,15 +10181,15 @@ static void ptimer_relayout(void)
     const int wifi_off = 15;
 #endif
 #if defined(DRAFTLING_HAS_BATT_INDICATOR)
-    if (s_lbl_dev_batt)    lv_obj_set_x(s_lbl_dev_batt, CONTENT_W - 80);
-    if (s_lbl_br_dev_batt) lv_obj_set_x(s_lbl_br_dev_batt, CONTENT_W - 80);
+    if (s_lbl_dev_batt)    lv_obj_set_x(s_lbl_dev_batt, CONTENT_W - 80 - STA_IN_R);
+    if (s_lbl_br_dev_batt) lv_obj_set_x(s_lbl_br_dev_batt, CONTENT_W - 80 - STA_IN_R);
 #endif
-    if (s_img_wifi)    lv_obj_set_x(s_img_wifi, CONTENT_W - wifi_off);
-    if (s_img_br_wifi) lv_obj_set_x(s_img_br_wifi, CONTENT_W - wifi_off);
+    if (s_img_wifi)    lv_obj_set_x(s_img_wifi, CONTENT_W - wifi_off - STA_IN_R);
+    if (s_img_br_wifi) lv_obj_set_x(s_img_br_wifi, CONTENT_W - wifi_off - STA_IN_R);
     /* File browser screen */
     if (s_list_files)    lv_obj_set_width(s_list_files, CONTENT_W);
     if (s_br_sline)      lv_obj_set_width(s_br_sline, CONTENT_W);
-    if (s_lbl_br_status) lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4);
+    if (s_lbl_br_status) lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4 - STA_IN_L - STA_IN_R);
 
     /* Editor panes: new widths, text re-wrapped. */
     suggest_hide();
@@ -13809,7 +14015,7 @@ static void build_screens(void)
 
     /* Title bar */
     s_lbl_title = lv_label_create(s_scr);
-    lv_obj_set_pos(s_lbl_title, 2, 0);
+    lv_obj_set_pos(s_lbl_title, 2 + HDR_IN_L, HDR_TEXT_Y);
     lv_obj_set_width(s_lbl_title, TITLE_W);
     lv_obj_set_style_text_font(s_lbl_title, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_title, theme_fg(), 0);
@@ -13913,7 +14119,7 @@ static void build_screens(void)
     lv_obj_set_style_pad_all(sline, 0, 0);
 
     s_lbl_status = lv_label_create(s_scr);
-    lv_obj_set_pos(s_lbl_status, 2, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_status, 2 + STA_IN_L, SCR_H - STATUS_H + 2);
     /* Width is constrained below (see status_avail_width()) so the
      * label never reaches the battery / wifi icon on the right and
      * never wraps to a second line (which would extend past SCR_H
@@ -13931,7 +14137,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_lbl_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_dev_batt, theme_fg(), 0);
     lv_obj_set_style_text_align(s_lbl_dev_batt, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_lbl_dev_batt, CONTENT_W - 80, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_dev_batt, CONTENT_W - 80 - STA_IN_R, SCR_H - STATUS_H + 2);
     lv_obj_set_width(s_lbl_dev_batt, 78);
     lv_label_set_text(s_lbl_dev_batt, "");
 #define WIFI_ICON_RIGHT_OFFSET 95   /* leave room for battery on its left */
@@ -13945,7 +14151,7 @@ static void build_screens(void)
      * status bars exist; only the fixed horizontal position is set
      * here. */
     s_img_wifi = lv_image_create(s_scr);
-    lv_obj_set_x(s_img_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET);
+    lv_obj_set_x(s_img_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET - STA_IN_R);
     lv_obj_add_flag(s_img_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
@@ -13967,7 +14173,8 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_browser, theme_bg(), 0);
 
     lv_obj_t *br_title = lv_label_create(s_scr_browser);
-    lv_obj_set_pos(br_title, 2, 0);
+    lv_obj_set_pos(br_title, 2 + HDR_IN_L, HDR_TEXT_Y);
+    corner_fit_header(br_title);
     lv_obj_set_style_text_font(br_title, FONT_11, 0);
     lv_obj_set_style_text_color(br_title, theme_fg(), 0);
     lv_label_set_text(br_title, "File Browser - Up/Down, Enter to open, N for new");
@@ -14021,8 +14228,8 @@ static void build_screens(void)
     lv_obj_set_style_pad_all(br_sline, 0, 0);
 
     s_lbl_br_status = lv_label_create(s_scr_browser);
-    lv_obj_set_pos(s_lbl_br_status, 2, SCR_H - STATUS_H + 2);
-    lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4);
+    lv_obj_set_pos(s_lbl_br_status, 2 + STA_IN_L, SCR_H - STATUS_H + 2);
+    lv_obj_set_width(s_lbl_br_status, CONTENT_W - 4 - STA_IN_L - STA_IN_R);
     lv_obj_set_style_text_font(s_lbl_br_status, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_status, theme_fg(), 0);
     lv_label_set_text(s_lbl_br_status, "F1:Menu  N:New  F2:Rename");
@@ -14033,7 +14240,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_lbl_br_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_br_dev_batt, theme_fg(), 0);
     lv_obj_set_style_text_align(s_lbl_br_dev_batt, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_lbl_br_dev_batt, CONTENT_W - 80, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_br_dev_batt, CONTENT_W - 80 - STA_IN_R, SCR_H - STATUS_H + 2);
     lv_obj_set_width(s_lbl_br_dev_batt, 78);
     lv_label_set_text(s_lbl_br_dev_batt, "");
 
@@ -14053,7 +14260,7 @@ static void build_screens(void)
      * See the matching editor-screen icon above: update_wifi_icons()
      * picks the source image and vertical position. */
     s_img_br_wifi = lv_image_create(s_scr_browser);
-    lv_obj_set_x(s_img_br_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET);
+    lv_obj_set_x(s_img_br_wifi, CONTENT_W - WIFI_ICON_RIGHT_OFFSET - STA_IN_R);
     lv_obj_add_flag(s_img_br_wifi, LV_OBJ_FLAG_HIDDEN);
 #undef WIFI_ICON_RIGHT_OFFSET
 
@@ -14141,7 +14348,7 @@ static void build_screens(void)
     lv_obj_set_style_text_font(s_lbl_ble_dev_batt, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_ble_dev_batt, theme_fg(), 0);
     lv_obj_set_style_text_align(s_lbl_ble_dev_batt, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_pos(s_lbl_ble_dev_batt, SCR_W - 80, SCR_H - STATUS_H + 2);
+    lv_obj_set_pos(s_lbl_ble_dev_batt, SCR_W - 80 - STA_IN_R, SCR_H - STATUS_H + 2);
     lv_obj_set_width(s_lbl_ble_dev_batt, 78);
     lv_label_set_text(s_lbl_ble_dev_batt, "");
 #endif
@@ -14245,7 +14452,8 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_menu, theme_bg(), 0);
 
     s_lbl_menu_hdr = lv_label_create(s_scr_menu);
-    lv_obj_set_pos(s_lbl_menu_hdr, 2, 0);
+    lv_obj_set_pos(s_lbl_menu_hdr, 2 + HDR_IN_L, HDR_TEXT_Y);
+    corner_fit_header(s_lbl_menu_hdr);
     lv_obj_set_style_text_font(s_lbl_menu_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_menu_hdr, theme_fg(), 0);
     lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
@@ -14267,8 +14475,8 @@ static void build_screens(void)
      * is embedded in the app image from CMakeLists.txt's PROJECT_VER
      * at build time. */
     lv_obj_t *menu_version_lbl = lv_label_create(s_scr_menu);
-    lv_obj_set_pos(menu_version_lbl, 2, SCR_H - STATUS_H + 2);
-    lv_obj_set_width(menu_version_lbl, SCR_W - 4);
+    lv_obj_set_pos(menu_version_lbl, 2 + STA_IN_L, SCR_H - STATUS_H + 2);
+    lv_obj_set_width(menu_version_lbl, SCR_W - 4 - STA_IN_L - STA_IN_R);
     lv_obj_set_style_text_font(menu_version_lbl, FONT_11, 0);
     lv_obj_set_style_text_color(menu_version_lbl, theme_fg(), 0);
     {
@@ -14283,8 +14491,8 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_help, theme_bg(), 0);
 
     s_lbl_help_hdr = lv_label_create(s_scr_help);
-    lv_obj_set_pos(s_lbl_help_hdr, 2, 0);
-    lv_obj_set_width(s_lbl_help_hdr, SCR_W - 4);
+    lv_obj_set_pos(s_lbl_help_hdr, 2 + HDR_IN_L, HDR_TEXT_Y);
+    lv_obj_set_width(s_lbl_help_hdr, SCR_W - 4 - HDR_IN_L - HDR_IN_R);
     lv_label_set_long_mode(s_lbl_help_hdr, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(s_lbl_help_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_help_hdr, theme_fg(), 0);
@@ -14404,7 +14612,8 @@ static void build_screens(void)
     lv_obj_set_style_bg_color(s_scr_settings, theme_bg(), 0);
 
     s_lbl_settings_hdr = lv_label_create(s_scr_settings);
-    lv_obj_set_pos(s_lbl_settings_hdr, 2, 0);
+    lv_obj_set_pos(s_lbl_settings_hdr, 2 + HDR_IN_L, HDR_TEXT_Y);
+    corner_fit_header(s_lbl_settings_hdr);
     lv_obj_set_style_text_font(s_lbl_settings_hdr, FONT_11, 0);
     lv_obj_set_style_text_color(s_lbl_settings_hdr, theme_fg(), 0);
     lv_label_set_text(s_lbl_settings_hdr, settings_level_header(SET_LVL_ROOT));
@@ -15047,6 +15256,11 @@ extern "C" void editor_ui_init(void)
     display_set_backlight(s_backlight_pct);
 #endif
     load_append_only_from_nvs();
+#if defined(CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS)
+    load_corners_from_nvs();
+    corners_compute();
+    editor_host_corners_changed(s_corner_size);
+#endif
     load_ptimer_from_nvs();
     load_name_suggest_from_nvs();
     load_hide_bars_from_nvs();

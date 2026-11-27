@@ -388,8 +388,17 @@ rectangles as RGBA (`Module.webPresent`); clipboard over
 pointer or a touch on the canvas): a tap focuses a hidden input
 (`#kbd-proxy`, `type="password"` by default: Gboard and the like ignore
 `autocomplete` / `autocorrect` / `spellcheck` but drop suggestions,
-autocorrection and learning for passwords; the key bar's "Suggest"
-makes it `type="text"`, remembered in `localStorage`; the field is
+autocorrection and learning for passwords -- a "Suggest" button that
+made it a text field showed no suggestions on Android and was removed;
+the on-screen keyboard is kept up while there is no physical keyboard
+(`keepKeyboard()`: after the field's blur, a viewport resize that
+leaves `keyboardShown()` false, i.e. the visual viewport >= 3/4 of the
+screen, or a tap on the canvas, with no Files panel or message open;
+the field is blurred and focused again `REFOCUS_MS` later, plus
+`navigator.virtualKeyboard.show()`, since a blur and focus in one go
+leave a dismissed keyboard hidden); the key bar is a grid of
+`--kb-cols` columns, `fitKeybar()`: as few equally full rows as fit
+the width; the field is
 emptied on blur / hide so no browser offers to save it; Enter /
 Backspace / Tab keydowns without a code are mapped by `e.key`), which
 brings up the on-screen keyboard and is what
@@ -408,7 +417,15 @@ with no code) is sent from its keyup, which still has the code; the
 text the input method composed for it is dropped (`dropImeText()`),
 and field text right after such a keydown waits `IME_WAIT_MS` for that
 keyup. A keydown for a key already down is a repeat (Android does not
-set `e.repeat`). `?keylog` lists the last key / input events over the
+set `e.repeat`). Rounded screen corners: the editor tells the page the
+setting (`editor_host_corners_changed()` -> `Module.webCorners`, which
+pads the key bar's ends, `body.round-corners`), and the page reports
+which corners of the canvas are screen corners (`reportCorners()`,
+`WEB_EV_CORNERS`: only in full screen, the bottom ones only when the
+canvas reaches the bottom of the screen -- no key bar or on-screen
+keyboard below it) and the device pixels per CSS pixel; `io_web.c`
+retries `editor_ui_set_screen_corners()` while a dialog is open.
+`?keylog` lists the last key / input events over the
 screen. `src/http_client_web.c` is
 `esp_http_client` over one synchronous `XMLHttpRequest` per request
 (the sync task is a worker), so Git servers must allow the page with
@@ -1416,8 +1433,9 @@ Editor...     Base font size, Append-only editing, Suggest character
               names, Hide status bars while typing, Show status bars
               after idle (15 / 30 / 60 / 120 s, only while hiding)
 Display...    Backlight, Color theme, Orientation, Rotate 180,
-              Invert display, 2x scale, Screen margins... (Left,
-              Right, Top, Bottom)
+              Invert display, 2x scale, Rounded screen corners (only
+              with DRAFTLING_DISPLAY_ROUND_CORNERS), Screen
+              margins... (Left, Right, Top, Bottom)
 Keyboard...   Active layouts
 System...     Standby timeout, Factory reset
 ```
@@ -3631,6 +3649,7 @@ in C / C++ code:
 | DRAFTLING_HAS_QUIT                | Adds F1 -> "Quit Draftling", which calls `standby_quit()` (after the unsaved-changes prompt) | Linux |
 | DRAFTLING_LINUX_FLATPAK           | Prompted (Linux only, set by `linux/sdkconfig.defaults.flatpak`): the Flatpak build; turns off HAS_BACKLIGHT and HAS_BATTERY, sets NETWORK_HOST_MANAGED, Wayland app id `art.draftling.Draftling` | Linux Flatpak |
 | DRAFTLING_NETWORK_HOST_MANAGED    | The host owns the network: no WiFi menu / Ctrl+W / Format-SD WiFi step, `wifi_manager_network_up()` always true (`linux/src/wifi_host.c`) | Linux Flatpak, web client |
+| DRAFTLING_DISPLAY_ROUND_CORNERS   | Settings -> Display -> "Rounded screen corners" (radius 0 / 16..64 in host units, NVS `corners`): the host reports which canvas corners are rounded screen corners (`editor_ui_set_screen_corners()`), `corners_compute()` grows `HEADER_H` / `STATUS_H` over them (text area rows lose at most `CORNER_SLACK` px) and insets the bar text (`HDR_IN_*` / `STA_IN_*`); hidden bars leave the bands (`TOP_CLEAR` / `BOT_CLEAR`). Needs RESIZABLE | web client |
 | DRAFTLING_WEB_PAGE                | The editor runs in a web page: the help page (F10) gets a "Web browser" section listing the page's own keys (F9 Files panel, F11 full screen), the system clipboard, Command as Ctrl and the shortcuts the browser keeps | web client |
 | DRAFTLING_DISPLAY_TRANSFLECTIVE   | Selects the separate transflective-panel copy of `COLOR_THEMES` in `editor_ui.cpp` (these panels render colors differently) | Viewe UEDX24320028E-WB-A + UEED035HV |
 | DRAFTLING_DISPLAY_HAS_BACKLIGHT   | Adds the "Backlight: NN%" entry to F1 -> Settings -> Display, enables the Ctrl+B cycle shortcut, and calls `display_set_backlight()` at boot from NVS (with no saved level: `display_get_backlight()` if it reports one, else `DRAFTLING_BACKLIGHT_DEFAULT_PCT`, 50 / Linux 100) -- unless DRAFTLING_DISPLAY_BACKLIGHT_BINARY is also set (see below) | AXS15231B boards, Tab5, LilyGO T5 E-Paper S3 Pro / Pro Lite, RGB boards, Freenove FNK0104 family, Xteink X4 Pro, M5Stack PaperMono, NiceMCU-C5E-DEV_2.8IPS, Guition JC4827W543C, Linux |

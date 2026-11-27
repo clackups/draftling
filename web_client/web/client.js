@@ -42,8 +42,10 @@
   /* Keep in step with web_client/src/web_host.h. */
   const WEB_EV = {
     KEY: 1, POINTER: 2, WHEEL: 3, RESIZE: 4, RELEASE_ALL: 5,
-    PASTE: 6, SAVE: 7, DAMAGE: 8,
+    PASTE: 6, SAVE: 7, DAMAGE: 8, CORNERS: 10,
   };
+  /* EDITOR_CORNER_* in firmware/components/editor/include/editor_ui.h. */
+  const CORNER = { TL: 1, TR: 2, BL: 4, BR: 8 };
   /* Keep in step with files_web.c. */
   const FILES_OP = { LIST: 1, READ: 2, ZIP: 3, WRITE: 4, MKPROJECT: 5 };
   /* LINUX_MOD_* in linux/src/linux_host.h. */
@@ -213,8 +215,10 @@
     webClipSet: clipSet,
     webClipRequest: clipRequest,
     webFilesReply: filesReply,
+    webCorners: cornersSetting,
     webReady: () => {
       ready = true;
+      reportCorners();
       messageEl.hidden = true;
       focusScreen();
       if (touchMode) toast("Tap the screen to type.");
@@ -257,6 +261,7 @@
   let resizeTimer = 0;
 
   function setScreen(w, h) {
+    reportCorners();
     w = Math.max(1, Math.round(w));
     h = Math.max(1, Math.round(h));
     if (w === screenW && h === screenH) return;
@@ -264,7 +269,79 @@
     screenH = h;
     sizeCanvasCss();
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => send(WEB_EV.RESIZE, screenW, screenH), 30);
+    resizeTimer = setTimeout(() => {
+      send(WEB_EV.RESIZE, screenW, screenH);
+      reportCorners();
+    }, 30);
+  }
+
+  /* ---- rounded screen corners ----------------------------------------- */
+
+  /* A phone's screen has rounded corners, which in full screen cut into
+   * the program's title and status bars. The program's setting (Settings
+   * -> Display -> "Rounded screen corners", a radius in CSS pixels, 0 =
+   * off) comes here through Module.webCorners; this side tells the
+   * program which corners of the canvas are corners of the screen
+   * (WEB_EV.CORNERS): only in full screen, the bottom ones only while
+   * neither the key bar nor the on-screen keyboard is below the canvas.
+   * The key bar keeps its buttons clear of the corners itself. */
+  let cornerSize = 0;
+  let cornersSent = "";
+  let cornersTimer = 0;
+
+  function isFullScreen() {
+    return !!document.fullscreenElement ||
+      !!(window.matchMedia && matchMedia("(display-mode: fullscreen)").matches);
+  }
+
+  /* The screen's height in CSS pixels in the current orientation
+   * (window.innerHeight shrinks with the on-screen keyboard). */
+  function screenHeightCss() {
+    const a = screen.width, b = screen.height;
+    const t = screen.orientation && screen.orientation.type;
+    const landscape = t ? t.startsWith("landscape") : innerWidth > innerHeight;
+    return landscape ? Math.min(a, b) : Math.max(a, b);
+  }
+
+  /* After the layout settles (a full-screen change resizes the screen
+   * area a moment later), so the size and the pixel ratio agree. */
+  function reportCorners() {
+    clearTimeout(cornersTimer);
+    cornersTimer = setTimeout(sendCorners, 80);
+  }
+
+  function sendCorners() {
+    const full = isFullScreen();
+    const round = full && cornerSize > 0;
+    if (round !== document.body.classList.contains("round-corners")) {
+      document.body.classList.toggle("round-corners", round);
+      fitKeybar();
+    }
+    let mask = 0;
+    const r = screenEl.getBoundingClientRect();
+    if (full && r.width > 0 && r.height > 0) {
+      const left = r.left <= 1, right = r.right >= innerWidth - 1;
+      if (r.top <= 1) mask |= (left ? CORNER.TL : 0) | (right ? CORNER.TR : 0);
+      if (Math.abs(r.bottom - screenHeightCss()) <= 2)
+        mask |= (left ? CORNER.BL : 0) | (right ? CORNER.BR : 0);
+    }
+    /* Canvas pixels per CSS pixel: the observer's exact device size. */
+    const k = screenW && r.width ? screenW / r.width : (window.devicePixelRatio || 1);
+    const milli = Math.round(k * 1000);
+    const key = mask + ":" + milli;
+    if (!ready || key === cornersSent) return;
+    cornersSent = key;
+    send(WEB_EV.CORNERS, mask, milli, 0);
+  }
+
+  function cornersSetting(size) {
+    cornerSize = size | 0;
+    document.documentElement.style.setProperty("--corner", cornerSize + "px");
+    reportCorners();
+  }
+  if (window.matchMedia) {
+    const mq = matchMedia("(display-mode: fullscreen)");
+    if (mq.addEventListener) mq.addEventListener("change", reportCorners);
   }
 
   function measureScreen() {
@@ -547,8 +624,8 @@
     const [x, y] = canvasPoint(e);
     send(WEB_EV.POINTER, x, y, 0);
     /* The end of a tap is a user gesture: focusing the text field now
-     * brings up the on-screen keyboard. */
-    if (touchMode && e.type === "pointerup" && document.activeElement !== proxy) focusScreen();
+     * brings up the on-screen keyboard (again, if it was dismissed). */
+    if (touchMode && e.type === "pointerup") keepKeyboard(true);
   };
   canvas.addEventListener("pointerup", pointerUp);
   canvas.addEventListener("pointercancel", pointerUp);
@@ -613,12 +690,32 @@
     document.body.classList.toggle("touch", on);
     keybar.hidden = !on || hwKeyboard;
     if (on) toolbar.classList.remove("shown");
+    fitKeybar();
+    reportCorners();
   }
+
+  /* The key bar's buttons in as few rows as fit the width (minus the
+   * room rounded screen corners take), the rows equally full. */
+  const KEYBAR_MIN_BTN = 52;   /* px, the narrowest button */
+  const KEYBAR_GAP = 4;
+  function fitKeybar() {
+    if (keybar.hidden) return;
+    const cs = getComputedStyle(keybar);
+    const w = keybar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const n = keybar.children.length;
+    const maxCols = Math.max(1, Math.floor((w + KEYBAR_GAP) / (KEYBAR_MIN_BTN + KEYBAR_GAP)));
+    const rows = Math.ceil(n / maxCols);
+    keybar.style.setProperty("--kb-cols", String(Math.ceil(n / rows)));
+  }
+  try { new ResizeObserver(fitKeybar).observe(keybar); } catch (e) { /* ignore */ }
 
   function setHwKeyboard(on) {
     if (on === hwKeyboard) return;
     hwKeyboard = on;
     keybar.hidden = !touchMode || hwKeyboard;
+    fitKeybar();
+    reportCorners();
+    if (!on) keepKeyboardLater();
   }
 
   /* A key with a code that only a physical keyboard sends (on-screen
@@ -643,9 +740,73 @@
       canvas.focus();
       return;
     }
-    if (reshow && document.activeElement === proxy) proxy.blur();
+    if (reshow && document.activeElement === proxy) {
+      /* A blur and a focus in one go reach the phone's keyboard as
+       * nothing at all: it stays hidden. Let it see the field go
+       * first. */
+      reshowing = true;
+      proxy.blur();
+      setTimeout(() => {
+        reshowing = false;
+        focusProxy(true);
+      }, REFOCUS_MS);
+      return;
+    }
+    focusProxy(reshow);
+  }
+
+  const REFOCUS_MS = 120;
+  let reshowing = false;
+  function focusProxy(show) {
     proxyReset();
     proxy.focus({ preventScroll: true });
+    /* Chrome: brings the keyboard up even where focusing alone does not
+     * (the field was focused while the keyboard was dismissed). */
+    if (show && navigator.virtualKeyboard && navigator.virtualKeyboard.show) {
+      try { navigator.virtualKeyboard.show(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  /* The on-screen keyboard stays up while there is no physical
+   * keyboard: dismissed (Back) or gone with the field's focus, it is
+   * brought back. Not while a panel of the page is open or the page is
+   * hidden. */
+  const KEEP_KBD_SETTLE_MS = 400;    /* the keyboard's slide in / out */
+  const KEEP_KBD_MIN_GAP_MS = 1500;  /* at most one try per this long */
+  let keepKbdTimer = 0;
+  let keepKbdAt = -1e9;
+
+  function wantKeyboard() {
+    return ready && touchMode && !hwKeyboard && filesEl.hidden && messageEl.hidden &&
+      document.visibilityState === "visible";
+  }
+
+  /* The on-screen keyboard takes a third or more of the screen; without
+   * it the visual viewport is the screen less the browser's bars. */
+  function keyboardShown() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : innerHeight;
+    return h < screenHeightCss() * 0.75;
+  }
+
+  /* fromTap: called from a tap (a user gesture, which some browsers
+   * need to show the keyboard); otherwise after the layout settled. */
+  function keepKeyboard(fromTap) {
+    if (!wantKeyboard() || reshowing) return;
+    if (document.activeElement !== proxy) {
+      focusScreen(true);
+      return;
+    }
+    if (keyboardShown()) return;
+    const now = performance.now();
+    if (!fromTap && now - keepKbdAt < KEEP_KBD_MIN_GAP_MS) return;
+    keepKbdAt = now;
+    focusScreen(true);
+  }
+
+  function keepKeyboardLater() {
+    clearTimeout(keepKbdTimer);
+    keepKbdTimer = setTimeout(() => keepKeyboard(false), KEEP_KBD_SETTLE_MS);
   }
 
   /* The app follows the visual viewport, which the on-screen keyboard
@@ -655,6 +816,8 @@
     if (!vv) return;
     appEl.style.top = vv.offsetTop + "px";
     appEl.style.height = vv.height + "px";
+    reportCorners();
+    keepKeyboardLater();
   }
   if (window.visualViewport) {
     visualViewport.addEventListener("resize", fitViewport);
@@ -801,24 +964,6 @@
   document.getElementById("kb-ctrl").addEventListener("click", () => setStickyCtrl(!stickyCtrl));
   document.getElementById("kb-files").addEventListener("click", () => openFiles());
   document.getElementById("kb-full").addEventListener("click", () => toggleFullscreen());
-  document.getElementById("kb-show").addEventListener("click", () => focusScreen(true));
-
-  /* Word suggestions: off by default (a password field, see index.html),
-   * remembered in this browser. */
-  const btnSuggest = document.getElementById("kb-suggest");
-  function setSuggest(on, save) {
-    proxy.type = on ? "text" : "password";
-    btnSuggest.setAttribute("aria-pressed", on ? "true" : "false");
-    if (save) {
-      try { localStorage.setItem("draftling-suggest", on ? "1" : "0"); } catch (e) { /* ignore */ }
-      /* The keyboard takes the new kind of field when it is focused again. */
-      if (document.activeElement === proxy) focusScreen(true);
-    }
-  }
-  let suggestSaved = null;
-  try { suggestSaved = localStorage.getItem("draftling-suggest"); } catch (e) { /* ignore */ }
-  setSuggest(suggestSaved === "1", false);
-  btnSuggest.addEventListener("click", () => setSuggest(proxy.type === "password", true));
 
   /* Never leave text in a password field when the page goes away: the
    * browser might offer to save it. */
@@ -826,7 +971,11 @@
     proxy.value = "";
     proxyLast = "";
   }
-  proxy.addEventListener("blur", () => { if (proxy.type === "password") clearProxy(); });
+  proxy.addEventListener("blur", () => {
+    clearProxy();
+    if (!reshowing) keepKeyboardLater();
+  });
+  document.addEventListener("visibilitychange", keepKeyboardLater);
 
   setTouchMode(touchMode);
 
@@ -982,6 +1131,7 @@
   }
 
   document.addEventListener("fullscreenchange", () => {
+    reportCorners();
     btnFull.textContent = document.fullscreenElement ? "Leave full screen" : "Full screen";
     if (!document.fullscreenElement && navigator.keyboard && navigator.keyboard.unlock) {
       navigator.keyboard.unlock();

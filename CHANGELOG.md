@@ -55,8 +55,16 @@ in the git log.
   tablets, a tap on the screen brings up the on-screen keyboard (and
   lets a Bluetooth keyboard type on Android), and a key bar below the
   screen adds Esc, Tab, Ctrl, the arrows and the menu; it hides while a
-  physical keyboard is in use. The on-screen keyboard's word suggestions
-  and autocorrection are off; "Suggest" in the bar turns them on.
+  physical keyboard is in use. The on-screen keyboard stays up while no
+  physical keyboard is in use, and comes back when dismissed. Its word
+  suggestions and autocorrection are off. The bar's buttons all fit the
+  screen, in two rows on a narrow phone.
+  For phones with rounded screen corners, F1 -> Settings -> Display ->
+  "Rounded screen corners" sets the corner radius (16 to 64, in the
+  browser's pixels; off by default): in full screen the title and
+  status bars then grow over the corners and their text moves in from
+  them, so no letter is cut off, while the text area keeps the full
+  width of the screen. The key bar's end buttons move in as well.
 
 ### Fixed
 

@@ -33,6 +33,7 @@
 #include <emscripten/threading.h>
 
 #include "editor.h"
+#include "editor_ui.h"
 #include "esp_log.h"
 #include "linux_host.h"
 #include "web_host.h"
@@ -132,6 +133,30 @@ static void got_paste(char *text, int len)
     free(text);
 }
 
+/* ---- rounded screen corners ------------------------------------------- */
+
+/* The page reports which corners of the canvas are rounded corners of
+ * the screen (full screen on a phone); the editor fits its bars to
+ * them (Settings -> Display -> "Rounded screen corners"). While a
+ * dialog keeps it from laying the screens out again, try again on
+ * every pass of the loop. */
+static bool s_corners_pending;
+static unsigned s_corners_mask;
+static int s_corners_milli = 1000;
+
+static void corners_try(void)
+{
+    s_corners_pending = !editor_ui_set_screen_corners(s_corners_mask, s_corners_milli);
+}
+
+/* The setting changed (0 = off): the page fits its key bar to it. */
+void editor_host_corners_changed(int size)
+{
+    MAIN_THREAD_ASYNC_EM_ASM({
+        if (Module.webCorners) Module.webCorners($0);
+    }, size);
+}
+
 /* ---- the backend ------------------------------------------------------- */
 
 static uint8_t *s_rgba;
@@ -184,11 +209,17 @@ static void web_dispatch(void)
         case WEB_EV_FILES:
             web_files_run((void *)(intptr_t)e.a);
             break;
+        case WEB_EV_CORNERS:
+            s_corners_mask = (unsigned)e.a;
+            s_corners_milli = e.b;
+            s_corners_pending = true;
+            break;
         default:
             break;
         }
     }
     atomic_store_explicit(&s_tail, t, memory_order_release);
+    if (s_corners_pending) corners_try();
 
     bool unsaved = false;
     editor_doc_foreach(any_unsaved_cb, &unsaved);

@@ -52,7 +52,11 @@ help; see the user documentation in `docs/`), with these differences:
 - **Full screen (F11, or "Full screen" at the top right).** Chrome and
   Edge also lock the keyboard there: Esc and the browser's shortcuts
   go to Draftling, and holding Esc leaves full screen. Firefox and
-  Safari leave full screen on Esc.
+  Safari leave full screen on Esc. On a phone with rounded screen
+  corners, set F1 -> Settings -> Display -> "Rounded screen corners"
+  to the corner radius (in CSS pixels; try 40 and adjust): in full
+  screen the title and status bars then cover the corners and keep
+  their text out of them, and the text area keeps the full width.
 - **Clipboard.** Ctrl+C / Ctrl+X put the selection on the system
   clipboard, Ctrl+V pastes from it (the browser may ask for permission
   the first time). The search, file-name and other small fields do not
@@ -66,10 +70,11 @@ help; see the user documentation in `docs/`), with these differences:
   with Ctrl+L); a Bluetooth keyboard works as on a computer. A bar
   below the screen has the keys a phone keyboard lacks -- Esc, Tab,
   Ctrl (for the next key), the arrows, Menu (F1) -- plus Files, Full
-  screen, Keyboard (brings a dismissed keyboard back) and Suggest. The
-  on-screen keyboard's word suggestions and autocorrection are off,
-  since a keyboard cannot see the document around the cursor anyway;
-  Suggest turns them on (remembered in the browser). The bar
+  screen, in two rows on a narrow phone. The on-screen keyboard stays
+  up while no physical keyboard is in use: dismissed, it comes back
+  (at the latest with the next tap on the screen). Its word suggestions
+  and autocorrection are off, since it cannot see the document around
+  the cursor and its language need not match Draftling's layout. The bar
   hides while a physical keyboard is in use and comes back when the
   on-screen keyboard types again. The screen shrinks above the
   on-screen keyboard instead of being covered.

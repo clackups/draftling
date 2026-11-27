@@ -18,10 +18,10 @@
     <!-- Phones and tablets: a focused text field is what brings up the
          on-screen keyboard (and what Android hands Bluetooth keyboard
          input to); client.js turns what is typed into it into keys.
-         A password field by default: on-screen keyboards ignore the
-         hints below but turn off word suggestions, autocorrection and
-         learning for passwords ("Suggest" in the key bar switches it to
-         a text field). -->
+         A password field: on-screen keyboards ignore the hints below
+         but turn off word suggestions, autocorrection and learning for
+         passwords (Draftling's layouts need not match the keyboard's
+         language, so its suggestions would not help anyway). -->
     <input id="kbd-proxy" class="kbd-proxy" type="password" inputmode="text"
            enterkeyhint="enter" autocapitalize="off" autocomplete="off"
            autocorrect="off" spellcheck="false" data-lpignore="true"
@@ -40,8 +40,6 @@
     <button type="button" data-key="F1" title="Menu (F1)">Menu</button>
     <button type="button" id="kb-files" title="Files (F9)">Files</button>
     <button type="button" id="kb-full" title="Full screen (F11)">Full</button>
-    <button type="button" id="kb-show" title="Show the on-screen keyboard">Keyboard</button>
-    <button type="button" id="kb-suggest" aria-pressed="false" title="Word suggestions of the on-screen keyboard">Suggest</button>
   </div>
 </div>
 

@@ -601,6 +601,15 @@ config DRAFTLING_WEB_PAGE
     default y if DRAFTLING_MODEL_WEB
     default n
 
+# The screen may have rounded corners (a phone, the web client in full
+# screen): Settings -> Display -> "Rounded screen corners" grows the
+# title and status bars over the corners the host reports
+# (editor_ui_set_screen_corners()). Needs DRAFTLING_DISPLAY_RESIZABLE.
+config DRAFTLING_DISPLAY_ROUND_CORNERS
+    bool
+    default y if DRAFTLING_MODEL_WEB
+    default n
+
 # ---- Derived: display category (driven by hardware-model choice) ----
 #
 # DRAFTLING_DISPLAY_COLOR is set automatically when the selected board

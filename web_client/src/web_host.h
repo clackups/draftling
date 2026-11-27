@@ -23,6 +23,8 @@ enum {
     WEB_EV_SAVE = 7,        /* the page is being hidden: save every document */
     WEB_EV_DAMAGE = 8,      /* the canvas was cleared: draw it all again */
     WEB_EV_FILES = 9,       /* a = a Files panel request (files_web.c) */
+    WEB_EV_CORNERS = 10,    /* a = EDITOR_CORNER_* bits of the canvas at rounded screen
+                               corners, b = device pixels per CSS pixel x 1000 */
 };
 
 /* Queue an event (the page's thread; io_web.c). */

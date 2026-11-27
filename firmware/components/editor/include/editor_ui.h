@@ -50,6 +50,23 @@ void editor_ui_set_coprocessor(const char *chip, const char *firmware);
 bool editor_ui_can_relayout(void);
 void editor_ui_relayout(void);
 
+/* Boards with CONFIG_DRAFTLING_DISPLAY_ROUND_CORNERS (the web client):
+ * the host reports which corners of the canvas are rounded corners of
+ * the screen (EDITOR_CORNER_* bits; 0 while not in full screen) and
+ * how many canvas pixels make one unit of the "Rounded screen corners"
+ * setting (CSS pixels in a browser), x 1000. With the LVGL lock held.
+ * False while a dialog keeps the screens from being laid out again:
+ * call again later. editor_host_corners_changed() (weak, no-op) tells
+ * the host the setting (0 = off) at start and on every change. */
+enum {
+    EDITOR_CORNER_TOP_LEFT     = 1,
+    EDITOR_CORNER_TOP_RIGHT    = 2,
+    EDITOR_CORNER_BOTTOM_LEFT  = 4,
+    EDITOR_CORNER_BOTTOM_RIGHT = 8,
+};
+bool editor_ui_set_screen_corners(unsigned mask, int px_per_unit_milli);
+void editor_host_corners_changed(int size);
+
 /* Files changed on the SD card behind the editor's back (the web
  * client's Files panel uploaded one): reload the open documents of
  * path (unless they have unsaved changes; path may be NULL) and list
