@@ -2137,6 +2137,15 @@ stores the layout's short name (`kb_layout_name()`, NVS key
 `curlayout`; a name, since ids differ between packs), and
 `editor_ui_init()` restores it with `kb_layout_select()` after the
 active set is loaded.
+While the name prompt (the save-as overlay, every `save_mode_t`) is
+open, `save_prompt_force_latin()` switches to a Latin layout with
+`kb_layout_force_latin()` (the current one if Latin, else the next
+active Latin one, else US even when inactive; layouts with an input
+method do not count) and `close_save_prompt()` gives the previous one
+back (`kb_layout_restore()`); the switch is not saved to NVS.
+`save_name_accept()` limits file names (save as, rename, Alt+M / Alt+C)
+to printable ASCII without `/ \ : * ? " < > | & ' $`; project names keep
+`project_name_char_ok()`.
 
 Caps Lock (`kb_layout_set_caps_lock()` / `kb_layout_get_caps_lock()`,
 HID keycode `KB_KEYCODE_CAPS_LOCK`) is applied inside

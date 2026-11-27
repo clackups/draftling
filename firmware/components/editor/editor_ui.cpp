@@ -1383,6 +1383,32 @@ typedef enum {
 } save_mode_t;
 static save_mode_t s_save_mode = SAVE_MODE_SAVE_AS;
 #define s_save_is_rename (s_save_mode == SAVE_MODE_RENAME)
+
+/* A name typed in another script (Cyrillic, Hebrew, Devanagari, ...)
+ * travels badly between file systems and Git hosts, so the name prompt
+ * switches to a Latin layout while it is open (kb_layout_force_latin())
+ * and gives the previous one back when it closes. The switch is not
+ * saved to NVS. */
+static bool s_save_layout_forced = false;
+static kb_layout_id_t s_save_prev_layout;
+
+static void update_title_bar(void);
+
+static void save_prompt_force_latin(void)
+{
+    if (s_save_layout_forced) return;
+    s_save_prev_layout = kb_layout_force_latin();
+    s_save_layout_forced = true;
+    update_title_bar();
+}
+
+static void save_prompt_restore_layout(void)
+{
+    if (!s_save_layout_forced) return;
+    s_save_layout_forced = false;
+    kb_layout_restore(s_save_prev_layout);
+    update_title_bar();
+}
 static char      s_rename_src[512] = "";
 /* Return to the in-pane (split) selector rather than the full-screen
  * browser after a project prompt raised from it. */
@@ -9513,6 +9539,7 @@ static void show_save_prompt(void)
     }
     s_save_pos = (int)strlen(s_save_buf);
     s_save_open = true;
+    save_prompt_force_latin();
     s_save_mode = SAVE_MODE_SAVE_AS;
     lv_label_set_text(s_save_hdr_lbl, "Save as (Enter/Esc):");
     lv_obj_set_parent(s_save_panel, s_scr);
@@ -9529,6 +9556,7 @@ static void show_name_prompt(save_mode_t mode, const char *hdr, const char *init
     snprintf(s_save_buf, sizeof(s_save_buf), "%s", initial ? initial : "");
     s_save_pos = (int)strlen(s_save_buf);
     s_save_open = true;
+    save_prompt_force_latin();
     s_save_mode = mode;
     s_save_from_inpane = s_inpane_browser_open;
     lv_label_set_text(s_save_hdr_lbl, hdr);
@@ -9568,6 +9596,7 @@ static void close_save_prompt(void)
 {
     s_save_open = false;
     lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
+    save_prompt_restore_layout();
 }
 
 static void rename_prompt_confirm(void)
@@ -10064,14 +10093,18 @@ static void save_prompt_confirm(void)
 /* What may be typed into the save-as / rename / project name field. */
 static bool save_name_accept(const char *text, size_t cur_len)
 {
-    /* No path separators. */
-    if (text[0] == '/' || text[0] == '\\') return false;
     /* Project names: ASCII letters, digits, '-', '_', ' '. */
-    if (save_mode_is_project_name(s_save_mode) &&
-        (strlen(text) != 1 || !project_name_char_ok(text[0]) ||
-         cur_len + 1 > PROJECT_NAME_MAX))
-        return false;
-    return true;
+    if (save_mode_is_project_name(s_save_mode))
+        return strlen(text) == 1 && project_name_char_ok(text[0]) &&
+               cur_len + 1 <= PROJECT_NAME_MAX;
+    /* File names: printable ASCII only, without the characters that
+     * Windows / FAT, macOS or a shell refuse or treat specially, so the
+     * file moves to any computer and Git host unchanged. Accented and
+     * other non-ASCII letters are left out for the same reason. */
+    if (strlen(text) != 1) return false;
+    unsigned char c = (unsigned char)text[0];
+    if (c < 0x20 || c > 0x7E) return false;
+    return strchr("/\\:*?\"<>|&'$", c) == NULL;
 }
 
 static void handle_save_prompt_key(const kb_event_t *ev)
@@ -13649,6 +13682,7 @@ static void apply_pending_connect_state(void)
         s_layouts_picker_open = false;
         s_save_open = false;
         if (s_save_panel) lv_obj_add_flag(s_save_panel, LV_OBJ_FLAG_HIDDEN);
+        save_prompt_restore_layout();
         close_newfmt_prompt();
         close_delete_prompt();
         s_exit_open = false;

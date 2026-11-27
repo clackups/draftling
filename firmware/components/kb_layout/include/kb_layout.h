@@ -242,6 +242,18 @@ kb_layout_id_t kb_layout_next(void);
  * or not in the active set. */
 bool kb_layout_select(kb_layout_id_t layout);
 
+/* Switch to a Latin layout for typing a file or project name, so the
+ * name is not written in another script: the current layout if it is
+ * Latin, else the first active Latin layout after it in Ctrl+L order,
+ * else US even when US is not in the active set. Layouts that go
+ * through an input method (VI, JA, Telugu RTS, ...) do not count as
+ * Latin here. Returns the layout that was current before, to be given
+ * back with kb_layout_restore(). */
+kb_layout_id_t kb_layout_force_latin(void);
+
+/* Return to a layout saved by kb_layout_force_latin(). */
+void kb_layout_restore(kb_layout_id_t layout);
+
 /* True when the active layout produces right-to-left script (Hebrew) */
 bool kb_layout_is_rtl(void);
 

@@ -85,6 +85,16 @@ in the git log.
   Draftling always started with the US layout, even when another one
   was in use. It now comes back with the layout that was selected
   last (Ctrl+L, Win+Space or F1 -> Keyboard).
+- **File and project names in Latin letters**: while a non-Latin
+  layout was selected (Ukrainian, Hebrew, Korean, the Indic layouts,
+  ...), typing a name on Ctrl+S, rename or a new project gave a name
+  in that script, which other computers and Git hosts handle badly.
+  The name prompt now switches to a Latin layout while it is open:
+  one of the active layouts if there is one, otherwise US. The
+  previous layout comes back when the prompt closes. A file name also
+  takes only plain ASCII characters: accented letters and the
+  characters other systems refuse or treat specially in file names
+  (`\ : * ? " < > | & ' $`) are ignored when typed.
 - **Spaces at the end of a full row**: pressing Space at the end of a
   row that was already full seemed to do nothing -- the cursor went
   off the right edge, and the spaces disappeared once the next letter

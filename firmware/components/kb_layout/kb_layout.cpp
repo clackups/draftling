@@ -4839,6 +4839,37 @@ extern "C" bool kb_layout_select(kb_layout_id_t layout)
     return true;
 }
 
+static bool plain_latin(kb_layout_id_t id)
+{
+    return s_layouts[id].is_latin && s_layouts[id].ime == KB_IME_NONE;
+}
+
+extern "C" kb_layout_id_t kb_layout_force_latin(void)
+{
+    kb_layout_id_t prev = s_layout;
+    if (plain_latin(s_layout)) return prev;
+    s_dead = NULL;
+    kb_layout_id_t id = s_layout;
+    for (int i = 0; i < KB_LAYOUT_COUNT; i++) {
+        id = (kb_layout_id_t)((id + 1) % KB_LAYOUT_COUNT);
+        if ((s_active_mask & (1ull << id)) && plain_latin(id)) {
+            s_layout = id;
+            return prev;
+        }
+    }
+    s_layout = KB_LAYOUT_US;
+    return prev;
+}
+
+extern "C" void kb_layout_restore(kb_layout_id_t layout)
+{
+    if (layout >= KB_LAYOUT_COUNT) return;
+    if (layout != s_layout) s_dead = NULL;
+    s_layout = layout;
+    /* The active set may have changed meanwhile. */
+    if (!(s_active_mask & (1ull << s_layout))) kb_layout_next();
+}
+
 extern "C" bool kb_layout_is_active(kb_layout_id_t layout)
 {
     if (layout >= KB_LAYOUT_COUNT) return false;
