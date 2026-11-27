@@ -119,7 +119,7 @@ is the original revision (v1.0-240810) of the T5 E-Paper S3 Pro.
 
 [LilyGO T5 4.7" E-Paper](https://lilygo.cc/products/t5-4-7-inch-e-paper-v2-3),
 ESP32-S3 version (V2.3). Not the T5 E-Paper S3 Pro above: an older,
-different board. Not yet tested on physical hardware.
+different board.
 
 - 4.7" 960x540 e-paper panel.
 - No touch (the touch panel of the touch version is not used yet), no
@@ -140,7 +140,7 @@ different board. Not yet tested on physical hardware.
 4.7" E-Paper (ESP32-S3) above, with a built-in keyboard (a Raspberry
 Pi Pico running QMK, connected to the T5's USB-C port). The
 `microjournal_rev7` preset is the T5 firmware with the USB-C port as a
-USB keyboard host. Not yet tested on physical hardware.
+USB keyboard host.
 
 - The keyboard works as on any computer: the Fn key with the number
   row gives F1 - F12 (F1 opens the menu, F10 the help).
@@ -177,8 +177,7 @@ similar device.
 ## M5Stack PaperMono / PaperMono-Lite
 
 [M5Stack PaperMono-Lite](https://docs.m5stack.com/en/core/PaperMono-Lite) and
-[PaperMono](https://docs.m5stack.com/en/core/PaperMono). Tested on
-physical hardware.
+[PaperMono](https://docs.m5stack.com/en/core/PaperMono).
 
 - 3.97" 800x480 e-paper (SSD1677). The device is natively portrait;
   Draftling starts in landscape (F1 -> Settings -> Display ->
@@ -200,7 +199,7 @@ physical hardware.
 
 ## Xteink X4 Pro
 
-Xteink X4 Pro e-reader. Tested on physical hardware.
+Xteink X4 Pro e-reader.
 
 - 4.26" 800x480 e-paper. Units carry one of three panel controllers
   (SSD1677, UC8179 or UC8279); the firmware detects which at boot.
@@ -224,7 +223,7 @@ Xteink X4 Pro e-reader. Tested on physical hardware.
 ## Xteink X4 Classic (X4 v2)
 
 Xteink X4 Classic, also sold as "X4 v2": the buttons-only sibling of
-the X4 Pro. **Not tested on physical hardware.**
+the X4 Pro.
 
 - Same 4.26" 800x480 e-paper with controller detection as the X4 Pro.
 - No touch, no front-light.
@@ -240,7 +239,6 @@ the X4 Pro. **Not tested on physical hardware.**
 ## Waveshare ESP32-S3-ePaper-3.97
 
 [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97).
-Tested on physical hardware.
 
 - 3.97" 800x480 e-paper (SSD1677-compatible).
 - No touch, no front-light.
@@ -262,8 +260,7 @@ Tested on physical hardware.
 a battery-powered, magnetically mounted e-paper badge, 32 MB flash.
 
 - 3.97" 800x480 e-paper. Units carry an SSD1677 or an SSD2677
-  controller, detected at boot; both are tested on physical
-  hardware.
+  controller, detected at boot.
 - GT911 touch.
 - No front-light.
 - Battery level and charging state (BQ27220 fuel gauge).
@@ -300,7 +297,7 @@ a 7.5" e-paper terminal, 32 MB flash.
 
 [Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI
 Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-272-792-resolution-black-white-color-driven-by-spi-interface.html):
-8 MB flash. Extensively tested on physical hardware.
+8 MB flash.
 
 - 5.79" 792x272 e-paper (two SSD1683 controllers, one per half).
 - No touch, no front-light.
@@ -318,8 +315,7 @@ Display](https://www.elecrow.com/crowpanel-esp32-5-79-e-paper-hmi-display-with-2
 ## M5Stack Tab5
 
 [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5): an ESP32-P4
-tablet, 32 MB PSRAM. Much faster than the ESP32-S3 devices. Tested on
-physical hardware.
+tablet, 32 MB PSRAM. Much faster than the ESP32-S3 devices.
 
 - 5" 1280x720 IPS color LCD (ILI9881C or ST7123, detected
   automatically).
@@ -367,7 +363,6 @@ a desktop writer; too bulky for a portable one.
 ## Waveshare ESP32-S3-LCD-3.16
 
 [Waveshare ESP32-S3-LCD-3.16](https://www.waveshare.com/wiki/ESP32-S3-LCD-3.16).
-Tested on physical hardware.
 
 - Long, narrow 3.16" IPS color LCD (ST7701), shown landscape at
   820x320.
@@ -393,9 +388,10 @@ Guition JC3248W535.
 
 ## Guition JC4827W543C
 
-[Guition JC4827W543C](https://www.atomic14.com/esp32/boards/guition-jc4827w543/):
-4 MB flash. Tested on physical hardware. The resistive-touch
-(JC4827W543R) and no-touch (JC4827W543N) variants are not supported.
+[Guition
+JC4827W543C](https://www.atomic14.com/esp32/boards/guition-jc4827w543/):
+4 MB flash. The resistive-touch (JC4827W543R) and no-touch
+(JC4827W543N) variants are not supported.
 
 - 4.3" 480x272 IPS color LCD (NV3041A).
 - GT911 touch.
@@ -426,7 +422,7 @@ the pins and panel timings.
 [Elecrow CrowPanel ESP32 HMI
 5.0"](https://www.elecrow.com/wiki/esp32-display-502727-intelligent-touch-screen-wi-fi26ble-800480-hmi-display.html)
 (DIS07050H, [GitHub](https://github.com/Elecrow-RD/CrowPanel-5.0-HMI-ESP32-Display-800x480)):
-4 MB flash. Tested on physical hardware.
+4 MB flash.
 
 - 5" 800x480 TN color LCD.
 - GT911 touch.
@@ -445,7 +441,7 @@ the pins and panel timings.
 ## VIEWE UEDX80480043E-WB-A / -WB-B
 
 [VIEWE UEDX80480043E-WB](https://github.com/VIEWESMART/UEDX80480043ESP32-4.3inch-Touch-Display).
-One firmware for both revisions. Tested on physical hardware.
+One firmware for both revisions.
 
 - 4.3" 800x480 color LCD (ST7262).
 - GT911 touch.
@@ -466,7 +462,7 @@ kits: small, inexpensive color-LCD boards.
 - FNK0104S: 4.0" 480x320 LCD (ST7796; Freenove's documentation calls
   it ST7789) with FT6336U touch.
 - FNK0104N: 3.5" 480x320 IPS LCD (ST77922) with touch built into the
-  display controller. Tested on physical hardware.
+  display controller.
 - All: backlight, battery level, SD card via USB and Sync via browser.
 
 
@@ -477,7 +473,7 @@ board](https://github.com/VIEWESMART/UEDX24320028ESP32-2.8inch-Touch-Display)
 with the
 [UEED035HV-RX40-L001](https://viewedisplay.com/product/3-5-inch-320x480-sunlight-readable-transflective-with-super-low-power-tft-lcd-module/)
 display attached in place of its stock 2.8" panel (the board with the
-stock panel is not supported). Tested on physical hardware.
+stock panel is not supported).
 
 - 3.5" 480x320 transflective color LCD (ST7365): readable in daylight
   with the backlight off.
@@ -490,8 +486,7 @@ stock panel is not supported). Tested on physical hardware.
 ## MicroJournal Rev 5.0 / 5.1
 
 [Micro Journal](https://github.com/unkyulee/micro-journal) revisions
-5.0 and 5.1, an ESP32-S3 writerdeck. One firmware for both. Tested on
-physical hardware with Rev 5.0 only.
+5.0 and 5.1, an ESP32-S3 writerdeck. One firmware for both.
 
 - 2.8" 320x240 color LCD: ILI9341 on Rev 5.0, ST7789 on Rev 5.1,
   detected at boot (F1 -> System & Storage -> Hardware information
@@ -508,7 +503,7 @@ physical hardware with Rev 5.0 only.
 
 [NiceMCU-C5E-DEV_2.8IPS](https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS)
 (also sold as NiceMCU-C5-2.8IPS): the only ESP32-C5 board, dual-band
-2.4 / 5 GHz Wi-Fi 6. Tested on physical hardware.
+2.4 / 5 GHz Wi-Fi 6.
 
 Not recommended for new builds: it is only slightly cheaper than the
 Freenove boards, has no battery input, and the ESP32-C5 has no USB
@@ -531,7 +526,7 @@ device support.
 
 [OnePage Reader](https://github.com/MoveCall/onepage-reader): an
 open-hardware e-reader with an ESP32-C61 (Wi-Fi 6, BLE) in a sealed
-body. Tested on physical hardware.
+body.
 
 - 4.26" 800x480 e-paper (SSD1677, the Xteink X4 panel).
 - No touch, no front-light.

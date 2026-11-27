@@ -69,12 +69,19 @@ they differ. Never commit under any other identity.
 ## User Documentation
 
 - Adding a board, or changing what a board does that a user can see
-  (buttons, features, test status), must also update the user
+  (buttons, features), must also update the user
   documentation in the same commit: the board's row in the summary
   table and its section in `HARDWARE.md`, the board list in
   `README.md`, and the board's entries in this file (the "Supported
   Hardware" table, the hardware-model list under
   `main/Kconfig.projbuild`, the preset list under "Building").
+- Do not write "tested on physical hardware", "untested", "not yet
+  verified on hardware" or similar test-status notes about a board or
+  feature anywhere in the repository (code comments, `HARDWARE.md`,
+  `README.md`, `CHANGELOG.md`, this file, the flasher manifest):
+  everything is tested on physical hardware before it is released.
+  Describing what was observed on hardware while debugging ("on
+  hardware the panel held GPIO0 LOW") is fine; a status claim is not.
 
 ## Project Overview
 
@@ -105,11 +112,11 @@ card).
 | Freenove FNK0104B | 2.8-inch ILI9341 color LCD, 320x240, FT6336U touch |
 | Freenove FNK0104N | 3.5-inch ST77922 QSPI color LCD, 480x320, ST77922 built-in touch |
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
-| MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host (tested on hardware with the ILI9341 only) |
+| MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host |
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
-| LilyGO T5 4.7" E-Paper (ESP32-S3) / MicroJournal Rev.7 | 4.7-inch e-paper (ED047TC1, shift-register control lines, FastEPD), 960x540, no touch; Rev.7 = the same board with its USB-C port as a USB keyboard host (untested on hardware) |
+| LilyGO T5 4.7" E-Paper (ESP32-S3) / MicroJournal Rev.7 | 4.7-inch e-paper (ED047TC1, shift-register control lines, FastEPD), 960x540, no touch; Rev.7 = the same board with its USB-C port as a USB keyboard host |
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
@@ -154,8 +161,7 @@ BLE 5.0 features off in `sdkconfig.defaults.bluetooth.esp32c5` (as on the
 C61: Bluedroid otherwise reconnects with LE Extended Create Connection,
 which the controller refuses after legacy scanning, reason 0x100),
 and IDF's C5 `BT_CONTROLLER_INIT_CONFIG_DEFAULT()` needs
-`-Wno-missing-field-initializers` in `components/ble_keyboard`. On
-the board, everything is tested on physical hardware.
+`-Wno-missing-field-initializers` in `components/ble_keyboard`.
 
 ## M5Stack Tab5 and ESP-Hosted
 
@@ -995,7 +1001,7 @@ Per-board display backends behind a single C API:
   and a timeout retries with the other controller -- a wrong guess
   otherwise ran every 30 s BUSY wait to its end and the device seemed
   not to boot. The SSD1677 path (dual-RAM differential
-  refresh) is tested on physical hardware and uses the same
+  refresh) uses the same
   sequences as `display_ws_epd397.cpp` (see "SSD1677 refresh method"
   below). Its earlier sticky-micronotes sequences (full CTRL2 0xF7,
   fast 0xFF, plus a re-driven band around each change) left
@@ -1005,8 +1011,7 @@ Per-board display backends behind a single C API:
   SSD2677 path (2bpp DTM1 data, waveform latch, no RAM windows) is ported from Seeed_GFX2's
   `Driver_SSD2677.cpp`, with the frame turned 180 degrees (rows sent
   bottom to top, unmirrored: Seeed's mirrored-row order showed the
-  picture upside down on hardware), and is tested on physical
-  hardware. The SPI bus is shared with the
+  picture upside down on hardware). The SPI bus is shared with the
   on-board MicroSD card (separate `CS`, same `SCLK`/`MOSI`/`MISO`):
   main.cpp powers the card (`SD_EN_PIN`) and drives its CS high before
   `display_init()`, because an unpowered card on the bus kept the panel
@@ -3159,7 +3164,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   held GPIO0 LOW after the scan-out was stopped, so standby could
   never arm EXT0 on it. `pre_sleep_crowpanel_50_deinit()` stops the
   panel and latches the backlight off. Pins and timings from Elecrow's
-  v3.0 PlatformIO example. Tested on physical hardware. *Requires ESP32-S3.*
+  v3.0 PlatformIO example. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_VIEWE_UEDX80480043** -- VIEWE UEDX80480043E-WB-A
   / -WB-B (one build for both; VIEWE states there is no software
   difference, `main/boards/viewe_uedx80480043.h`): ESP32-S3 N16R8,
@@ -3176,7 +3181,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   CH340C USB-UART (no USB MSC / Kermit), USB-powered with no battery
   input. `pre_sleep_viewe_uedx80480043_deinit()` puts the GT911 to sleep,
   releases the SD card, stops the panel and latches the backlight
-  off. Tested on physical hardware (standby about 30 mA).
+  off (standby about 30 mA).
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_GUITION_JC4827W543C** -- Guition JC4827W543C
   (`main/boards/guition_jc4827w543c.h`): ESP32-S3-WROOM-1-N4R8 (4 MB
@@ -3193,7 +3198,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   `pre_sleep_jc4827w543c_deinit()` puts the GT911 to sleep, releases
   the SD card, holds the amplifier lines and calls
   `display_deep_sleep_prepare()`. No USB MSC / Kermit (native USB vs.
-  bridge not confirmed). Tested on physical hardware.
+  bridge not confirmed).
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_FREENOVE_FNK0104A** -- Freenove FNK0104A: 2.8"
   ILI9341 color SPI LCD, 320x240, no touch, on-board MicroSD on
@@ -3213,7 +3218,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   RST=48), reported in the panel's native frame (no swap/mirror). The
   unused on-board WS2812 LED (GPIO40,
   `BOARD_WS2812_PIN`) is switched off at boot by `ws2812_off()` in
-  main.cpp. Tested on physical hardware. *Requires ESP32-S3.*
+  main.cpp. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_MICROJOURNAL_REV5** -- MicroJournal Rev 5.0 and
   5.1 (github.com/unkyulee/micro-journal `rev.5/5.0`, `rev.5/5.1`;
   one build, `main/boards/microjournal_rev5.h`) writerdeck: ESP32-S3
@@ -3228,8 +3233,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   sleep the device wakes only by reset or power cycle). The console
   is on UART because USB-OTG host and USB-Serial/JTAG share the
   internal PHY; `usb_kbd_init()` installs the USB Host library itself
-  (no BSP). Backlight control is disabled. Tested on physical hardware with the
-  Rev 5.0 (ILI9341) panel only; the Rev 5.1 (ST7789) is untested. *Requires ESP32-S3.*
+  (no BSP). Backlight control is disabled. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_LILYGO_T5_47_S3** -- LilyGO T5 4.7" e-paper, ESP32-S3
   version (V2.3; `main/boards/lilygo_t5_47_s3.h`), not the T5 E-Paper
   S3 Pro: 960x540 ED047TC1 whose output enable, mode, STV, panel
@@ -3274,7 +3278,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   keyboard on a Pico plugged into the USB-C port; VBUS comes from the
   device's battery boost module, the T5 does not source it). The stock
   Rev.7 firmware keeps documents in internal flash; Draftling uses the
-  T5's MicroSD slot, which is reachable in the Rev.7 enclosure. Untested on physical hardware. *Requires ESP32-S3.*
+  T5's MicroSD slot, which is reachable in the Rev.7 enclosure. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_PRO** -- Xteink X4 Pro: 4.26" 800x480
   e-paper panel over SPI, one of three controllers (SSD1677, UC8179,
   UC8279) auto-detected at boot by
@@ -3294,8 +3298,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   (`esp_restart()` from the Settings "restart to apply" prompt, a panic,
   a watchdog) does not reset the I2C peripheral or the GT911, so
   without the power-cycle the controller comes up wedged on the bus and
-  touch is dead until the next deep-sleep cycle. Tested on physical
-  hardware after an initial blind port; see HARDWARE.md.
+  touch is dead until the next deep-sleep cycle. See HARDWARE.md.
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_XTEINK_X4_CLASSIC** -- Xteink X4 Classic (a.k.a.
   "X4 v2"): the buttons-only, no-front-light sibling of the X4 Pro.
@@ -3316,8 +3319,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   own SPI bus. Menu button (GPIO2) is the deep-sleep wake source and
   doubles as F1 / forget-keyboards; Back button + a 3-way dial
   switch (Up/Down/OK) provide full menu navigation without a
-  keyboard. No on-board battery monitor. Extensively tested on
-  physical hardware; see HARDWARE.md. *Requires ESP32-S3.*
+  keyboard. No on-board battery monitor. See HARDWARE.md.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_WAVESHARE_EPAPER_397** -- Waveshare
   ESP32-S3-ePaper-3.97: 3.97" 800x480 black/white e-paper panel driven
   over plain SPI by `components/display/display_ws_epd397.cpp`, using
@@ -3326,7 +3329,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   active-low buttons (Up/Function/Down plus BOOT) stand in for it.
   Battery and the e-paper panel's own supply rail are both managed by
   an on-board AXP2101 PMIC on I2C. On-board MicroSD on SDMMC 1-bit.
-  Tested on physical hardware. *Requires ESP32-S3.*
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_SEEED_RETERMINAL_STICKY** -- Seeed reTerminal
   Sticky: the same 3.97" 800x480 panel class as the Waveshare
   ESP32-S3-ePaper-3.97 above, driven by
@@ -3339,8 +3342,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   forget BLE keyboards) drive the
   editor without a keyboard. 32 MB flash; dual-OTA partition table
   (`partitions_seeed_reterminal_sticky.csv`) so the third-party
-  Crosspoint firmware can still be installed later. Tested on
-  physical hardware; pin assignments are triple-sourced from Seeed's
+  Crosspoint firmware can still be installed later. Pin assignments are triple-sourced from Seeed's
   own documentation and the FreeInk SDK (MIT licensed), which agree;
   see `main/boards/seeed_reterminal_sticky.h` and HARDWARE.md. The
   panel controller is an SSD1677 or an SSD2677, auto-detected (see
@@ -3381,8 +3383,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   and forget-keyboards on a 2 s hold; Button B (GPIO3) is Page Down on
   a short press and sleep on a 2 s hold
   (`CONFIG_DRAFTLING_SLEEP_BUTTON_GPIO`); `papermono_btn_init()` in
-  main.cpp suppresses the Page Up/Down on a long hold. Tested on
-  physical hardware; see HARDWARE.md.
+  main.cpp suppresses the Page Up/Down on a long hold. See
+  HARDWARE.md.
   *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_WAVESHARE_LCD_316** -- Waveshare ESP32-S3-LCD-3.16:
   3.16" 320x820 portrait ST7701 color LCD on the 16-bit RGB
@@ -3394,8 +3396,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   QMI8658 IMU (0x6B) and PCF85063 RTC (0x51) on I2C SDA=15/SCL=7 are
   quieted once per boot by `ws_lcd316_quiet_i2c_peripherals()` in
   main.cpp (IMU CTRL1 sensorDisable = Power-Down; RTC Control_2
-  COF = 111 = CLKOUT off), right after `display_init()`. Tested on
-  physical hardware. *Requires ESP32-S3.*
+  COF = 111 = CLKOUT off), right after `display_init()`.
+  *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_NICEMCU_C5_28IPS** -- NiceMCU-C5E-DEV_2.8IPS:
   XH-C5E_N16R8 module (ESP32-C5, 16 MB flash, 8 MB quad PSRAM), 2.8"
   240x320 ST7789P3 IPS panel (write-only SPI on DC=4, CS=5, SCK=6,
@@ -3421,8 +3423,8 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   (GPIO27) switched off at boot. No battery monitor. Touch reports in
   the panel's native portrait frame turned 180 degrees from the
   vendor's upright portrait: swap + mirror Y (mirror X, as on the
-  FNK0104B, put lower-right taps in the upper-left corner). Tested on
-  physical hardware. *Requires ESP32-C5.*
+  FNK0104B, put lower-right taps in the upper-left corner).
+  *Requires ESP32-C5.*
 - **DRAFTLING_MODEL_ONEPAGE_C61** -- OnePage Reader
   (github.com/MoveCall/onepage-reader, `main/boards/onepage_c61.h`):
   ESP32-C61HR2, 16 MB flash, 4.26" 800x480 SSD1677 e-paper (the
@@ -3448,7 +3450,7 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   0x100); internal RAM is the tightest of any target, so WiFi uses 8
   static TX buffers, allocations above 4 KB go to PSRAM and the SPI
   master ISR runs from flash (esp_wifi_init() ran out of memory with
-  BLE up). Tested on physical hardware. *Requires ESP32-C61.*
+  BLE up). *Requires ESP32-C61.*
 - **DRAFTLING_MODEL_LINUX** -- the native Linux program built in
   `linux/` (see "Linux application"), not by idf.py. Color, HIDPI
   (Hack fonts only), touch = the window's mouse, battery from
@@ -3988,11 +3990,9 @@ bootloader at `0x2000`, not `0x0`: take the offsets from each build's
 there as more boards get a web-flasher entry. A release does not need to
 cover every board with prebuilt binaries -- the flasher's manifest
 tracks a `releases` list per board (see below), so a board can simply
-keep pointing at an older tag until it is next rebuilt. An
-experimental / untested board's manifest entry marks itself with a
-`" -- UNTESTED on physical hardware"` (or similar) suffix on its
-`description` field, matching the convention already used for
-`xteink_x4_classic`; there is no separate schema flag for this.
+keep pointing at an older tag until it is next rebuilt. Every board
+is tested on physical hardware before its images are published, so a
+manifest `description` carries no "untested" marker.
 
 Note: step 5 below refers to `firmware/` in the *`draftling-flasher`*
 repository -- its own binary-staging directory, named the same as (but unrelated to)

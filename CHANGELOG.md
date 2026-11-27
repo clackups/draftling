@@ -22,7 +22,7 @@ in the git log.
   (ESP32-S3 version, documents on its MicroSD card) and
   `microjournal_rev7` for the Micro Journal Rev.7 writerdeck built
   around it, whose built-in keyboard plugs into the board's USB-C
-  port. Not yet tested on physical hardware.
+  port.
 - **USB keyboard on any ESP32-S3 board**: a new build option, "Use the
   native USB port as a USB host for a keyboard", lets an ESP32-S3
   board take a USB keyboard on its native USB port instead of offering
