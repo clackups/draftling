@@ -34,7 +34,7 @@ ALL_PACK_BOARDS="seeed_reterminal_sticky freenove_fnk0104a freenove_fnk0104s"
 LARGE_PACKS="indic"
 # One line per dependency set.
 DEP_GROUPS=(
-    "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 seeed_reterminal_e1001 seeed_reterminal_sticky m5stack_papermono freenove_fnk0104a freenove_fnk0104s"
+    "xteink_x4_pro xteink_x4_classic waveshare_rlcd42 waveshare_epaper_397 seeed_reterminal_e1001 seeed_trmnl_75_og_diy seeed_reterminal_sticky m5stack_papermono freenove_fnk0104a freenove_fnk0104s"
     "microjournal_rev5 microjournal_rev7"
     "m5stack_tab5"
 )

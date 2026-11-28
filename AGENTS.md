@@ -4028,7 +4028,7 @@ the web flasher (https://flasher.draftling.art/, see below), in the
 separate `clackups/draftling-flasher` repository only -- never as
 GitHub release assets. Currently: `xteink_x4_pro`, `xteink_x4_classic`,
 `waveshare_rlcd42`, `waveshare_epaper_397`,
-`seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
+`seeed_reterminal_e1001`, `seeed_trmnl_75_og_diy`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `freenove_fnk0104a`, `freenove_fnk0104s`,
 `microjournal_rev5`, `microjournal_rev7` and `m5stack_tab5`, each
 with the default language pack. Only `seeed_reterminal_sticky`, `freenove_fnk0104a` and
