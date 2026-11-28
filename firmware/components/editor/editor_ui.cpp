@@ -1196,6 +1196,7 @@ enum menu_item_t {
     MENU_ITEM_HWINFO,
     MENU_ITEM_USB_MSC,       /* CONFIG_DRAFTLING_HAS_USB_MSC */
     MENU_ITEM_FORMAT_SD,
+    MENU_ITEM_ROOT_DOCS,     /* only when documents lie in the root */
     /* Every level below the top one ends with it */
     MENU_ITEM_BACK,
 };
@@ -1289,6 +1290,25 @@ static bool s_msg_kermit             = false;
  * tap) asks for the name of a new project to move them to, Esc powers
  * the device off (deep sleep); it asks again on the next start. */
 static bool s_msg_migrate            = false;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+/* "Choose files..." button of the "Files outside projects" pop-up. */
+static lv_obj_t *s_msg_choose_btn    = NULL;
+#endif
+/* "Files outside projects" list (see open_rootdocs_picker()). */
+static bool               s_rootdocs_open = false;
+static bool               s_rootdocs_from_popup = false;
+static project_root_doc_t *s_rootdocs = NULL;   /* PSRAM, PROJECT_ROOT_DOCS_MAX */
+static int                s_rootdocs_n = 0;      /* rows stored, <= PROJECT_ROOT_DOCS_MAX */
+static int                s_rootdocs_total = 0;  /* documents found, may be more */
+static int                s_rootdocs_sel = 0;
+static int                s_rootdocs_sel_prev = 0;
+static void rootdocs_free(void)
+{
+    heap_caps_free(s_rootdocs);
+    s_rootdocs = NULL;
+    s_rootdocs_n = s_rootdocs_total = 0;
+}
+
 /* The pop-up says the SD card is missing. It cannot be closed: the user
  * inserts a card, then Enter (or a tap) restarts the device. */
 static bool s_msg_restart            = false;
@@ -5361,20 +5381,35 @@ static void check_project_setup(void)
         return;
     }
     if (s_setup_dismissed) return;
+    /* Only the documents still to be moved are asked about; those the
+     * user chose to keep in the root (F1 -> System & Storage -> "Files
+     * outside projects...") are left alone. */
     const int SHOW = 6;
-    project_file_name_t names[SHOW];
-    int ndocs = project_root_doc_names(names, SHOW);
+    project_root_doc_t *docs = (project_root_doc_t *)heap_caps_malloc(
+        PROJECT_ROOT_DOCS_MAX * sizeof(project_root_doc_t), MALLOC_CAP_SPIRAM);
+    int total = 0, ndocs = 0;
+    int stored = docs ? project_root_docs(docs, PROJECT_ROOT_DOCS_MAX, &total, &ndocs) : -1;
+    if (stored < 0) {
+        ESP_LOGW(TAG, "Cannot list the documents outside projects");
+        ndocs = 0;
+    }
     if (ndocs > 0) {
         std::string text = ndocs == 1 ? "This file does not belong to any project:\n"
                                       : "These files do not belong to any project:\n";
-        for (int i = 0; i < ndocs && i < SHOW; i++) {
+        int shown = 0;
+        for (int i = 0; i < stored && shown < SHOW; i++) {
+            if (docs[i].ignored) continue;
+            /* only shown: a long name is cut short */
+            char name[64];
+            snprintf(name, sizeof(name), "%.63s", docs[i].name);
             text += "  ";
-            text += names[i];
+            text += name;
             text += '\n';
+            shown++;
         }
-        if (ndocs > SHOW) {
+        if (ndocs > shown) {
             char more[48];
-            snprintf(more, sizeof(more), "  ...and %d more\n", ndocs - SHOW);
+            snprintf(more, sizeof(more), "  ...and %d more\n", ndocs - shown);
             text += more;
         }
         bool have_projects = project_any();
@@ -5389,13 +5424,17 @@ static void check_project_setup(void)
                 ? " Their Git sync settings (git.cfg) and history go with them, "
                   "unless the project has its own."
                 : " Their Git sync settings (git.cfg) and history go with them.";
-        show_msg_popup("Files outside projects", text.c_str(), false);
+        if (total > ndocs)
+            text += "\nThe files you chose to keep outside projects stay.";
+        heap_caps_free(docs);
         s_msg_migrate = true;
+        show_msg_popup("Files outside projects", text.c_str(), false);
         lv_label_set_text(s_msg_hint_lbl, have_projects
-                              ? "Enter: move to a project  Esc: power off"
-                              : "Enter: move to a new project  Esc: power off");
+                              ? "Enter: move  I: choose files  Esc: power off"
+                              : "Enter: new project  I: choose files  Esc: power off");
         return;
     }
+    heap_caps_free(docs);
     if (!project_any()) {
         show_name_prompt(SAVE_MODE_PROJECT_FIRST, "Create a project (Enter):",
                          PROJECT_DEFAULT_NAME);
@@ -5827,6 +5866,7 @@ static char menu_item_hotkey(menu_item_t id)
     case MENU_ITEM_HWINFO:      return 'i';  /* "Hardware information" */
     case MENU_ITEM_USB_MSC:     return 'u';  /* "SD card via USB: ..." */
     case MENU_ITEM_FORMAT_SD:   return 'f';  /* "Format SD card..." */
+    case MENU_ITEM_ROOT_DOCS:   return 'o';  /* "Files outside projects..." */
     default:                    return 0;
     }
 }
@@ -6083,6 +6123,11 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_FORMAT_SD,
                  sd_card_is_mounted() ? "Format " STORAGE_NAME "..."
                                       : "Format " STORAGE_NAME "... (no " STORAGE_NAME ")");
+        if (sd_card_is_mounted() && !sd_handed_off_msg()) {
+            int total = 0;
+            if (project_root_docs(NULL, 0, &total, NULL) >= 0 && total > 0)
+                menu_add(MENU_ITEM_ROOT_DOCS, "Files outside projects...");
+        }
         menu_add(MENU_ITEM_BACK, "Back (Esc)");
         break;
     }
@@ -6159,6 +6204,9 @@ static void show_menu(void)
     s_fmt_step = FMT_STEP_NONE;
     s_xfer_open = false;
     s_xfer_migrate = false;
+    s_rootdocs_open = false;
+    s_rootdocs_from_popup = false;
+    rootdocs_free();
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     s_kermit_picker_open = false;
 #endif
@@ -7408,6 +7456,12 @@ static void show_msg_popup(const char *title, const char *text, bool busy)
     else      lv_obj_remove_flag(s_msg_hint_lbl, LV_OBJ_FLAG_HIDDEN);
     s_msg_busy = busy;
     s_msg_open = true;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    if (s_msg_choose_btn) {
+        if (s_msg_migrate) lv_obj_remove_flag(s_msg_choose_btn, LV_OBJ_FLAG_HIDDEN);
+        else               lv_obj_add_flag(s_msg_choose_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+#endif
     lv_obj_set_parent(s_msg_panel, lv_scr_act());
     lv_obj_remove_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_msg_panel);
@@ -7424,6 +7478,9 @@ static void close_msg_popup(void)
         s_msg_migrate = false;
         lv_label_set_text(s_msg_hint_lbl, "Enter / Esc: close");
     }
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    if (s_msg_choose_btn) lv_obj_add_flag(s_msg_choose_btn, LV_OBJ_FLAG_HIDDEN);
+#endif
     if (s_msg_panel) lv_obj_add_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     if (s_msg_kermit) {
@@ -7441,8 +7498,17 @@ static void show_name_prompt(save_mode_t mode, const char *hdr, const char *init
 static void default_project_name(char *out, size_t n);
 
 /* "Files outside projects" pop-up: Enter asks for the new project's
- * name; Esc powers off (deep sleep), the files stay where they are. */
+ * name; Esc powers off (deep sleep), the files stay where they are;
+ * I (or the "Choose files..." button) opens the list where files can be
+ * kept outside projects. */
 static void show_migrate_picker(void);
+static void open_rootdocs_picker(bool from_popup);
+
+static void migrate_popup_choose(void)
+{
+    close_msg_popup();
+    open_rootdocs_picker(true);
+}
 
 static void migrate_popup_accept(void)
 {
@@ -7475,8 +7541,13 @@ static void handle_msg_popup_key(const kb_event_t *ev)
 #endif
     if (s_msg_busy) return;
     if (s_msg_migrate) {
+        bool plain = !(ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL |
+                                       KB_MOD_LALT | KB_MOD_RALT |
+                                       KB_MOD_LGUI | KB_MOD_RGUI));
         if (ev->keycode == KB_KEY_ENTER) migrate_popup_accept();
         else if (ev->keycode == KB_KEY_ESCAPE) migrate_popup_power_off();
+        else if (plain && kb_layout_shortcut_char(ev->keycode) == 'i')
+            migrate_popup_choose();
         return;
     }
     if (s_msg_restart) {
@@ -7507,6 +7578,12 @@ static void msg_popup_touch_cb(lv_event_t *e)
         return;
     }
     if (!s_msg_busy) close_msg_popup();
+}
+
+static void msg_choose_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_msg_migrate) migrate_popup_choose();
 }
 #endif
 
@@ -8093,6 +8170,114 @@ static void kermit_picker_activate(int idx)
 }
 #endif /* CONFIG_DRAFTLING_HAS_KERMIT */
 
+/* ---- "Files outside projects" list ----
+ *
+ * One row per root document (projects.h, project_root_docs()), Enter
+ * toggles between moving it into a project and keeping it in the root
+ * (project_root_doc_set_ignored()); the last row is "Done". Rendered
+ * into s_menu_list. Opened from F1 -> System & Storage (returns there)
+ * or from the "Files outside projects" pop-up (returns to the browser,
+ * which shows the pop-up again while files are left to move). */
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static list_touch_ctx_t   s_rootdocs_touch_ctx;
+#endif
+static void rootdocs_picker_activate(int idx);
+static void xfer_return(void);
+
+static bool rootdocs_load(void)
+{
+    if (!s_rootdocs)
+        s_rootdocs = (project_root_doc_t *)heap_caps_malloc(
+            PROJECT_ROOT_DOCS_MAX * sizeof(project_root_doc_t), MALLOC_CAP_SPIRAM);
+    int n = s_rootdocs ? project_root_docs(s_rootdocs, PROJECT_ROOT_DOCS_MAX,
+                                           &s_rootdocs_total, NULL)
+                       : -1;
+    if (n < 0) {
+        rootdocs_free();
+        return false;
+    }
+    s_rootdocs_n = n;   /* rows; never more than the array holds */
+    return true;
+}
+
+static void refresh_rootdocs_picker_items(void)
+{
+    char buf[96];
+    if (s_rootdocs_total > s_rootdocs_n)
+        snprintf(buf, sizeof(buf), "Enter: keep outside projects or move (first %d of %d)",
+                 s_rootdocs_n, s_rootdocs_total);
+    else
+        snprintf(buf, sizeof(buf), "Enter: keep outside projects or move");
+    lv_label_set_text(s_lbl_menu_hdr, buf);
+    lv_obj_clean(s_menu_list);
+    for (int i = 0; i < s_rootdocs_n; i++) {
+        snprintf(buf, sizeof(buf), "%s %.70s", s_rootdocs[i].ignored ? "[keep]" : "[move]",
+                 s_rootdocs[i].name);
+        lv_list_add_btn(s_menu_list, NULL, buf);
+    }
+    lv_list_add_btn(s_menu_list, NULL, "Done");
+    if (s_rootdocs_sel > s_rootdocs_n) s_rootdocs_sel = s_rootdocs_n;
+    apply_list_selection_styles(s_menu_list, s_rootdocs_sel);
+    s_rootdocs_sel_prev = s_rootdocs_sel;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_rootdocs_touch_ctx.p_sel      = &s_rootdocs_sel;
+    s_rootdocs_touch_ctx.p_sel_prev = &s_rootdocs_sel_prev;
+    s_rootdocs_touch_ctx.activate   = rootdocs_picker_activate;
+    list_touch_attach(s_menu_list, &s_rootdocs_touch_ctx);
+#endif
+    sync_battery_labels();
+}
+
+static void close_rootdocs_picker(void)
+{
+    s_rootdocs_open = false;
+    rootdocs_free();
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    if (s_rootdocs_from_popup) {
+        s_rootdocs_from_popup = false;
+        s_menu_open = false;
+        xfer_return();   /* the browser checks the card layout again */
+    } else {
+        refresh_menu_items();
+    }
+}
+
+static void rootdocs_picker_activate(int idx)
+{
+    if (idx < 0 || idx >= s_rootdocs_n) {   /* "Done" */
+        close_rootdocs_picker();
+        return;
+    }
+    project_root_doc_t *d = &s_rootdocs[idx];
+    if (project_root_doc_set_ignored(d->name, !d->ignored) != ESP_OK) {
+        editor_ui_set_status("Cannot save the choice");
+        return;
+    }
+    d->ignored = !d->ignored;
+    refresh_rootdocs_picker_items();
+}
+
+static void open_rootdocs_picker(bool from_popup)
+{
+    if (from_popup) {
+        s_xfer_from_inpane = s_inpane_browser_open;
+        if (s_inpane_browser_open) close_inpane_browser();
+        show_menu();   /* clears the picker state: load after it */
+    }
+    if (!rootdocs_load()) {
+        editor_ui_set_status("Cannot read the files outside projects");
+        if (from_popup) {
+            s_setup_dismissed = true;   /* do not ask again this boot */
+            close_menu();
+        }
+        return;
+    }
+    s_rootdocs_from_popup = from_popup;
+    s_rootdocs_open = true;
+    s_rootdocs_sel = 0;
+    refresh_rootdocs_picker_items();
+}
+
 /* ---- "Format SD card" picker (see fmt_step_t) ---- */
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
 static list_touch_ctx_t s_fmt_touch_ctx;
@@ -8537,6 +8722,9 @@ static void menu_activate_item(int row)
     case MENU_ITEM_FORMAT_SD:
         open_fmt_picker();
         break;
+    case MENU_ITEM_ROOT_DOCS:
+        open_rootdocs_picker(false);
+        break;
     case MENU_ITEM_HWINFO:
         s_menu_open = false;
         show_hwinfo(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER);
@@ -8610,6 +8798,28 @@ static void handle_menu_key(const kb_event_t *ev)
         default:
             break;
         }
+        return;
+    }
+
+    if (s_rootdocs_open) {
+        switch (ev->keycode) {
+        case KB_KEY_UP:
+            if (s_rootdocs_sel > 0) s_rootdocs_sel--;
+            break;
+        case KB_KEY_DOWN:
+            if (s_rootdocs_sel < s_rootdocs_n) s_rootdocs_sel++;   /* n = "Done" */
+            break;
+        case KB_KEY_ENTER:
+            rootdocs_picker_activate(s_rootdocs_sel);
+            return;
+        case KB_KEY_ESCAPE:
+            close_rootdocs_picker();
+            return;
+        default:
+            return;
+        }
+        update_list_highlight(s_menu_list, s_rootdocs_sel, s_rootdocs_sel_prev);
+        s_rootdocs_sel_prev = s_rootdocs_sel;
         return;
     }
 
@@ -13572,7 +13782,8 @@ static void apply_pending_sleep_request(void)
     if (s_exit_open) return;    /* already asking */
     /* Only the plain menu list is closed; a picker shown inside the
      * menu counts as an open dialog. */
-    bool menu_picker = s_wifi_scan_picker_open || s_fmt_step != FMT_STEP_NONE;
+    bool menu_picker = s_wifi_scan_picker_open || s_fmt_step != FMT_STEP_NONE ||
+                       s_rootdocs_open;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     menu_picker = menu_picker || s_usbmsc_picker_open;
 #endif
@@ -15173,6 +15384,27 @@ static void build_screens(void)
         lv_label_set_long_mode(s_msg_text_lbl, LV_LABEL_LONG_WRAP);
         lv_label_set_text(s_msg_text_lbl, "");
 
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        /* Shown only by the "Files outside projects" pop-up; a tap on
+         * the rest of the panel moves the files. */
+        s_msg_choose_btn = lv_button_create(s_msg_panel);
+        lv_obj_set_size(s_msg_choose_btn, LV_PCT(100), LINE_H + 6);
+        lv_obj_set_style_bg_color(s_msg_choose_btn, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_msg_choose_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_msg_choose_btn, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_msg_choose_btn, 1, 0);
+        lv_obj_set_style_radius(s_msg_choose_btn, 4, 0);
+        lv_obj_set_style_shadow_width(s_msg_choose_btn, 0, 0);
+        lv_obj_set_style_pad_all(s_msg_choose_btn, 0, 0);
+        lv_obj_add_flag(s_msg_choose_btn, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_event_cb(s_msg_choose_btn, msg_choose_btn_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_t *choose_lbl = lv_label_create(s_msg_choose_btn);
+        lv_obj_set_style_text_font(choose_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(choose_lbl, theme_fg(), 0);
+        lv_label_set_text(choose_lbl, "Choose files...");
+        lv_obj_center(choose_lbl);
+#endif
+
         s_msg_hint_lbl = lv_label_create(s_msg_panel);
         lv_obj_set_style_text_font(s_msg_hint_lbl, FONT_11, 0);
         lv_obj_set_style_text_color(s_msg_hint_lbl, theme_fg(), 0);
@@ -15383,6 +15615,12 @@ static void teardown_screens(void)
     s_wifi_pw_panel = s_wifi_pw_hdr_lbl = s_wifi_pw_name_lbl = s_wifi_pw_cur = NULL;
     s_dbx_panel = s_dbx_hdr_lbl = s_dbx_val_lbl = s_dbx_cur = NULL;
     s_msg_panel = s_msg_title_lbl = s_msg_text_lbl = s_msg_hint_lbl = NULL;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_msg_choose_btn = NULL;
+#endif
+    s_rootdocs_open = false;
+    s_rootdocs_from_popup = false;
+    rootdocs_free();
     s_exit_panel = s_exit_hdr_lbl = NULL;
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
@@ -15501,7 +15739,7 @@ static void rebuild_screens_for_theme(void)
 extern "C" bool editor_ui_can_relayout(void)
 {
     if (!s_scr) return false;   /* before editor_ui_init() */
-    if (s_restart_confirm_open || s_fmt_step != FMT_STEP_NONE ||
+    if (s_restart_confirm_open || s_fmt_step != FMT_STEP_NONE || s_rootdocs_open ||
         s_factory_reset_confirm || s_theme_picker_open ||
         s_layouts_picker_open || s_save_open || s_xfer_open ||
         s_setup_busy || s_wifi_scan_picker_open ||
