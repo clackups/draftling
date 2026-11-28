@@ -94,6 +94,10 @@ load the firmware quickly without having to compile it.
   its own documents and its own Git repository. See
   [Projects](#projects) below.
 
+- **EPUB reader**: `.epub` books can be read from any folder of the
+  card, the root included, with the fonts of the firmware. See
+  [Reading books](#reading-books-epub) below.
+
 - **File browser** to open, create, rename, move and copy `.md`,
   `.fountain` and `.txt` files in a project (entries sorted
   alphabetically)
@@ -302,6 +306,51 @@ file browser. In split-screen mode the two panes can show files from
 different projects (in the pane's file selector, Esc goes up to the
 list of projects).
 
+
+## Reading books (EPUB)
+
+Books in the EPUB format can be read on the device. Copy the `.epub`
+files to the card in any folder, with "SD card via USB", "Sync via
+browser" or a card reader.
+
+- Books in the root folder are listed after the projects, and books
+  in a project folder next to its documents: Enter opens one.
+- **B** in the file browser, or F1 -> "Open a book...", opens the book
+  browser, which shows every folder of the card -- also folders that
+  are not projects, and folders inside folders -- with the books in
+  them. Enter opens a folder or a book, Backspace goes up a folder,
+  Esc closes it.
+
+While reading, the book's title and chapter are shown in the top bar:
+
+| Key | Action |
+|-----|--------|
+| PgDn / Space | Next page; at the end of a chapter, the next chapter |
+| PgUp / Shift+Space | Previous page; at the start of a chapter, the end of the previous one |
+| N / Ctrl+PgDn | Next chapter |
+| P / Ctrl+PgUp | Previous chapter |
+| C | Contents: the chapters, named as in the book's table of contents |
+| Ctrl+F | Find in the chapter |
+| Shift+arrows, Ctrl+C | Select and copy text |
+| Alt+I | Book information: title, folder, size, chapters |
+| Esc | Close the book |
+
+The book is read only: typing, pasting and saving do nothing. Closing
+it, switching chapters and going to sleep keep the reading position
+(in a hidden `.<name>.epub.meta` file next to the book), and the book
+opens there next time.
+
+Each chapter is shown with the formatting of the Markdown documents:
+headings, bold and italic, lists, quotes, separators and code. The
+book's own fonts, styles and layout are not used, and images are
+shown as `[image]` (with their description, if the book gives one).
+Text in a script the firmware's language pack does not include is
+not shown; see [Keyboard Layouts](#keyboard-layouts). A chapter
+larger than the memory set aside for documents is cut short. Books
+protected with DRM cannot be opened. Books are never synchronized
+with Git. In the file browser, F2 renames a book, Del deletes it after
+a confirmation (no Git check: a book is not in Git), and inside a
+project Alt+M / Alt+C move and copy it to another project.
 
 ## Writing screenplays (Fountain)
 

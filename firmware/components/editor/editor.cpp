@@ -9,6 +9,7 @@
 
 #include "editor.h"
 #include "sd_card.h"
+#include "epub.h"
 
 static const char *TAG = "Editor";
 
@@ -61,6 +62,12 @@ struct editor_doc_s {
      * editor_doc_epoch() / editor_doc_generation(). */
     uint32_t epoch;
     uint32_t gen;
+
+    /* An EPUB book (editor_open_file() on a .epub): the text is the
+     * Markdown of one chapter, read only -- every edit is refused and
+     * nothing is saved but the reading position. NULL otherwise. */
+    epub_book_t *book;
+    int    chapter;
 };
 
 /* Maximum number of simultaneously open documents. Two is enough for the
@@ -93,6 +100,9 @@ static size_t s_doc_buf_size = 0;
 #define s_line_cache_num    (s_active->line_cache_num)
 #define s_line_cache_offset (s_active->line_cache_offset)
 
+/* Why the last book or chapter could not be opened (static text). */
+static const char *s_book_error = NULL;
+
 /* Shared system clipboard (not per-document). */
 static char  *s_clipboard  = NULL;
 static size_t s_clip_len   = 0;
@@ -102,6 +112,10 @@ static bool   s_clip_in_file = false;
 #ifndef CLIPBOARD_FILE
 #define CLIPBOARD_FILE "/sdcard/.clipboard"
 #endif
+
+/* The active document is a book: edits are refused. */
+#define READ_ONLY()  (s_active && s_active->book)
+static void move_gap_to(size_t pos);
 
 /* Content length (excluding gap) */
 static inline size_t content_len(void) { return s_buf_size - (s_gap_end - s_gap_start); }
@@ -207,8 +221,18 @@ static void insert_at_gap(const char *text, size_t len)
 
 /* Reset a document slot to an empty, untitled buffer. The slot's
  * buffers must already be allocated (doc_ensure_buffers). */
+/* Close the document's book, if it has one. Callers replacing a book
+ * the user was reading save its position first (book_keep_position()). */
+static void doc_drop_book(editor_doc_t *d)
+{
+    epub_close(d->book);
+    d->book = NULL;
+    d->chapter = 0;
+}
+
 static void doc_reset_empty(editor_doc_t *d)
 {
+    doc_drop_book(d);
     d->gap_start   = 0;
     d->gap_end     = d->buf_size;
     d->path[0]     = '\0';
@@ -411,20 +435,21 @@ static void meta_path_for(const char *file_path, char *out, size_t out_sz)
     }
 }
 
-static void editor_load_meta(void)
+/* The sidecar's cursor, scroll line and (books) chapter; -1 = not
+ * there. False when there is no sidecar. */
+static bool meta_read(const char *path, long *cursor, long *scroll, long *chapter)
 {
-    if (s_path[0] == '\0') return;
+    *cursor = *scroll = *chapter = -1;
+    if (!path || path[0] == '\0') return false;
     char meta[320];
-    meta_path_for(s_path, meta, sizeof(meta));
-    if (meta[0] == '\0') return;
-    if (!sd_card_file_exists(meta)) return;
+    meta_path_for(path, meta, sizeof(meta));
+    if (meta[0] == '\0') return false;
+    if (!sd_card_file_exists(meta)) return false;
 
     char *data = NULL;
     size_t len = 0;
-    if (sd_card_read_file(meta, &data, &len) != ESP_OK || !data) return;
+    if (sd_card_read_file(meta, &data, &len) != ESP_OK || !data) return false;
 
-    long cursor = -1;
-    long scroll = -1;
     /* Parse line-oriented key=value pairs in-place. */
     size_t i = 0;
     while (i < len) {
@@ -445,13 +470,21 @@ static void editor_load_meta(void)
         memcpy(vbuf, val, val_len);
         vbuf[val_len] = '\0';
         if (key_len == 6 && memcmp(data + line_start, "cursor", 6) == 0) {
-            cursor = strtol(vbuf, NULL, 10);
+            *cursor = strtol(vbuf, NULL, 10);
         } else if (key_len == 6 && memcmp(data + line_start, "scroll", 6) == 0) {
-            scroll = strtol(vbuf, NULL, 10);
+            *scroll = strtol(vbuf, NULL, 10);
+        } else if (key_len == 7 && memcmp(data + line_start, "chapter", 7) == 0) {
+            *chapter = strtol(vbuf, NULL, 10);
         }
     }
     free(data);
+    return true;
+}
 
+/* Put the cursor and scroll line where they were (meta_read()),
+ * clamped to the document. */
+static void apply_position(long cursor, long scroll)
+{
     size_t doc_len = content_len();
     if (cursor >= 0) {
         if ((size_t)cursor > doc_len) cursor = (long)doc_len;
@@ -468,6 +501,12 @@ static void editor_load_meta(void)
     }
 }
 
+static void editor_load_meta(void)
+{
+    long cursor, scroll, chapter;
+    if (meta_read(s_path, &cursor, &scroll, &chapter)) apply_position(cursor, scroll);
+}
+
 extern "C" void editor_save_meta(void)
 {
     if (s_path[0] == '\0') return;
@@ -476,9 +515,11 @@ extern "C" void editor_save_meta(void)
     if (meta[0] == '\0') return;
 
     char body[96];
-    int n = snprintf(body, sizeof(body),
-                     "cursor=%zu\nscroll=%d\n",
-                     s_gap_start, s_scroll_line);
+    int n = s_active->book
+        ? snprintf(body, sizeof(body), "chapter=%d\ncursor=%zu\nscroll=%d\n",
+                   s_active->chapter, s_gap_start, s_scroll_line)
+        : snprintf(body, sizeof(body), "cursor=%zu\nscroll=%d\n",
+                   s_gap_start, s_scroll_line);
     if (n <= 0) return;
     if ((size_t)n >= sizeof(body)) n = (int)sizeof(body) - 1;
     sd_card_write_file(meta, body, (size_t)n);
@@ -597,6 +638,80 @@ static size_t transcode_utf16_file(FILE *f, bool little_endian,
     return out;
 }
 
+static esp_err_t book_load_chapter(int chapter, bool at_end);
+
+/* The active document's text is about to be replaced: if it is a book,
+ * keep the reading position in its sidecar. */
+static void book_keep_position(void)
+{
+    if (READ_ONLY()) editor_save_meta();
+}
+
+/* Open the EPUB at path in the active document, at the position saved
+ * in its sidecar (else the start of the first chapter). */
+static esp_err_t open_book(const char *path)
+{
+    const char *why = NULL;
+    epub_book_t *book = epub_open(path, &why);
+    if (!book) {
+        s_book_error = why;
+        return ESP_FAIL;
+    }
+    book_keep_position();
+    doc_reset_empty(s_active);
+    s_active->book = book;
+    strncpy(s_path, path, sizeof(s_path) - 1);
+    s_path[sizeof(s_path) - 1] = '\0';
+    long cursor, scroll, chapter;
+    meta_read(path, &cursor, &scroll, &chapter);
+    if (chapter < 0 || chapter >= epub_chapter_count(book)) {
+        chapter = 0;
+        cursor = scroll = -1;
+    }
+    esp_err_t err = book_load_chapter((int)chapter, false);
+    if (err != ESP_OK && chapter != 0) {
+        cursor = scroll = -1;
+        err = book_load_chapter(0, false);
+    }
+    if (err != ESP_OK) {
+        doc_reset_empty(s_active);   /* closes the book */
+        return err;
+    }
+    apply_position(cursor, scroll);
+    ESP_LOGI(TAG, "Opened book %s at chapter %ld", path, chapter + 1);
+    return ESP_OK;
+}
+
+/* Replace the text with a chapter of the active document's book: the
+ * cursor at its start, or its end (reading backwards). */
+static esp_err_t book_load_chapter(int chapter, bool at_end)
+{
+    epub_book_t *book = s_active->book;
+    if (!book || chapter < 0 || chapter >= epub_chapter_count(book))
+        return ESP_ERR_INVALID_ARG;
+    /* The whole buffer: the text is never saved, so the flash storage
+     * limit of doc_capacity() does not apply. */
+    const char *why = NULL;
+    long n = epub_chapter_markdown(book, chapter, s_buf, s_buf_size - 64, &why);
+    if (n < 0) {
+        s_book_error = why;
+        s_gap_start = 0;
+        s_gap_end = s_buf_size;
+        invalidate_caches();
+        return ESP_FAIL;
+    }
+    s_gap_start = (size_t)n;
+    s_gap_end   = s_buf_size;
+    s_active->chapter = chapter;
+    s_modified = false;
+    s_format = EDITOR_DOC_MARKDOWN;
+    s_scroll_line = 0;
+    s_sel_anchor = -1;
+    invalidate_caches();
+    if (!at_end) move_gap_to(0);
+    return ESP_OK;
+}
+
 extern "C" esp_err_t editor_open_file(const char *path)
 {
     /* The document keeps the path: one that does not fit would be
@@ -605,6 +720,8 @@ extern "C" esp_err_t editor_open_file(const char *path)
         ESP_LOGE(TAG, "Open: path too long: %s", path);
         return ESP_ERR_INVALID_SIZE;
     }
+    if (editor_path_is_book(path)) return open_book(path);
+    book_keep_position();   /* before the buffer is overwritten */
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
     fseek(f, 0, SEEK_END);
@@ -671,6 +788,7 @@ extern "C" esp_err_t editor_open_file(const char *path)
     if (in_gap) memmove(s_buf, dst, written);
     s_gap_start = written;
     s_gap_end   = s_buf_size;
+    doc_drop_book(s_active);
 
     strncpy(s_path, path, sizeof(s_path) - 1);
     s_path[sizeof(s_path) - 1] = '\0';
@@ -692,6 +810,7 @@ extern "C" esp_err_t editor_open_file(const char *path)
 
 extern "C" esp_err_t editor_save_file(void)
 {
+    if (READ_ONLY()) return ESP_ERR_NOT_SUPPORTED;
     if (s_path[0] == '\0') return ESP_ERR_INVALID_STATE;
     esp_err_t ret = sd_card_write_file_parts(s_path, s_buf, s_gap_start,
                                              s_buf + s_gap_end, s_buf_size - s_gap_end);
@@ -702,6 +821,7 @@ extern "C" esp_err_t editor_save_file(void)
 
 extern "C" esp_err_t editor_save_file_as(const char *path)
 {
+    if (READ_ONLY()) return ESP_ERR_NOT_SUPPORTED;
     if (strlen(path) >= sizeof(s_path)) {
         ESP_LOGE(TAG, "Save as: path too long: %s", path);
         return ESP_ERR_INVALID_SIZE;
@@ -748,7 +868,12 @@ extern "C" editor_doc_format_t editor_get_format(void)
 
 extern "C" void editor_set_format(editor_doc_format_t f)
 {
-    if (s_active) s_format = f;
+    if (s_active && !READ_ONLY()) s_format = f;
+}
+
+extern "C" bool editor_path_is_book(const char *path)
+{
+    return path && has_ext(path, strlen(path), ".epub");
 }
 
 extern "C" esp_err_t editor_delete_file(const char *path)
@@ -799,7 +924,8 @@ extern "C" esp_err_t editor_rename_file(const char *old_path, const char *new_pa
         if (!d->in_use || strcmp(d->path, old_path) != 0) continue;
         strncpy(d->path, new_path, sizeof(d->path) - 1);
         d->path[sizeof(d->path) - 1] = '\0';
-        editor_path_format(new_path, &d->format);
+        if (d->book) epub_set_path(d->book, new_path);
+        else editor_path_format(new_path, &d->format);
     }
     ESP_LOGI(TAG, "Renamed: %s -> %s", old_path, new_path);
     return ESP_OK;
@@ -851,6 +977,8 @@ extern "C" esp_err_t editor_rename_dir(const char *old_dir, const char *new_dir)
 
 extern "C" void editor_new_file(void)
 {
+    book_keep_position();
+    doc_drop_book(s_active);
     s_gap_start = 0;
     s_gap_end   = s_buf_size;
     s_path[0]   = '\0';
@@ -866,6 +994,7 @@ extern "C" void editor_close_file(void)
     /* Persist cursor/scroll metadata before we drop the path so the
      * next open can resume at the same position. */
     editor_save_meta();
+    doc_drop_book(s_active);
     s_gap_start = 0;
     s_gap_end   = s_buf_size;
     s_path[0]   = '\0';
@@ -896,6 +1025,54 @@ extern "C" const char *editor_doc_get_path(const editor_doc_t *doc)
 extern "C" bool editor_doc_is_modified(const editor_doc_t *doc)
 {
     return doc && doc->modified;
+}
+
+/* ---- Books ---- */
+
+extern "C" bool editor_is_read_only(void) { return READ_ONLY(); }
+
+extern "C" bool editor_doc_is_read_only(const editor_doc_t *doc)
+{
+    return doc && doc->book;
+}
+
+extern "C" int editor_book_chapter(void)
+{
+    return READ_ONLY() ? s_active->chapter : -1;
+}
+
+extern "C" int editor_book_chapter_count(void)
+{
+    return READ_ONLY() ? epub_chapter_count(s_active->book) : 0;
+}
+
+extern "C" const char *editor_book_title(void)
+{
+    return READ_ONLY() ? epub_title(s_active->book) : NULL;
+}
+
+extern "C" const char *editor_book_chapter_title(int chapter)
+{
+    return READ_ONLY() ? epub_chapter_title(s_active->book, chapter) : NULL;
+}
+
+extern "C" const char *editor_book_error(void)
+{
+    return s_book_error ? s_book_error : "Cannot open the book";
+}
+
+extern "C" esp_err_t editor_book_goto(int chapter, bool at_end)
+{
+    if (!READ_ONLY()) return ESP_ERR_INVALID_STATE;
+    int old = s_active->chapter;
+    esp_err_t err = book_load_chapter(chapter, at_end);
+    if (err != ESP_OK && book_load_chapter(old, false) != ESP_OK) {
+        s_gap_start = 0;   /* the old chapter cannot be read either */
+        s_gap_end = s_buf_size;
+        invalidate_caches();
+    }
+    if (err == ESP_OK) editor_save_meta();   /* the reading position */
+    return err;
 }
 
 /* First in-use slot, used as a fallback active document. */
@@ -949,6 +1126,7 @@ extern "C" void editor_doc_release(editor_doc_t *doc)
      * gap buffer is kept allocated for reuse by a future
      * acquire so we do not thrash large PSRAM allocations. */
     editor_doc_save_meta(doc);
+    doc_drop_book(doc);
     doc->in_use   = false;
     doc->path[0]  = '\0';
     doc->modified = false;
@@ -1020,6 +1198,7 @@ extern "C" esp_err_t editor_reload_path(const char *path)
     for (int i = 0; i < EDITOR_MAX_DOCS; i++) {
         editor_doc_t *d = &s_docs[i];
         if (!d->in_use || strcmp(d->path, path) != 0) continue;
+        if (d->book) continue;   /* a book is not edited elsewhere */
         if (d->modified) {
             ret = ESP_ERR_INVALID_STATE;
             continue;
@@ -1439,6 +1618,7 @@ extern "C" void editor_move_word_right(void)
 
 extern "C" bool editor_insert_char(char c)
 {
+    if (READ_ONLY()) return false;
     /* Reserve a small safety margin so we never completely fill the
      * buffer (matches editor_open_file() / editor_replace_range()). */
     if (content_len() + 1 > doc_capacity()) {
@@ -1455,6 +1635,7 @@ extern "C" bool editor_insert_char(char c)
 
 extern "C" bool editor_insert_text(const char *text, size_t len)
 {
+    if (READ_ONLY()) return false;
     if (!text || len == 0) return true;
     if (content_len() + len > doc_capacity()) {
         ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte insert",
@@ -1478,6 +1659,7 @@ extern "C" size_t editor_peek_before(char *out, size_t max)
 
 extern "C" bool editor_replace_before(size_t del, const char *text)
 {
+    if (READ_ONLY()) return false;
     if (del > s_gap_start) return false;
     size_t len = text ? strlen(text) : 0;
     if (content_len() - del + len > doc_capacity()) {
@@ -1500,6 +1682,7 @@ extern "C" bool editor_insert_newline(void)
 
 extern "C" void editor_delete_back(void)
 {
+    if (READ_ONLY()) return;
     if (s_gap_start == 0) return;
     /* Remove all bytes of the previous UTF-8 character by expanding
      * the gap leftward past continuation bytes and the start byte. */
@@ -1513,6 +1696,7 @@ extern "C" void editor_delete_back(void)
 
 extern "C" void editor_delete_forward(void)
 {
+    if (READ_ONLY()) return;
     if (s_gap_end >= s_buf_size) return;
     /* Remove the start byte and any following continuation bytes. */
     size_t ne = s_gap_end + 1;
@@ -1564,6 +1748,7 @@ extern "C" int editor_find(const char *needle, size_t from_pos)
 extern "C" esp_err_t editor_replace_range(size_t start, size_t end,
                                           const char *replacement)
 {
+    if (READ_ONLY()) return ESP_ERR_NOT_SUPPORTED;
     size_t len = content_len();
     if (start > len) start = len;
     if (end > len) end = len;
@@ -1620,6 +1805,7 @@ extern "C" void editor_get_selection_range(size_t *start, size_t *end)
 
 extern "C" bool editor_delete_selection(void)
 {
+    if (READ_ONLY()) return false;
     if (!editor_selection_active()) return false;
     size_t sel_s, sel_e;
     editor_get_selection_range(&sel_s, &sel_e);
@@ -1672,6 +1858,7 @@ extern "C" bool editor_copy(void)
 
 extern "C" bool editor_cut(void)
 {
+    if (READ_ONLY()) return false;
     if (!editor_copy()) return false;
     editor_delete_selection();
     return true;
@@ -1704,6 +1891,7 @@ static bool paste_fits(size_t len)
 
 extern "C" bool editor_paste_text(const char *text, size_t len)
 {
+    if (READ_ONLY()) return false;
     if (len == 0) return true;
     if (!paste_fits(len)) return false;
     editor_delete_selection();
@@ -1712,6 +1900,7 @@ extern "C" bool editor_paste_text(const char *text, size_t len)
 
 extern "C" bool editor_paste(void)
 {
+    if (READ_ONLY()) return false;
     if (s_clip_len == 0) return true;
     if (!s_clip_in_file) return editor_paste_text(s_clipboard, s_clip_len);
     if (!paste_fits(s_clip_len)) return false;
