@@ -191,6 +191,15 @@
             }
         },
         {
+            "name": "microjournal_rev8",
+            "displayName": "MicroJournal Rev.8 (ESP32-S3 N16R8, 4.2in ST7306 reflective LCD, built-in keyboard, documents in flash)",
+            "binaryDir": "build/microjournal_rev8",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.microjournal_rev8;sdkconfig.defaults.storage_flash_16mb",
+                "SDKCONFIG": "build/microjournal_rev8/sdkconfig"
+            }
+        },
+        {
             "name": "viewe_uedx24320028_ueed035hv",
             "displayName": "Viewe UEDX24320028E-WB-A + UEED035HV (3.5in ST7365 transflective, touch)",
             "binaryDir": "build/viewe_uedx24320028_ueed035hv",

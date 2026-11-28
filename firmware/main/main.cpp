@@ -59,6 +59,9 @@
 #if defined(CONFIG_DRAFTLING_HAS_TAB5_KBD)
 #include "tab5_kbd.h"
 #endif
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+#include "matrix_kbd.h"
+#endif
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
 #include "usb_msc.h"
 #endif
@@ -1073,6 +1076,38 @@ static void pre_sleep_rlcd42_deinit(void)
     gpio_deep_sleep_hold_en();
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42 */
+
+#if defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+/* Panel lines display_deep_sleep_prepare() latches for deep sleep. The
+ * latches survive the wake reset; the key-matrix columns are released
+ * by matrix_kbd_init(). */
+static const int s_rev8_held_pins[] = {
+    RLCD_CS_PIN, RLCD_RST_PIN, RLCD_DC_PIN, RLCD_SCK_PIN, RLCD_MOSI_PIN,
+};
+
+static void rev8_release_held_pins(void)
+{
+    gpio_deep_sleep_hold_dis();
+    for (int pin : s_rev8_held_pins) gpio_hold_dis((gpio_num_t)pin);
+}
+
+static void pre_sleep_rev8_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: MicroJournal Rev.8 teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();   /* unmounts the flash volume */
+
+    /* Panel off and its control lines parked (display_rlcd.cpp). */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+
+    /* Columns held LOW, EXT1 wake on the rows: any key wakes it. */
+    (void)matrix_kbd_prepare_sleep();
+    gpio_deep_sleep_hold_en();
+}
+#endif /* CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8 */
 
 #if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
 static void pre_sleep_ws_epaper397_deinit(void)
@@ -2799,6 +2834,9 @@ extern "C" void app_main(void)
     rlcd42_release_held_pins();
     rlcd42_quiet_peripherals();
 #endif
+#if defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+    rev8_release_held_pins();
+#endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_RLCD)
     display_init(RLCD_MOSI_PIN, RLCD_SCK_PIN, RLCD_DC_PIN,
                  RLCD_CS_PIN, RLCD_RST_PIN, -1,
@@ -3592,6 +3630,28 @@ extern "C" void app_main(void)
     }
 #endif
 
+    /* Built-in key matrix (MicroJournal Rev.8): always there, so the
+     * board goes straight to the file browser like a wired keyboard. */
+    bool matrix_kbd_present = false;
+#if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
+    {
+        static const int8_t rows[MATRIX_KBD_ROWS] = MATRIX_KBD_ROW_PINS;
+        static const int8_t cols[MATRIX_KBD_COLS] = MATRIX_KBD_COL_PINS;
+        static const uint8_t keymap[MATRIX_KBD_ROWS * MATRIX_KBD_COLS] =
+            MATRIX_KBD_KEYMAP;
+        static const uint8_t fn_keymap[MATRIX_KBD_ROWS * MATRIX_KBD_COLS] =
+            MATRIX_KBD_FN_KEYMAP;
+        matrix_kbd_config_t mcfg = {};
+        mcfg.rows      = rows;
+        mcfg.nrows     = MATRIX_KBD_ROWS;
+        mcfg.cols      = cols;
+        mcfg.ncols     = MATRIX_KBD_COLS;
+        mcfg.keymap    = keymap;
+        mcfg.fn_keymap = fn_keymap;
+        matrix_kbd_present = matrix_kbd_init(&mcfg) == 0;
+    }
+#endif
+
     /* Bring up USB Host + HID keyboard driver (Tab5 USB-A, or the
      * ESP32-S3 native USB port with CONFIG_DRAFTLING_USB_HOST_NATIVE:
      * MicroJournal Rev 5 / Rev.7 and any other S3 board built so).
@@ -3638,11 +3698,14 @@ extern "C" void app_main(void)
      * disable it; the BT controller stays up but the host stops
      * scanning and stops dispatching key events / status text until
      * it is re-enabled. */
-    bool wired_kbd_present = usb_kbd_present || tab5_kbd_present;
+    bool wired_kbd_present = usb_kbd_present || tab5_kbd_present ||
+                             matrix_kbd_present;
     if (wired_kbd_present) {
         if (usb_kbd_present) {
             ESP_LOGI(TAG, "USB keyboard detected; BLE will stay idle "
                           "until the USB keyboard is unplugged");
+        } else if (matrix_kbd_present) {
+            ESP_LOGI(TAG, "Built-in keyboard; BLE stays idle");
         } else {
             ESP_LOGI(TAG, "Tab5 keyboard detected; BLE stays idle "
                           "(connect on demand via the menu)");
@@ -3813,6 +3876,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_onepage_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+    standby_set_pre_sleep_cb(pre_sleep_rev8_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)

@@ -151,6 +151,61 @@ extern "C" void display_init(int mosi, int sck, int dc, int cs, int rst,
     /* Hardware reset & RLCD init sequence */
     hw_reset();
 
+#if defined(CONFIG_DRAFTLING_RLCD_PANEL_YDP420)
+    /* Osptek YDP420H001-V3 (MicroJournal Rev.8): the panel supplier's
+     * ST7305-family sequence, as in Micro Journal's
+     * ST7305_4p2_BW_DisplayDriver (RLCD_TYPE 2, the "new supplier"
+     * module): other gate / source voltages and EQ timing than the
+     * Waveshare panel, frame rate 0x05, and the voltages set again
+     * after High Power Mode is entered. Same RAM layout (2x4-pixel
+     * bytes, window 0x12..0x2A x 0x00..0xC7). Upstream draws black as
+     * a set bit with inversion off; this driver draws ink as a clear
+     * bit (see display_set_pixel), so inversion is switched on at the
+     * end instead, as on the Waveshare panel. */
+    send_command(0xD6); send_data(0x13); send_data(0x02);
+    send_command(0xD1); send_data(0x01);
+    send_command(0xC0); send_data(0x12); send_data(0x0A);
+    send_command(0xC1); send_data(0x73); send_data(0x3E); send_data(0x3C); send_data(0x3C);
+    send_command(0xC2); send_data(0x00); send_data(0x21); send_data(0x23); send_data(0x23);
+    send_command(0xC4); send_data(0x32); send_data(0x5C); send_data(0x5A); send_data(0x5A);
+    send_command(0xC5); send_data(0x32); send_data(0x35); send_data(0x37); send_data(0x37);
+    send_command(0xD8); send_data(0x80); send_data(0xE9);
+    send_command(0xB2); send_data(0x05);
+    send_command(0xB3); send_data(0xE5); send_data(0xF6); send_data(0x17); send_data(0x77);
+                        send_data(0x77); send_data(0x77); send_data(0x77); send_data(0x77);
+                        send_data(0x77); send_data(0x71);
+    send_command(0xB4); send_data(0x05); send_data(0x46); send_data(0x77); send_data(0x77);
+                        send_data(0x77); send_data(0x77); send_data(0x76); send_data(0x45);
+    send_command(0x62); send_data(0x32); send_data(0x03); send_data(0x1F);
+    send_command(0xB7); send_data(0x13);
+    send_command(0xB0); send_data(0x64);
+    send_command(0x11);
+    vTaskDelay(pdMS_TO_TICKS(120));
+    send_command(0xC9); send_data(0x00);
+    send_command(0x36); send_data(0x48);
+    send_command(0x3A); send_data(0x11);
+    send_command(0xB9); send_data(0x20);
+    send_command(0xB8); send_data(0x29);
+    send_command(0x2A); send_data(0x12); send_data(0x2A);
+    send_command(0x2B); send_data(0x00); send_data(0xC7);
+    send_command(0x35); send_data(0x00);
+    send_command(0xD0); send_data(0xFF);
+    send_command(0x38);
+    send_command(0x29);
+    send_command(0xBB); send_data(0x4F);   /* enable and clear the RAM */
+    /* High Power Mode again, then the voltages once more. */
+    send_command(0x38);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    send_command(0xC1); send_data(0x73); send_data(0x3E); send_data(0x3C); send_data(0x3C);
+    send_command(0xC2); send_data(0x00); send_data(0x21); send_data(0x23); send_data(0x23);
+    send_command(0xC4); send_data(0x32); send_data(0x5C); send_data(0x5A); send_data(0x5A);
+    send_command(0xC5); send_data(0x32); send_data(0x35); send_data(0x37); send_data(0x37);
+    send_command(0xC9); send_data(0x00);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    send_command(0x29);
+    send_command(0x21);                     /* inversion on: ink = clear bit */
+#else
+    /* Waveshare ESP32-S3-RLCD-4.2 panel. */
     send_command(0xD6); send_data(0x17); send_data(0x02);
     send_command(0xD1); send_data(0x01);
     send_command(0xC0); send_data(0x11); send_data(0x04);
@@ -182,6 +237,8 @@ extern "C" void display_init(int mosi, int sck, int dc, int cs, int rst,
     send_command(0xD0); send_data(0xFF);
     send_command(0x38);
     send_command(0x29);
+
+#endif
 
     display_clear(0xFF);
     display_flush();
@@ -326,7 +383,11 @@ extern "C" void display_set_shared_i2c_bus(void * /*bus_handle*/)
 
 const char *display_controller_name(void)
 {
+#if defined(CONFIG_DRAFTLING_RLCD_PANEL_YDP420)
+    return "ST7306 (YDP420H001)";
+#else
     return "ST7305";
+#endif
 }
 
 #endif /* CONFIG_DRAFTLING_DISPLAY_RLCD */

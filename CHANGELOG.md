@@ -8,6 +8,14 @@ in the git log.
 
 ### Added
 
+- **MicroJournal Rev.8**: the reflective-LCD writerdeck with a built-in
+  keyboard (`microjournal_rev8` preset). The keyboard is read directly,
+  with Fn + the number row for F1 - F12; any key wakes the device from
+  sleep. There is no MicroSD slot, so the documents are kept in the
+  internal flash (8 MB). Sync via browser works on the lower USB-C
+  port. Only the current ("type 2") display module is supported. See
+  HARDWARE.md.
+
 - **Documents in the internal flash, for boards without a MicroSD
   slot**: Draftling can now keep the documents, projects and Git
   history in a part of the device's own flash memory instead of on a
