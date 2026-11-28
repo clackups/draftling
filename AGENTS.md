@@ -1256,15 +1256,21 @@ The largest component. Contains:
   (`s_books_dir` below the mount point; `..`, folders, `.epub` files,
   "System Volume Information" left out, `BOOKS_MAX_ROWS`); it refuses
   while the focused document has unsaved changes, since the book
-  replaces it. While a book is focused, `handle_editor_key_main()`
+  replaces it, and Esc returns to where it was opened
+  (`s_books_from_menu`, `s_books_from_inpane`). While a book is focused, `handle_editor_key_main()`
   first asks `book_editor_key()`: Space / Shift+Space = PgDn / PgUp,
-  PgDn at the end / PgUp at the start of a chapter, N / P and
+  PgDn / Ctrl+Down at the end / PgUp / Ctrl+Up at the start of a
+  chapter, N / P and
   Ctrl+PgDn / PgUp change chapter (`book_show_chapter()`: every pane
   on the book adopts the new view, e-paper full refresh), C opens the
   contents picker (`s_toc_open`, `TOC_MAX_ROWS`); keys that would edit
   only post a status hint, the rest (movement, find, copy, panes,
   F-keys) fall through. The title bar shows the book title and
-  `Ch N/M`; F10 lists the reader keys.
+  `Ch N/M`. F10 in a book replaces the editor's key list with the
+  reader's (every key that works, touch, the contents list and the
+  book browser, `help_book_browser_rows()`, which the file browser's
+  help shows too); the pickers themselves have no F10, so keep these
+  rows in step with `book_editor_key()` and the picker key handlers.
 - **editor_format.h** (`private_include/`), **md_editor.cpp**,
   **fountain_editor.cpp**, **text_editor.cpp** -- per-format editing
   behaviour. `editor_ui.cpp` holds everything the formats share and

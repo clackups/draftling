@@ -319,21 +319,31 @@ browser" or a card reader.
   browser, which shows every folder of the card -- also folders that
   are not projects, and folders inside folders -- with the books in
   them. Enter opens a folder or a book, Backspace goes up a folder,
-  Esc closes it.
+  Esc goes back to the file browser (or the menu). It is not offered
+  while the document in the editor has unsaved changes, since the
+  book takes its place.
 
 While reading, the book's title and chapter are shown in the top bar:
 
 | Key | Action |
 |-----|--------|
-| PgDn / Space | Next page; at the end of a chapter, the next chapter |
-| PgUp / Shift+Space | Previous page; at the start of a chapter, the end of the previous one |
+| PgDn / Space / Ctrl+Down | Next page; at the end of a chapter, the next chapter |
+| PgUp / Shift+Space / Ctrl+Up | Previous page; at the start of a chapter, the end of the previous one |
+| Arrows, Ctrl+Left / Right | Line, character, word |
+| Home / End, Ctrl+Home / End | Start / end of the line, of the chapter |
 | N / Ctrl+PgDn | Next chapter |
 | P / Ctrl+PgUp | Previous chapter |
-| C | Contents: the chapters, named as in the book's table of contents |
-| Ctrl+F | Find in the chapter |
-| Shift+arrows, Ctrl+C | Select and copy text |
+| C | Contents: the chapters, named as in the book's table of contents (Up / Down, PgUp / PgDn by ten, Enter go there, Esc back) |
+| Ctrl+F | Find in the chapter (Enter: next match) |
+| Shift+arrows, Ctrl+A, Ctrl+C | Select text, select the chapter, copy |
 | Alt+I | Book information: title, folder, size, chapters |
+| Ctrl+O | Open another file or book |
 | Esc | Close the book |
+
+On a touchscreen a tap moves the cursor, a double-tap selects a word
+and a swipe scrolls within the chapter; in the contents and the book
+browser a tap selects a row and a second tap opens it. F10 lists all
+of this.
 
 The book is read only: typing, pasting and saving do nothing. Closing
 it, switching chapters and going to sleep keep the reading position

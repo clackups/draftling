@@ -1306,6 +1306,8 @@ static int                   s_books_count = 0;
 static int                  *s_books_rows = NULL;     /* entry per row, -1 = ".." */
 static int                   s_books_nrows = 0;
 static int                   s_books_sel = 0, s_books_sel_prev = 0;
+static bool                  s_books_from_menu = false;    /* else B in a file browser */
+static bool                  s_books_from_inpane = false;  /* B in the split's selector */
 static bool                  s_toc_open = false;
 static int                   s_toc_sel = 0, s_toc_sel_prev = 0;
 #define TOC_MAX_ROWS   512    /* chapters listed */
@@ -8279,6 +8281,8 @@ static void open_books_picker(void)
         editor_ui_set_status("Save the document first (Ctrl+S)");
         return;
     }
+    s_books_from_menu = s_menu_open;
+    s_books_from_inpane = !s_menu_open && s_inpane_browser_open;
     if (!s_menu_open) {
         if (s_inpane_browser_open) close_inpane_browser();
         show_menu();
@@ -8295,12 +8299,23 @@ static void open_books_picker(void)
     refresh_books_items();
 }
 
+/* Esc: back to the F1 menu, or to the file browser B was pressed in. */
 static void close_books_picker(void)
 {
     s_books_open = false;
     books_free();
     lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
-    refresh_menu_items();
+    if (s_books_from_menu) {
+        refresh_menu_items();
+        return;
+    }
+    s_menu_open = false;
+    if (s_books_from_inpane) {
+        editor_ui_show_editor();
+        show_inpane_browser();
+    } else {
+        editor_ui_show_file_browser();
+    }
 }
 
 static void books_activate(int r)
@@ -9161,6 +9176,20 @@ static void help_common_rows(std::string &out, int cols, int kc)
     help_row(out, cols, kc, "Ctrl+T", "Writing sprint: timer (15, 25, 50 min) or word goal, shown as a line on the right edge; optional word count in the top bar");
 }
 
+/* The book browser (B in the file browser, F1 -> "Open a book..."). */
+static void help_book_browser_rows(std::string &out, int cols, int kc)
+{
+    help_heading(out, "Book browser (B, F1 -> Open a book)");
+    help_row(out, cols, kc, "Up / Down", "Select a folder or a book; every folder of the card is shown, also those that are not projects");
+    help_row(out, cols, kc, "Enter", "Open the folder (\"../\" goes up) or read the book");
+    help_row(out, cols, kc, "Backspace", "Up one folder");
+    help_row(out, cols, kc, "Esc", "Close the book browser: back to the file browser, or to the menu it was opened from");
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    help_row(out, cols, kc, "Tap", "Select a row; tap it again to open it");
+#endif
+    help_row(out, cols, kc, "Note", "Not while the document in the editor has unsaved changes: the book replaces it");
+}
+
 static void build_help_text(std::string &out, help_origin_t origin, int cols)
 {
     int kc = cols / 3;
@@ -9170,15 +9199,41 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
     pane_bind_focus();
     if (origin == HELP_FROM_EDITOR && editor_is_read_only()) {
         help_heading(out, "Reading a book");
-        help_row(out, cols, kc, "PgDn, Space", "Next page; at the end of a chapter the next chapter");
-        help_row(out, cols, kc, "PgUp, Shift+Space", "Previous page; at the start of a chapter the end of the previous one");
+        help_row(out, cols, kc, "PgDn, Space, Ctrl+Down", "Next page; at the end of a chapter, the start of the next one");
+        help_row(out, cols, kc, "PgUp, Shift+Space, Ctrl+Up", "Previous page; at the start of a chapter, the end of the previous one");
+        help_row(out, cols, kc, "Up / Down", "Previous / next line");
+        help_row(out, cols, kc, "Left / Right", "Previous / next character");
+        help_row(out, cols, kc, "Ctrl+Left/Right", "Previous / next word");
+        help_row(out, cols, kc, "Home / End", "Start / end of the line");
+        help_row(out, cols, kc, "Ctrl+Home/End", "Start / end of the chapter");
         help_row(out, cols, kc, "N, Ctrl+PgDn", "Next chapter");
         help_row(out, cols, kc, "P, Ctrl+PgUp", "Previous chapter");
-        help_row(out, cols, kc, "C", "Contents: pick a chapter");
-        help_row(out, cols, kc, "Ctrl+F", "Find in the chapter");
-        help_row(out, cols, kc, "Shift+arrows, Ctrl+C", "Select and copy text");
-        help_row(out, cols, kc, "Alt+I", "Book information");
-        help_row(out, cols, kc, "Esc", "Close the book (the position is kept)");
+        help_row(out, cols, kc, "C", "Contents: the list of chapters (see below)");
+        help_row(out, cols, kc, "Ctrl+F", "Find in the chapter (Enter: next match, from the top again after the last; Esc: close)");
+        help_row(out, cols, kc, "Shift+arrows", "Select text");
+        help_row(out, cols, kc, "Ctrl+A", "Select the whole chapter");
+        help_row(out, cols, kc, "Ctrl+C", "Copy the selection, to paste into a document");
+        help_row(out, cols, kc, "Alt+I", "Book information: title, folder, size, chapters, the chapter being read");
+        help_row(out, cols, kc, "Ctrl+O", "Open another file or book");
+        help_row(out, cols, kc, "Ctrl+Tab", "Switch pane (when split; each pane can show a book or a document)");
+        help_row(out, cols, kc, "Esc", "Close the book");
+        help_row(out, cols, kc, "Other keys", "Typing, Enter, Backspace, Delete, paste, replace and save do nothing: a book is read only");
+        help_row(out, cols, kc, "Position", "Kept when the book is closed, at every chapter change and before sleep; the book opens there next time");
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        help_row(out, cols, kc, "Tap", "Move the cursor");
+        help_row(out, cols, kc, "Double-tap", "Select a word");
+        help_row(out, cols, kc, "Swipe up/down", "Scroll within the chapter (change chapter with N / P or the contents)");
+#endif
+
+        help_heading(out, "Contents (C)");
+        help_row(out, cols, kc, "Up / Down", "Select a chapter (the current one is selected first)");
+        help_row(out, cols, kc, "PgUp / PgDn", "Ten chapters up / down");
+        help_row(out, cols, kc, "Enter", "Go to the chapter");
+        help_row(out, cols, kc, "Esc", "Back to the book, where you were");
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        help_row(out, cols, kc, "Tap", "Select a chapter; tap it again to go there");
+#endif
+        help_book_browser_rows(out, cols, kc);
         help_common_rows(out, cols, kc);
     } else if (origin == HELP_FROM_EDITOR) {
         help_heading(out, "Editor");
@@ -9215,7 +9270,8 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Del, Alt+D", "Delete the project (only when synchronized with Git)");
         help_row(out, cols, kc, "Alt+I", "Project information: files, size, Git status");
         help_row(out, cols, kc, "Ctrl+G", "Git sync of the selected project");
-        help_row(out, cols, kc, "B", "Open a book (.epub) from any folder");
+        help_row(out, cols, kc, "Books", "Books (.epub) in the root folder are listed after the projects: Enter reads one; F2, Del, Alt+I rename, delete, describe it");
+        help_row(out, cols, kc, "B", "Book browser: books in any folder (see below)");
         if (origin == HELP_FROM_INPANE)
             help_row(out, cols, kc, "Ctrl+Tab", "Back to the editor, in the other pane");
 
@@ -9230,9 +9286,11 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Alt+C", "Copy the file to a project (also this one, under a new name)");
         help_row(out, cols, kc, "Alt+I", "File and project information: words, size, Git status");
         help_row(out, cols, kc, "Ctrl+G", "Git sync of this project");
-        help_row(out, cols, kc, "B", "Open a book (.epub) from any folder");
+        help_row(out, cols, kc, "Books", "Books (.epub) are listed with the files: Enter reads one; F2 renames it, Del deletes it (no Git check), Alt+M / Alt+C move / copy it, Alt+I describes it");
+        help_row(out, cols, kc, "B", "Book browser: books in any folder (see below)");
         if (origin == HELP_FROM_INPANE)
             help_row(out, cols, kc, "Ctrl+Tab", "Switch to the other pane");
+        help_book_browser_rows(out, cols, kc);
         help_common_rows(out, cols, kc);
     }
 
@@ -12716,11 +12774,16 @@ static bool book_editor_key(const kb_event_t *&ev, kb_event_t *tmp, bool ctrl)
     }
     bool next = (plain && !shift && ch == 'n') || (ctrl && ev->keycode == KB_KEY_PAGEDOWN);
     bool prev = (plain && !shift && ch == 'p') || (ctrl && ev->keycode == KB_KEY_PAGEUP);
-    /* Page Down at the end of a chapter goes on to the next one, Page
-     * Up at its start back to the end of the previous one. */
-    if (ev->keycode == KB_KEY_PAGEDOWN && !ev->modifier &&
-        editor_get_cursor() >= editor_get_length() && cur + 1 < n) next = true;
-    if (ev->keycode == KB_KEY_PAGEUP && !ev->modifier && editor_get_cursor() == 0 && cur > 0) {
+    /* Page Down (or Ctrl+Down, the editor's other page key) at the end
+     * of a chapter goes on to the next one, Page Up / Ctrl+Up at its
+     * start back to the end of the previous one. */
+    bool only_ctrl = ctrl && !alt && !gui && !shift;
+    bool page_down = (ev->keycode == KB_KEY_PAGEDOWN && !ev->modifier) ||
+                     (ev->keycode == KB_KEY_DOWN && only_ctrl);
+    bool page_up   = (ev->keycode == KB_KEY_PAGEUP && !ev->modifier) ||
+                     (ev->keycode == KB_KEY_UP && only_ctrl);
+    if (page_down && editor_get_cursor() >= editor_get_length() && cur + 1 < n) next = true;
+    if (page_up && editor_get_cursor() == 0 && cur > 0) {
         book_show_chapter(cur - 1, true);
         return true;
     }
