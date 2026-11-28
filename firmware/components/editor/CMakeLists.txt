@@ -15,7 +15,6 @@ endif()
 if(CONFIG_DRAFTLING_HAS_TAB5_KBD)
     idf_component_optional_requires(PRIVATE tab5_kbd)
 endif()
-
 if(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
     idf_component_optional_requires(PRIVATE matrix_kbd)
 endif()

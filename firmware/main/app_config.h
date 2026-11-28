@@ -101,6 +101,8 @@
 #include "boards/microjournal_rev5.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV6)
 #include "boards/microjournal_rev6.h"
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+#include "boards/microjournal_rev8.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV)
 #include "boards/viewe_uedx24320028_ueed035hv.h"
 #elif defined(CONFIG_DRAFTLING_MODEL_XTEINK_X4_PRO)

@@ -1077,6 +1077,45 @@ static void pre_sleep_rlcd42_deinit(void)
 }
 #endif /* CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42 */
 
+#if defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+/* Panel lines display_deep_sleep_prepare() latches for deep sleep. The
+ * latches survive the wake reset; the key-matrix columns are released
+ * by matrix_kbd_init(). */
+static const int s_rev8_held_pins[] = {
+    RLCD_CS_PIN, RLCD_RST_PIN, RLCD_DC_PIN, RLCD_SCK_PIN, RLCD_MOSI_PIN,
+};
+
+static void rev8_release_held_pins(void)
+{
+    gpio_deep_sleep_hold_dis();
+    for (int pin : s_rev8_held_pins) gpio_hold_dis((gpio_num_t)pin);
+}
+
+static void pre_sleep_rev8_deinit(void)
+{
+    ESP_LOGI(TAG, "Pre-sleep: MicroJournal Rev.8 teardown");
+
+    pre_sleep_autosave();
+    (void)sd_card_deinit();   /* unmounts the flash volume */
+
+    /* Panel off and its control lines parked (display_rlcd.cpp). */
+    bool locked = draftling_lvgl_port_lock(5000);
+    display_deep_sleep_prepare();
+    if (locked) draftling_lvgl_port_unlock();
+
+    /* Columns held low, EXT1 any-low wake on the rows (GPIO5-8,
+     * 15-18, RTC IOs): any key wakes it. standby_enter_sleep() arms no
+     * GPIO wake of its own here (DRAFTLING_WAKEUP_GPIO = -1). */
+    uint64_t rows = matrix_kbd_prepare_sleep();
+    gpio_deep_sleep_hold_en();   /* also the panel lines */
+    if (rows) {
+        esp_err_t err = esp_sleep_enable_ext1_wakeup_io(rows, ESP_EXT1_WAKEUP_ANY_LOW);
+        if (err == ESP_OK) ESP_LOGI(TAG, "Any key wakes the device (EXT1)");
+        else ESP_LOGW(TAG, "EXT1 key wake: %s", esp_err_to_name(err));
+    }
+}
+#endif /* CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8 */
+
 #if defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_EPAPER_397)
 static void pre_sleep_ws_epaper397_deinit(void)
 {
@@ -2829,6 +2868,9 @@ extern "C" void app_main(void)
     rlcd42_release_held_pins();
     rlcd42_quiet_peripherals();
 #endif
+#if defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+    rev8_release_held_pins();
+#endif
 #if defined(CONFIG_DRAFTLING_DISPLAY_RLCD)
     display_init(RLCD_MOSI_PIN, RLCD_SCK_PIN, RLCD_DC_PIN,
                  RLCD_CS_PIN, RLCD_RST_PIN, -1,
@@ -3863,6 +3905,8 @@ extern "C" void app_main(void)
     standby_set_pre_sleep_cb(pre_sleep_onepage_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_WAVESHARE_RLCD42)
     standby_set_pre_sleep_cb(pre_sleep_rlcd42_deinit);
+#elif defined(CONFIG_DRAFTLING_MODEL_MICROJOURNAL_REV8)
+    standby_set_pre_sleep_cb(pre_sleep_rev8_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_ELECROW_CROWPANEL_50)
     standby_set_pre_sleep_cb(pre_sleep_crowpanel_50_deinit);
 #elif defined(CONFIG_DRAFTLING_MODEL_VIEWE_UEDX80480043)

@@ -63,6 +63,7 @@ Features used in the table:
 | [Viewe UEDX24320028E-WB-A + UEED035HV](#viewe-uedx24320028e-wb-a-with-ueed035hv-rx40-l001-display) | `viewe_uedx24320028_ueed035hv` | 3.5" 480x320 transflective | yes | yes | - | yes |
 | [MicroJournal Rev 5.0 / 5.1](#microjournal-rev-50--51) | `microjournal_rev5` | 2.8" 320x240 LCD | - | - | - | - |
 | [MicroJournal Rev.6](#microjournal-rev6) | `microjournal_rev6` | 2.8" 320x240 LCD | - | - | - | - |
+| [MicroJournal Rev.8](#microjournal-rev8) | `microjournal_rev8` | 4.2" 400x300 reflective LCD | - | - | - | yes |
 | [NiceMCU-C5E-DEV_2.8IPS](#nicemcu-c5e-dev_28ips) | `nicemcu_c5_28ips` | 2.8" 320x240 IPS | yes | yes | - | - |
 | [OnePage Reader](#onepage-reader) | `onepage_c61` | 4.26" 800x480 e-paper | - | - | yes | - |
 
@@ -326,6 +327,9 @@ The storage is formatted on first boot. The build refuses a storage
 partition smaller than 1 MB. On a 4 MB flash only the default and
 Vietnamese language packs fit next to the storage.
 
+The `seeed_trmnl_75_og_diy` and `microjournal_rev8` presets are built
+this way.
+
 
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
 
@@ -584,6 +588,33 @@ it. Holding Lower + `-` down while pressing the other key works too.
 Differences from the Rev.6 firmware: Shift + Left / Right select text
 (Home and End are Lower + Left / Right), and Lower + Up / Down are
 Page Up / Down.
+
+
+## MicroJournal Rev.8
+
+[Micro Journal Rev.8](https://github.com/unkyulee/micro-journal/tree/main/rev.8/8.0)
+("Melodica"), a writerdeck with a 4.2" reflective LCD and a built-in
+mechanical keyboard, built around an ESP32-S3-DevKitC-1 N16R8.
+
+- 4.2" 400x300 reflective LCD (Osptek YDP420H001-V3, ST7306): no
+  backlight, readable in daylight. This is the panel the upstream
+  firmware calls "type 2"; the older "type 1" module is not supported
+  yet.
+- Built-in 69-key ISO keyboard, wired straight to the ESP32-S3 (no
+  Bluetooth or USB keyboard needed; Bluetooth is left out). Ctrl, Alt,
+  AltGr and the Windows key work as on a computer. Fn + the number row
+  gives F1 - F12 (F1 opens the menu, F10 the help), Fn + Up / Down
+  Page Up / Page Down, Fn + Left / Right Home / End. Caps Lock is Caps
+  Lock. The key left of Z types ` and ~ on the US layout.
+- No MicroSD slot: the documents are kept in the 16 MB flash, 8 MB of
+  it (see "Boards without a MicroSD slot" above).
+  F1 -> System & Storage -> "Format internal storage..." erases them.
+- Sync via browser on the lower USB-C port (the DevKitC-1's "USB"
+  port); no SD card via USB. Flash the firmware through the upper port
+  ("UART").
+- Any key wakes the device from sleep. The rocker switch at the back
+  cuts the power.
+- No battery level.
 
 
 ## NiceMCU-C5E-DEV_2.8IPS

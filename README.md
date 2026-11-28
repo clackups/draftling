@@ -66,6 +66,7 @@ load the firmware quickly without having to compile it.
   * [MicroJournal Rev.6](https://github.com/unkyulee/micro-journal/tree/main/rev.6/6.0) writerdeck (ESP32-S3 with a built-in 48-key keyboard, read directly from its pins; [key map](HARDWARE.md#rev6-keys))
   * [LilyGO T5 4.7" E-Paper](https://lilygo.cc/products/t5-4-7-inch-e-paper-v2-3), ESP32-S3 version
   * [MicroJournal Rev.7](https://github.com/unkyulee/micro-journal/tree/main/rev.7/7.0) e-paper writerdeck (LilyGO T5 4.7" ESP32-S3 with a built-in USB keyboard)
+  * [MicroJournal Rev.8](https://github.com/unkyulee/micro-journal/tree/main/rev.8/8.0) reflective-LCD writerdeck (ESP32-S3 with a built-in keyboard, documents in the internal flash)
   * [NiceMCU-C5E-DEV_2.8IPS](https://github.com/NiceMCU-01/NiceMCU-C5-2.8IPS) (ESP32-C5, 2.8" color LCD)
 
 

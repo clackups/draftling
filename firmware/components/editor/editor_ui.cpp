@@ -14609,8 +14609,8 @@ static void build_screens(void)
     tab5_kbd_set_callback((kb_event_callback_t)editor_ui_handle_key);
 #endif
 #if defined(CONFIG_DRAFTLING_HAS_MATRIX_KBD)
-    /* A keyboard matrix on GPIO pins (MicroJournal Rev.6) feeds the
-     * same handler, next to BLE. */
+    /* A keyboard matrix on GPIO pins (MicroJournal Rev.6, Rev.8)
+     * feeds the same handler. */
     matrix_kbd_set_callback((kb_event_callback_t)editor_ui_handle_key);
 #endif
 

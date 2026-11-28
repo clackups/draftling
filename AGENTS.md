@@ -114,6 +114,7 @@ card).
 | Freenove FNK0104S | 4.0-inch ST7796 color LCD, 480x320, FT6336U touch |
 | MicroJournal Rev 5.0 / 5.1 | ILI9341 (5.0) or ST7789 (5.1) color LCD, auto-detected, 320x240, shared-SPI MicroSD, USB host |
 | MicroJournal Rev.6 | the Rev 5 display and MicroSD wiring (ILI9341 or ST7789, auto-detected, 320x240), built-in 48-key keyboard matrix on GPIO pins |
+| MicroJournal Rev.8 | 4.2-inch ST7306 reflective LCD (YDP420H001), 400x300, built-in key-matrix keyboard, documents in internal flash (16 MB), no Bluetooth |
 | Viewe UEDX24320028E-WB-A + UEED035HV-RX40-L001 | 3.5-inch ST7365 transflective color LCD (separately sold display on the board's connector), 480x320, CHSC6540-compatible touch |
 | Xteink X4 Pro | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, GT911 touch |
 | Xteink X4 Classic (X4 v2) | 4.26-inch e-paper (SSD1677/UC8179/UC8279, auto-detected), 800x480, no touch, no front-light |
@@ -576,7 +577,8 @@ components/                 Reusable IDF components
   power/                    TCA9554-latched battery rail + PWR-button driver
   sd_card/                  SD card (SDMMC 1-bit) file operations
   standby/                  Deep-sleep / standby inactivity timer
-  matrix_kbd/               Keyboard matrix on GPIO pins (MicroJournal Rev.6)
+  matrix_kbd/               Keyboard matrix on GPIO pins (MicroJournal
+                            Rev.6, Rev.8)
   tab5_kbd/                 M5Stack Tab5 attachable keyboard (I2C + INT)
   wifi_manager/             WiFi STA connection manager
   usb_kbd/                  USB HID keyboard host (boot protocol)
@@ -774,7 +776,12 @@ the wakeup / boot button (all boards that define `WAKEUP_GPIO_NUM`), a
 Per-board display backends behind a single C API:
 
 - **display_rlcd.cpp** -- Waveshare ESP32-S3-RLCD-4.2 reflective LCD
-  over SPI.
+  over SPI. Also the MicroJournal Rev.8's Osptek YDP420H001-V3 module
+  (`CONFIG_DRAFTLING_RLCD_PANEL_YDP420`): same RAM layout and window,
+  the supplier's voltage / timing sequence from the upstream
+  `ST7305_4p2_BW_DisplayDriver` (`RLCD_TYPE` 2), ending with
+  inversion on so ink stays a clear bit. The upstream "type 1" module
+  (a 300x400 nibble-per-pixel layout) is not supported.
 - **display_epdiy.cpp** -- E-paper backend for the M5Stack PaperS3
   ED047TC1 panel and the LilyGO T5 E-Paper S3 Pro / Pro Lite
   ED047TC2 panel, both driven by the `vroland/epdiy` managed
@@ -2433,7 +2440,7 @@ file I/O must not take a PSRAM stack either. Partition tables:
 `_8mb.csv` (4.94 / 3 MB), `_16mb.csv` (7.94 / 8 MB), selected with
 `sdkconfig.defaults.storage_flash_<size>` appended to a preset (the
 `seeed_trmnl_75_og_diy` preset: the E1001 build on the 16 MB TRMNL
-7.5" (OG) DIY Kit). The top-level `CMakeLists.txt` parses the table at
+7.5" (OG) DIY Kit; `microjournal_rev8`). The top-level `CMakeLists.txt` parses the table at
 configure time and stops when the partition is missing, not data/fat
 or smaller than 1 MB, and refuses every pack but default / Vietnamese
 on a 4 MB flash with storage. The editor caps the document size at a
@@ -2577,7 +2584,8 @@ Public API: `power_init()`, `power_set_long_press_cb()`, `power_off()`.
 ### components/matrix_kbd/
 
 Keyboard matrix wired straight to GPIO pins, built only with the
-derived `CONFIG_DRAFTLING_HAS_MATRIX_KBD` (MicroJournal Rev.6) and an
+derived `CONFIG_DRAFTLING_HAS_MATRIX_KBD` (MicroJournal Rev.6 and
+Rev.8) and an
 empty component otherwise; main, editor and standby pull it in with
 `idf_component_optional_requires()`, and its own dependencies are
 optional requirements too (see usb_kbd). Board-agnostic: the board
@@ -2607,6 +2615,9 @@ counts as a wired keyboard like the Tab5's: BLE initialised but idle,
 the file browser at boot, no no-keyboard sleep, and a "Built-in" row on
 the Hardware information page. The engine was tested on the host with
 stub ESP-IDF headers (key sequences through `key_changed()`).
+The scan task's stack is in internal RAM (`xTaskCreate()`), so it
+keeps running while flash writes have the cache, and PSRAM, off
+(the Rev.8 keeps its documents in flash).
 
 Public API: `matrix_kbd_init()`, `matrix_kbd_is_present()`,
 `matrix_kbd_set_callback()`, `matrix_kbd_prepare_sleep()`.
@@ -3376,6 +3387,30 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
   control. The stock firmware 2.x keeps documents in internal flash;
   Draftling uses the MicroSD slot.
   *Requires ESP32-S3.*
+- **DRAFTLING_MODEL_MICROJOURNAL_REV8** -- MicroJournal Rev.8
+  "Melodica" (github.com/unkyulee/micro-journal `rev.8/8.0`,
+  `main/boards/microjournal_rev8.h`): ESP32-S3-DevKitC-1 N16R8, 4.2"
+  400x300 Osptek YDP420H001-V3 reflective LCD (ST7306) on SPI3
+  (MOSI=11, SCK=12, CS=10, DC=46, RST=3; `display_rlcd.cpp` with
+  `DRAFTLING_RLCD_PANEL_YDP420`), and a 69-key ISO keyboard as an
+  8 x 9 diode matrix (rows 8,18,17,16,15,7,6,5; columns
+  1,2,42,41,40,39,45,48,47; `components/matrix_kbd`, keymap
+  `KBD_LAYERS[2]`: base and Fn = `MKBD_LAYER(1)`, no Shift layer). Key numbers,
+  pins and the bottom row's modifiers follow the upstream firmware
+  (micro-journal-mcu `Keypad_68.cpp`, the RLCD `KeyboardScreen.cpp`
+  BLE map); the ISO key left of Z sends 0x35 (keycap ` ~), the key
+  left of Enter 0x31; Fn + number row = F1..F12, Fn + arrows = Page
+  Up / Down, Home / End; key 69 (optional encoder push) = F1. No
+  MicroSD slot: the preset appends `sdkconfig.defaults.storage_flash_16mb`
+  (8 MB storage). No Bluetooth (`DRAFTLING_NO_BLUETOOTH`,
+  `CONFIG_BT_ENABLED=n`), no battery monitor, no wake button
+  (`DRAFTLING_WAKEUP_GPIO` -1): `pre_sleep_rev8_deinit()` parks the
+  panel (`display_deep_sleep_prepare()`) and arms EXT1 any-low on the
+  row mask `matrix_kbd_prepare_sleep()` returns, so any key wakes it;
+  `rev8_release_held_pins()` releases the panel holds at boot. The
+  DevKitC-1's "USB" port is the native USB (`DRAFTLING_HAS_USB_MSC`,
+  so Sync via browser; "SD card via USB" is off with flash storage),
+  its "UART" port the console. *Requires ESP32-S3.*
 - **DRAFTLING_MODEL_LILYGO_T5_47_S3** -- LilyGO T5 4.7" e-paper, ESP32-S3
   version (V2.3; `main/boards/lilygo_t5_47_s3.h`), not the T5 E-Paper
   S3 Pro: 960x540 ED047TC1 whose output enable, mode, STV, panel
@@ -3610,12 +3645,12 @@ ESP32-S3-only (`depends on IDF_TARGET_ESP32S3`):
 The hardware-model selection drives two non-prompted `int` symbols
 consumed in `main/app_config.h` as `DISPLAY_WIDTH` / `DISPLAY_HEIGHT`:
 
-- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD), 960 (PaperS3, LilyGO T5 4.7"), 320
+- **DRAFTLING_DISPLAY_WIDTH** -- 400 (RLCD, MicroJournal Rev.8), 960 (PaperS3, LilyGO T5 4.7"), 320
   (FNK0104A/B, FNK0104N, Waveshare LCD-3.16, MicroJournal Rev 5 / Rev.6, NiceMCU C5 2.8IPS), 480 (FNK0104S), 800 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
   Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB), 792 (Elecrow CrowPanel 5.79"),
   480 (Guition JC4827W543C), 1024 (Linux and web, initial window).
-- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD), 540 (PaperS3, LilyGO T5 4.7"), 820
+- **DRAFTLING_DISPLAY_HEIGHT** -- 300 (RLCD, MicroJournal Rev.8), 540 (PaperS3, LilyGO T5 4.7"), 820
   (Waveshare LCD-3.16, FNK0104N), 240
   (FNK0104A/B, MicroJournal Rev 5 / Rev.6, NiceMCU C5 2.8IPS), 320 (FNK0104S), 480 (Xteink X4 Pro / X4 Classic,
   Waveshare ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono,
@@ -3798,7 +3833,8 @@ in C / C++ code:
 
 | Symbol | Purpose | Set by |
 |--------|---------|--------|
-| DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2 |
+| DRAFTLING_DISPLAY_RLCD            | Selects `display_rlcd.cpp`        | RLCD-4.2, MicroJournal Rev.8 |
+| DRAFTLING_RLCD_PANEL_YDP420       | `display_rlcd.cpp` uses the Osptek YDP420H001-V3 init sequence instead of the Waveshare panel's | MicroJournal Rev.8 |
 | DRAFTLING_MODEL_XTEINK_X4         | Common to the Xteink X4 Pro and X4 Classic (shared `display_xteink_epd.cpp` backend, CW2017 gauge, SDMMC slot, OTA partition table, GPIO1 peripheral-rail latch, GPIO3 Power/wake) | Xteink X4 Pro, Xteink X4 Classic |
 | DRAFTLING_DISPLAY_EPD             | Gates EPD-only options (BLACK_BACKGROUND, full-refresh interval) and the editor's no-blink cursor / 120 ms flush debounce | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite, LilyGO T5 4.7" S3, Xteink X4 Pro / X4 Classic, Elecrow CrowPanel 5.79", Waveshare ESP32-S3-ePaper-3.97, Seeed reTerminal Sticky, M5Stack PaperMono |
 | DRAFTLING_DISPLAY_EPDIY           | Selects `display_epdiy.cpp` (with `epd_board_v7` for LilyGO T5 or the in-tree `epd_board_papers3` for PaperS3) and pulls in the `vroland/epdiy` managed component | PaperS3, LilyGO T5 E-Paper S3 Pro / Pro Lite |
@@ -3849,7 +3885,7 @@ in C / C++ code:
 | DRAFTLING_HAS_KERMIT              | Builds `components/kermit/` and shows F1 -> Sync -> "Sync via browser" (Kermit file server on the serial console); only boards whose USB port is the ESP32-S3's native USB -- not boards with a USB-to-UART bridge, whose DTR / RTS auto-reset lines reset the chip when a computer opens the port | Every `DRAFTLING_HAS_USB_MSC` board |
 | DRAFTLING_USB_HOST_NATIVE         | Prompted, every ESP32-S3 board except those with `DRAFTLING_NATIVE_USB_PINS_TAKEN`: the native USB port (GPIO19 / GPIO20) is a USB keyboard host instead of a device -- sets DRAFTLING_HAS_USB_HOST, turns off DRAFTLING_HAS_USB_MSC (and so Kermit), selects ESP-IDF's `USB_HOST_HUBS_SUPPORTED` (the `usb` component, only in the build while usb_host_hid is), sets DRAFTLING_NO_BLUETOOTH to save battery: `ble_keyboard.cpp` compiles to its no-op stubs and main.cpp never calls `ble_keyboard_init()`, even with `CONFIG_BT_ENABLED` still on in the board's sdkconfig (the controller is never started; `CONFIG_BT_ENABLED=n`, as in the microjournal presets, only saves flash) | default y on MicroJournal Rev 5; set by the `microjournal_rev7` preset |
 | DRAFTLING_NATIVE_USB_PINS_TAKEN   | GPIO19 / GPIO20 serve something else (touch I2C, Rev.6 keyboard columns), so DRAFTLING_USB_HOST_NATIVE is not offered | Sunton 8048S043 / 8048S070, Elecrow CrowPanel 5.0", VIEWE UEDX80480043E-WB, Seeed reTerminal E1001, MicroJournal Rev.6 |
-| DRAFTLING_HAS_MATRIX_KBD          | Builds `components/matrix_kbd` (keyboard matrix on GPIO pins, pins and keymap from the board header); main.cpp starts it and counts it as a wired keyboard | MicroJournal Rev.6 |
+| DRAFTLING_HAS_MATRIX_KBD          | Builds `components/matrix_kbd` (keyboard matrix on GPIO pins, pins and keymap from the board header); main.cpp starts it and counts it as a wired keyboard | MicroJournal Rev.6, Rev.8 |
 | DRAFTLING_HAS_USB_HOST            | Enables the `usb_kbd` USB HID keyboard host (boot-time probe; BLE stays idle while a USB keyboard is present) | M5Stack Tab5, any S3 board with DRAFTLING_USB_HOST_NATIVE (MicroJournal Rev 5 / Rev.7) |
 | DRAFTLING_USB_HOST_BSP_MANAGED    | USB PHY, VBUS and the USB Host library task are owned by the board BSP (`bsp_usb_host_start()`); otherwise `usb_kbd_init()` installs the host library and its task itself (ESP32-S3 native USB-OTG) | M5Stack Tab5 |
 | DRAFTLING_USB_HOST_DEP            | `int` mirror (0/1) of DRAFTLING_HAS_USB_HOST, tested by the `espressif/usb_host_hid` rule in `components/usb_kbd/idf_component.yml` (the component manager reads `sdkconfig.json`, which omits hidden bool symbols that are n); `components/usb_kbd/` registers as an empty component when DRAFTLING_HAS_USB_HOST is unset, so neither it nor `usb_host_hid` is compiled on other boards | M5Stack Tab5, MicroJournal Rev 5 |
@@ -4036,7 +4072,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `guition_jc3248w535`, `sunton_8048s070`, `sunton_8048s043`,
 `waveshare_touch_lcd_7`, `elecrow_crowpanel_50`, `viewe_uedx80480043`, `guition_jc4827w543c`, `waveshare_lcd_316`, `freenove_fnk0104a`, `freenove_fnk0104b`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
-`microjournal_rev6`,
+`microjournal_rev6`, `microjournal_rev8`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
 `seeed_reterminal_e1001`, `seeed_trmnl_75_og_diy`, `seeed_reterminal_sticky`,

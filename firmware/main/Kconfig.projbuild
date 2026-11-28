@@ -283,6 +283,20 @@ config DRAFTLING_MODEL_MICROJOURNAL_REV6
         in main/boards/microjournal_rev6.h.
         See https://github.com/unkyulee/micro-journal (rev.6/6.0).
 
+config DRAFTLING_MODEL_MICROJOURNAL_REV8
+    bool "MicroJournal Rev.8 (ESP32-S3, 4.2\" ST7306 reflective LCD, 400x300, built-in keyboard)"
+    depends on IDF_TARGET_ESP32S3
+    help
+        MicroJournal Rev.8 "Melodica" writerdeck: an ESP32-S3-DevKitC-1
+        N16R8, a 4.2" 400x300 Osptek YDP420H001-V3 reflective LCD
+        (ST7306 / ST7305 family, the "type 2" module of the upstream
+        firmware) on SPI, and a built-in 69-key matrix keyboard wired
+        straight to the GPIOs (components/matrix_kbd). No MicroSD slot:
+        the documents live in internal flash
+        (DRAFTLING_STORAGE_FLASH). No Bluetooth. Pins and the keymap
+        are in main/boards/microjournal_rev8.h.
+        See https://github.com/unkyulee/micro-journal (rev.8/8.0).
+
 config DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     bool "Viewe UEDX24320028E-WB-A board + UEED035HV-RX40-L001 3.5\" transflective display (ESP32-S3, ST7365, 480x320, touch)"
     depends on IDF_TARGET_ESP32S3
@@ -766,6 +780,16 @@ config DRAFTLING_DISPLAY_AXS15231B
 config DRAFTLING_DISPLAY_RLCD
     bool
     default y if DRAFTLING_MODEL_WAVESHARE_RLCD42
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV8
+    default n
+
+# DRAFTLING_RLCD_PANEL_YDP420 makes display_rlcd.cpp use the init
+# sequence of the Osptek YDP420H001-V3 module (MicroJournal Rev.8)
+# instead of the Waveshare RLCD-4.2 panel's. Same controller family and
+# RAM layout, other voltages and timing.
+config DRAFTLING_RLCD_PANEL_YDP420
+    bool
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV8
     default n
 
 # DRAFTLING_DISPLAY_MIPI_DSI is set automatically when the selected
@@ -1518,6 +1542,8 @@ config DRAFTLING_NO_BLUETOOTH
     # A USB keyboard host build leaves Bluetooth out to save battery
     # (MicroJournal Rev 5 / Rev.7 and any S3 board with the option).
     default y if DRAFTLING_USB_HOST_NATIVE
+    # MicroJournal Rev.8: built-in keyboard, no Bluetooth keyboard host.
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV8
     # Linux, web browser: the computer's own keyboard, no BLE stack.
     default y if DRAFTLING_MODEL_LINUX
     default y if DRAFTLING_MODEL_WEB
@@ -1529,6 +1555,7 @@ config DRAFTLING_NO_BLUETOOTH
 config DRAFTLING_HAS_MATRIX_KBD
     bool
     default y if DRAFTLING_MODEL_MICROJOURNAL_REV6
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV8
     default n
 
 config DRAFTLING_HAS_USB_HOST
@@ -1600,6 +1627,9 @@ config DRAFTLING_HAS_USB_MSC
     default y if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
     default y if DRAFTLING_MODEL_WAVESHARE_TOUCH_LCD_349
     default y if DRAFTLING_MODEL_M5STACK_PAPERMONO
+    # MicroJournal Rev.8: the DevKitC-1's "USB" port is the native USB.
+    # With flash storage only "Sync via browser" (Kermit) uses it.
+    default y if DRAFTLING_MODEL_MICROJOURNAL_REV8
     default n
 
 # DRAFTLING_HAS_KERMIT enables F1 -> "Sync via browser", the Kermit file
@@ -1769,6 +1799,9 @@ config DRAFTLING_WAKEUP_GPIO
     default 0  if DRAFTLING_MODEL_FREENOVE_FNK0104N
     default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV5
     default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV6
+    # MicroJournal Rev.8: no wake button; any key of the built-in
+    # keyboard wakes it (matrix_kbd_prepare_sleep(), EXT1 on the rows).
+    default -1 if DRAFTLING_MODEL_MICROJOURNAL_REV8
     # Viewe UEDX24320028E-WB-A: BOOT button on GPIO0 (shared with
     # the WS2812B RGB LED data line, which Draftling leaves unused).
     default 0  if DRAFTLING_MODEL_VIEWE_UEDX24320028_UEED035HV
@@ -2177,6 +2210,7 @@ config DRAFTLING_DISPLAY_WIDTH
     int
     range 64 2048
     default 400 if DRAFTLING_MODEL_WAVESHARE_RLCD42
+    default 400 if DRAFTLING_MODEL_MICROJOURNAL_REV8
     default 960 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 960 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 960 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
@@ -2231,6 +2265,7 @@ config DRAFTLING_DISPLAY_HEIGHT
     int
     range 64 2048
     default 300 if DRAFTLING_MODEL_WAVESHARE_RLCD42
+    default 300 if DRAFTLING_MODEL_MICROJOURNAL_REV8
     default 540 if DRAFTLING_MODEL_M5STACK_PAPERS3
     default 540 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO
     default 540 if DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752
