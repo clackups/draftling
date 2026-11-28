@@ -5,6 +5,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <sys/stat.h>
 #include <esp_log.h>
 #include <esp_system.h>
 #include <esp_app_desc.h>
@@ -28,6 +29,7 @@
 #include "md_parser.h"
 #include "editor_format.h"
 #include "projects.h"
+#include "epub.h"
 #include "ble_keyboard.h"
 #if defined(CONFIG_DRAFTLING_HAS_USB_HOST)
 #include "usb_kbd.h"
@@ -1175,6 +1177,7 @@ enum menu_item_t {
     MENU_ITEM_CONN_MENU,
     MENU_ITEM_SYSTEM_MENU,
     MENU_ITEM_SLEEP,
+    MENU_ITEM_BOOKS,         /* "Open a book..." */
     MENU_ITEM_QUIT,          /* CONFIG_DRAFTLING_HAS_QUIT */
     MENU_ITEM_HELP,
     MENU_ITEM_CLOSE,         /* the top level's counterpart of "Back" */
@@ -1289,6 +1292,36 @@ static bool s_msg_kermit             = false;
  * tap) asks for the name of a new project to move them to, Esc powers
  * the device off (deep sleep); it asks again on the next start. */
 static bool s_msg_migrate            = false;
+
+/* ---- Books (EPUB), see editor_path_is_book() ----
+ *
+ * The book browser (F1 -> "Open a book...", B in the file browser)
+ * lists every folder of the card -- projects or not -- and the .epub
+ * files, in s_menu_list; the contents list (C while reading) lists the
+ * chapters of the book being read. */
+static bool                  s_books_open = false;
+static char                  s_books_dir[256] = "";   /* below the mount point, "" = root */
+static sd_card_file_entry_t *s_books_list = NULL;
+static int                   s_books_count = 0;
+static int                  *s_books_rows = NULL;     /* entry per row, -1 = ".." */
+static int                   s_books_nrows = 0;
+static int                   s_books_sel = 0, s_books_sel_prev = 0;
+static bool                  s_toc_open = false;
+static int                   s_toc_sel = 0, s_toc_sel_prev = 0;
+#define TOC_MAX_ROWS   512    /* chapters listed */
+#define BOOKS_MAX_ROWS 512    /* entries of a folder listed */
+
+static bool open_path_in_editor(const char *path);
+
+static void books_free(void)
+{
+    sd_card_free_list(s_books_list);
+    s_books_list = NULL;
+    s_books_count = 0;
+    free(s_books_rows);
+    s_books_rows = NULL;
+    s_books_nrows = 0;
+}
 /* The pop-up says the SD card is missing. It cannot be closed: the user
  * inserts a card, then Enter (or a tap) restarts the device. */
 static bool s_msg_restart            = false;
@@ -2953,6 +2986,13 @@ static void update_title_bar(void)
         const char *slash = strrchr(path, '/');
         name = slash ? slash + 1 : path;
     }
+    /* A book: its title and the chapter. */
+    char chapter_tag[24] = "";
+    if (editor_is_read_only()) {
+        if (editor_book_title()) name = editor_book_title();
+        snprintf(chapter_tag, sizeof(chapter_tag), "  Ch %d/%d",
+                 editor_book_chapter() + 1, editor_book_chapter_count());
+    }
     char buf[384];
     int line, col;
     editor_get_cursor_pos(&line, &col);
@@ -2982,13 +3022,13 @@ static void update_title_bar(void)
      * cursor moves to a different line, so the s_prev_title cache
      * below collapses no-op redraws back to a single update. */
     char tail[96];
-    snprintf(tail, sizeof(tail), "%s  L %d/%d%s%s",
-             editor_is_modified() ? " *" : "",
+    snprintf(tail, sizeof(tail), "%s%s  L %d/%d%s%s",
+             editor_is_modified() ? " *" : "", chapter_tag,
              line + 1, total_lines, layout_tag, words_tag);
 #else
     char tail[96];
-    snprintf(tail, sizeof(tail), "%s  L %d/%d C:%d%s%s",
-             editor_is_modified() ? " *" : "",
+    snprintf(tail, sizeof(tail), "%s%s  L %d/%d C:%d%s%s",
+             editor_is_modified() ? " *" : "", chapter_tag,
              line + 1, total_lines, col + 1, layout_tag, words_tag);
 #endif
 
@@ -5078,6 +5118,20 @@ static const sd_card_file_entry_t *browser_selected_entry(void)
     return &s_browser_entries[idx];
 }
 
+/* Folder the browser lists: the card root or the project shown. */
+static void browser_dir(char *out, size_t n)
+{
+    if (browser_at_root()) snprintf(out, n, "%s", sd_card_get_mount_point());
+    else project_dir(s_cur_project, out, n);
+}
+
+/* The highlighted row is a book (.epub file). */
+static const sd_card_file_entry_t *browser_selected_book(void)
+{
+    const sd_card_file_entry_t *e = browser_selected_entry();
+    return (e && !e->is_dir && editor_path_is_book(e->name)) ? e : NULL;
+}
+
 /* Project of a document's file, if it lies in one. */
 static bool doc_project(const editor_doc_t *d, char *out, size_t n)
 {
@@ -5215,11 +5269,19 @@ static void refresh_file_list(const char *select_name = NULL)
     }
     if (browser_at_root()) {
         /* The list of projects: the folders in the SD card root with a
-         * valid project name (as project_list() picks them). */
+         * valid project name (as project_list() picks them), then the
+         * books (.epub) in the root. */
         int n = 0;
         for (int i = 0; i < s_browser_count; i++) {
-            if (!s_browser_entries[i].is_dir ||
-                project_name_problem(s_browser_entries[i].name)) continue;
+            const sd_card_file_entry_t &e = s_browser_entries[i];
+            bool keep = e.is_dir ? !project_name_problem(e.name)
+                                 : editor_path_is_book(e.name);
+            if (!keep) continue;
+            if (!e.is_dir) {
+                if (n != i) s_browser_entries[n] = s_browser_entries[i];
+                n++;
+                continue;
+            }
             if (n != i) s_browser_entries[n] = s_browser_entries[i];
             s_browser_entries[n].size = 0;
             n++;
@@ -5233,9 +5295,10 @@ static void refresh_file_list(const char *select_name = NULL)
     int row = 0;
     for (int i = 0; i < s_browser_count; i++) {
         const char *name = s_browser_entries[i].name;
-        /* In a project only its documents are listed. */
+        /* In a project only its documents and books are listed. */
         bool show = browser_at_root() ? true
-                  : (!s_browser_entries[i].is_dir && editor_path_format(name, NULL));
+                  : (!s_browser_entries[i].is_dir &&
+                     (editor_path_format(name, NULL) || editor_path_is_book(name)));
         if (show) {
             char label[sizeof(s_browser_entries[0].name) + 8];
             if (s_browser_entries[i].is_dir)
@@ -5451,14 +5514,22 @@ extern "C" void editor_ui_show_file_browser(void)
      * close it now (historical behavior; the buffer is reloaded
      * from disk when a file is picked). */
     {
-        /* Back in the project of the document being closed. */
+        /* Back in the project of the document being closed; a book in
+         * the root folder is shown in the list of projects. A book in
+         * any other folder leaves the browser where it was. */
         const char *ap = editor_get_file_path();
         project_name_t dp;
+        const char *mp = sd_card_get_mount_point();
+        size_t ml = strlen(mp);
         if (ap && project_of_path(ap, dp, sizeof(dp))) {
             snprintf(s_cur_project, sizeof(s_cur_project), "%s", dp);
             snprintf(s_last_project, sizeof(s_last_project), "%s", dp);
             snprintf(select, sizeof(select), "%s", strrchr(ap, '/') + 1);
             project_set_last_file(dp, select);
+        } else if (ap && editor_path_is_book(ap) && !strncmp(ap, mp, ml) &&
+                   ap[ml] == '/' && !strchr(ap + ml + 1, '/')) {
+            s_cur_project[0] = '\0';
+            snprintf(select, sizeof(select), "%s", ap + ml + 1);
         }
     }
     editor_close_file();
@@ -5814,6 +5885,7 @@ static char menu_item_hotkey(menu_item_t id)
     case MENU_ITEM_CONN_MENU:   return 'c';  /* "Connectivity..." */
     case MENU_ITEM_SYSTEM_MENU: return 't';  /* "System & Storage..." */
     case MENU_ITEM_HELP:        return 'h';  /* "Help (F10)" */
+    case MENU_ITEM_BOOKS:       return 'b';  /* "Open a book..." */
     case MENU_ITEM_QUIT:        return 'q';  /* "Quit Draftling" */
     case MENU_ITEM_GIT_SYNC:    return 's';  /* "Synchronize: ..." */
     case MENU_ITEM_DRAFTBOX:    return 'c';  /* "Connect a Draftbox repository..." */
@@ -5973,6 +6045,8 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_CONN_MENU, "Connectivity...");
 #endif
         menu_add(MENU_ITEM_SYSTEM_MENU, "System & Storage...");
+        if (sd_card_is_mounted() && !sd_handed_off_msg())
+            menu_add(MENU_ITEM_BOOKS, "Open a book...");
         menu_add(MENU_ITEM_SLEEP, "Sleep now");
 #if defined(CONFIG_DRAFTLING_HAS_QUIT)
         menu_add(MENU_ITEM_QUIT, "Quit Draftling");
@@ -6159,6 +6233,9 @@ static void show_menu(void)
     s_fmt_step = FMT_STEP_NONE;
     s_xfer_open = false;
     s_xfer_migrate = false;
+    s_books_open = false;
+    s_toc_open = false;
+    books_free();
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     s_kermit_picker_open = false;
 #endif
@@ -8093,6 +8170,276 @@ static void kermit_picker_activate(int idx)
 }
 #endif /* CONFIG_DRAFTLING_HAS_KERMIT */
 
+/* ---- Book browser and contents list (see s_books_open) ---- */
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static list_touch_ctx_t s_books_touch_ctx;
+static list_touch_ctx_t s_toc_touch_ctx;
+#endif
+static void books_activate(int idx);
+static void toc_activate(int idx);
+static void book_show_chapter(int chapter, bool at_end);
+
+/* List s_books_dir: ".." (below the root), the folders, the books. */
+static bool books_load(void)
+{
+    books_free();
+    char dir[320];
+    snprintf(dir, sizeof(dir), "%s%s%s", sd_card_get_mount_point(),
+             s_books_dir[0] ? "/" : "", s_books_dir);
+    if (sd_card_list_dir(dir, &s_books_list, &s_books_count) != ESP_OK) {
+        s_books_list = NULL;
+        s_books_count = 0;
+        return false;
+    }
+    s_books_rows = (int *)malloc((size_t)(s_books_count + 1) * sizeof(int));
+    if (!s_books_rows) { books_free(); return false; }
+    if (s_books_dir[0]) s_books_rows[s_books_nrows++] = -1;
+    /* sd_card_list_dir() puts the folders first. */
+    for (int i = 0; i < s_books_count && s_books_nrows < BOOKS_MAX_ROWS; i++) {
+        const sd_card_file_entry_t &e = s_books_list[i];
+        if (e.is_dir ? !strcasecmp(e.name, "System Volume Information")
+                     : !editor_path_is_book(e.name)) continue;
+        s_books_rows[s_books_nrows++] = i;
+    }
+    return true;
+}
+
+static void refresh_books_items(void)
+{
+    char buf[300];
+    snprintf(buf, sizeof(buf), "Open a book: /%.200s", s_books_dir);
+    lv_label_set_text(s_lbl_menu_hdr, buf);
+    lv_obj_clean(s_menu_list);
+    for (int r = 0; r < s_books_nrows; r++) {
+        int i = s_books_rows[r];
+        if (i < 0) snprintf(buf, sizeof(buf), "../  (up)");
+        else if (s_books_list[i].is_dir) snprintf(buf, sizeof(buf), "%.255s/", s_books_list[i].name);
+        else snprintf(buf, sizeof(buf), "  %.255s", s_books_list[i].name);
+        lv_list_add_btn(s_menu_list, NULL, buf);
+    }
+    if (s_books_nrows == 0) lv_list_add_btn(s_menu_list, NULL, "(no books or folders here)");
+    if (s_books_sel >= s_books_nrows) s_books_sel = s_books_nrows ? s_books_nrows - 1 : 0;
+    apply_list_selection_styles(s_menu_list, s_books_sel);
+    s_books_sel_prev = s_books_sel;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_books_touch_ctx.p_sel      = &s_books_sel;
+    s_books_touch_ctx.p_sel_prev = &s_books_sel_prev;
+    s_books_touch_ctx.activate   = books_activate;
+    list_touch_attach(s_menu_list, &s_books_touch_ctx);
+#endif
+    sync_battery_labels();
+}
+
+/* Into a sub-folder (name) or up (NULL); the folder left is selected
+ * on the way up. */
+static void books_enter(const char *name)
+{
+    char left[256] = "";
+    if (name) {
+        size_t n = strlen(s_books_dir);
+        if (n + 1 + strlen(name) >= sizeof(s_books_dir)) {
+            editor_ui_set_status("Folder path too long");
+            return;
+        }
+        snprintf(s_books_dir + n, sizeof(s_books_dir) - n, "%s%s", n ? "/" : "", name);
+    } else {
+        char *slash = strrchr(s_books_dir, '/');
+        snprintf(left, sizeof(left), "%s", slash ? slash + 1 : s_books_dir);
+        if (slash) *slash = '\0';
+        else s_books_dir[0] = '\0';
+    }
+    if (!books_load()) {
+        /* The folder went away: start again from the root. */
+        s_books_dir[0] = '\0';
+        if (!books_load()) {
+            editor_ui_set_status("Cannot read the " STORAGE_NAME);
+            return;
+        }
+    }
+    s_books_sel = 0;
+    for (int r = 0; left[0] && r < s_books_nrows; r++) {
+        int i = s_books_rows[r];
+        if (i >= 0 && s_books_list[i].is_dir && !strcmp(s_books_list[i].name, left)) {
+            s_books_sel = r;
+            break;
+        }
+    }
+    refresh_books_items();
+}
+
+static void open_books_picker(void)
+{
+    if (const char *busy = sd_handed_off_msg()) {
+        editor_ui_set_status(busy);
+        return;
+    }
+    /* The book replaces the focused pane's document. */
+    if (s_editor_screen_active && editor_doc_is_modified(s_panes[s_focus].doc)) {
+        if (s_menu_open) close_menu();
+        editor_ui_set_status("Save the document first (Ctrl+S)");
+        return;
+    }
+    if (!s_menu_open) {
+        if (s_inpane_browser_open) close_inpane_browser();
+        show_menu();
+    }
+    if (!books_load()) {
+        s_books_dir[0] = '\0';
+        if (!books_load()) {
+            editor_ui_set_status("Cannot read the " STORAGE_NAME);
+            return;
+        }
+    }
+    s_books_open = true;
+    s_books_sel = 0;
+    refresh_books_items();
+}
+
+static void close_books_picker(void)
+{
+    s_books_open = false;
+    books_free();
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    refresh_menu_items();
+}
+
+static void books_activate(int r)
+{
+    if (r < 0 || r >= s_books_nrows) return;
+    int i = s_books_rows[r];
+    if (i < 0) { books_enter(NULL); return; }
+    if (s_books_list[i].is_dir) { books_enter(s_books_list[i].name); return; }
+    char path[600];   /* mount point + folder (255) + name (255) */
+    snprintf(path, sizeof(path), "%s%s%s/%s", sd_card_get_mount_point(),
+             s_books_dir[0] ? "/" : "", s_books_dir, s_books_list[i].name);
+    s_books_open = false;
+    books_free();
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    s_menu_open = false;
+    if (s_editor_screen_active) {
+        /* The focused document is replaced: keep its position. */
+        pane_bind_focus();
+        editor_save_meta();
+    }
+    if (!open_path_in_editor(path)) {
+        /* Back where the menu was opened from, with the reason. */
+        char why[96];
+        snprintf(why, sizeof(why), "%s", editor_book_error());
+        close_menu();
+        editor_ui_set_status(why);
+    }
+}
+
+static void handle_books_key(const kb_event_t *ev)
+{
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        if (s_books_sel > 0) s_books_sel--;
+        break;
+    case KB_KEY_DOWN:
+        if (s_books_sel + 1 < s_books_nrows) s_books_sel++;
+        break;
+    case KB_KEY_ENTER:
+        books_activate(s_books_sel);
+        return;
+    case KB_KEY_BACKSPACE:
+        if (s_books_dir[0]) books_enter(NULL);
+        return;
+    case KB_KEY_ESCAPE:
+        close_books_picker();
+        return;
+    default:
+        return;
+    }
+    update_list_highlight(s_menu_list, s_books_sel, s_books_sel_prev);
+    s_books_sel_prev = s_books_sel;
+}
+
+static void refresh_toc_items(void)
+{
+    char buf[160];
+    const char *title = editor_book_title();
+    snprintf(buf, sizeof(buf), "Contents: %.100s", title ? title : "book");
+    lv_label_set_text(s_lbl_menu_hdr, buf);
+    lv_obj_clean(s_menu_list);
+    int n = editor_book_chapter_count();
+    if (n > TOC_MAX_ROWS) n = TOC_MAX_ROWS;
+    for (int i = 0; i < n; i++) {
+        const char *t = editor_book_chapter_title(i);
+        if (t) snprintf(buf, sizeof(buf), "%d. %.120s", i + 1, t);
+        else snprintf(buf, sizeof(buf), "%d. (untitled section)", i + 1);
+        lv_list_add_btn(s_menu_list, NULL, buf);
+    }
+    apply_list_selection_styles(s_menu_list, s_toc_sel);
+    s_toc_sel_prev = s_toc_sel;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_toc_touch_ctx.p_sel      = &s_toc_sel;
+    s_toc_touch_ctx.p_sel_prev = &s_toc_sel_prev;
+    s_toc_touch_ctx.activate   = toc_activate;
+    list_touch_attach(s_menu_list, &s_toc_touch_ctx);
+#endif
+    sync_battery_labels();
+}
+
+/* C while reading: the chapters, the current one highlighted. */
+static void open_toc_picker(void)
+{
+    int n = editor_book_chapter_count();
+    if (n <= 0) return;
+    show_menu();
+    s_toc_open = true;
+    s_toc_sel = editor_book_chapter();
+    if (s_toc_sel < 0) s_toc_sel = 0;
+    if (s_toc_sel >= TOC_MAX_ROWS) s_toc_sel = TOC_MAX_ROWS - 1;
+    refresh_toc_items();
+}
+
+static void close_toc_picker(void)
+{
+    s_toc_open = false;
+    lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+    close_menu();   /* back to the book */
+}
+
+static void toc_activate(int idx)
+{
+    close_toc_picker();
+    pane_bind_focus();
+    if (idx >= 0 && idx < editor_book_chapter_count() && idx != editor_book_chapter())
+        book_show_chapter(idx, false);
+}
+
+static void handle_toc_key(const kb_event_t *ev)
+{
+    int last = editor_book_chapter_count();
+    if (last > TOC_MAX_ROWS) last = TOC_MAX_ROWS;
+    last--;
+    switch (ev->keycode) {
+    case KB_KEY_UP:
+        if (s_toc_sel > 0) s_toc_sel--;
+        break;
+    case KB_KEY_DOWN:
+        if (s_toc_sel < last) s_toc_sel++;
+        break;
+    case KB_KEY_PAGEUP:
+        s_toc_sel = s_toc_sel > 10 ? s_toc_sel - 10 : 0;
+        break;
+    case KB_KEY_PAGEDOWN:
+        s_toc_sel = s_toc_sel + 10 < last ? s_toc_sel + 10 : last;
+        break;
+    case KB_KEY_ENTER:
+        toc_activate(s_toc_sel);
+        return;
+    case KB_KEY_ESCAPE:
+        close_toc_picker();
+        return;
+    default:
+        return;
+    }
+    update_list_highlight(s_menu_list, s_toc_sel, s_toc_sel_prev);
+    s_toc_sel_prev = s_toc_sel;
+}
+
 /* ---- "Format SD card" picker (see fmt_step_t) ---- */
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
 static list_touch_ctx_t s_fmt_touch_ctx;
@@ -8537,6 +8884,9 @@ static void menu_activate_item(int row)
     case MENU_ITEM_FORMAT_SD:
         open_fmt_picker();
         break;
+    case MENU_ITEM_BOOKS:
+        open_books_picker();
+        break;
     case MENU_ITEM_HWINFO:
         s_menu_open = false;
         show_hwinfo(s_editor_screen_active ? HELP_FROM_EDITOR : HELP_FROM_BROWSER);
@@ -8612,6 +8962,9 @@ static void handle_menu_key(const kb_event_t *ev)
         }
         return;
     }
+
+    if (s_books_open) { handle_books_key(ev); return; }
+    if (s_toc_open) { handle_toc_key(ev); return; }
 
     if (s_fmt_step != FMT_STEP_NONE) {
         int last_row = (s_fmt_step == FMT_STEP_WIFI) ? 2 : 1;
@@ -8814,7 +9167,20 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
     if (kc < 11) kc = 11;
     if (kc > 16) kc = 16;
 
-    if (origin == HELP_FROM_EDITOR) {
+    pane_bind_focus();
+    if (origin == HELP_FROM_EDITOR && editor_is_read_only()) {
+        help_heading(out, "Reading a book");
+        help_row(out, cols, kc, "PgDn, Space", "Next page; at the end of a chapter the next chapter");
+        help_row(out, cols, kc, "PgUp, Shift+Space", "Previous page; at the start of a chapter the end of the previous one");
+        help_row(out, cols, kc, "N, Ctrl+PgDn", "Next chapter");
+        help_row(out, cols, kc, "P, Ctrl+PgUp", "Previous chapter");
+        help_row(out, cols, kc, "C", "Contents: pick a chapter");
+        help_row(out, cols, kc, "Ctrl+F", "Find in the chapter");
+        help_row(out, cols, kc, "Shift+arrows, Ctrl+C", "Select and copy text");
+        help_row(out, cols, kc, "Alt+I", "Book information");
+        help_row(out, cols, kc, "Esc", "Close the book (the position is kept)");
+        help_common_rows(out, cols, kc);
+    } else if (origin == HELP_FROM_EDITOR) {
         help_heading(out, "Editor");
         help_row(out, cols, kc, "Esc", "Back to the file browser (asks to save changes)");
         help_row(out, cols, kc, "Ctrl+S", "Save / save as");
@@ -8849,6 +9215,7 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Del, Alt+D", "Delete the project (only when synchronized with Git)");
         help_row(out, cols, kc, "Alt+I", "Project information: files, size, Git status");
         help_row(out, cols, kc, "Ctrl+G", "Git sync of the selected project");
+        help_row(out, cols, kc, "B", "Open a book (.epub) from any folder");
         if (origin == HELP_FROM_INPANE)
             help_row(out, cols, kc, "Ctrl+Tab", "Back to the editor, in the other pane");
 
@@ -8863,6 +9230,7 @@ static void build_help_text(std::string &out, help_origin_t origin, int cols)
         help_row(out, cols, kc, "Alt+C", "Copy the file to a project (also this one, under a new name)");
         help_row(out, cols, kc, "Alt+I", "File and project information: words, size, Git status");
         help_row(out, cols, kc, "Ctrl+G", "Git sync of this project");
+        help_row(out, cols, kc, "B", "Open a book (.epub) from any folder");
         if (origin == HELP_FROM_INPANE)
             help_row(out, cols, kc, "Ctrl+Tab", "Switch to the other pane");
         help_common_rows(out, cols, kc);
@@ -9343,6 +9711,44 @@ static void build_projectinfo_text(std::string &out, int cols, const char *name)
 
 /* data/len is the content to compare with the server, or NULL to let
  * Git sync read the saved file itself. */
+/* Book information (Alt+I on a book): title, file, size, chapters and,
+ * when reading (chapter >= 0), the current chapter. */
+static void build_bookinfo_text(std::string &out, int cols, const char *path, int chapter)
+{
+    int kc = 11;
+    const char *slash = strrchr(path, '/');
+    const char *why = NULL;
+    epub_book_t *b = epub_open(path, &why);
+    help_heading(out, "Book");
+    help_row(out, cols, kc, "Title", (b && epub_title(b)) ? epub_title(b) : "(none)");
+    help_row(out, cols, kc, "File", slash ? slash + 1 : path);
+    const char *mp = sd_card_get_mount_point();
+    size_t ml = strlen(mp);
+    std::string folder = slash ? std::string(path, (size_t)(slash - path)) : std::string();
+    if (!strncmp(folder.c_str(), mp, ml)) folder.erase(0, ml);
+    help_row(out, cols, kc, "Folder", folder.empty() ? "/" : folder.c_str());
+    struct stat st;
+    char buf[64];
+    if (stat(path, &st) == 0) {
+        format_size(buf, sizeof(buf), (uint64_t)st.st_size);
+        help_row(out, cols, kc, "Size", buf);
+    }
+    if (!b) {
+        help_row(out, cols, kc, "Status", why ? why : "Cannot be read");
+        return;
+    }
+    snprintf(buf, sizeof(buf), "%d", epub_chapter_count(b));
+    help_row(out, cols, kc, "Chapters", buf);
+    if (chapter >= 0) {
+        const char *t = epub_chapter_title(b, chapter);
+        snprintf(buf, sizeof(buf), "%d of %d", chapter + 1, epub_chapter_count(b));
+        std::string cur = buf;
+        if (t) { cur += ": "; cur += t; }
+        help_row(out, cols, kc, "Reading", cur.c_str());
+    }
+    epub_close(b);
+}
+
 static void build_fileinfo_text(std::string &out, int cols, const char *name,
                                 const char *fmt_name, bool unsaved,
                                 const text_counts_t *tc,
@@ -9396,6 +9802,12 @@ static void show_editor_fileinfo(void)
     if (!s_scr_help) return;
     pane_bind_focus();
     const char *path = editor_get_file_path();
+    if (editor_is_read_only() && path) {
+        std::string text;
+        build_bookinfo_text(text, help_cols(), path, editor_book_chapter());
+        show_help_page(HELP_FROM_EDITOR, "Book information - Esc or Enter to close", text);
+        return;
+    }
     const char *name = "(untitled)";
     const char *git_name = NULL;
     project_name_t proj = "";
@@ -9427,6 +9839,15 @@ static void show_browser_fileinfo(void)
     if (!s_scr_help || !s_browser_list) return;
     help_origin_t origin = s_inpane_browser_open ? HELP_FROM_INPANE : HELP_FROM_BROWSER;
     const sd_card_file_entry_t *e = browser_selected_entry();
+    if (const sd_card_file_entry_t *bk = browser_selected_book()) {
+        char bdir[64], path[320];
+        browser_dir(bdir, sizeof(bdir));
+        snprintf(path, sizeof(path), "%s/%s", bdir, bk->name);
+        std::string text;
+        build_bookinfo_text(text, help_cols(), path, -1);
+        show_help_page(origin, "Book information - Esc or Enter to close", text);
+        return;
+    }
     if (browser_at_root()) {
         if (!e) return;
         std::string text;
@@ -9664,6 +10085,13 @@ static void show_rename_prompt(void)
     if (!s_save_panel || !s_browser_list) return;
     const sd_card_file_entry_t *e = browser_selected_entry();
     if (!e) return;
+    if (const sd_card_file_entry_t *bk = browser_selected_book()) {
+        char bdir[64];
+        browser_dir(bdir, sizeof(bdir));
+        snprintf(s_rename_src, sizeof(s_rename_src), "%s/%s", bdir, bk->name);
+        show_name_prompt(SAVE_MODE_RENAME, "Rename to (Enter/Esc):", bk->name);
+        return;
+    }
     if (browser_at_root()) {
         snprintf(s_rename_src, sizeof(s_rename_src), "%s", e->name);
         show_name_prompt(SAVE_MODE_PROJECT_RENAME, "Rename project to (Enter/Esc):", e->name);
@@ -9692,8 +10120,13 @@ static void rename_prompt_confirm(void)
         restore_default_status();
         return;
     }
-    if (!editor_path_format(s_save_buf, NULL)) {
-        /* Any other extension would hide the file from the browser. */
+    /* Any other extension would hide the file from the browser. */
+    if (editor_path_is_book(old_name)) {
+        if (!editor_path_is_book(s_save_buf)) {
+            editor_ui_set_status("Name must end in .epub");
+            return;
+        }
+    } else if (!editor_path_format(s_save_buf, NULL)) {
         editor_ui_set_status("Name must end in .md, .fountain or .txt");
         return;
     }
@@ -11063,6 +11496,18 @@ static void show_delete_prompt(void)
     if (!s_del_panel || !s_browser_list) return;
     const sd_card_file_entry_t *e = browser_selected_entry();
     if (!e) return;
+    if (const sd_card_file_entry_t *bk = browser_selected_book()) {
+        /* Books are never in Git: confirm and delete. */
+        char bdir[64];
+        browser_dir(bdir, sizeof(bdir));
+        s_del_is_project = false;
+        snprintf(s_del_path, sizeof(s_del_path), "%s/%s", bdir, bk->name);
+        remember_neighbour_row();
+        char hdr[96];
+        snprintf(hdr, sizeof(hdr), "Delete the book %.40s? (cannot be undone)", bk->name);
+        open_delete_panel(hdr);
+        return;
+    }
     if (browser_at_root()) {
         show_project_delete_prompt(e->name);
         return;
@@ -12223,6 +12668,97 @@ static bool suggest_handle_key(const kb_event_t *ev)
 
 static void handle_editor_key_main(const kb_event_t *ev);
 
+/* Show another chapter of the book in the focused pane. */
+static void book_show_chapter(int chapter, bool at_end)
+{
+    pane_bind_focus();
+    editor_doc_t *doc = editor_get_active();
+    if (editor_book_goto(chapter, at_end) != ESP_OK) {
+        editor_ui_set_status(editor_book_error());
+        return;
+    }
+    /* Every pane on this book adopts the new text's view. */
+    for (int i = 0; i < s_pane_count; i++)
+        if (s_panes[i].doc == doc && i != s_focus) s_panes[i].has_saved_view = false;
+    pane_capture_view(s_rp);
+#if defined(CONFIG_DRAFTLING_DISPLAY_EPD)
+    if (s_pane_count > 1) epd_full_screen_repaint();
+    else display_clear(0xFF);
+#endif
+    ensure_cursor_visible();
+    editor_ui_refresh();
+    char msg[160];
+    const char *t = editor_book_chapter_title(chapter);
+    snprintf(msg, sizeof(msg), "Chapter %d of %d%s%.100s", chapter + 1,
+             editor_book_chapter_count(), t ? ": " : "", t ? t : "");
+    set_status_with_timeout(msg, 4000);
+}
+
+/* Keys of the book reader (the focused document is a book). Returns
+ * true when the key was handled here; false lets the editor's own
+ * handling run (cursor movement, find, copy, panes, ...), with *ev
+ * possibly rewritten (Space = Page Down). */
+static bool book_editor_key(const kb_event_t *&ev, kb_event_t *tmp, bool ctrl)
+{
+    bool alt = (ev->modifier & (KB_MOD_LALT | KB_MOD_RALT)) != 0;
+    bool gui = (ev->modifier & (KB_MOD_LGUI | KB_MOD_RGUI)) != 0;
+    bool shift = (ev->modifier & (KB_MOD_LSHIFT | KB_MOD_RSHIFT)) != 0;
+    bool plain = !ctrl && !alt && !gui;
+    char ch = kb_layout_shortcut_char(ev->keycode);
+    int cur = editor_book_chapter(), n = editor_book_chapter_count();
+
+    if (plain && ev->keycode == KB_KEY_SPACE) {
+        *tmp = *ev;
+        tmp->keycode = shift ? KB_KEY_PAGEUP : KB_KEY_PAGEDOWN;
+        tmp->modifier = 0;
+        tmp->character = 0;
+        ev = tmp;
+    }
+    bool next = (plain && !shift && ch == 'n') || (ctrl && ev->keycode == KB_KEY_PAGEDOWN);
+    bool prev = (plain && !shift && ch == 'p') || (ctrl && ev->keycode == KB_KEY_PAGEUP);
+    /* Page Down at the end of a chapter goes on to the next one, Page
+     * Up at its start back to the end of the previous one. */
+    if (ev->keycode == KB_KEY_PAGEDOWN && !ev->modifier &&
+        editor_get_cursor() >= editor_get_length() && cur + 1 < n) next = true;
+    if (ev->keycode == KB_KEY_PAGEUP && !ev->modifier && editor_get_cursor() == 0 && cur > 0) {
+        book_show_chapter(cur - 1, true);
+        return true;
+    }
+    if (next) {
+        if (cur + 1 < n) book_show_chapter(cur + 1, false);
+        else editor_ui_set_status("This is the last chapter");
+        return true;
+    }
+    if (prev) {
+        if (cur > 0) book_show_chapter(cur - 1, false);
+        else editor_ui_set_status("This is the first chapter");
+        return true;
+    }
+    if (plain && !shift && ch == 'c') {
+        open_toc_picker();
+        return true;
+    }
+
+    /* Everything that would change the text. */
+    static const char *const ro = "Reading a book: N / P chapter, C contents, Esc close";
+    switch (ev->keycode) {
+    case KB_KEY_UP: case KB_KEY_DOWN: case KB_KEY_LEFT: case KB_KEY_RIGHT:
+    case KB_KEY_HOME: case KB_KEY_END: case KB_KEY_PAGEUP: case KB_KEY_PAGEDOWN:
+    case KB_KEY_ESCAPE: case KB_KEYCODE_CAPS_LOCK:
+        return false;
+    case KB_KEY_TAB:
+        if (ctrl) return false;   /* Ctrl+Tab: the other pane */
+        break;
+    default:
+        if (ev->keycode >= KB_KEY_F1 && ev->keycode <= KB_KEY_F12) return false;
+        if (ctrl && ev->keycode != KB_KEY_BACKSPACE && ev->keycode != KB_KEY_DELETE &&
+            ev->keycode != KB_KEY_ENTER && !strchr("vxhs", ch ? ch : '!')) return false;
+        break;
+    }
+    editor_ui_set_status(ro);
+    return true;
+}
+
 static void handle_editor_key(const kb_event_t *ev)
 {
     s_sugg_kept = false;
@@ -12318,6 +12854,14 @@ static void handle_editor_key_main(const kb_event_t *ev)
     if (const char *busy = sd_handed_off_msg()) {
         editor_ui_set_status(busy);
         return;
+    }
+
+    /* A book is read, not edited. */
+    kb_event_t book_ev;
+    if (editor_is_read_only()) {
+        if (book_editor_key(ev, &book_ev, ctrl)) return;
+        ctrl  = (ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL)) != 0;
+        shift = (ev->modifier & (KB_MOD_LSHIFT | KB_MOD_RSHIFT)) != 0;
     }
 
     /* Win+Space cycles the keyboard layout, mirroring Ctrl+L. HID
@@ -12899,15 +13443,29 @@ static void browser_activate_item(int row)
         }
         return;
     }
-    if (browser_at_root()) return;
+    const char *name = s_browser_entries[idx].name;
+    bool book = editor_path_is_book(name);
+    /* The list of projects also lists the books in the root folder. */
+    if (browser_at_root() && !book) return;
 
     char dir[64];
-    project_dir(s_cur_project, dir, sizeof(dir));
+    if (browser_at_root()) snprintf(dir, sizeof(dir), "%s", sd_card_get_mount_point());
+    else project_dir(s_cur_project, dir, sizeof(dir));
     char path[512];
-    snprintf(path, sizeof(path), "%s/%s", dir, s_browser_entries[idx].name);
-    project_set_last_file(s_cur_project, s_browser_entries[idx].name);
-    snprintf(s_last_project, sizeof(s_last_project), "%s", s_cur_project);
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    if (!browser_at_root()) {
+        project_set_last_file(s_cur_project, name);
+        snprintf(s_last_project, sizeof(s_last_project), "%s", s_cur_project);
+    }
+    open_path_in_editor(path);
+}
 
+/* Open path (a document or a book) in the editor: single pane, or the
+ * target / focused pane of a split. False (with a status message) if
+ * it cannot be opened; the browser stays. */
+static bool open_path_in_editor(const char *path)
+{
+    bool book = editor_path_is_book(path);
     if (s_pane_count <= 1) {
         editor_init();
         esp_err_t oerr = editor_open_file(path);
@@ -12921,11 +13479,11 @@ static void browser_activate_item(int row)
                      "File too large (limit %u KB)",
                      (unsigned)(editor_get_max_doc_size() / 1024));
             editor_ui_set_status(msg);
-            return;
+            return false;
         }
         if (oerr != ESP_OK) {
-            editor_ui_set_status("Open failed");
-            return;
+            editor_ui_set_status(book ? editor_book_error() : "Open failed");
+            return false;
         }
         /* Keep pane 0's document handle current (editor_open_file may
          * have acted on the active doc). */
@@ -12939,8 +13497,8 @@ static void browser_activate_item(int row)
                      ? s_open_target_pane : s_focus;
         editor_doc_t *d = open_into_pane(tp, path);
         if (!d) {
-            editor_ui_set_status("Open failed");
-            return;
+            editor_ui_set_status(book ? editor_book_error() : "Open failed");
+            return false;
         }
         s_focus = tp;
         pane_bind_focus();
@@ -12974,6 +13532,7 @@ static void browser_activate_item(int row)
      * mode. */
     close_inpane_browser();
     editor_ui_show_editor();
+    return true;
 }
 
 static void handle_browser_key(const kb_event_t *ev)
@@ -13126,6 +13685,11 @@ static void handle_browser_key(const kb_event_t *ev)
     if ((ch == 'm' || ch == 'c') && alt && !ctrl) {
         /* Alt+M / Alt+C: move / copy the selected file to a project. */
         show_xfer_picker(ch == 'c');
+        return;
+    }
+    if (ch == 'b' && !alt && !ctrl) {
+        /* B: the book browser, every folder of the card. */
+        open_books_picker();
         return;
     }
     if (ev->keycode == KB_KEY_BACKSPACE ||
@@ -13572,7 +14136,8 @@ static void apply_pending_sleep_request(void)
     if (s_exit_open) return;    /* already asking */
     /* Only the plain menu list is closed; a picker shown inside the
      * menu counts as an open dialog. */
-    bool menu_picker = s_wifi_scan_picker_open || s_fmt_step != FMT_STEP_NONE;
+    bool menu_picker = s_wifi_scan_picker_open || s_fmt_step != FMT_STEP_NONE ||
+                       s_books_open || s_toc_open;
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     menu_picker = menu_picker || s_usbmsc_picker_open;
 #endif
@@ -15383,6 +15948,9 @@ static void teardown_screens(void)
     s_wifi_pw_panel = s_wifi_pw_hdr_lbl = s_wifi_pw_name_lbl = s_wifi_pw_cur = NULL;
     s_dbx_panel = s_dbx_hdr_lbl = s_dbx_val_lbl = s_dbx_cur = NULL;
     s_msg_panel = s_msg_title_lbl = s_msg_text_lbl = s_msg_hint_lbl = NULL;
+    s_books_open = false;
+    s_toc_open = false;
+    books_free();
     s_exit_panel = s_exit_hdr_lbl = NULL;
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
@@ -15502,7 +16070,7 @@ extern "C" bool editor_ui_can_relayout(void)
 {
     if (!s_scr) return false;   /* before editor_ui_init() */
     if (s_restart_confirm_open || s_fmt_step != FMT_STEP_NONE ||
-        s_factory_reset_confirm || s_theme_picker_open ||
+        s_books_open || s_toc_open || s_factory_reset_confirm || s_theme_picker_open ||
         s_layouts_picker_open || s_save_open || s_xfer_open ||
         s_setup_busy || s_wifi_scan_picker_open ||
         s_wifi_scan_in_progress || s_wifi_pw_open || s_dbx_open ||

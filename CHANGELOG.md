@@ -8,6 +8,15 @@ in the git log.
 
 ### Added
 
+- **EPUB reader**: books in the EPUB format can be read from any folder
+  of the card. Books in the root folder are listed after the projects
+  and books in a project next to its documents; B in the file browser
+  or F1 -> "Open a book..." browses every folder. Chapters are shown
+  with headings, bold, italic, lists and quotes in the firmware's
+  fonts; PgDn / Space turn the pages and continue into the next
+  chapter, N / P change chapter, C lists the contents. The reading
+  position is kept. Images are not shown yet. See README.md.
+
 - **Documents in the internal flash, for boards without a MicroSD
   slot**: Draftling can now keep the documents, projects and Git
   history in a part of the device's own flash memory instead of on a

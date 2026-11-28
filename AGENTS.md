@@ -238,7 +238,8 @@ selects the firmware's own `components/editor`, `kb_layout`, `fonts`,
 unchanged against LVGL 9.6.0 -- the way the component `CMakeLists.txt`
 files do; `EMBED_FILES` blobs come in through `.incbin`
 (`tools/gen_embed.py`). ESP-IDF headers are stood in for by
-`online_demo/shim/include/`, and FreeRTOS, NVS, the display / touch
+`online_demo/shim/include/` (its `miniz.h` cannot inflate, so the
+demo reads only stored EPUB entries), and FreeRTOS, NVS, the display / touch
 port, BLE keyboard, board buttons, WiFi, Git sync, USB MSC / Kermit,
 standby and battery by `online_demo/src/*_demo.*`: single-threaded (a
 task runs from a one-shot LVGL timer), storage in IndexedDB, network
@@ -551,7 +552,7 @@ components/                 Reusable IDF components
   display/                  RLCD SPI display driver and LVGL port
   editor/                   Gap-buffer text editor, Markdown / Fountain
                             parsers, Markdown / Fountain / plain-text
-                            format hooks, LVGL UI
+                            format hooks, LVGL UI, EPUB reader (epub.cpp)
   fonts/                    Custom LVGL bitmap fonts (Greybeard, Hack,
                             Vietnamese subsets, CJK pixel-font driver,
                             Tamil cluster-glyph driver, Devanagari /
@@ -1196,6 +1197,74 @@ The largest component. Contains:
   carry `*` / `**` / `***` emphasis, `_underline_` (`md_span_t::
   underline`), notes (`code`, `mark_len` 0) and boneyard text
   (`strikethrough`, `mark_len` 0); notes and boneyard may span lines.
+- **epub.cpp** (`private_include/epub.h`) -- EPUB books. The ZIP
+  central directory is read once (`epub_open()`; no ZIP64), entries
+  are inflated whole into PSRAM with the ROM miniz
+  (`tinfl_decompress_mem_to_mem()`, raw deflate; encrypted entries are
+  refused as DRM; `EPUB_MAX_ENTRY` 8 MB). `META-INF/container.xml` ->
+  the OPF: `dc:title`, manifest, spine (reading order = chapters);
+  chapter titles from the EPUB 3 nav document (`properties="nav"`,
+  the `<nav epub:type="toc">` links) or else the NCX (`navPoint`),
+  matched to spine files after resolving the href (URL-decoded, no
+  fragment, `..` folded). `epub_xhtml_to_markdown()` is a forgiving
+  tag scanner (no XML parser, CSS ignored): `h1`-`h6` -> `#`..`####`,
+  `p`/`div`/... -> blank lines, `br` -> newline, `em`/`i` -> `*`,
+  `strong`/`b` -> `**`, `s`/`del` -> `~~`, `code` -> backticks, `pre`
+  -> a fence, `blockquote` -> `> `, `ul`/`ol`/`li` -> `- ` / `N. `
+  indented by depth, `hr` -> `---`, `img` -> `[image: alt]`, table
+  cells joined by ` | `; `head`, `script`, `style`, `svg`, `math`,
+  `rt`, `rp` skipped (an svg becomes `[image]`); entities decoded;
+  whitespace collapsed; soft hyphens, zero-width spaces and BOMs
+  dropped. Emphasis is closed before a line break and reopened after
+  it, and waits for the first non-space character, so every span
+  stays on one line and hugs its text. The rendered Markdown shows
+  backslash escapes as typed, so only what would otherwise become
+  formatting is escaped (`*` next to a non-space, `_` outside a word,
+  backticks, `~~`, `#` / `>` / `- ` / `+ ` / `N. ` at a line start).
+  A chapter that does not fit is cut short with a note (`RESERVE`
+  bytes kept for it). Book metadata lives in PSRAM (`ps_alloc`
+  containers). Host test: `test/epub/run.sh` (books written by
+  `make_book.py`, zlib for miniz, AddressSanitizer); run it after
+  changing epub.cpp.
+- **Books in the engine** (`editor.cpp`): `editor_open_file()` on a
+  `.epub` (`editor_path_is_book()`) opens it as a book
+  (`editor_doc_t::book`, `chapter`): the text is one chapter's
+  Markdown written straight into the gap buffer (the whole buffer, not
+  `doc_capacity()`: it is never saved), and the document is read only
+  -- `READ_ONLY()` makes every mutating function refuse (inserts,
+  deletes, replace, cut / paste, save, set_format), so no UI path can
+  change or save it. The sidecar (`.<name>.epub.meta`) gets a
+  `chapter=` line next to `cursor=` / `scroll=` (`meta_read()`), so the
+  close, pre-sleep and chapter-change meta saves keep the reading
+  position; `book_keep_position()` saves it before a book's text is
+  replaced by another document. `editor_book_goto()` loads another
+  chapter (cursor at its start or end); `editor_reload_path()` and
+  `editor_discard_all_changes()` leave books alone.
+  `editor_rename_file()` re-points the book (`epub_set_path()`).
+- **Book UI** (`editor_ui.cpp`): `refresh_file_list()` lists `.epub`
+  files after the projects at the root and with the documents in a
+  project; `browser_activate_item()` opens them through
+  `open_path_in_editor()` (the single-pane / split open code, shared
+  with the book browser). Del (`browser_selected_book()`, no Git
+  check), F2 (`.epub` to `.epub`) and Alt+I (`build_bookinfo_text()`)
+  have book branches, checked before the root's project branches.
+  `editor_ui_show_file_browser()` returns from a root book to the list
+  of projects with it selected; from a book elsewhere the browser
+  stays where it was. The book browser (`s_books_open`, B in the
+  browser or F1 -> "Open a book...", `MENU_ITEM_BOOKS` letter `B`) is
+  a picker in `s_menu_list` over every folder of the card
+  (`s_books_dir` below the mount point; `..`, folders, `.epub` files,
+  "System Volume Information" left out, `BOOKS_MAX_ROWS`); it refuses
+  while the focused document has unsaved changes, since the book
+  replaces it. While a book is focused, `handle_editor_key_main()`
+  first asks `book_editor_key()`: Space / Shift+Space = PgDn / PgUp,
+  PgDn at the end / PgUp at the start of a chapter, N / P and
+  Ctrl+PgDn / PgUp change chapter (`book_show_chapter()`: every pane
+  on the book adopts the new view, e-paper full refresh), C opens the
+  contents picker (`s_toc_open`, `TOC_MAX_ROWS`); keys that would edit
+  only post a status hint, the rest (movement, find, copy, panes,
+  F-keys) fall through. The title bar shows the book title and
+  `Ch N/M`; F10 lists the reader keys.
 - **editor_format.h** (`private_include/`), **md_editor.cpp**,
   **fountain_editor.cpp**, **text_editor.cpp** -- per-format editing
   behaviour. `editor_ui.cpp` holds everything the formats share and
@@ -1444,6 +1513,7 @@ Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
                           with CONFIG_DRAFTLING_NO_BLUETOOTH)
 System & Storage...       Hardware information / SD card via USB /
                           Format SD card...
+Open a book...            (the book browser, while a card is mounted)
 Sleep now
 Quit Draftling            (only with CONFIG_DRAFTLING_HAS_QUIT)
 Help (F10)

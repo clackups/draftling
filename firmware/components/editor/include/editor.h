@@ -137,6 +137,26 @@ void editor_set_format(editor_doc_format_t f);
 /* True if path ends in a document extension; stores its format in
  * *out (when non-NULL). */
 bool editor_path_format(const char *path, editor_doc_format_t *out);
+
+/* ---- Books (EPUB) ----
+ *
+ * editor_open_file() on a .epub opens it as a book: the document holds
+ * one chapter, converted to Markdown, and is read only -- every edit
+ * function refuses (returns false / ESP_ERR_NOT_SUPPORTED) and it is
+ * never saved. Only the reading position is kept, in the usual
+ * metadata sidecar (chapter, cursor, scroll line). */
+bool editor_path_is_book(const char *path);   /* a .epub name */
+bool editor_is_read_only(void);               /* the active document is a book */
+bool editor_doc_is_read_only(const editor_doc_t *doc);
+int  editor_book_chapter(void);               /* 0-based, -1 if not a book */
+int  editor_book_chapter_count(void);
+const char *editor_book_title(void);          /* NULL if none */
+const char *editor_book_chapter_title(int chapter);   /* NULL if untitled */
+/* Load another chapter, the cursor at its start or end. On failure the
+ * current chapter stays (editor_book_error() says why). */
+esp_err_t editor_book_goto(int chapter, bool at_end);
+/* Why the last book / chapter open failed. */
+const char *editor_book_error(void);
 /* The file extension of a format, without the dot ("md", ...). */
 const char *editor_format_ext(editor_doc_format_t f);
 
