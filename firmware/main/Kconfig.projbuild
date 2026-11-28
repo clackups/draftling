@@ -564,6 +564,60 @@ config DRAFTLING_USB_HOST_NATIVE
         Bluetooth; the microjournal_rev5 / _rev7 presets do) only makes
         the image smaller.
 
+# Document storage in the ESP32's own flash instead of a MicroSD card,
+# for boards (or board variants) without a card slot. Board-agnostic:
+# any device build can use it. sd_card_init_flash() mounts a FAT file
+# system on wear levelling from the data/fat partition named below at
+# the card's mount point, so the editor, the projects and Git sync work
+# unchanged. The partition table must provide that partition; the
+# partitions_storage_{4,8,16}mb.csv tables (selected together with this
+# option by sdkconfig.defaults.storage_flash_{4,8,16}mb) do. The
+# top-level CMakeLists.txt refuses a build whose partition is missing,
+# not data/fat, or smaller than 1 MB.
+config DRAFTLING_STORAGE_FLASH
+    bool "Store documents in a flash partition instead of a MicroSD card"
+    depends on !DRAFTLING_MODEL_LINUX && !DRAFTLING_MODEL_WEB
+    default n
+    help
+        Keep the documents, projects, Git history and wifi.cfg in a FAT
+        file system in the internal flash instead of on a MicroSD card,
+        for boards without a card slot. The MicroSD slot, if the board
+        has one, is not used.
+
+        The partition table must contain a data/fat partition with the
+        label below, at least 1 MB large. Ready-made tables for 4, 8
+        and 16 MB of flash: partitions_storage_4mb.csv (2.94 MB app,
+        1 MB storage), partitions_storage_8mb.csv (4.94 MB app, 3 MB
+        storage) and partitions_storage_16mb.csv (7.94 MB app, 8 MB
+        storage); add sdkconfig.defaults.storage_flash_<size> to the
+        board's SDKCONFIG_DEFAULTS to select this option and the table.
+
+        The partition is formatted on first boot. "SD card via USB" is
+        not available with this option.
+
+config DRAFTLING_STORAGE_FLASH_PARTITION
+    string "Flash storage partition label"
+    depends on DRAFTLING_STORAGE_FLASH
+    default "storage"
+    help
+        Label of the data/fat partition that holds the documents.
+
+config DRAFTLING_STORAGE_FLASH_DOC_DIVISOR
+    int "Largest document: 1/N of the flash storage"
+    depends on DRAFTLING_STORAGE_FLASH
+    range 4 64
+    default 8
+    help
+        A document may take at most this fraction of the flash file
+        system (on top of the PSRAM limit), because it needs much more
+        room than its own size: a save writes a second copy before
+        replacing the file, a Git sync keeps the commit's blob, the
+        fetched pack and a merge's three versions and result in scratch
+        files, and the Git history keeps every committed version. With
+        8: about 120 KB on the 4 MB table, 380 KB on 8 MB, 1 MB on
+        16 MB. The limit is shown as "Max file size" on the hardware
+        information page.
+
 # The Linux program packaged as a Flatpak (linux/packaging/flatpak/, selected by
 # linux/sdkconfig.defaults.flatpak). Inside the sandbox it cannot set
 # the screen backlight or read the battery, and the network belongs to

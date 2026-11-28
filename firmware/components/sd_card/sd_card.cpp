@@ -23,12 +23,30 @@
 #include <driver/spi_common.h>
 #include <driver/spi_master.h>
 #include <driver/gpio.h>
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+#include <esp_partition.h>
+#include <wear_levelling.h>
+#endif
 
 #include "sd_card.h"
 
 static const char *TAG = "SDCard";
 static sdmmc_card_t *s_card = NULL;
 static char s_mount[32] = "";
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+/* Internal-flash storage (CONFIG_DRAFTLING_STORAGE_FLASH): a FAT file
+ * system on wear levelling in a data/fat partition, mounted at the
+ * same path as a card would be. s_card stays NULL then. */
+static wl_handle_t s_wl = WL_INVALID_HANDLE;
+static char s_flash_label[17] = "";
+static size_t s_flash_size = 0;
+static bool flash_mounted(void) { return s_wl != WL_INVALID_HANDLE; }
+#else
+static bool flash_mounted(void) { return false; }
+#endif
+
+/* A file system is mounted at s_mount: a card or the flash partition. */
+static bool mounted(void) { return s_card != NULL || flash_mounted(); }
 static int  s_spi_host  = -1;     /* set when mounted via SPI, otherwise -1 */
 static bool s_spi_bus_owned = false;
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY)
@@ -421,8 +439,86 @@ extern "C" esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
     return ESP_OK;
 }
 
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+/* Mount settings of the flash partition (mount and format). Clusters
+ * of one flash sector (allocation_unit_size 0 = CONFIG_WL_SECTOR_SIZE,
+ * 4 KB): a Git repository is mostly small files, and on a 1 MB volume
+ * 16 KB clusters would leave room for only about 60 of them. */
+static esp_vfs_fat_mount_config_t flash_mount_cfg(void)
+{
+    esp_vfs_fat_mount_config_t cfg = {};
+    cfg.format_if_mount_failed = true;  /* first boot: blank partition */
+    cfg.max_files              = 10;
+    cfg.allocation_unit_size   = 0;
+    return cfg;
+}
+#endif
+
+extern "C" esp_err_t sd_card_init_flash(const char *partition_label,
+                                        const char *mount_point)
+{
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    if (mounted()) return ESP_ERR_INVALID_STATE;
+    strncpy(s_mount, mount_point, sizeof(s_mount) - 1);
+    snprintf(s_flash_label, sizeof(s_flash_label), "%s", partition_label);
+
+    const esp_partition_t *part = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, s_flash_label);
+    if (!part) {
+        ESP_LOGE(TAG, "No data/fat partition \"%s\" in the partition table",
+                 s_flash_label);
+        return ESP_ERR_NOT_FOUND;
+    }
+    s_flash_size = part->size;
+
+    esp_vfs_fat_mount_config_t cfg = flash_mount_cfg();
+    wl_handle_t wl = WL_INVALID_HANDLE;
+    esp_err_t ret = esp_vfs_fat_spiflash_mount_rw_wl(s_mount, s_flash_label,
+                                                     &cfg, &wl);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Flash storage mount failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    s_wl = wl;
+    ESP_LOGI(TAG, "Flash storage \"%s\" (%u KB at 0x%lx) mounted at %s",
+             s_flash_label, (unsigned)(part->size / 1024),
+             (unsigned long)part->address, s_mount);
+    recover_interrupted_writes();
+    return ESP_OK;
+#else
+    (void)partition_label; (void)mount_point;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+extern "C" bool sd_card_is_mounted(void)
+{
+    return mounted();
+}
+
+extern "C" bool sd_card_is_internal_flash(void)
+{
+    return flash_mounted();
+}
+
+extern "C" size_t sd_card_flash_partition_size(void)
+{
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    return flash_mounted() ? s_flash_size : 0;
+#else
+    return 0;
+#endif
+}
+
 extern "C" esp_err_t sd_card_deinit(void)
 {
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    if (flash_mounted()) {
+        esp_err_t fret = esp_vfs_fat_spiflash_unmount_rw_wl(s_mount, s_wl);
+        s_wl = WL_INVALID_HANDLE;
+        return fret;
+    }
+#endif
     if (!s_card) return ESP_ERR_INVALID_STATE;
     esp_err_t ret;
     if (s_spi_host >= 0) {
@@ -449,6 +545,19 @@ extern "C" esp_err_t sd_card_deinit(void)
 
 extern "C" esp_err_t sd_card_format(void)
 {
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    if (flash_mounted()) {
+        /* Formats the mounted volume in place; it stays mounted. */
+        esp_vfs_fat_mount_config_t fcfg = flash_mount_cfg();
+        ESP_LOGW(TAG, "Formatting flash storage \"%s\" at %s",
+                 s_flash_label, s_mount);
+        esp_err_t fret = esp_vfs_fat_spiflash_format_cfg_rw_wl(s_mount,
+                                                               s_flash_label, &fcfg);
+        if (fret != ESP_OK)
+            ESP_LOGE(TAG, "Format failed: %s", esp_err_to_name(fret));
+        return fret;
+    }
+#endif
     if (!s_card) return ESP_ERR_INVALID_STATE;
     /* Same settings as the mount. esp_vfs_fat_sdcard_format_cfg()
      * unmounts the FAT volume, re-creates it and mounts it again at
@@ -473,6 +582,7 @@ extern "C" esp_err_t sd_card_format(void)
 
 extern "C" bool sd_card_is_ready(void)
 {
+    if (flash_mounted()) return true;
     return s_card != NULL && sdmmc_get_status(s_card) == ESP_OK;
 }
 
@@ -483,7 +593,7 @@ extern "C" sdmmc_card_t *sd_card_get_handle(void)
 
 extern "C" esp_err_t sd_card_get_fs_space(uint64_t *total_bytes, uint64_t *free_bytes)
 {
-    if (!s_card) return ESP_ERR_INVALID_STATE;
+    if (!mounted()) return ESP_ERR_INVALID_STATE;
     return esp_vfs_fat_info(s_mount, total_bytes, free_bytes);
 }
 
@@ -494,7 +604,7 @@ extern "C" const char *sd_card_get_mount_point(void)
 
 extern "C" esp_err_t sd_card_read_file(const char *path, char **out_buf, size_t *out_len)
 {
-    if (!s_card) return ESP_ERR_INVALID_STATE;
+    if (!mounted()) return ESP_ERR_INVALID_STATE;
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Open failed: %s", path); return ESP_ERR_NOT_FOUND; }
 
@@ -539,7 +649,7 @@ extern "C" esp_err_t sd_card_write_file_parts(const char *path,
                                               const char *a, size_t alen,
                                               const char *b, size_t blen)
 {
-    if (!s_card) return ESP_ERR_INVALID_STATE;
+    if (!mounted()) return ESP_ERR_INVALID_STATE;
 
     /* Atomic write: stream the new contents into a hidden temporary
      * next to the target (".<basename>.dtmp", skipped by the file
@@ -737,7 +847,7 @@ extern "C" bool sd_card_is_dir(const char *path)
 
 extern "C" esp_err_t sd_card_copy_file(const char *src, const char *dst)
 {
-    if (!s_card) return ESP_ERR_INVALID_STATE;
+    if (!mounted()) return ESP_ERR_INVALID_STATE;
     if (sd_card_file_exists(dst)) {
         ESP_LOGW(TAG, "Copy: %s already exists", dst);
         return ESP_ERR_INVALID_STATE;

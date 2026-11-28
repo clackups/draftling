@@ -44,6 +44,7 @@ load the firmware quickly without having to compile it.
   * [LilyGO T5 E-Paper S3 Pro / Pro Lite](https://github.com/Xinyuan-LilyGO/T5S3-4.7-e-paper-PRO) (including the H752 variant)
   * [Waveshare ESP32-S3-Touch-LCD-3.49](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-3.49)
   * [Seeed Studio reTerminal E1001](https://wiki.seeedstudio.com/getting_started_with_reterminal_e1001/) (7.5" e-paper, metal body)
+  * Seeed Studio TRMNL 7.5" (OG) DIY Kit (7.5" e-paper, no MicroSD slot: documents in the internal flash)
   * [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5)
   * [OnePage Reader](https://github.com/MoveCall/onepage-reader) (ESP32-C61, 4.26" e-paper, open hardware)
   * [M5Stack PaperS3](https://docs.m5stack.com/en/core/papers3) (discontinued)

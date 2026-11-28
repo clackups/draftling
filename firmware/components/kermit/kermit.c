@@ -61,6 +61,14 @@
 #define PKT_BUF     (MY_MAXLX + 128)
 
 #define TASK_STACK  (12 * 1024)
+/* PSRAM, except with the documents in internal flash: flash I/O turns
+ * the cache (and so the PSRAM) off, so the task that reads and writes
+ * the files needs an internal-RAM stack then. */
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+#define TASK_STACK_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#else
+#define TASK_STACK_CAPS MALLOC_CAP_SPIRAM
+#endif
 
 #define ROOT_MAX    32
 #define PATH_MAX_K  320
@@ -95,7 +103,7 @@ static struct {
 } P;
 
 static kermit_status_cb_t s_cb;
-static StackType_t       *s_stack;      /* PSRAM, kept between runs */
+static StackType_t       *s_stack;      /* kept between runs, see TASK_STACK_CAPS */
 static StaticTask_t       s_tcb;
 static SemaphoreHandle_t  s_done;
 static volatile bool      s_stop;
@@ -1486,7 +1494,7 @@ esp_err_t kermit_server_start(const char *root_dir, kermit_status_cb_t cb)
         if (!s_done) return ESP_ERR_NO_MEM;
     }
     if (!s_stack) {
-        s_stack = heap_caps_malloc(TASK_STACK, MALLOC_CAP_SPIRAM);
+        s_stack = heap_caps_malloc(TASK_STACK, TASK_STACK_CAPS);
         if (!s_stack) return ESP_ERR_NO_MEM;
     }
     xSemaphoreTake(s_done, 0);

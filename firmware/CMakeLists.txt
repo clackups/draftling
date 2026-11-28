@@ -76,6 +76,98 @@ if(CONFIG_DRAFTLING_LANG_PACK_INDIC AND
         "pack for this board.")
 endif()
 
+# Internal-flash document storage (CONFIG_DRAFTLING_STORAGE_FLASH): the
+# partition table must hold a data/fat partition with the configured
+# label, at least 1 MB large -- smaller volumes leave too little room
+# for documents and their Git history. Checked here, at configure time,
+# so a wrong table never reaches a device. (ESP-IDF itself checks that
+# the table fits the flash and the app fits its slot.)
+if(CONFIG_DRAFTLING_STORAGE_FLASH)
+    set(_dl_min_storage 1048576)
+    set(_dl_label "${CONFIG_DRAFTLING_STORAGE_FLASH_PARTITION}")
+    if(NOT CONFIG_PARTITION_TABLE_CUSTOM)
+        message(FATAL_ERROR
+            "Flash document storage needs a custom partition table with a "
+            "'${_dl_label}' data/fat partition (e.g. partitions_storage_16mb.csv; "
+            "see sdkconfig.defaults.storage_flash_<size>).")
+    endif()
+    get_filename_component(_dl_csv "${CONFIG_PARTITION_TABLE_CUSTOM_FILENAME}"
+                           ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+    if(NOT EXISTS "${_dl_csv}")
+        message(FATAL_ERROR "Partition table ${_dl_csv} not found.")
+    endif()
+    file(STRINGS "${_dl_csv}" _dl_lines)
+    set(_dl_found FALSE)
+    foreach(_dl_line IN LISTS _dl_lines)
+        string(STRIP "${_dl_line}" _dl_line)
+        if(_dl_line STREQUAL "" OR _dl_line MATCHES "^#")
+            continue()
+        endif()
+        string(REPLACE "," ";" _dl_f "${_dl_line}")
+        list(LENGTH _dl_f _dl_n)
+        if(_dl_n LESS 5)
+            continue()
+        endif()
+        list(GET _dl_f 0 _dl_name)
+        string(STRIP "${_dl_name}" _dl_name)
+        if(NOT _dl_name STREQUAL _dl_label)
+            continue()
+        endif()
+        set(_dl_found TRUE)
+        list(GET _dl_f 1 _dl_type)
+        list(GET _dl_f 2 _dl_sub)
+        list(GET _dl_f 4 _dl_size)
+        string(STRIP "${_dl_type}" _dl_type)
+        string(STRIP "${_dl_sub}" _dl_sub)
+        string(STRIP "${_dl_size}" _dl_size)
+        if(NOT _dl_type STREQUAL "data" OR NOT _dl_sub STREQUAL "fat")
+            message(FATAL_ERROR
+                "Partition '${_dl_label}' in ${_dl_csv} is ${_dl_type}/${_dl_sub}; "
+                "flash document storage needs a data/fat partition.")
+        endif()
+        # Sizes as gen_esp32part.py accepts them: hex, decimal, K or M.
+        string(TOLOWER "${_dl_size}" _dl_size)
+        if(_dl_size MATCHES "^0x[0-9a-f]+$")
+            math(EXPR _dl_bytes "${_dl_size}")
+        elseif(_dl_size MATCHES "^([0-9]+)k$")
+            math(EXPR _dl_bytes "${CMAKE_MATCH_1} * 1024")
+        elseif(_dl_size MATCHES "^([0-9]+)m$")
+            math(EXPR _dl_bytes "${CMAKE_MATCH_1} * 1048576")
+        elseif(_dl_size MATCHES "^[0-9]+$")
+            set(_dl_bytes "${_dl_size}")
+        else()
+            message(FATAL_ERROR
+                "Cannot read the size '${_dl_size}' of partition '${_dl_label}' "
+                "in ${_dl_csv}.")
+        endif()
+        if(_dl_bytes LESS _dl_min_storage)
+            math(EXPR _dl_kb "${_dl_bytes} / 1024")
+            message(FATAL_ERROR
+                "Flash document storage partition '${_dl_label}' in ${_dl_csv} "
+                "is ${_dl_kb} KB; it must be at least 1 MB (1024 KB).")
+        endif()
+        math(EXPR _dl_kb "${_dl_bytes} / 1024")
+        message(STATUS "Draftling flash document storage: '${_dl_label}', ${_dl_kb} KB")
+        break()
+    endforeach()
+    if(NOT _dl_found)
+        message(FATAL_ERROR
+            "Flash document storage is enabled, but ${_dl_csv} has no "
+            "'${_dl_label}' partition.")
+    endif()
+
+    # A 4 MB flash with 1 MB of storage leaves a 2.94 MB app slot
+    # (partitions_storage_4mb.csv): only the default and Vietnamese
+    # packs fit. Refuse the others before compiling anything.
+    if(CONFIG_ESPTOOLPY_FLASHSIZE_4MB AND
+       NOT (CONFIG_DRAFTLING_LANG_PACK_DEFAULT OR CONFIG_DRAFTLING_LANG_PACK_VIETNAMESE))
+        message(FATAL_ERROR
+            "The ${CONFIG_DRAFTLING_LANG_PACK_NAME} language pack does not fit a "
+            "4 MB flash that also holds the document storage. Build the "
+            "default or the Vietnamese pack for this board.")
+    endif()
+endif()
+
 # Silence warnings emitted from the vroland/epdiy managed component
 # (last upstream release 2.0.0, Nov 2023). The component still uses
 # APIs that have since been deprecated in ESP-IDF:

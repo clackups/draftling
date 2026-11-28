@@ -27,6 +27,26 @@ esp_err_t sd_card_init(int clk_pin, int cmd_pin, int d0_pin, const char *mount_p
  */
 esp_err_t sd_card_init_spi(int spi_host, int miso, int mosi, int sck,
                            int cs, int enable_gpio, const char *mount_point);
+/*
+ * Mount the internal-flash document storage instead of a card
+ * (CONFIG_DRAFTLING_STORAGE_FLASH): a FAT file system on wear
+ * levelling in the data/fat partition partition_label, mounted at
+ * mount_point (the same "/sdcard" a card uses, so every path stays
+ * the same). A blank or unreadable partition is formatted. Returns
+ * ESP_ERR_NOT_SUPPORTED in builds without flash storage and
+ * ESP_ERR_NOT_FOUND when the partition table has no such partition.
+ * Every other sd_card_* call then works on that file system;
+ * sd_card_get_handle() stays NULL (there is no card).
+ */
+esp_err_t sd_card_init_flash(const char *partition_label, const char *mount_point);
+
+/* True while a file system is mounted: a card or the flash storage. */
+bool sd_card_is_mounted(void);
+/* True while the flash storage (not a card) is mounted. */
+bool sd_card_is_internal_flash(void);
+/* Size of the mounted flash storage partition in bytes, 0 if none. */
+size_t sd_card_flash_partition_size(void);
+
 esp_err_t sd_card_deinit(void);
 bool sd_card_is_ready(void);
 const char *sd_card_get_mount_point(void);
@@ -40,11 +60,13 @@ const char *sd_card_get_mount_point(void);
  * off the card, rather than unmount it, while USB MSC owns it. */
 sdmmc_card_t *sd_card_get_handle(void);
 
-/* Size and free space of the mounted FAT file system, in bytes.
- * Returns ESP_ERR_INVALID_STATE when no card is mounted. */
+/* Size and free space of the mounted FAT file system (card or flash
+ * storage), in bytes. Returns ESP_ERR_INVALID_STATE when nothing is
+ * mounted. */
 esp_err_t sd_card_get_fs_space(uint64_t *total_bytes, uint64_t *free_bytes);
 
-/* Erase the mounted card by creating a fresh FAT file system on it
+/* Erase the mounted card (or the flash storage) by creating a fresh
+ * FAT file system on it
  * (every file and directory is lost), then mount it again at the same
  * mount point. Blocking: can take several seconds on a large card.
  * Nothing else may touch the card while this runs. Returns

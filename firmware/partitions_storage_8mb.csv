@@ -1,0 +1,18 @@
+# 8 MB flash with the documents in internal flash
+# (CONFIG_DRAFTLING_STORAGE_FLASH, for boards without a MicroSD slot;
+# selected by sdkconfig.defaults.storage_flash_8mb).
+#
+# One "factory" app of 4.94 MB and a 3 MB "storage" data/fat
+# partition (FAT on wear levelling, mounted at /sdcard) filling the
+# rest of the chip. The app slot leaves room for the firmware to grow
+# beyond today's ~2.7 MB default-pack image; the top-level
+# CMakeLists.txt refuses a storage partition smaller than 1 MB.
+#
+# 8 MB: the app slot fits every language pack (the largest, Indic on a
+# high-density board, is ~4.8 MB).
+#
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x6000,
+phy_init, data, phy,     0xf000,   0x1000,
+factory,  app,  factory, 0x10000,  0x4F0000,
+storage,  data, fat,     0x500000, 0x300000,

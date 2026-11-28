@@ -3153,8 +3153,23 @@ extern "C" void app_main(void)
     }
 
     /* Initialize SD card */
-    ESP_LOGI(TAG, "Initializing SD card...");
     esp_err_t sd_ret = ESP_FAIL;
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    /* Documents in internal flash (board without a MicroSD slot): mount
+     * the FAT partition at the card's mount point instead of probing a
+     * card. A card slot the board may have is left alone. */
+    ESP_LOGI(TAG, "Mounting flash document storage...");
+    sd_ret = sd_card_init_flash(CONFIG_DRAFTLING_STORAGE_FLASH_PARTITION,
+                                SD_MOUNT_POINT);
+    if (sd_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Flash storage mount failed: %s", esp_err_to_name(sd_ret));
+        if (draftling_lvgl_port_lock(-1)) {
+            editor_ui_set_status("ERROR: internal storage not ready");
+            draftling_lvgl_port_unlock();
+        }
+    }
+#else
+    ESP_LOGI(TAG, "Initializing SD card...");
 #if defined(CONFIG_DRAFTLING_DISPLAY_EPDIY)
     /* Hold the LVGL port lock across the whole SD mount sequence on
      * epdiy e-paper boards (M5Stack PaperS3, LilyGO T5 E-Paper S3 Pro
@@ -3284,6 +3299,7 @@ extern "C" void app_main(void)
         draftling_lvgl_port_unlock();
     }
 #endif
+#endif /* CONFIG_DRAFTLING_STORAGE_FLASH */
 
 #if defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO) || \
     defined(CONFIG_DRAFTLING_MODEL_LILYGO_T5_EPD_S3_PRO_H752)

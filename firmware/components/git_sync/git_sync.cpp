@@ -79,6 +79,16 @@ static bool s_time_synced = false;
 /* ---- sync task stack (SPIRAM) ------------------------------------- */
 
 #define GIT_SYNC_STACK_SIZE (24 * 1024)
+/* The worker's stack is in PSRAM, except with the documents in internal
+ * flash (CONFIG_DRAFTLING_STORAGE_FLASH): every flash read or write
+ * turns the cache off, and with it the PSRAM, so a task doing file I/O
+ * there must run on an internal-RAM stack (ESP-IDF asserts
+ * esp_task_stack_is_sane_cache_disabled() otherwise). */
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+#define GIT_SYNC_STACK_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#else
+#define GIT_SYNC_STACK_CAPS MALLOC_CAP_SPIRAM
+#endif
 static StackType_t *s_stack_buf = NULL;
 static StaticTask_t s_task_tcb;
 /* One long-lived worker runs every sync: its static stack and TCB are
@@ -1240,7 +1250,7 @@ extern "C" esp_err_t git_sync_start(const char *project_dir, git_sync_direction_
 
     if (!s_worker) {
         if (!s_stack_buf) {
-            s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, MALLOC_CAP_SPIRAM);
+            s_stack_buf = (StackType_t *)heap_caps_malloc(GIT_SYNC_STACK_SIZE, GIT_SYNC_STACK_CAPS);
             if (!s_stack_buf) { set_error("Failed to alloc sync stack"); return ESP_ERR_NO_MEM; }
         }
         s_worker = xTaskCreateStaticPinnedToCore(

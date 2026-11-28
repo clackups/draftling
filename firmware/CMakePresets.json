@@ -245,6 +245,15 @@
             }
         },
         {
+            "name": "seeed_trmnl_75_og_diy",
+            "displayName": "Seeed Studio TRMNL 7.5in (OG) DIY Kit (E1001 build, documents in internal flash)",
+            "binaryDir": "build/seeed_trmnl_75_og_diy",
+            "cacheVariables": {
+                "SDKCONFIG_DEFAULTS": "sdkconfig.defaults;sdkconfig.defaults.bluetooth;sdkconfig.defaults.seeed_reterminal_e1001;sdkconfig.defaults.storage_flash_16mb",
+                "SDKCONFIG": "build/seeed_trmnl_75_og_diy/sdkconfig"
+            }
+        },
+        {
             "name": "seeed_reterminal_sticky",
             "displayName": "Seeed reTerminal Sticky (SSD1677, 3.97in e-paper, touch)",
             "binaryDir": "build/seeed_reterminal_sticky",

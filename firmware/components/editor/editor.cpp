@@ -106,6 +106,17 @@ static bool   s_clip_in_file = false;
 /* Content length (excluding gap) */
 static inline size_t content_len(void) { return s_buf_size - (s_gap_end - s_gap_start); }
 
+/* Largest document the active slot may hold: its gap buffer less a
+ * 64-byte safety margin and, with the documents in internal flash
+ * (CONFIG_DRAFTLING_STORAGE_FLASH), storage_doc_limit(). */
+static size_t storage_doc_limit(void);
+static size_t doc_capacity(void)
+{
+    size_t cap = s_buf_size - 64;
+    size_t lim = storage_doc_limit();
+    return (lim && lim < cap) ? lim : cap;
+}
+
 /* Character at logical position p (0..content_len-1) */
 static inline char char_at(size_t p)
 {
@@ -333,9 +344,40 @@ extern "C" void editor_init(void)
     doc_reset_empty(s_active);
 }
 
+/* With the documents in internal flash the file system is small (1 to
+ * 8 MB, partitions_storage_*.csv), and a document takes far more room
+ * than its own size: the atomic save writes a second copy next to it,
+ * a Git sync streams the commit's blob, the fetched pack and its
+ * response, and a merge's three versions plus the result through
+ * scratch files in .git/tmp, and the history keeps every committed
+ * version. So a document may take at most 1/N of the volume
+ * (CONFIG_DRAFTLING_STORAGE_FLASH_DOC_DIVISOR). The volume size is
+ * read once it is mounted (after editor_init()); 0 = no limit yet. */
+static size_t storage_doc_limit(void)
+{
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    static size_t s_limit = 0;
+    if (s_limit == 0 && sd_card_is_internal_flash()) {
+        uint64_t total = 0, free_b = 0;
+        if (sd_card_get_fs_space(&total, &free_b) == ESP_OK && total > 0) {
+            s_limit = (size_t)(total / CONFIG_DRAFTLING_STORAGE_FLASH_DOC_DIVISOR);
+            s_limit &= ~(size_t)1023;
+            ESP_LOGI(TAG, "Document limit %u KB (1/%d of the %u KB flash storage)",
+                     (unsigned)(s_limit / 1024),
+                     CONFIG_DRAFTLING_STORAGE_FLASH_DOC_DIVISOR,
+                     (unsigned)(total / 1024));
+        }
+    }
+    return s_limit;
+#else
+    return 0;
+#endif
+}
+
 extern "C" size_t editor_get_max_doc_size(void)
 {
-    return s_doc_buf_size;
+    size_t lim = storage_doc_limit();
+    return (lim && lim < s_doc_buf_size) ? lim : s_doc_buf_size;
 }
 
 /* ---- Per-file metadata sidecar ----
@@ -586,10 +628,10 @@ extern "C" esp_err_t editor_open_file(const char *path)
 
     /* Same limit as editing: the buffer less a 64-byte margin. A UTF-16
      * file's UTF-8 size is only known once transcoded. */
-    size_t cap = s_buf_size - 64;
+    size_t cap = doc_capacity();
     if (enc == ENC_UTF8 && payload > cap) {
-        ESP_LOGW(TAG, "Refusing to open %s: %ld bytes > editor buffer (%u KB)",
-                 path, fsize, (unsigned)(s_buf_size / 1024));
+        ESP_LOGW(TAG, "Refusing to open %s: %ld bytes > document limit (%u KB)",
+                 path, fsize, (unsigned)(cap / 1024));
         fclose(f);
         return ESP_ERR_NO_MEM;
     }
@@ -1399,9 +1441,9 @@ extern "C" bool editor_insert_char(char c)
 {
     /* Reserve a small safety margin so we never completely fill the
      * buffer (matches editor_open_file() / editor_replace_range()). */
-    if (content_len() + 1 > s_buf_size - 64) {
+    if (content_len() + 1 > doc_capacity()) {
         ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting insert",
-                 (unsigned)(s_buf_size / 1024));
+                 (unsigned)(doc_capacity() / 1024));
         return false;
     }
     if (s_gap_start >= s_gap_end) return false;
@@ -1414,9 +1456,9 @@ extern "C" bool editor_insert_char(char c)
 extern "C" bool editor_insert_text(const char *text, size_t len)
 {
     if (!text || len == 0) return true;
-    if (content_len() + len > s_buf_size - 64) {
+    if (content_len() + len > doc_capacity()) {
         ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte insert",
-                 (unsigned)(s_buf_size / 1024), len);
+                 (unsigned)(doc_capacity() / 1024), len);
         return false;
     }
     size_t pos = s_gap_start;
@@ -1438,9 +1480,9 @@ extern "C" bool editor_replace_before(size_t del, const char *text)
 {
     if (del > s_gap_start) return false;
     size_t len = text ? strlen(text) : 0;
-    if (content_len() - del + len > s_buf_size - 64) {
+    if (content_len() - del + len > doc_capacity()) {
         ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte insert",
-                 (unsigned)(s_buf_size / 1024), len);
+                 (unsigned)(doc_capacity() / 1024), len);
         return false;
     }
     remove_before_gap(s_gap_start - del);
@@ -1531,7 +1573,7 @@ extern "C" esp_err_t editor_replace_range(size_t start, size_t end,
     size_t old_span = end - start;
     /* New content size must fit in the buffer with the editor's usual
      * 64-byte safety margin (matches editor_open_file()). */
-    if (len - old_span + rlen > s_buf_size - 64) return ESP_ERR_NO_MEM;
+    if (len - old_span + rlen > doc_capacity()) return ESP_ERR_NO_MEM;
 
     /* Delete the old range, then insert the replacement at the same
      * position. Going through the existing helpers preserves all
@@ -1652,9 +1694,9 @@ static bool paste_fits(size_t len)
 {
     size_t sel_s = s_gap_start, sel_e = s_gap_start;
     if (editor_selection_active()) editor_get_selection_range(&sel_s, &sel_e);
-    if (content_len() - (sel_e - sel_s) + len > s_buf_size - 64) {
+    if (content_len() - (sel_e - sel_s) + len > doc_capacity()) {
         ESP_LOGW(TAG, "Editor buffer full (%u KB), rejecting %zu-byte paste",
-                 (unsigned)(s_buf_size / 1024), len);
+                 (unsigned)(doc_capacity() / 1024), len);
         return false;
     }
     return true;

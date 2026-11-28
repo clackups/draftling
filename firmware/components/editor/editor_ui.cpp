@@ -61,6 +61,16 @@
 #include "kermit.h"
 #endif
 #include "sd_card.h"
+
+/* What the documents are kept on, in user-visible text: a MicroSD card
+ * or, with CONFIG_DRAFTLING_STORAGE_FLASH, a partition of the internal
+ * flash (mounted at the same path, see sd_card_init_flash()). */
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+#define STORAGE_NAME  "internal storage"
+#else
+#define STORAGE_NAME  "SD card"
+#endif
+
 #include "lvgl_port.h"
 #include "display.h"
 #include "display_margins.h"
@@ -1254,6 +1264,10 @@ static const char *usb_msc_mode_name(usb_msc_mode_t mode)
  * pulled out mid-session can still be switched back off. */
 static bool usbmsc_item_disabled(void)
 {
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    /* usb_msc exposes a card's sectors; there is no card. */
+    return true;
+#endif
     return usb_msc_get_mode() == USB_MSC_MODE_OFF && !sd_card_is_ready();
 }
 #endif
@@ -5197,7 +5211,7 @@ static void refresh_file_list(const char *select_name = NULL)
     if (sd_card_list_dir(dir, &s_browser_entries, &s_browser_count) != ESP_OK) {
         s_browser_entries = NULL;
         s_browser_count = 0;
-        if (sd_card_get_handle()) editor_ui_set_status("Cannot read the SD card folder");
+        if (sd_card_is_mounted()) editor_ui_set_status("Cannot read the " STORAGE_NAME " folder");
     }
     if (browser_at_root()) {
         /* The list of projects: the folders in the SD card root with a
@@ -5333,9 +5347,15 @@ static void check_project_setup(void)
     if (!sd_card_is_ready()) {
         if (s_setup_dismissed) return;
         s_setup_dismissed = true;
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+        show_msg_popup("No internal storage",
+                       "The internal storage cannot be mounted.\n"
+                       "Restart the device.", false);
+#else
         show_msg_popup("No SD card",
                        "The SD card is missing or cannot be read.\n"
                        "Insert a MicroSD card and restart the device.", false);
+#endif
         s_msg_restart = true;
         lv_label_set_text(s_msg_hint_lbl, "Enter: restart");
         return;
@@ -5699,7 +5719,11 @@ extern "C" void editor_ui_set_ble_prompt_text(const char *text)
      * only shows once a keyboard is connected. */
     if (!sd_handed_off_msg() && !sd_card_is_ready()) {
         std::string t(text);
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+        t += "\n\nThe internal storage cannot be mounted.\nRestart the device.";
+#else
         t += "\n\nNo SD card found.\nInsert a MicroSD card and restart the device.";
+#endif
         lv_label_set_text(s_ble_prompt_lbl, t.c_str());
         return;
     }
@@ -6045,7 +6069,11 @@ static void refresh_menu_items(void)
          * commit_usb_msc_pending_mode(). See usbmsc_item_disabled() for
          * when it is disabled instead. */
         if (usbmsc_item_disabled()) {
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+            snprintf(buf, sizeof(buf), "SD card via USB: (no SD card, internal storage)");
+#else
             snprintf(buf, sizeof(buf), "SD card via USB: (no SD card)");
+#endif
         } else {
             snprintf(buf, sizeof(buf), "SD card via USB: %s  (Enter to change)",
                      usb_msc_mode_name(s_usbmsc_pending_mode));
@@ -6053,8 +6081,8 @@ static void refresh_menu_items(void)
         menu_add(MENU_ITEM_USB_MSC, buf);
 #endif
         menu_add(MENU_ITEM_FORMAT_SD,
-                 sd_card_get_handle() ? "Format SD card..."
-                                      : "Format SD card... (no SD card)");
+                 sd_card_is_mounted() ? "Format " STORAGE_NAME "..."
+                                      : "Format " STORAGE_NAME "... (no " STORAGE_NAME ")");
         menu_add(MENU_ITEM_BACK, "Back (Esc)");
         break;
     }
@@ -7950,7 +7978,7 @@ static void kermit_start(void)
         return;
     }
     if (!sd_card_is_ready()) {
-        editor_ui_set_status("Sync via browser: no SD card");
+        editor_ui_set_status("Sync via browser: no " STORAGE_NAME);
         return;
     }
     if (git_sync_get_state() == GIT_SYNC_IN_PROGRESS) {
@@ -8078,7 +8106,7 @@ static void refresh_fmt_picker_items(void)
     switch (s_fmt_step) {
     case FMT_STEP_WIFI:
         lv_label_set_text(s_lbl_menu_hdr,
-                          "Format SD card: keep the WiFi settings?");
+                          "Format " STORAGE_NAME ": keep the WiFi settings?");
         snprintf(buf, sizeof(buf), "Keep WiFi settings (%s)", s_fmt_ssid);
         lv_list_add_btn(s_menu_list, NULL, buf);
         lv_list_add_btn(s_menu_list, NULL, "Erase WiFi settings");
@@ -8086,13 +8114,13 @@ static void refresh_fmt_picker_items(void)
         break;
     case FMT_STEP_CONFIRM1:
         lv_label_set_text(s_lbl_menu_hdr,
-                          "Format SD card: ALL files will be erased");
+                          "Format " STORAGE_NAME ": ALL files will be erased");
         lv_list_add_btn(s_menu_list, NULL, "Cancel");
-        lv_list_add_btn(s_menu_list, NULL, "Erase all files on the SD card");
+        lv_list_add_btn(s_menu_list, NULL, "Erase all files on the " STORAGE_NAME);
         break;
     case FMT_STEP_CONFIRM2:
         lv_label_set_text(s_lbl_menu_hdr,
-                          "Really format the SD card? Cannot be undone.");
+                          "Really format the " STORAGE_NAME "? Cannot be undone.");
         lv_list_add_btn(s_menu_list, NULL, "Cancel");
 #if defined(CONFIG_DRAFTLING_NETWORK_HOST_MANAGED)
         lv_list_add_btn(s_menu_list, NULL, "Yes, format now");
@@ -8144,9 +8172,9 @@ static const char *fmt_blocked_reason(void)
 {
     const char *busy = sd_handed_off_msg();
     if (busy) return busy;
-    if (!sd_card_get_handle()) return "Format SD card: no SD card";
+    if (!sd_card_is_mounted()) return "Format " STORAGE_NAME ": no " STORAGE_NAME;
     if (git_sync_get_state() == GIT_SYNC_IN_PROGRESS)
-        return "Format SD card: wait for Git sync to finish";
+        return "Format " STORAGE_NAME ": wait for Git sync to finish";
     return NULL;
 }
 
@@ -8184,13 +8212,13 @@ static void fmt_task(void *arg)
                 : "Could not erase the WiFi settings from the device memory.";
         }
         snprintf(text, sizeof(text),
-                 "The SD card is formatted.\n%s%s"
+                 "The " STORAGE_NAME " is formatted.\n%s%s"
                  "The device will restart in a few seconds.", wifi_msg,
                  wifi_msg[0] ? "\n" : "");
     } else {
         snprintf(text, sizeof(text),
                  "Formatting failed: %s.\nRestart the device before "
-                 "using the SD card again.", esp_err_to_name(ret));
+                 "using the " STORAGE_NAME " again.", esp_err_to_name(ret));
     }
     memset(a, 0, sizeof(*a));
     free(a);
@@ -8198,7 +8226,7 @@ static void fmt_task(void *arg)
     draftling_lvgl_port_lock(-1);
     /* On success the device restarts on its own: show it as busy, so
      * there is no "press Enter" hint and keys are ignored. */
-    show_msg_popup("Format SD card", text, ret == ESP_OK);
+    show_msg_popup("Format " STORAGE_NAME, text, ret == ESP_OK);
     draftling_lvgl_port_unlock();
 
     if (ret == ESP_OK) {
@@ -8219,7 +8247,7 @@ static void fmt_start(void)
     fmt_args_t *a = (fmt_args_t *)calloc(1, sizeof(fmt_args_t));
     if (!a) {
         close_fmt_picker();
-        editor_ui_set_status("Format SD card: out of memory");
+        editor_ui_set_status("Format " STORAGE_NAME ": out of memory");
         return;
     }
     a->keep_wifi = s_fmt_keep_wifi;
@@ -8232,15 +8260,21 @@ static void fmt_start(void)
      * standby from sleeping in the middle of the format. */
     editor_discard_all_changes();
     standby_reset_timer();
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    show_msg_popup("Format " STORAGE_NAME,
+                   "Formatting the internal storage...\n"
+                   "Do not switch the device off.", true);
+#else
     show_msg_popup("Format SD card",
                    "Formatting the SD card...\n"
                    "Do not remove the card or switch the device off.", true);
+#endif
 
     if (xTaskCreatePinnedToCore(fmt_task, "sd_format", 6 * 1024, a, 3,
                                 NULL, 0) != pdPASS) {
         memset(a, 0, sizeof(*a));
         free(a);
-        show_msg_popup("Format SD card",
+        show_msg_popup("Format " STORAGE_NAME,
                        "Formatting failed: could not start the task.", false);
     }
 }
@@ -8475,7 +8509,11 @@ static void menu_activate_item(int row)
 #if defined(CONFIG_DRAFTLING_HAS_USB_MSC)
     case MENU_ITEM_USB_MSC:
         if (usbmsc_item_disabled()) {
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+            editor_ui_set_status("SD card via USB: not with internal storage");
+#else
             editor_ui_set_status("SD card via USB: insert an SD card first");
+#endif
             break;
         }
         /* Open the picker sub-list. Up/Down to navigate, Enter to
@@ -8939,7 +8977,8 @@ static void build_hwinfo_text(std::string &out, int cols)
         help_row(out, cols, kc, "PSRAM", "none");
     }
     /* The editor's gap buffer, sized by editor_init() from the PSRAM
-     * free at boot: the largest document that can be opened. */
+     * free at boot (with flash storage also capped by the volume size):
+     * the largest document that can be opened. */
     format_mem(buf, sizeof(buf), editor_get_max_doc_size());
     help_row(out, cols, kc, "Max file size", buf);
     uint32_t flash = 0;
@@ -8986,6 +9025,24 @@ static void build_hwinfo_text(std::string &out, int cols)
     help_row(out, cols, kc, "Fonts", "low definition (Greybeard)");
 #endif
 
+#if defined(CONFIG_DRAFTLING_STORAGE_FLASH)
+    help_heading(out, "Storage");
+    if (!sd_card_is_internal_flash()) {
+        help_row(out, cols, kc, "Status", "not mounted");
+    } else {
+        help_row(out, cols, kc, "Type", "internal flash (FAT, wear levelling)");
+        format_size(buf, sizeof(buf), sd_card_flash_partition_size());
+        help_row(out, cols, kc, "Partition", buf);
+        uint64_t fs_total = 0, fs_free = 0;
+        if (sd_card_get_fs_space(&fs_total, &fs_free) == ESP_OK) {
+            char tot[24], fr[24];
+            format_size(tot, sizeof(tot), fs_total);
+            format_size(fr, sizeof(fr), fs_free);
+            snprintf(buf, sizeof(buf), "%s of %s", fr, tot);
+            help_row(out, cols, kc, "Free", buf);
+        }
+    }
+#else
     help_heading(out, "SD card");
     sdmmc_card_t *card = sd_card_get_handle();
     if (!card) {
@@ -9026,6 +9083,7 @@ static void build_hwinfo_text(std::string &out, int cols)
             help_row(out, cols, kc, "Interface", buf);
         }
     }
+#endif
 
     help_heading(out, "Keyboard");
     bool any_kbd = false;
@@ -10087,7 +10145,7 @@ static void save_prompt_confirm(void)
     }
     if (!sd_card_is_ready() || !s_rename_src[0]) {
         close_save_prompt();
-        editor_ui_set_status("Save failed: SD card not ready");
+        editor_ui_set_status("Save failed: " STORAGE_NAME " not ready");
         return;
     }
     if (strchr(s_save_buf, '/')) {

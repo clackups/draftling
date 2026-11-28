@@ -1,0 +1,7 @@
+# Documents in internal flash instead of a MicroSD card, 16 MB flash.
+# Append to a board's SDKCONFIG_DEFAULTS (after its own
+# sdkconfig.defaults.<board>), e.g. the seeed_trmnl_75_og_diy
+# preset. The board's flash size must be at least 16 MB.
+CONFIG_DRAFTLING_STORAGE_FLASH=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_storage_16mb.csv"

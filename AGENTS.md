@@ -120,6 +120,7 @@ card).
 | Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI | 5.79-inch e-paper (SSD1683 x2), 792x272, no touch |
 | Waveshare ESP32-S3-ePaper-3.97 | 3.97-inch e-paper (SSD1677-compatible), 800x480, no touch |
 | Seeed Studio reTerminal E1001 | 7.5-inch e-paper (UC8179), 800x480, no touch |
+| Seeed Studio TRMNL 7.5" (OG) DIY Kit | the reTerminal E1001 build without a MicroSD slot: documents in internal flash (16 MB) |
 | Seeed reTerminal Sticky | 3.97-inch e-paper (SSD1677/SSD2677, auto-detected), 800x480, GT911 touch |
 | M5Stack PaperMono / PaperMono-Lite | 3.97-inch e-paper (SSD1677), 800x480, FT6336G touch |
 | NiceMCU-C5E-DEV_2.8IPS (ESP32-C5) | 2.8-inch ST7789 IPS color LCD over PARLIO, 320x240, CST816D / FT6336G touch |
@@ -511,6 +512,13 @@ partitions_xteink_x4_classic.csv  Same dual-OTA layout for the Xteink
                             X4 Classic (X4 v2)
 partitions_seeed_reterminal_sticky.csv  Same dual-OTA layout for the
                             Seeed reTerminal Sticky (32 MB flash)
+partitions_storage_{4,8,16}mb.csv  factory app + "storage" data/fat
+                            partition for CONFIG_DRAFTLING_STORAGE_FLASH
+                            (documents in internal flash, see
+                            components/sd_card/)
+sdkconfig.defaults.storage_flash_{4,8,16}mb  Turn on flash document
+                            storage and select the matching table;
+                            appended to a preset's SDKCONFIG_DEFAULTS
 sdkconfig.defaults          Common Kconfig defaults for all targets
 sdkconfig.defaults.esp32s3  ESP32-S3-specific defaults (PSRAM, WiFi)
 sdkconfig.defaults.esp32c5  ESP32-C5-specific defaults (quad PSRAM, WiFi)
@@ -1124,7 +1132,13 @@ The largest component. Contains:
   -- there is no flat copy of the text, and `editor_open_file()` reads
   the file straight into the buffer: into the gap when it fits there,
   so a failed open keeps the old text, and UTF-16 files are transcoded
-  from the file in a stream). A copy too large for a PSRAM block goes
+  from the file in a stream). With `CONFIG_DRAFTLING_STORAGE_FLASH`
+  every capacity check (`doc_capacity()`) and
+  `editor_get_max_doc_size()` are also capped at 1 /
+  `CONFIG_DRAFTLING_STORAGE_FLASH_DOC_DIVISOR` (default 8) of the
+  mounted flash volume (`storage_doc_limit()`, read once after the
+  mount): the save copy, the Git scratch files in `.git/tmp`, the
+  fetched pack and the history all need room next to the document. A copy too large for a PSRAM block goes
   to `/sdcard/.clipboard` and is pasted from there into the gap. Exposes `editor_get_max_doc_size()`
   for the UI, which shows it on the F1 -> System & Storage ->
   Hardware information page ("Max file size").
@@ -2388,9 +2402,46 @@ and `sd_card_remove_tree()` (a folder with everything in it, hidden
 files included; entries are unlinked while the folder is read) serve
 the project operations.
 
-Public API: `sd_card_init()`, `sd_card_read_file()`,
+**Flash document storage** (`CONFIG_DRAFTLING_STORAGE_FLASH`,
+prompted in `main/Kconfig.projbuild`, board-agnostic, for boards
+without a card slot): `sd_card_init_flash(label, mount_point)` mounts a
+FAT file system on wear levelling (`esp_vfs_fat_spiflash_mount_rw_wl()`,
+4 KB clusters, formatted when blank) from the data/fat partition
+`CONFIG_DRAFTLING_STORAGE_FLASH_PARTITION` (default `storage`) at
+`/sdcard`, so every caller works unchanged; main.cpp calls it instead
+of the card init. `s_card` stays NULL then: code that means "storage
+mounted" must ask `sd_card_is_mounted()`, not `sd_card_get_handle()`
+(which is only for card-specific things: USB MSC, the card rows of the
+hardware page). `sd_card_is_internal_flash()` /
+`sd_card_flash_partition_size()` serve the hardware page;
+`sd_card_format()` re-creates the volume in place
+(`esp_vfs_fat_spiflash_format_cfg_rw_wl()`). In `editor_ui.cpp`,
+`STORAGE_NAME` ("SD card" / "internal storage") names it in the Format
+and error texts, and "SD card via USB" is disabled. All flash code is
+under `#if CONFIG_DRAFTLING_STORAGE_FLASH`, so the Linux, web and demo
+builds of `sd_card.cpp` need no new stand-ins. Every flash read or
+write turns the cache, and with it the PSRAM, off: a task that touches
+the file system must then run on an internal-RAM stack, or ESP-IDF
+asserts `esp_task_stack_is_sane_cache_disabled()` (seen on the first
+Git sync). The two tasks with PSRAM stacks, the Git sync worker
+(`GIT_SYNC_STACK_CAPS`) and the Kermit server (`TASK_STACK_CAPS`),
+allocate them from internal RAM with this option; a new task doing
+file I/O must not take a PSRAM stack either. Partition tables:
+`partitions_storage_4mb.csv` (2.94 MB app / 1 MB storage),
+`_8mb.csv` (4.94 / 3 MB), `_16mb.csv` (7.94 / 8 MB), selected with
+`sdkconfig.defaults.storage_flash_<size>` appended to a preset (the
+`seeed_trmnl_75_og_diy` preset: the E1001 build on the 16 MB TRMNL
+7.5" (OG) DIY Kit). The top-level `CMakeLists.txt` parses the table at
+configure time and stops when the partition is missing, not data/fat
+or smaller than 1 MB, and refuses every pack but default / Vietnamese
+on a 4 MB flash with storage. The editor caps the document size at a
+fraction of the volume (see `editor.cpp` under components/editor/).
+
+Public API: `sd_card_init()`, `sd_card_init_flash()`,
+`sd_card_read_file()`,
 `sd_card_write_file()`, `sd_card_list_dir()`, `sd_card_file_exists()`,
-`sd_card_format()`, `sd_card_get_fs_space()`, and others.
+`sd_card_format()`, `sd_card_get_fs_space()`, `sd_card_is_mounted()`,
+and others.
 
 ### components/standby/
 
@@ -3925,7 +3976,7 @@ board (`waveshare_rlcd42`, `m5stack_papers3`, `lilygo_t5_epd_s3_pro`,
 `freenove_fnk0104s`, `freenove_fnk0104n`, `microjournal_rev5`,
 `viewe_uedx24320028_ueed035hv`, `xteink_x4_pro`, `xteink_x4_classic`,
 `elecrow_crowpanel_579`, `waveshare_epaper_397`,
-`seeed_reterminal_e1001`, `seeed_reterminal_sticky`,
+`seeed_reterminal_e1001`, `seeed_trmnl_75_og_diy`, `seeed_reterminal_sticky`,
 `m5stack_papermono`, `nicemcu_c5_28ips`, `onepage_c61`). Each
 preset points `SDKCONFIG_DEFAULTS` at `sdkconfig.defaults`,
 `sdkconfig.defaults.bluetooth` (left out for boards without Bluetooth,

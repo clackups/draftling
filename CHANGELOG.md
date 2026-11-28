@@ -8,6 +8,18 @@ in the git log.
 
 ### Added
 
+- **Documents in the internal flash, for boards without a MicroSD
+  slot**: Draftling can now keep the documents, projects and Git
+  history in a part of the device's own flash memory instead of on a
+  MicroSD card (1 MB on 4 MB-flash boards, 3 MB on 8 MB, 8 MB on
+  16 MB). It is set up when the firmware is built; the storage is
+  prepared on first start, and F1 -> System & Storage -> "Format
+  internal storage..." erases it. A document may take up to an eighth
+  of that space (about 120 KB, 380 KB or 1 MB), since saving and Git
+  sync need room for copies and the history next to it; the limit is
+  shown as "Max file size" on the hardware information page. The first
+  board using it is the
+  Seeed Studio TRMNL 7.5" (OG) DIY Kit (`seeed_trmnl_75_og_diy`).
 - **French AZERTY AFNOR layout**: the default firmware now includes
   the French standard AZERTY of 2019 (FR-AF, https://norme-azerty.fr/)
   next to the classic AZERTY. Turn it on in F1 -> Settings ->

@@ -15,7 +15,11 @@ extern "C" {
  * Sized dynamically at startup from the free PSRAM available when
  * editor_init() runs (after the display, LVGL widget heap, and
  * editor UI have taken their share). The gap buffer is the only
- * per-document allocation of that size.
+ * per-document allocation of that size. With the documents in
+ * internal flash (CONFIG_DRAFTLING_STORAGE_FLASH) it is further capped
+ * at 1/CONFIG_DRAFTLING_STORAGE_FLASH_DOC_DIVISOR of the file system
+ * once that is mounted (room for the save copy, Git scratch files and
+ * history).
  *
  * Returns 0 before editor_init() has run. */
 size_t editor_get_max_doc_size(void);

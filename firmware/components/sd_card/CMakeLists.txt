@@ -9,7 +9,10 @@ idf_component_register(
     ## `driver/gpio.h`, so the matching
     ## `esp_driver_*` components must be listed explicitly. They
     ## also exist on IDF 5.3+, so the same list works on older IDFs.
+    ## wear_levelling / esp_partition: the internal-flash document
+    ## storage (CONFIG_DRAFTLING_STORAGE_FLASH, sd_card_init_flash()).
     PRIV_REQUIRES fatfs vfs driver esp_driver_sdmmc esp_driver_sdspi esp_driver_spi esp_driver_gpio
+                  wear_levelling esp_partition
     ## sdmmc is REQUIRES (public), not PRIV_REQUIRES: include/sd_card.h
     ## declares sd_card_get_handle() returning a `sdmmc_card_t *` and
     ## includes <sdmmc_cmd.h> for that type, so every component that

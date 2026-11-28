@@ -44,6 +44,7 @@ Features used in the table:
 | [Waveshare ESP32-S3-ePaper-3.97](#waveshare-esp32-s3-epaper-397) | `waveshare_epaper_397` | 3.97" 800x480 e-paper | - | - | yes | yes |
 | [Seeed reTerminal Sticky](#seeed-reterminal-sticky) | `seeed_reterminal_sticky` | 3.97" 800x480 e-paper | yes | - | yes | - |
 | [Seeed Studio reTerminal E1001](#seeed-studio-reterminal-e1001) | `seeed_reterminal_e1001` | 7.5" 800x480 e-paper | - | - | yes | - |
+| [Seeed Studio TRMNL 7.5" (OG) DIY Kit](#seeed-studio-trmnl-75-og-diy-kit) | `seeed_trmnl_75_og_diy` | 7.5" 800x480 e-paper | - | - | yes | - |
 | [Elecrow CrowPanel 5.79" E-Paper](#elecrow-crowpanel-esp32-s3-579-e-paper-hmi-display) | `elecrow_crowpanel_579` | 5.79" 792x272 e-paper | - | - | - | - |
 | [M5Stack Tab5](#m5stack-tab5) | `m5stack_tab5` | 5" 1280x720 IPS | yes | yes | yes | - |
 | [Waveshare ESP32-S3-Touch-LCD-3.49](#waveshare-esp32-s3-touch-lcd-349) | `waveshare_touch_lcd_349` | 3.49" 640x172 IPS | yes | yes | yes | yes |
@@ -291,6 +292,38 @@ a 7.5" e-paper terminal, 32 MB flash.
   KEY1 and KEY2 are not used.
 - No SD card via USB or Sync via browser.
 - The RTC, temperature sensor, LED and buzzer are not used.
+
+
+## Seeed Studio TRMNL 7.5" (OG) DIY Kit
+
+The same 7.5" e-paper and buttons as the reTerminal E1001, 16 MB
+flash, no MicroSD slot. The `seeed_trmnl_75_og_diy` preset is the
+E1001 build with the documents kept in the internal flash (see
+"Boards without a MicroSD slot" below): 8 MB of document storage.
+
+- Everything else as on the reTerminal E1001 above.
+- F1 -> System & Storage -> "Format internal storage..." erases the
+  documents; there is no SD card via USB.
+
+
+## Boards without a MicroSD slot
+
+Any board can keep its documents in a partition of the ESP32's own
+flash instead of on a MicroSD card: add
+`sdkconfig.defaults.storage_flash_4mb`, `_8mb` or `_16mb` (matching
+the board's flash size) to the end of the preset's
+`SDKCONFIG_DEFAULTS` in `firmware/CMakePresets.json`. It turns on
+`CONFIG_DRAFTLING_STORAGE_FLASH` and selects the partition table:
+
+| Flash | Table | App slot | Document storage |
+| --- | --- | --- | --- |
+| 4 MB | `partitions_storage_4mb.csv` | 2.94 MB | 1 MB |
+| 8 MB | `partitions_storage_8mb.csv` | 4.94 MB | 3 MB |
+| 16 MB | `partitions_storage_16mb.csv` | 7.94 MB | 8 MB |
+
+The storage is formatted on first boot. The build refuses a storage
+partition smaller than 1 MB. On a 4 MB flash only the default and
+Vietnamese language packs fit next to the storage.
 
 
 ## Elecrow CrowPanel ESP32-S3 5.79" E-Paper HMI Display
