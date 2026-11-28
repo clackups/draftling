@@ -1275,6 +1275,7 @@ static bool s_msg_kermit             = false;
  * tap) asks for the name of a new project to move them to, Esc powers
  * the device off (deep sleep); it asks again on the next start. */
 static bool s_msg_migrate            = false;
+static bool s_msg_ignore_only        = false;
 /* The pop-up says the SD card is missing. It cannot be closed: the user
  * inserts a card, then Enter (or a tap) restarts the device. */
 static bool s_msg_restart            = false;
@@ -1427,6 +1428,10 @@ static char           s_xfer_src_name[256] = "";
 static project_name_t s_xfer_dst_project = "";
 static project_name_t *s_xfer_projects = NULL;  /* malloc'ed, see xfer_set_projects() */
 static int            s_xfer_nprojects = 0;  /* rows before "New project..." */
+static bool           s_xfer_ignore = false;
+static project_file_name_t *s_root_docs = NULL;
+static bool *s_root_doc_ignored = NULL;
+static int            s_root_doc_count = 0;
 /* The picker moves the files found outside any project (see
  * check_project_setup()) instead of one file. */
 static bool           s_xfer_migrate = false;
@@ -1506,6 +1511,9 @@ static lv_obj_t *s_msg_panel     = NULL;
 static lv_obj_t *s_msg_title_lbl = NULL;
 static lv_obj_t *s_msg_text_lbl  = NULL;
 static lv_obj_t *s_msg_hint_lbl  = NULL;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+static lv_obj_t *s_msg_ignore_btn = NULL;
+#endif
 static bool      s_msg_open      = false;
 static bool      s_msg_busy      = false;
 
@@ -5322,6 +5330,38 @@ static void browser_go_up(void)
     restore_default_status();
 }
 
+static void root_doc_list_free(void)
+{
+    if (s_root_docs) heap_caps_free(s_root_docs);
+    if (s_root_doc_ignored) heap_caps_free(s_root_doc_ignored);
+    s_root_docs = NULL;
+    s_root_doc_ignored = NULL;
+    s_root_doc_count = 0;
+}
+
+static int root_doc_list_load(void)
+{
+    root_doc_list_free();
+    s_root_docs = (project_file_name_t *)heap_caps_malloc(
+        PROJECT_ROOT_DOCS_MAX * sizeof(project_file_name_t), MALLOC_CAP_SPIRAM);
+    s_root_doc_ignored = (bool *)heap_caps_malloc(
+        PROJECT_ROOT_DOCS_MAX * sizeof(bool), MALLOC_CAP_SPIRAM);
+    if (!s_root_docs || !s_root_doc_ignored) {
+        root_doc_list_free();
+        return -1;
+    }
+    int count = project_root_doc_list(s_root_docs, s_root_doc_ignored,
+                                     PROJECT_ROOT_DOCS_MAX);
+    if (count < 0) {
+        root_doc_list_free();
+        return -1;
+    }
+    s_root_doc_count = count;
+    return count;
+}
+
+static void show_ignore_picker(void);
+
 /* Start-up checks of the card layout, when the file browser shows:
  * the card is missing; documents lie in the root folder (from before
  * projects existed, or copied there over USB); no project exists yet
@@ -5342,26 +5382,51 @@ static void check_project_setup(void)
     }
     if (s_setup_dismissed) return;
     const int SHOW = 6;
-    project_file_name_t names[SHOW];
-    int ndocs = project_root_doc_names(names, SHOW);
-    if (ndocs > 0) {
-        std::string text = ndocs == 1 ? "This file does not belong to any project:\n"
-                                      : "These files do not belong to any project:\n";
-        for (int i = 0; i < ndocs && i < SHOW; i++) {
+    if (root_doc_list_load() < 0) {
+        s_setup_dismissed = true;
+        show_msg_popup("Root file check failed",
+                       "Cannot read the root file ignore list. Restart the device and try again.",
+                       false);
+        return;
+    }
+    char move_names[SHOW][64];
+    char ignored_names[SHOW][64];
+    int ndocs = 0;
+    int nignored = 0;
+    for (int i = 0; i < s_root_doc_count && i < PROJECT_ROOT_DOCS_MAX; i++) {
+        if (s_root_doc_ignored[i]) {
+            if (nignored < SHOW)
+                strlcpy(ignored_names[nignored++], s_root_docs[i], sizeof(ignored_names[0]));
+        } else {
+            if (ndocs < SHOW)
+                strlcpy(move_names[ndocs++], s_root_docs[i], sizeof(move_names[0]));
+        }
+    }
+    int total_ignored = 0;
+    int total_move = 0;
+    for (int i = 0; i < s_root_doc_count && i < PROJECT_ROOT_DOCS_MAX; i++) {
+        if (s_root_doc_ignored[i]) total_ignored++;
+        else total_move++;
+    }
+    root_doc_list_free();
+    if (total_move > 0) {
+        std::string text = total_move == 1 ? "This file does not belong to any project:\n"
+                                           : "These files do not belong to any project:\n";
+        for (int i = 0; i < ndocs; i++) {
             text += "  ";
-            text += names[i];
+            text += move_names[i];
             text += '\n';
         }
-        if (ndocs > SHOW) {
+        if (total_move > SHOW) {
             char more[48];
-            snprintf(more, sizeof(more), "  ...and %d more\n", ndocs - SHOW);
+            snprintf(more, sizeof(more), "  ...and %d more\n", total_move - SHOW);
             text += more;
         }
         bool have_projects = project_any();
         if (have_projects)
-            text += ndocs == 1 ? "Move it to a project?" : "Move them to a project?";
+            text += total_move == 1 ? "Move it to a project?" : "Move them to a project?";
         else
-            text += ndocs == 1 ? "Move it to a new project?" : "Move them to a new project?";
+            text += total_move == 1 ? "Move it to a new project?" : "Move them to a new project?";
         char cfg[32];
         snprintf(cfg, sizeof(cfg), "%s/git.cfg", sd_card_get_mount_point());
         if (sd_card_file_exists(cfg))
@@ -5369,11 +5434,31 @@ static void check_project_setup(void)
                 ? " Their Git sync settings (git.cfg) and history go with them, "
                   "unless the project has its own."
                 : " Their Git sync settings (git.cfg) and history go with them.";
-        show_msg_popup("Files outside projects", text.c_str(), false);
+        if (total_ignored > 0)
+            text += "\nIgnored files stay in the root.";
         s_msg_migrate = true;
-        lv_label_set_text(s_msg_hint_lbl, have_projects
-                              ? "Enter: move to a project  Esc: power off"
-                              : "Enter: move to a new project  Esc: power off");
+        s_msg_ignore_only = false;
+        show_msg_popup("Files outside projects", text.c_str(), false);
+        lv_label_set_text(s_msg_hint_lbl,
+                          "Enter: move  Down/I: ignore  Esc: power off");
+        return;
+    }
+    if (total_ignored > 0) {
+        std::string text = "These files are ignored and will stay in the root:\n";
+        for (int i = 0; i < nignored; i++) {
+            text += "  ";
+            text += ignored_names[i];
+            text += '\n';
+        }
+        if (total_ignored > SHOW) {
+            char more[48];
+            snprintf(more, sizeof(more), "  ...and %d more\n", total_ignored - SHOW);
+            text += more;
+        }
+        s_msg_migrate = false;
+        s_msg_ignore_only = true;
+        show_msg_popup("Ignored files outside projects", text.c_str(), false);
+        lv_label_set_text(s_msg_hint_lbl, "Enter / I: manage  Esc: continue");
         return;
     }
     if (!project_any()) {
@@ -6131,6 +6216,7 @@ static void show_menu(void)
     s_fmt_step = FMT_STEP_NONE;
     s_xfer_open = false;
     s_xfer_migrate = false;
+    s_xfer_ignore = false;
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     s_kermit_picker_open = false;
 #endif
@@ -7380,6 +7466,14 @@ static void show_msg_popup(const char *title, const char *text, bool busy)
     else      lv_obj_remove_flag(s_msg_hint_lbl, LV_OBJ_FLAG_HIDDEN);
     s_msg_busy = busy;
     s_msg_open = true;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    if (s_msg_ignore_btn) {
+        if (s_msg_migrate || s_msg_ignore_only)
+            lv_obj_remove_flag(s_msg_ignore_btn, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(s_msg_ignore_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+#endif
     lv_obj_set_parent(s_msg_panel, lv_scr_act());
     lv_obj_remove_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_msg_panel);
@@ -7391,11 +7485,15 @@ static void close_msg_popup(void)
 {
     s_msg_open = false;
     s_msg_busy = false;
-    if (s_msg_restart || s_msg_migrate) {
+    if (s_msg_restart || s_msg_migrate || s_msg_ignore_only) {
         s_msg_restart = false;
         s_msg_migrate = false;
+        s_msg_ignore_only = false;
         lv_label_set_text(s_msg_hint_lbl, "Enter / Esc: close");
     }
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    if (s_msg_ignore_btn) lv_obj_add_flag(s_msg_ignore_btn, LV_OBJ_FLAG_HIDDEN);
+#endif
     if (s_msg_panel) lv_obj_add_flag(s_msg_panel, LV_OBJ_FLAG_HIDDEN);
 #if defined(CONFIG_DRAFTLING_HAS_KERMIT)
     if (s_msg_kermit) {
@@ -7415,6 +7513,7 @@ static void default_project_name(char *out, size_t n);
 /* "Files outside projects" pop-up: Enter asks for the new project's
  * name; Esc powers off (deep sleep), the files stay where they are. */
 static void show_migrate_picker(void);
+static void migrate_popup_ignore(void);
 
 static void migrate_popup_accept(void)
 {
@@ -7427,6 +7526,12 @@ static void migrate_popup_accept(void)
     char def[PROJECT_NAME_MAX + 1];
     default_project_name(def, sizeof(def));
     show_name_prompt(SAVE_MODE_PROJECT_MIGRATE, "Name of the new project (Enter/Esc):", def);
+}
+
+static void migrate_popup_ignore(void)
+{
+    close_msg_popup();
+    show_ignore_picker();
 }
 
 static void migrate_popup_power_off(void)
@@ -7446,9 +7551,25 @@ static void handle_msg_popup_key(const kb_event_t *ev)
     }
 #endif
     if (s_msg_busy) return;
-    if (s_msg_migrate) {
-        if (ev->keycode == KB_KEY_ENTER) migrate_popup_accept();
-        else if (ev->keycode == KB_KEY_ESCAPE) migrate_popup_power_off();
+    if (s_msg_migrate || s_msg_ignore_only) {
+        bool plain = !(ev->modifier & (KB_MOD_LCTRL | KB_MOD_RCTRL |
+                                       KB_MOD_LALT | KB_MOD_RALT |
+                                       KB_MOD_LGUI | KB_MOD_RGUI));
+        if (plain && kb_layout_shortcut_char(ev->keycode) == 'i')
+            migrate_popup_ignore();
+        else if (ev->keycode == KB_KEY_ENTER) {
+            if (s_msg_ignore_only) migrate_popup_ignore();
+            else migrate_popup_accept();
+        }
+        else if (ev->keycode == KB_KEY_DOWN) migrate_popup_ignore();
+        else if (ev->keycode == KB_KEY_ESCAPE) {
+            if (s_msg_ignore_only) {
+                s_setup_dismissed = true;
+                close_msg_popup();
+            } else {
+                migrate_popup_power_off();
+            }
+        }
         return;
     }
     if (s_msg_restart) {
@@ -7478,7 +7599,18 @@ static void msg_popup_touch_cb(lv_event_t *e)
         migrate_popup_accept();
         return;
     }
+    if (s_msg_ignore_only) {
+        s_setup_dismissed = true;
+        close_msg_popup();
+        return;
+    }
     if (!s_msg_busy) close_msg_popup();
+}
+
+static void msg_ignore_btn_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_msg_migrate || s_msg_ignore_only) migrate_popup_ignore();
 }
 #endif
 
@@ -9726,21 +9858,32 @@ static void xfer_picker_activate(int idx);
 static void refresh_xfer_picker_items(void)
 {
     char buf[96];
-    if (s_xfer_migrate)
+    if (s_xfer_ignore)
+        snprintf(buf, sizeof(buf), "Enter toggles whether root files are ignored:");
+    else if (s_xfer_migrate)
         snprintf(buf, sizeof(buf), "Move the files outside projects to:");
     else
         snprintf(buf, sizeof(buf), "%s %.40s to project:", s_xfer_copy ? "Copy" : "Move",
                  s_xfer_src_name);
     lv_label_set_text(s_lbl_menu_hdr, buf);
     lv_obj_clean(s_menu_list);
-    for (int i = 0; i < s_xfer_nprojects; i++) {
-        if (strcmp(s_xfer_projects[i], s_xfer_src_project) == 0)
-            snprintf(buf, sizeof(buf), "%.32s (this project, new name)", s_xfer_projects[i]);
-        else
-            snprintf(buf, sizeof(buf), "%.32s", s_xfer_projects[i]);
-        lv_list_add_btn(s_menu_list, NULL, buf);
+    if (s_xfer_ignore) {
+        for (int i = 0; i < s_root_doc_count && i < PROJECT_ROOT_DOCS_MAX; i++) {
+            snprintf(buf, sizeof(buf), "%s: %.58s",
+                     s_root_doc_ignored[i] ? "Ignored" : "Included", s_root_docs[i]);
+            lv_list_add_btn(s_menu_list, NULL, buf);
+        }
+        lv_list_add_btn(s_menu_list, NULL, "Done");
+    } else {
+        for (int i = 0; i < s_xfer_nprojects; i++) {
+            if (strcmp(s_xfer_projects[i], s_xfer_src_project) == 0)
+                snprintf(buf, sizeof(buf), "%.32s (this project, new name)", s_xfer_projects[i]);
+            else
+                snprintf(buf, sizeof(buf), "%.32s", s_xfer_projects[i]);
+            lv_list_add_btn(s_menu_list, NULL, buf);
+        }
+        lv_list_add_btn(s_menu_list, NULL, "New project...");
     }
-    lv_list_add_btn(s_menu_list, NULL, "New project...");
     apply_list_selection_styles(s_menu_list, s_xfer_sel);
     s_xfer_sel_prev = s_xfer_sel;
 #if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
@@ -9754,9 +9897,16 @@ static void refresh_xfer_picker_items(void)
 
 static void close_xfer_picker(void)
 {
+    bool was_ignoring = s_xfer_ignore;
     s_xfer_open = false;
+    s_xfer_ignore = false;
     s_menu_open = false;
+<<<<<<< HEAD
     lv_label_set_text(s_lbl_menu_hdr, MENU_HDR_TEXT);
+=======
+    lv_label_set_text(s_lbl_menu_hdr, menu_header_text());
+    if (was_ignoring) root_doc_list_free();
+>>>>>>> a796c65 (option to ignore moving files in root; auto ignore files with clippings in the name for dual-boot)
     xfer_return();
 }
 
@@ -9809,11 +9959,28 @@ static void show_migrate_picker(void)
 {
     xfer_set_projects(NULL, NULL);
     s_xfer_copy = false;
+    s_xfer_ignore = false;
     s_xfer_src_project[0] = '\0';
     s_xfer_from_inpane = s_inpane_browser_open;
     if (s_inpane_browser_open) close_inpane_browser();
     show_menu();   /* clears the picker flags */
     s_xfer_migrate = true;
+    s_xfer_open = true;
+    s_xfer_sel = 0;
+    refresh_xfer_picker_items();
+}
+
+static void show_ignore_picker(void)
+{
+    if (root_doc_list_load() < 0) {
+        editor_ui_set_status("Cannot read the root file ignore list");
+        return;
+    }
+
+    s_xfer_from_inpane = s_inpane_browser_open;
+    if (s_inpane_browser_open) close_inpane_browser();
+    show_menu();
+    s_xfer_ignore = true;
     s_xfer_open = true;
     s_xfer_sel = 0;
     refresh_xfer_picker_items();
@@ -9848,6 +10015,22 @@ static void show_xfer_picker(bool copy)
 
 static void xfer_picker_activate(int idx)
 {
+    if (s_xfer_ignore) {
+        if (idx >= s_root_doc_count) {
+            close_xfer_picker();
+            return;
+        }
+        bool ignore = !s_root_doc_ignored[idx];
+        esp_err_t err = project_root_doc_set_ignored(s_root_docs[idx], ignore);
+        if (err != ESP_OK) {
+            editor_ui_set_status("Cannot save the root file ignore choice");
+            return;
+        }
+        s_root_doc_ignored[idx] = ignore;
+        refresh_xfer_picker_items();
+        return;
+    }
+
     bool is_new = (idx >= s_xfer_nprojects);
     project_name_t dst = "";
     if (!is_new) snprintf(dst, sizeof(dst), "%s", s_xfer_projects[idx]);
@@ -9894,7 +10077,7 @@ static void xfer_picker_activate(int idx)
 
 static void handle_xfer_picker_key(const kb_event_t *ev)
 {
-    int last_row = s_xfer_nprojects;   /* "New project..." */
+    int last_row = s_xfer_ignore ? s_root_doc_count : s_xfer_nprojects;
     switch (ev->keycode) {
     case KB_KEY_UP:
         if (s_xfer_sel > 0) s_xfer_sel--;
@@ -15115,6 +15298,25 @@ static void build_screens(void)
         lv_label_set_long_mode(s_msg_text_lbl, LV_LABEL_LONG_WRAP);
         lv_label_set_text(s_msg_text_lbl, "");
 
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+        s_msg_ignore_btn = lv_button_create(s_msg_panel);
+        lv_obj_set_size(s_msg_ignore_btn, LV_PCT(100), LINE_H + 6);
+        lv_obj_set_style_bg_color(s_msg_ignore_btn, theme_bg(), 0);
+        lv_obj_set_style_bg_opa(s_msg_ignore_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(s_msg_ignore_btn, theme_fg(), 0);
+        lv_obj_set_style_border_width(s_msg_ignore_btn, 1, 0);
+        lv_obj_set_style_border_opa(s_msg_ignore_btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(s_msg_ignore_btn, 4, 0);
+        lv_obj_set_style_pad_all(s_msg_ignore_btn, 0, 0);
+        lv_obj_add_flag(s_msg_ignore_btn, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_event_cb(s_msg_ignore_btn, msg_ignore_btn_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_t *ignore_lbl = lv_label_create(s_msg_ignore_btn);
+        lv_obj_set_style_text_font(ignore_lbl, FONT_11, 0);
+        lv_obj_set_style_text_color(ignore_lbl, theme_fg(), 0);
+        lv_label_set_text(ignore_lbl, "Ignore files...");
+        lv_obj_center(ignore_lbl);
+#endif
+
         s_msg_hint_lbl = lv_label_create(s_msg_panel);
         lv_obj_set_style_text_font(s_msg_hint_lbl, FONT_11, 0);
         lv_obj_set_style_text_color(s_msg_hint_lbl, theme_fg(), 0);
@@ -15325,6 +15527,9 @@ static void teardown_screens(void)
     s_wifi_pw_panel = s_wifi_pw_hdr_lbl = s_wifi_pw_name_lbl = s_wifi_pw_cur = NULL;
     s_dbx_panel = s_dbx_hdr_lbl = s_dbx_val_lbl = s_dbx_cur = NULL;
     s_msg_panel = s_msg_title_lbl = s_msg_text_lbl = s_msg_hint_lbl = NULL;
+#if defined(CONFIG_DRAFTLING_TOUCHSCREEN)
+    s_msg_ignore_btn = NULL;
+#endif
     s_exit_panel = s_exit_hdr_lbl = NULL;
     s_exit_opt_lbl[0] = s_exit_opt_lbl[1] = s_exit_opt_lbl[2] = NULL;
     s_newfmt_panel = NULL;
@@ -15338,6 +15543,7 @@ static void teardown_screens(void)
     s_search_find_hdr = s_search_find_lbl = NULL;
     s_search_repl_hdr = s_search_repl_lbl = NULL;
     s_search_cur = s_search_help_lbl = NULL;
+    root_doc_list_free();
 
     /* Reset every "open" / transient flag so a fresh build starts
      * from a clean state. The persistent document, NVS-backed font

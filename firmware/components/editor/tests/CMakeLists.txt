@@ -1,0 +1,74 @@
+cmake_minimum_required(VERSION 3.16)
+project(editor_menu_tests LANGUAGES CXX)
+
+enable_testing()
+
+function(add_editor_menu_test name)
+    add_executable(${name} ../editor_menu.cpp editor_menu_test.cpp)
+    target_include_directories(${name} PRIVATE ../include)
+    target_compile_features(${name} PRIVATE cxx_std_11)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
+    endif()
+    foreach(feature IN LISTS ARGN)
+        target_compile_definitions(${name} PRIVATE ${feature}=1)
+    endforeach()
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_editor_menu_test(editor_menu_base)
+add_editor_menu_test(editor_menu_usb
+    CONFIG_DRAFTLING_HAS_USB_MSC
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR)
+add_editor_menu_test(editor_menu_kermit
+    CONFIG_DRAFTLING_HAS_KERMIT
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+add_editor_menu_test(editor_menu_usb_kermit
+    CONFIG_DRAFTLING_HAS_USB_MSC
+    CONFIG_DRAFTLING_HAS_KERMIT
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+
+function(add_editor_settings_test name)
+    add_executable(${name} ../editor_settings.cpp editor_settings_test.cpp)
+    target_include_directories(${name} PRIVATE ../include)
+    target_compile_features(${name} PRIVATE cxx_std_11)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(${name} PRIVATE -Wall -Wextra -Werror)
+    endif()
+    foreach(feature IN LISTS ARGN)
+        target_compile_definitions(${name} PRIVATE ${feature}=1)
+    endforeach()
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_editor_settings_test(editor_settings_base)
+add_editor_settings_test(editor_settings_backlight_color
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR)
+add_editor_settings_test(editor_settings_rotate_invert
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+add_editor_settings_test(editor_settings_all_features
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_COLOR
+    CONFIG_DRAFTLING_DISPLAY_CAN_ROTATE
+    CONFIG_DRAFTLING_DISPLAY_CAN_INVERT)
+add_editor_settings_test(editor_settings_binary_backlight
+    CONFIG_DRAFTLING_DISPLAY_HAS_BACKLIGHT
+    CONFIG_DRAFTLING_DISPLAY_BACKLIGHT_BINARY
+    CONFIG_DRAFTLING_DISPLAY_COLOR)
+
+add_executable(editor_projects_test ../projects.cpp projects_test.cpp)
+target_include_directories(editor_projects_test PRIVATE
+    stubs
+    ../private_include)
+target_compile_features(editor_projects_test PRIVATE cxx_std_11)
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(editor_projects_test PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME editor_projects_test COMMAND editor_projects_test)

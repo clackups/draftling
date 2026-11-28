@@ -14,6 +14,7 @@ extern "C" {
 
 #define PROJECT_NAME_MAX      32
 #define PROJECT_DEFAULT_NAME  "MyDrafts"
+#define PROJECT_ROOT_DOCS_MAX 128
 
 typedef char project_name_t[PROJECT_NAME_MAX + 1];
 
@@ -53,16 +54,34 @@ esp_err_t project_delete(const char *name);
  * project name in out and return true. */
 bool project_of_path(const char *path, char *out, size_t out_sz);
 
+<<<<<<< HEAD
 /* Documents (*.md, *.fountain, *.txt) in the root folder: returns
  * their count and stores the first max names (sorted, cut to fit) in
  * names (which may be NULL). */
 typedef char project_file_name_t[64];
+=======
+/* Unignored documents (*.md, *.fountain, *.txt) eligible for migration. */
+int project_root_doc_count(void);
+
+/* Like project_root_doc_count(), and also stores the first max names
+ * (sorted, cut to fit) in names. */
+typedef char project_file_name_t[256];
+>>>>>>> a796c65 (option to ignore moving files in root; auto ignore files with clippings in the name for dual-boot)
 int project_root_doc_names(project_file_name_t *names, int max);
+
+/* All supported root documents except names containing "clippings"
+ * (case-insensitive). ignored, when non-NULL, receives the saved
+ * ignore state for each returned name. */
+int project_root_doc_list(project_file_name_t *names, bool *ignored, int max);
+
+/* Persist or clear the ignore state of a supported root document. */
+esp_err_t project_root_doc_set_ignored(const char *name, bool ignored);
 
 /* Move the root folder's documents (with their metadata sidecars),
  * git.cfg and .git history into the project, creating it if needed.
- * A document whose name is taken in the project gets a "-2", "-3", ...
- * suffix. *moved receives the number of documents moved. */
+ * Ignored documents are left in the root. A document whose name is
+ * taken in the project gets a "-2", "-3", ... suffix. *moved receives
+ * the number of documents moved. */
 esp_err_t project_migrate_root(const char *name, int *moved);
 
 /* A file name like name, but free in dir: name itself, or "base-2.ext",

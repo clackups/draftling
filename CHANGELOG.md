@@ -8,6 +8,7 @@ in the git log.
 
 ### Added
 
+<<<<<<< HEAD
 - **French AZERTY AFNOR layout**: the default firmware now includes
   the French standard AZERTY of 2019 (FR-AF, https://norme-azerty.fr/)
   next to the classic AZERTY. Turn it on in F1 -> Settings ->
@@ -442,6 +443,16 @@ in the git log.
 
 - **2x scale for the visually impaired** (F1 -> Settings -> "2x scale
   (large view)"): draws every screen pixel as a 2x2 block, so text,
+=======
+- **Choose which root documents stay outside projects**: the
+  "Files outside projects" prompt now lets you mark files to keep in
+  the root. Those choices persist on the SD card and can be changed
+  later. Files with "clippings" in the name are always left in the
+  root and are omitted from the prompt.
+
+- **2x scale for the visually impaired** (F1 -> Settings -> Display ->
+  "2x scale (large view)"): draws every screen pixel as a 2x2 block, so text,
+>>>>>>> a796c65 (option to ignore moving files in root; auto ignore files with clippings in the name for dual-boot)
   menus and dialogs are twice as large (with a quarter of the content
   on screen). Applied on the next restart, which is offered when you
   leave the Settings screen.

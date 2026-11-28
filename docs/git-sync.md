@@ -48,8 +48,13 @@ at a time.
 
 A card from before projects existed (documents, `git.cfg` and `.git`
 in the root) is converted at boot: the device asks for a project name
-and moves all of them into that project, so its history and
-remote-tracking state carry over.
+and moves all eligible documents into that project, so its history and
+remote-tracking state carry over. In the prompt, press `I` or Down (or tap
+"Ignore files...") to choose root documents that should stay there.
+Those choices are saved in `.projects.ignore`, and the prompt can be
+used later to change them. Files whose names contain `clippings`
+(case-insensitive) are always left in the root and are omitted from
+the prompt.
 
 The object store uses standard loose objects (`<type> <size>\0<payload>`
 deflated with zlib), so the `.git` directory can be copied onto a

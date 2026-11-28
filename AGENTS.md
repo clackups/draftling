@@ -1224,15 +1224,24 @@ can show different formats.
 
 **Projects.** The SD card holds one folder per project
 (`/sdcard/<project>`); the root holds only `wifi.cfg` and the hidden
-`.projects.meta` (`last=<project>`). Filesystem logic lives in
+`.projects.meta` (`last=<project>`) and `.projects.ignore` (root
+document names to leave outside projects). Filesystem logic lives in
 `projects.cpp` / `private_include/projects.h`: `project_name_problem()`
 (ASCII letters, digits, `-`, `_`, space; no leading or trailing space,
 FAT drops the latter; at most `PROJECT_NAME_MAX` = 32; "System Volume
 Information" reserved), `project_list()` (root folders with a valid
 name), `project_create()` / `project_delete()` (`sd_card_remove_tree()`,
+<<<<<<< HEAD
 `.git` included), `project_of_path()`, `project_root_doc_names()`,
 `project_migrate_root()` (root documents with their `.meta` sidecars,
 then `git.cfg` and `.git` unless the project has its own; a taken name
+=======
+`.git` included), `project_of_path()`, `project_root_doc_count()`,
+`project_root_doc_list()` / `project_root_doc_set_ignored()`,
+`project_migrate_root()` (unignored root documents with their `.meta`
+sidecars, then `git.cfg` and `.git` unless the project has its own; names
+containing "clippings" are always left in the root, and a taken name
+>>>>>>> a796c65 (option to ignore moving files in root; auto ignore files with clippings in the name for dual-boot)
 gets `-2`, `-3`, ... from `project_free_file_name()`), `project_stats()`
 and the per-project `.project.meta` (`last=<file>`, the last selected
 file). `editor_rename_dir()` renames a project folder and re-points
@@ -1252,7 +1261,8 @@ with it highlighted. `check_project_setup()` runs whenever the browser
 shows: no card -> message pop-up with `s_msg_restart` (Enter restarts;
 nothing else closes it, and `show_msg_popup()` does not replace it),
 root documents -> the "Files outside projects" pop-up (`s_msg_migrate`,
-up to six names from `project_root_doc_names()`; Enter ->
+up to six names from `project_root_doc_names()`; I/Down or the Ignore files
+button -> a persistent per-file ignore picker; Enter ->
 `migrate_popup_accept()`: with projects on the card the Alt+M picker in
 `s_xfer_migrate` mode (`show_migrate_picker()`, all projects plus "New
 project...", `migrate_into_project()`; `s_setup_busy` keeps the dialog
