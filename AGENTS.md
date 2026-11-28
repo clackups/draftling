@@ -1199,8 +1199,10 @@ The largest component. Contains:
   (`strikethrough`, `mark_len` 0); notes and boneyard may span lines.
 - **epub.cpp** (`private_include/epub.h`) -- EPUB books. The ZIP
   central directory is read once (`epub_open()`; no ZIP64), entries
-  are inflated whole into PSRAM with the ROM miniz
-  (`tinfl_decompress_mem_to_mem()`, raw deflate; encrypted entries are
+  are inflated whole into PSRAM with the ROM miniz (`tinfl_decompress()`,
+  raw deflate, the ~11 KB `tinfl_decompressor` on the heap -- never
+  `tinfl_decompress_mem_to_mem()`, which puts it on the stack and
+  overflowed the LVGL task that opens books; encrypted entries are
   refused as DRM; `EPUB_MAX_ENTRY` 8 MB). `META-INF/container.xml` ->
   the OPF: `dc:title`, manifest, spine (reading order = chapters);
   chapter titles from the EPUB 3 nav document (`properties="nav"`,
@@ -1224,7 +1226,7 @@ The largest component. Contains:
   A chapter that does not fit is cut short with a note (`RESERVE`
   bytes kept for it). Book metadata lives in PSRAM (`ps_alloc`
   containers). Host test: `test/epub/run.sh` (books written by
-  `make_book.py`, zlib for miniz, AddressSanitizer); run it after
+  `make_book.py`, miniz 1.14 as in the ROM, AddressSanitizer); run it after
   changing epub.cpp.
 - **Books in the engine** (`editor.cpp`): `editor_open_file()` on a
   `.epub` (`editor_path_is_book()`) opens it as a book

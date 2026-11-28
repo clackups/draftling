@@ -10,7 +10,8 @@
  *
  * Only what the book needs is kept in memory: the ZIP central
  * directory, the spine and the chapter titles, all in PSRAM. A chapter
- * is inflated whole (the ROM's miniz, raw deflate) into a temporary
+ * is inflated whole (the ROM's miniz, raw deflate, the decompressor
+ * state on the heap) into a temporary
  * PSRAM buffer and converted straight into the document buffer. */
 #include <cctype>
 #include <cstdio>
@@ -162,10 +163,20 @@ static char *zip_read(const epub_book_t *b, const char *name, size_t *len, const
         } else if (e->method == 0) {
             if (fread(out, 1, e->usize, f) != e->usize) { heap_caps_free(out); out = NULL; }
         } else {
+            /* The decompressor state is about 11 KB: on the heap, never
+             * on the stack (tinfl_decompress_mem_to_mem() keeps it on the
+             * stack, which overflowed the LVGL task that opens books). */
             uint8_t *in = (uint8_t *)ps_malloc(e->csize);
-            size_t got = TINFL_DECOMPRESS_MEM_TO_MEM_FAILED;
-            if (in && fread(in, 1, e->csize, f) == e->csize)
-                got = tinfl_decompress_mem_to_mem(out, e->usize, in, e->csize, 0);
+            tinfl_decompressor *d = (tinfl_decompressor *)ps_malloc(sizeof(tinfl_decompressor));
+            size_t got = (size_t)-1;
+            if (in && d && fread(in, 1, e->csize, f) == e->csize) {
+                tinfl_init(d);
+                size_t in_n = e->csize, out_n = e->usize;
+                tinfl_status st = tinfl_decompress(d, in, &in_n, (mz_uint8 *)out, (mz_uint8 *)out,
+                                                   &out_n, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+                if (st == TINFL_STATUS_DONE) got = out_n;
+            }
+            heap_caps_free(d);
             heap_caps_free(in);
             if (got != e->usize) {
                 heap_caps_free(out);
