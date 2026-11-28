@@ -49,7 +49,9 @@ at a time.
 A card from before projects existed (documents, `git.cfg` and `.git`
 in the root) is converted at boot: the device asks for a project name
 and moves all of them into that project, so its history and
-remote-tracking state carry over.
+remote-tracking state carry over. Documents you chose to keep outside
+projects (I in that dialog, or F1 -> System & Storage -> "Files
+outside projects...") and `My Clippings.txt` stay in the root.
 
 The object store uses standard loose objects (`<type> <size>\0<payload>`
 deflated with zlib), so the `.git` directory can be copied onto a

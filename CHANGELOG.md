@@ -8,6 +8,15 @@ in the git log.
 
 ### Added
 
+- **Keep some files outside projects**: in the "Files outside
+  projects" dialog, I (or "Choose files..." on a touchscreen) lists the
+  documents in the root folder; Enter marks one to stay there, and the
+  dialog stops asking about it. The choice is saved on the card and can
+  be changed in F1 -> System & Storage -> "Files outside projects...".
+  `My Clippings.txt`, which e-book reader firmware (Crosspoint,
+  Crossink) keeps in the root of a shared card, is always left where it
+  is. Based on a contribution by languidlost (PR #115).
+
 - **Documents in the internal flash, for boards without a MicroSD
   slot**: Draftling can now keep the documents, projects and Git
   history in a part of the device's own flash memory instead of on a

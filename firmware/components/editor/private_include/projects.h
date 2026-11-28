@@ -53,15 +53,35 @@ esp_err_t project_delete(const char *name);
  * project name in out and return true. */
 bool project_of_path(const char *path, char *out, size_t out_sz);
 
-/* Documents (*.md, *.fountain, *.txt) in the root folder: returns
- * their count and stores the first max names (sorted, cut to fit) in
- * names (which may be NULL). */
-typedef char project_file_name_t[64];
-int project_root_doc_names(project_file_name_t *names, int max);
+/* Documents (*.md, *.fountain, *.txt) in the root folder, outside any
+ * project. The user can mark some to stay there ("ignored"); the marks
+ * are kept in the hidden root file .projects.ignore, one name per line,
+ * matched case-insensitively. "My Clippings.txt", which reader firmware
+ * sharing the card (Crosspoint, Crossink) keeps in the root, is never
+ * listed and never moved. */
+#define PROJECT_ROOT_DOCS_MAX 128
+typedef char project_file_name_t[256];   /* a whole FAT name */
+typedef struct {
+    project_file_name_t name;
+    bool                ignored;
+} project_root_doc_t;
+
+/* Stores up to max root documents (sorted) in out, which may be NULL
+ * when max is 0, and returns how many were stored (<= max), or -1 when
+ * the root or the ignore list cannot be read. *total and *unignored
+ * (either may be NULL) receive the counts over all of them, also those
+ * past max. */
+int project_root_docs(project_root_doc_t *out, int max, int *total, int *unignored);
+
+/* Mark a root document to stay in the root (ignored) or to be moved
+ * again. Names of files no longer in the root are dropped from the
+ * list on the way. */
+esp_err_t project_root_doc_set_ignored(const char *name, bool ignored);
 
 /* Move the root folder's documents (with their metadata sidecars),
  * git.cfg and .git history into the project, creating it if needed.
- * A document whose name is taken in the project gets a "-2", "-3", ...
+ * Ignored documents and "My Clippings.txt" stay in the root. A
+ * document whose name is taken in the project gets a "-2", "-3", ...
  * suffix. *moved receives the number of documents moved. */
 esp_err_t project_migrate_root(const char *name, int *moved);
 

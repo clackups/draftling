@@ -1237,16 +1237,23 @@ every pane renders its own bound document, the two panes of a split
 can show different formats.
 
 **Projects.** The SD card holds one folder per project
-(`/sdcard/<project>`); the root holds only `wifi.cfg` and the hidden
-`.projects.meta` (`last=<project>`). Filesystem logic lives in
+(`/sdcard/<project>`); the root holds only `wifi.cfg`, the hidden
+`.projects.meta` (`last=<project>`) and `.projects.ignore` (root
+documents the user keeps outside projects, one name per line, matched
+ignoring case). Filesystem logic lives in
 `projects.cpp` / `private_include/projects.h`: `project_name_problem()`
 (ASCII letters, digits, `-`, `_`, space; no leading or trailing space,
 FAT drops the latter; at most `PROJECT_NAME_MAX` = 32; "System Volume
 Information" reserved), `project_list()` (root folders with a valid
 name), `project_create()` / `project_delete()` (`sd_card_remove_tree()`,
-`.git` included), `project_of_path()`, `project_root_doc_names()`,
-`project_migrate_root()` (root documents with their `.meta` sidecars,
-then `git.cfg` and `.git` unless the project has its own; a taken name
+`.git` included), `project_of_path()`, `project_root_docs()` (root
+documents with their ignore state, at most `max` stored -- callers use
+the returned count, never `*total`, as the array bound -- and the
+counts over all of them), `project_root_doc_set_ignored()` (also drops
+names of files that are gone), `project_migrate_root()` (root documents
+that are not ignored, never `My Clippings.txt` -- the clippings file of
+reader firmware sharing the card -- with their `.meta` sidecars, then
+`git.cfg` and `.git` unless the project has its own; a taken name
 gets `-2`, `-3`, ... from `project_free_file_name()`), `project_stats()`
 and the per-project `.project.meta` (`last=<file>`, the last selected
 file). `editor_rename_dir()` renames a project folder and re-points
@@ -1265,8 +1272,16 @@ project; returning from the editor opens the closed document's project
 with it highlighted. `check_project_setup()` runs whenever the browser
 shows: no card -> message pop-up with `s_msg_restart` (Enter restarts;
 nothing else closes it, and `show_msg_popup()` does not replace it),
-root documents -> the "Files outside projects" pop-up (`s_msg_migrate`,
-up to six names from `project_root_doc_names()`; Enter ->
+root documents not ignored -> the "Files outside projects" pop-up
+(`s_msg_migrate`, up to six names from `project_root_docs()`; I or the
+touch "Choose files..." button `s_msg_choose_btn` ->
+`open_rootdocs_picker(true)`, a list in `s_menu_list` where Enter
+toggles a document between move and keep (`[move]` / `[keep]`, then
+"Done"), which returns to the browser so the check runs again; the
+same list is F1 -> System & Storage -> "Files outside projects..."
+(`MENU_ITEM_ROOT_DOCS`, letter `O`, only while root documents exist),
+returning to that level; no pop-up when every root document is
+ignored; Enter ->
 `migrate_popup_accept()`: with projects on the card the Alt+M picker in
 `s_xfer_migrate` mode (`show_migrate_picker()`, all projects plus "New
 project...", `migrate_into_project()`; `s_setup_busy` keeps the dialog
@@ -1443,7 +1458,8 @@ Connectivity...           WiFi... (Status, Connect to <SSID> | Disconnect,
                           Bluetooth... (Status, Scan for keyboard; not
                           with CONFIG_DRAFTLING_NO_BLUETOOTH)
 System & Storage...       Hardware information / SD card via USB /
-                          Format SD card...
+                          Format SD card... / Files outside projects...
+                          (only while documents lie in the root)
 Sleep now
 Quit Draftling            (only with CONFIG_DRAFTLING_HAS_QUIT)
 Help (F10)
@@ -1587,6 +1603,11 @@ calls `build_screens()` again and restores the screen the user was
 on (in Settings: the level, selection and pending restart). The
 persistent state (open document, NVS-backed font size / theme /
 backlight / standby timeout) survives the rebuild.
+
+Host test: `test/host/run.sh` builds `projects.cpp` natively (stub
+ESP-IDF headers, the SD card a temporary folder) and checks the root
+documents, the ignore list and the migration; run it after changing
+`projects.cpp`.
 
 Public API: `editor_init()`, `editor_open_file()`, `editor_save_file()`,
 `editor_rename_file()`, `editor_get_format()` / `editor_set_format()`,

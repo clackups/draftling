@@ -285,6 +285,13 @@ editor.
   name is taken gets a `-2` (`-3`, ...) suffix. If you are not ready to move them,
   Esc powers the device off (deep sleep); it asks again the next time
   it starts. Esc in the name prompt goes back to the dialog.
+  **I** (or "Choose files..." on a touchscreen) lists the files: Enter
+  switches a file between "move" and "keep", so it stays in the root
+  and the dialog no longer asks about it. The choice is saved on the
+  card (`.projects.ignore`) and can be changed later in F1 -> System &
+  Storage -> "Files outside projects...". `My Clippings.txt`, which
+  e-book reader firmware sharing the card keeps in the root, is always
+  left alone.
 - **No SD card**: the device asks you to insert one and press Enter to
   restart. The dialog cannot be closed otherwise.
 

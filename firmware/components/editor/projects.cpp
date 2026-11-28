@@ -3,6 +3,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <strings.h>
+#include <string>
+#include <vector>
 #include <esp_log.h>
 #include <esp_heap_caps.h>
 
@@ -17,6 +19,10 @@ static const char *TAG = "Projects";
  * nor Git sync ever sees them. */
 #define PROJECT_META_NAME ".project.meta"
 #define ROOT_META_NAME    ".projects.meta"
+/* Root documents to leave outside projects; see projects.h. */
+#define ROOT_IGNORE_NAME  ".projects.ignore"
+/* Kept in the root by reader firmware that shares the card. */
+#define ROOT_KEEP_NAME    "My Clippings.txt"
 
 extern "C" bool project_name_char_ok(char c)
 {
@@ -140,22 +146,117 @@ extern "C" bool project_of_path(const char *path, char *out, size_t out_sz)
     return project_name_problem(out) == NULL;
 }
 
-extern "C" int project_root_doc_names(project_file_name_t *names, int max)
+typedef std::vector<std::string> name_list_t;
+
+static void ignore_path(char *out, size_t out_sz)
 {
+    snprintf(out, out_sz, "%s/" ROOT_IGNORE_NAME, mount());
+}
+
+/* The ignore list; false when it exists but cannot be read. */
+static bool ignore_load(name_list_t &out)
+{
+    out.clear();
+    char path[96];
+    ignore_path(path, sizeof(path));
+    if (!sd_card_file_exists(path)) return true;
+    char *data = NULL;
+    size_t len = 0;
+    esp_err_t err = sd_card_read_file(path, &data, &len);
+    if (err != ESP_OK || !data) {
+        ESP_LOGE(TAG, "Cannot read %s: %s", path, esp_err_to_name(err));
+        free(data);
+        return false;
+    }
+    const char *p = data, *end = data + len;
+    while (p < end) {
+        const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+        size_t n = nl ? (size_t)(nl - p) : (size_t)(end - p);
+        if (n && p[n - 1] == '\r') n--;
+        if (n > 0 && n < sizeof(project_file_name_t) && !memchr(p, '/', n))
+            out.emplace_back(p, n);
+        p = nl ? nl + 1 : end;
+    }
+    free(data);
+    return true;
+}
+
+static esp_err_t ignore_save(const name_list_t &names)
+{
+    char path[96];
+    ignore_path(path, sizeof(path));
+    if (names.empty())
+        return sd_card_file_exists(path) ? sd_card_delete_file(path) : ESP_OK;
+    std::string body;
+    for (const std::string &n : names) {
+        body += n;
+        body += '\n';
+    }
+    return sd_card_write_file(path, body.data(), body.size());
+}
+
+static bool name_listed(const name_list_t &names, const char *name)
+{
+    for (const std::string &n : names)
+        if (strcasecmp(n.c_str(), name) == 0) return true;
+    return false;
+}
+
+/* A root entry the migration is about: a document, not the readers'
+ * clippings file. */
+static bool root_doc_candidate(const sd_card_file_entry_t &e)
+{
+    return !e.is_dir && editor_path_format(e.name, NULL) &&
+           strcasecmp(e.name, ROOT_KEEP_NAME) != 0;
+}
+
+extern "C" int project_root_docs(project_root_doc_t *out, int max, int *total,
+                                 int *unignored)
+{
+    if (total) *total = 0;
+    if (unignored) *unignored = 0;
+    if (!out) max = 0;
+    name_list_t ignored;
+    if (!ignore_load(ignored)) return -1;
     int count = 0;
     sd_card_file_entry_t *e = NULL;
-    if (!scan_dir(mount(), &e, &count)) return 0;
-    int n = 0;
+    if (!scan_dir(mount(), &e, &count)) return -1;
+    int n = 0, all = 0, free_docs = 0;
+    /* sd_card_list_dir() sorts case-insensitively by name. */
     for (int i = 0; i < count; i++) {
-        if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
-        /* only shown in a pop-up: a long name is cut short */
-        if (names && n < max)
-            snprintf(names[n], sizeof(project_file_name_t), "%.*s",
-                     (int)sizeof(project_file_name_t) - 1, e[i].name);
-        n++;
+        if (!root_doc_candidate(e[i])) continue;
+        bool ign = name_listed(ignored, e[i].name);
+        all++;
+        if (!ign) free_docs++;
+        if (n < max) {
+            snprintf(out[n].name, sizeof(out[n].name), "%s", e[i].name);
+            out[n].ignored = ign;
+            n++;
+        }
     }
     sd_card_free_list(e);
+    if (total) *total = all;
+    if (unignored) *unignored = free_docs;
     return n;
+}
+
+extern "C" esp_err_t project_root_doc_set_ignored(const char *name, bool ignored)
+{
+    if (!name || !name[0] || strchr(name, '/') ||
+        strlen(name) >= sizeof(project_file_name_t))
+        return ESP_ERR_INVALID_ARG;
+    name_list_t list;
+    if (!ignore_load(list)) return ESP_FAIL;
+    /* Drop the entry for this name, and those of files that are gone. */
+    name_list_t keep;
+    char path[400];
+    for (const std::string &n : list) {
+        if (strcasecmp(n.c_str(), name) == 0) continue;
+        snprintf(path, sizeof(path), "%s/%s", mount(), n.c_str());
+        if (sd_card_file_exists(path) && !sd_card_is_dir(path)) keep.push_back(n);
+    }
+    if (ignored) keep.emplace_back(name);
+    return ignore_save(keep);
 }
 
 extern "C" bool project_free_file_name(const char *dir, const char *name,
@@ -188,6 +289,8 @@ extern "C" esp_err_t project_migrate_root(const char *name, int *moved)
 {
     *moved = 0;
     if (project_name_problem(name)) return ESP_ERR_INVALID_ARG;
+    name_list_t ignored;
+    if (!ignore_load(ignored)) return ESP_FAIL;
     char dir[64];
     project_dir(name, dir, sizeof(dir));
     if (!sd_card_is_dir(dir)) {
@@ -200,7 +303,7 @@ extern "C" esp_err_t project_migrate_root(const char *name, int *moved)
     if (!scan_dir(mount(), &e, &count)) return ESP_FAIL;
     esp_err_t ret = ESP_OK;
     for (int i = 0; i < count; i++) {
-        if (e[i].is_dir || !editor_path_format(e[i].name, NULL)) continue;
+        if (!root_doc_candidate(e[i]) || name_listed(ignored, e[i].name)) continue;
         char dst_name[256];
         if (!project_free_file_name(dir, e[i].name, dst_name, sizeof(dst_name))) {
             ret = ESP_FAIL;
